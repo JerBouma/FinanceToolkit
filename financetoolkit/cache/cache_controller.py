@@ -396,7 +396,7 @@ class Cache:
             source (str): The external data source, e.g. "fmp".
             dataset (str): The dataset within that source, e.g. "historical".
             parameters (dict[str, Any] | None): Parameters that change the returned
-                data. Entities and date ranges must not be included here.
+                data. Entities and date ranges must not be included here. Defaults to None, no parameters.
 
         Returns:
             str: The dataset key.
@@ -429,9 +429,9 @@ class Cache:
             source (str): The external data source.
             dataset (str): The dataset within that source.
             entities (list[str] | str): The entities being requested.
-            start (str | date | None): Inclusive start of the requested range.
-            end (str | date | None): Inclusive end of the requested range.
-            parameters (dict[str, Any] | None): Parameters that change the data.
+            start (str | date | None): Inclusive start of the requested range. Defaults to None, an open start.
+            end (str | date | None): Inclusive end of the requested range. Defaults to None, an open end.
+            parameters (dict[str, Any] | None): Parameters that change the data. Defaults to None, no parameters.
             date_axis (int): 0 when the index holds the dates, 1 when the columns do. Defaults to 0.
             reference_date (date | None): The date the revision window is measured
                 back from, and the end of a requested range without an end or ending after it.
@@ -563,9 +563,9 @@ class Cache:
             dataset (str): The dataset within that source.
             entity (str): The entity the data belongs to.
             data (pd.DataFrame | pd.Series): The freshly fetched data.
-            start (str | date | None): Inclusive start of the range that was requested.
-            end (str | date | None): Inclusive end of the range that was requested.
-            parameters (dict[str, Any] | None): Parameters that change the data.
+            start (str | date | None): Inclusive start of the range that was requested. Defaults to None, an open start.
+            end (str | date | None): Inclusive end of the range that was requested. Defaults to None, an open end.
+            parameters (dict[str, Any] | None): Parameters that change the data. Defaults to None, no parameters.
             date_axis (int): 0 when the index holds the dates, 1 when the columns do. Defaults to 0.
         """
         if not self.serves(source):
@@ -672,7 +672,7 @@ class Cache:
             source (str): The external data source.
             dataset (str): The dataset within that source.
             entity (str): The entity to read.
-            parameters (dict[str, Any] | None): Parameters that change the data.
+            parameters (dict[str, Any] | None): Parameters that change the data. Defaults to None, no parameters.
             ttl (int | None): Overrides the dataset's registered time-to-live for
                 this read. Used where the lifetime is configured by the caller
                 rather than by the nature of the data, such as the MCP server's
@@ -733,7 +733,7 @@ class Cache:
             entity (str): The entity the data belongs to.
             data (Any): The value to store: a DataFrame, Series or Index, a scalar, or a
                 list, tuple or dictionary of these (see serialization_model.encode_object).
-            parameters (dict[str, Any] | None): Parameters that change the data.
+            parameters (dict[str, Any] | None): Parameters that change the data. Defaults to None, no parameters.
         """
         if not self.serves(source):
             return
@@ -766,8 +766,8 @@ class Cache:
         Args:
             source (str): The external data source.
             dataset (str): The dataset within that source.
-            entity (str | None): The entity to drop, or None for the whole dataset.
-            parameters (dict[str, Any] | None): Parameters that change the data.
+            entity (str | None): The entity to drop, or None for the whole dataset. Defaults to None.
+            parameters (dict[str, Any] | None): Parameters that change the data. Defaults to None, no parameters.
 
         Returns:
             int: The number of stored payloads removed.
@@ -793,9 +793,10 @@ class Cache:
         automatically; removal is always something the caller asked for.
 
         Args:
-            source (str | None): Only remove entries from this source, e.g. "oecd".
+            source (str | None): Only remove entries from this source, e.g. "oecd". Defaults to None, every source.
             dataset (str | None): Only remove entries from this dataset, e.g. "historical".
-            entity (str | None): Only remove entries for this entity, e.g. "AAPL".
+                Defaults to None, every dataset.
+            entity (str | None): Only remove entries for this entity, e.g. "AAPL". Defaults to None, every entity.
 
         Returns:
             int: The number of stored payloads removed.
@@ -844,8 +845,8 @@ class Cache:
             ttl (int): Maximum age in seconds.
             source (str | None): Only evict entries from this source. None evicts
                 across every source, which is rarely what a caller that owns just
-                one part of a shared cache wants.
-            dataset (str | None): Only evict entries from this dataset.
+                one part of a shared cache wants. Defaults to None.
+            dataset (str | None): Only evict entries from this dataset. Defaults to None, every dataset.
 
         Returns:
             int: The number of rows removed.

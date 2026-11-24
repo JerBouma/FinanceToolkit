@@ -3,6 +3,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from financetoolkit.utilities.error_model import InvalidArgumentError
+
 
 def test_get_binomial_model(recorder, options_module):
     recorder.capture(options_module.get_binomial_model())
@@ -14,7 +16,7 @@ def test_get_binomial_model(recorder, options_module):
             strike_step_size=2,
             risk_free_rate=0.01,
             dividend_yield=0.005,
-            timesteps=2,
+            time_steps=2,
             rounding=2,
         )
     )
@@ -36,12 +38,12 @@ def test_get_black_scholes_model(recorder, options_module):
 
 def test_get_stock_price_simulation(recorder, options_module):
     recorder.capture(options_module.get_stock_price_simulation())
-    recorder.capture(options_module.get_stock_price_simulation(timesteps=5))
+    recorder.capture(options_module.get_stock_price_simulation(time_steps=5))
 
 
 def test_the_stock_price_simulation_takes_a_fraction_of_a_year(options_module):
     half_year = options_module.get_stock_price_simulation(
-        time_to_expiration=0.5, timesteps=2
+        time_to_expiration=0.5, time_steps=2
     )
 
     start, end = half_year.columns[0], half_year.columns[-1]
@@ -529,7 +531,7 @@ def test_get_strategy_payoff_invalid_legs(options_module, caplog):
 
 def test_stock_price_on_a_past_date_is_the_traded_close(options_module):
     simulation = options_module.get_stock_price_simulation(
-        start_date="2021-06-01", timesteps=1, rounding=6
+        start_date="2021-06-01", time_steps=1, rounding=6
     )
     historical = options_module._daily_historical.loc["2021-06-01"]
 
@@ -1536,7 +1538,7 @@ def test_get_binomial_model_variants(recorder, options_module):
         "leisen_reimer",
         "exact_inversion",
     ):
-        recorder.capture(options_module.get_binomial_model(method=method, timesteps=5))
+        recorder.capture(options_module.get_binomial_model(method=method, time_steps=5))
     recorder.capture(
         options_module.get_binomial_model(
             method="leisen_reimer", put_option=True, american_option=True
@@ -1545,7 +1547,7 @@ def test_get_binomial_model_variants(recorder, options_module):
 
 
 def test_the_strike_centred_trees_use_an_odd_number_of_steps(options_module):
-    tree = options_module.get_binomial_model(method="exact_inversion", timesteps=4)
+    tree = options_module.get_binomial_model(method="exact_inversion", time_steps=4)
     # Four steps become five: six dates from the start date to expiration.
     assert len(tree.columns) == 6
 
@@ -1557,7 +1559,7 @@ def test_a_short_exact_inversion_tree_keeps_every_strike(options_module, caplog)
         tree = options_module.get_binomial_model(
             method=method,
             time_to_expiration=0.004,
-            timesteps=11,
+            time_steps=11,
             strike_price_range=0.5,
         )
         assert not tree.empty
@@ -1569,7 +1571,7 @@ def test_a_short_exact_inversion_tree_keeps_every_strike(options_module, caplog)
     # The movements of these trees differ per strike, so they are shown per strike.
     with caplog.at_level("INFO"):
         options_module.get_binomial_model(
-            method="exact_inversion", timesteps=5, show_input_info=True
+            method="exact_inversion", time_steps=5, show_input_info=True
         )
     assert "at a strike of" in caplog.text
 
@@ -1654,7 +1656,7 @@ def test_cash_dividends_replace_the_dividend_yield(options_module, caplog):
 def test_get_implied_volatility_american(recorder, option_market):
     module, labels = option_market
     european = module.get_implied_volatility(put_option=True)
-    american = module.get_implied_volatility(put_option=True, american=True)
+    american = module.get_implied_volatility(put_option=True, american_option=True)
     recorder.capture(american.to_frame("American"))
     # The early exercise right is part of the American price, so the volatility that
     # reprices a put is lower when that right is counted, most for the deep in-the-money.
@@ -1747,11 +1749,11 @@ def test_get_touch_option(recorder, options_module):
     recorder.capture(
         options_module.get_touch_option(barrier_percentage=1.1, payment="hit")
     )
-    recorder.capture(options_module.get_touch_option(touch_type="no-touch"))
-    recorder.capture(options_module.get_touch_option(touch_type="double-no-touch"))
+    recorder.capture(options_module.get_touch_option(option_type="no-touch"))
+    recorder.capture(options_module.get_touch_option(option_type="double-no-touch"))
     recorder.capture(
         options_module.get_touch_option(
-            touch_type="double-one-touch", monitoring="daily", cash_payout=100
+            option_type="double-one-touch", monitoring="daily", cash_payout=100
         )
     )
 
@@ -1814,9 +1816,10 @@ def test_compound_style_options_refuse_invalid_choices(options_module, caplog):
 
 
 def test_path_dependent_options_refuse_invalid_choices(options_module, caplog):
+    with pytest.raises(InvalidArgumentError, match="method must be one of"):
+        options_module.get_asian_option(method="levy")
     # Each invalid combination is reported with an empty result.
     for call, message in (
-        (lambda: options_module.get_asian_option(method="levy"), "method must"),
         (
             lambda: options_module.get_barrier_option(
                 barrier_direction="double", rebate=1
@@ -1839,7 +1842,7 @@ def test_path_dependent_options_refuse_invalid_choices(options_module, caplog):
         ),
         (
             lambda: options_module.get_touch_option(
-                touch_type="no-touch", payment="hit"
+                option_type="no-touch", payment="hit"
             ),
             "pays at expiration",
         ),
@@ -1894,7 +1897,8 @@ def test_get_volatility_surface_parameters(recorder, option_market, method):
         # One rho, eta and gamma for the whole surface of a ticker.
         for ticker in parameters.index.get_level_values(0).unique():
             assert parameters.loc[ticker, ["rho", "eta", "gamma"]].nunique().max() == 1
-    assert module.get_volatility_surface(method="heston").empty
+    with pytest.raises(InvalidArgumentError, match="method must be one of"):
+        module.get_volatility_surface(method="heston")
 
 
 def test_get_local_volatility_surface(recorder, option_market):
@@ -1902,7 +1906,10 @@ def test_get_local_volatility_surface(recorder, option_market):
     local_volatility = module.get_local_volatility_surface(method="ssvi")
     recorder.capture(local_volatility.rename(columns=labels))
     assert list(local_volatility.columns) == list(labels)
-    assert module.get_local_volatility_surface(method="sabr").empty
+    with pytest.raises(
+        InvalidArgumentError, match="method must be one of 'svi' or 'ssvi'"
+    ):
+        module.get_local_volatility_surface(method="sabr")
 
 
 def test_get_exchange_option(recorder, options_module):
@@ -2025,7 +2032,7 @@ def test_the_delta_hedging_backtest_without_moves_in_volatility_breaks_even(
 
 
 def test_get_delta_hedging_simulation(recorder, options_module):
-    recorder.capture(options_module.get_delta_hedging_simulation(paths=2000))
+    recorder.capture(options_module.get_delta_hedging_simulation(simulations=2000))
     recorder.capture(
         options_module.get_delta_hedging_simulation(
             days=21,
@@ -2035,7 +2042,7 @@ def test_get_delta_hedging_simulation(recorder, options_module):
             put_option=True,
             transaction_cost=0.001,
             rebalancing_days=5,
-            paths=2000,
+            simulations=2000,
         )
     )
 

@@ -5,6 +5,7 @@ import pandas as pd
 import pytest
 
 from financetoolkit.technicals.cycle import cycle_model
+from financetoolkit.utilities.error_model import InvalidArgumentError
 
 
 def _cycle_prices() -> pd.Series:
@@ -154,8 +155,8 @@ def test_swiss_army_knife_filters_match_talib():
 
 
 def test_swiss_army_knife_filter_rejects_invalid_input():
-    with pytest.raises(ValueError, match="Filter must be"):
-        cycle_model.get_swiss_army_knife_filter(_cycle_prices(), filter="band_stop")
+    with pytest.raises(InvalidArgumentError, match="method must be one of"):
+        cycle_model.get_swiss_army_knife_filter(_cycle_prices(), method="band_stop")
     with pytest.raises(ValueError, match="at least 5"):
         cycle_model.get_swiss_army_knife_filter(_cycle_prices(), window=4)
     with pytest.raises(ValueError, match="delta"):

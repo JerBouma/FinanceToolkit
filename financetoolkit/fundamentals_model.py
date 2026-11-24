@@ -257,7 +257,10 @@ def collect_financial_statements(
     elif isinstance(tickers, list):
         ticker_list = tickers
     else:
-        raise ValueError(f"Type for the tickers ({type(tickers)}) variable is invalid.")
+        raise error_model.InvalidArgumentError(
+            "tickers must be a str or a list of str, such as 'AAPL' or ['AAPL', 'MSFT'], "
+            f"not {type(tickers).__name__}. Please pass the tickers in one of these forms."
+        )
 
     if statement not in ["balance", "income", "cashflow"]:
         raise ValueError(

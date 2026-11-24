@@ -31,6 +31,7 @@ from financetoolkit.fixedincome.credit.credit_curve_model import (
     get_survival_probability,
 )
 from financetoolkit.fixedincome.helpers import discount_factors
+from financetoolkit.utilities.error_model import check_option
 
 # The premium accrues on ACT/360 while the times are ACT/365F year fractions.
 ACCRUAL_PER_YEAR = 365 / 360
@@ -370,10 +371,7 @@ def get_cds_option(
     dtype: float64
     ```
     """
-    if option_type not in CDS_OPTION_TYPES:
-        raise ValueError(
-            f"The option type must be one of {', '.join(CDS_OPTION_TYPES)}, not {option_type!r}."
-        )
+    check_option("option_type", option_type, CDS_OPTION_TYPES)
     if not 0 < option_expiry < maturity:
         raise ValueError(
             f"The option expires ({option_expiry}) after today and before the maturity "

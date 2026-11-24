@@ -5,6 +5,7 @@ import pandas as pd
 import pytest
 
 from financetoolkit.technicals.pattern import pattern_model
+from financetoolkit.utilities.error_model import InvalidArgumentError
 
 
 def test_collect_all_indicators(recorder, technical_module):
@@ -401,7 +402,7 @@ def test_get_bollinger_bands(recorder, technical_module):
     recorder.capture(technical_module.get_bollinger_bands(method="price_bands"))
     recorder.capture(
         technical_module.get_bollinger_bands(
-            method="price_bands", window=10, num_std_dev=1.5, fast_window=3
+            method="price_bands", window=10, num_std_dev=1.5, short_window=3
         )
     )
     recorder.capture(
@@ -708,7 +709,7 @@ def test_get_quantitative_qualitative_estimation(recorder, technical_module):
     recorder.capture(technical_module.get_quantitative_qualitative_estimation())
     recorder.capture(
         technical_module.get_quantitative_qualitative_estimation(
-            window=10, smooth_window=3, factor=3.0
+            window=10, smooth_window=3, multiplier=3.0
         )
     )
     recorder.capture(
@@ -882,7 +883,7 @@ def test_get_relative_volume(recorder, technical_module):
 def test_get_volume_flow_indicator(recorder, technical_module):
     recorder.capture(technical_module.get_volume_flow_indicator())
     recorder.capture(
-        technical_module.get_volume_flow_indicator(window=50, smoothing_window=5)
+        technical_module.get_volume_flow_indicator(window=50, smooth_window=5)
     )
     recorder.capture(technical_module.get_volume_flow_indicator(growth=True))
 
@@ -924,9 +925,9 @@ def test_get_price_volume_rank(recorder, technical_module):
 
 def test_get_buying_selling_pressure(recorder, technical_module):
     recorder.capture(technical_module.get_buying_selling_pressure())
-    recorder.capture(technical_module.get_buying_selling_pressure(smoothing_window=1))
+    recorder.capture(technical_module.get_buying_selling_pressure(smooth_window=1))
     recorder.capture(
-        technical_module.get_buying_selling_pressure(window=20, smoothing_window=10)
+        technical_module.get_buying_selling_pressure(window=20, smooth_window=10)
     )
 
 
@@ -1024,7 +1025,7 @@ def test_conventional_default_windows():
     assert defaults(Technicals.get_force_index)["window"] is None
     # The windows depend on the method: 20 and 10 for the Keltner Channels.
     keltner = defaults(Technicals.get_keltner_channels)
-    assert (keltner["window"], keltner["atr_window"], keltner["atr_multiplier"]) == (
+    assert (keltner["window"], keltner["atr_window"], keltner["multiplier"]) == (
         None,
         None,
         2,
@@ -1069,7 +1070,7 @@ def test_bands_and_channels_take_a_fractional_width(technical_module):
         ),
         (
             technical_module.get_keltner_channels,
-            "atr_multiplier",
+            "multiplier",
             1.5,
             "Lower Line",
             "Middle Line",
@@ -1208,7 +1209,8 @@ def test_signals_only_keeps_the_periods_with_a_signal(technical_module):
 
 
 def test_get_moving_average_rejects_an_unknown_method(technical_module):
-    assert technical_module.get_moving_average(method="cubic").empty
+    with pytest.raises(InvalidArgumentError, match="method must be one of"):
+        technical_module.get_moving_average(method="cubic")
 
 
 def _stock_with_a_cryptocurrency():
@@ -1611,7 +1613,7 @@ def test_ttr_indicator_defaults():
     dvi = defaults(Technicals.get_dv_intermediate_oscillator)
     assert (dvi["window"], dvi["magnitude_weight"]) == (252, 0.8)
     bands = defaults(Technicals.get_bollinger_bands)
-    assert (bands["window"], bands["num_std_dev"], bands["fast_window"]) == (20, 2, 2)
+    assert (bands["window"], bands["num_std_dev"], bands["short_window"]) == (20, 2, 2)
 
 
 def test_get_moving_average_triple_exponential(recorder, technical_module):
@@ -1949,7 +1951,7 @@ def test_get_relative_volatility_index(recorder, technical_module):
 
 def test_get_acceleration_bands(recorder, technical_module):
     recorder.capture(technical_module.get_acceleration_bands())
-    recorder.capture(technical_module.get_acceleration_bands(window=10, factor=2.0))
+    recorder.capture(technical_module.get_acceleration_bands(window=10, multiplier=2.0))
     recorder.capture(technical_module.get_acceleration_bands(growth=True))
 
 
@@ -2015,11 +2017,11 @@ def test_get_squeeze_momentum(recorder, technical_module):
 
 def test_get_keltner_channels_original(recorder, technical_module):
     recorder.capture(
-        technical_module.get_keltner_channels(method="original", atr_multiplier=1)
+        technical_module.get_keltner_channels(method="original", multiplier=1)
     )
     recorder.capture(
         technical_module.get_keltner_channels(
-            method="original", window=10, atr_multiplier=1
+            method="original", window=10, multiplier=1
         )
     )
     recorder.capture(technical_module.get_keltner_channels(method="original"))
@@ -2035,7 +2037,7 @@ def test_get_donchian_channels_include_current(recorder, technical_module):
 def test_keltner_and_donchian_defaults_are_unchanged(technical_module):
     keltner = technical_module.get_keltner_channels()
     assert keltner.equals(
-        technical_module.get_keltner_channels(atr_multiplier=2, method="exponential")
+        technical_module.get_keltner_channels(multiplier=2, method="exponential")
     )
     donchian = technical_module.get_donchian_channels()
     current = technical_module.get_donchian_channels(include_current=True)
@@ -2057,7 +2059,7 @@ def test_volatility_default_windows():
         (Technicals.get_average_true_range, {"window": 14}),
         (Technicals.get_chaikin_volatility, {"window": 10, "roc_window": 10}),
         (Technicals.get_relative_volatility_index, {"window": 14, "std_window": 10}),
-        (Technicals.get_acceleration_bands, {"window": 20, "factor": 4.0}),
+        (Technicals.get_acceleration_bands, {"window": 20, "multiplier": 4.0}),
         (
             Technicals.get_chande_kroll_stop,
             {"window": 10, "multiplier": 1.0, "stop_window": 9},
@@ -2112,8 +2114,8 @@ def test_merged_methods_reject_an_unknown_method(technical_module):
         "get_keltner_channels",
         "get_volume_index",
     ):
-        # The ValueError is logged and the result is empty, as for other data errors.
-        assert getattr(technical_module, name)(method="unknown").empty, name
+        with pytest.raises(InvalidArgumentError, match="method must be one of"):
+            getattr(technical_module, name)(method="unknown")
 
 
 def test_get_hilbert_dominant_cycle_period(recorder, technical_module):
@@ -2167,16 +2169,16 @@ def test_get_swiss_army_knife_filter(recorder, technical_module):
     recorder.capture(technical_module.get_swiss_army_knife_filter())
     recorder.capture(
         technical_module.get_swiss_army_knife_filter(
-            filter="gaussian", median_price=False
+            method="gaussian", median_price=False
         )
     )
-    recorder.capture(technical_module.get_swiss_army_knife_filter(filter="high_pass"))
+    recorder.capture(technical_module.get_swiss_army_knife_filter(method="high_pass"))
     recorder.capture(
         technical_module.get_swiss_army_knife_filter(
-            filter="two_pole_high_pass", window=30
+            method="two_pole_high_pass", window=30
         )
     )
-    recorder.capture(technical_module.get_swiss_army_knife_filter(filter="butterworth"))
+    recorder.capture(technical_module.get_swiss_army_knife_filter(method="butterworth"))
     recorder.capture(technical_module.get_swiss_army_knife_filter(delta=0.3))
 
 
@@ -2193,7 +2195,7 @@ def test_get_moving_average_super_smoother(recorder, technical_module):
 def test_get_even_better_sinewave(recorder, technical_module):
     recorder.capture(technical_module.get_even_better_sinewave())
     recorder.capture(
-        technical_module.get_even_better_sinewave(window=50, smoothing_window=15)
+        technical_module.get_even_better_sinewave(window=50, smooth_window=15)
     )
 
 
@@ -2332,9 +2334,12 @@ def test_get_sample_weights(recorder, technical_module):
 
 
 def test_labeling_invalid_parameters(technical_module):
-    assert technical_module.get_event_filter(method="unknown").empty
-    assert technical_module.get_fixed_horizon_labels(relative_to="unknown").empty
-    assert technical_module.get_matrix_flag_labels(template="unknown").empty
+    with pytest.raises(InvalidArgumentError, match="method must be one of"):
+        technical_module.get_event_filter(method="unknown")
+    with pytest.raises(InvalidArgumentError, match="relative_to must be one of"):
+        technical_module.get_fixed_horizon_labels(relative_to="unknown")
+    with pytest.raises(InvalidArgumentError, match="template must be one of"):
+        technical_module.get_matrix_flag_labels(template="unknown")
     assert technical_module.get_sample_weights(method="time_decay", decay=-1).empty
     assert technical_module.get_triple_barrier_labels(side="unknown").empty
 
@@ -2352,5 +2357,6 @@ def test_get_bet_sizes(recorder, technical_module):
     recorder.capture(technical_module.get_bet_sizes(method="probability"))
     recorder.capture(technical_module.get_bet_sizes(step_size=0.5))
     assert budget["Bet Size"].abs().max().max() <= 1
-    assert technical_module.get_bet_sizes(method="unknown").empty
+    with pytest.raises(InvalidArgumentError, match="method must be one of"):
+        technical_module.get_bet_sizes(method="unknown")
     assert technical_module.get_bet_sizes(step_size=2).empty

@@ -225,6 +225,7 @@ class RatesEconomics:
                 or the annual data. Defaults to None, which is quarterly when the Economics class
                 was initialized with quarterly=True and otherwise the highest frequency available: daily.
             gmdb_source (bool | None, optional): Whether to get the data from the Global Macro Database (GMDB).
+                Defaults to None, which uses the GMDB for yearly data when gmdb_source is True on the Economics class (its default) and the OECD otherwise.
             end_of_period (bool, optional): Whether to return the rate at the end of each month,
                 quarter or year instead of its average. Defaults to False.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
@@ -783,6 +784,7 @@ class RatesEconomics:
                 Defaults to None, which is quarterly when the Economics class was initialized with
                 quarterly=True and monthly otherwise.
             gmdb_source (bool | None, optional): Whether to get the data from the Global Macro Database (GMDB).
+                Defaults to None, which uses the GMDB for yearly data when gmdb_source is True on the Economics class (its default) and the OECD otherwise.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
@@ -943,6 +945,7 @@ class RatesEconomics:
                 and the monthly OECD data when other countries are requested or countries is None.
             gmdb_source (bool | None, optional): Whether to get the data from the Global Macro Database (GMDB).
                 Not used for daily and weekly data.
+                Defaults to None, which uses the GMDB for yearly data when gmdb_source is True on the Economics class (its default) and the OECD otherwise.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.

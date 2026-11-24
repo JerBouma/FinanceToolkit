@@ -219,6 +219,9 @@ def test_the_method_description_lists_every_indicators_own_values():
             module = (group.get("method_to_module") or {}).get(
                 indicator, group.get("module_name")
             )
+            # A mapping also names the category, as {"module": ..., "category": ...}.
+            if isinstance(module, dict):
+                module = module["module"]
             if module not in config["module_class_map"]:
                 continue
             for value in _formula_variants(getattr(owner(module), indicator)):

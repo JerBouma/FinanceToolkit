@@ -12,7 +12,12 @@ from financetoolkit.technicals.cycle import cycle_model
 from financetoolkit.technicals.helpers import calculate_per_ticker
 from financetoolkit.technicals.momentum import momentum_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
-from financetoolkit.utilities.error_model import handle_errors
+from financetoolkit.utilities.error_model import (
+    InvalidArgumentError,
+    check_option,
+    check_period,
+    handle_errors,
+)
 from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import (
     apply_rounding,
@@ -105,19 +110,11 @@ class MomentumTechnicals:
         | 2025-12-30 |            43.4593 |      -53.5607 |              28.5714 |                50      |           -21.4286 |                  -35.5284 |                -0.1288 |                            -0.1608 | -464807           |               54.1042 |                        0.0003 |                                    0.003  |                                 -0.0027 |                      0.0788 |                        -0.1122 |                                    -0.0325 |                                  -0.0797 |                      -2.3582 |                     19.2762 |                      9.6926 |                      11.6321 |                      16.8441 |                       20.2146 |                       9.095  |                            25.712  |                     -21.7389 |                   38.6752 |                    270.612 |              276.183 |                   265.068 |                   250.519 |         46.4393 |         48.9647 |      0.0788 |             0.8074 |          -0.7285 |                   48.4209 |             29.5551 |             34.7338 |                0.6843 |                            4.0838 |             0.15   |                  0.4444 |  -0.3773 |              -1.9448 |                   0.3866 |                 0.9145 |                 1.1096 |                 0.0857 |                -1.708  |          -0.0148 |    -4.0858 |            53.5704 |             0.2174 |                       0.4141 |           -0.0182 |                        0.1612 |         -0.0465 |            -0.4022 |                    -0.8195 |                        -0.6065 | 57.9069 | 47.7783 | 78.1641 |                          0.0877 |                     -6.3714 |                                 -0.3191 |                 -7.7102 |                   -8.4097 |                   0.6995 |               0.0051 |    -20.2725 |                -20.6589 |                 -0.7486 |       -3.2998 |                    5881.83 | 53.9827 |                  48.8135 |                  50.5959 |                  3.8001 |       36.7617 |   50.4639 | -0.0122 |  113.905  |  105.452  |                  -0.2379 |              58.3333 |                     -1.0873 |               0 |                1 |           1 |                       -0.6718 |                0.0069 |                  0.7814 |
         | 2025-12-31 |            38.2003 |      -62.8029 |              21.4286 |                42.8571 |           -21.4286 |                  -56.9136 |                -0.0887 |                            -0.1381 |      -4.82705e+06 |               46.4079 |                       -0.0003 |                                    0.0023 |                                 -0.0026 |                     -0.0897 |                        -0.1258 |                                    -0.0512 |                                  -0.0746 |                      -1.5169 |                     18.7176 |                      9.0003 |                      11.3294 |                      16.2589 |                       20.4663 |                      11.4565 |                            24.6539 |                     -37.4456 |                   34.0262 |                    270.248 |              276.821 |                   265.6   |                   250.867 |         37.1971 |         45.0758 |     -0.0897 |             0.628  |          -0.7176 |                   45.6902 |             12.0094 |             27.1964 |               -0.6702 |                            2.8953 |            -0.6218 |                  0.057  |  -0.536  |              -1.6049 |                   0.515  |                 0.9113 |                 1.1148 |                -0.0091 |                -1.9324 |          -0.0248 |    -6.896  |            52.5944 |             0.3745 |                       0.3956 |           -0.0452 |                        0.1157 |         -0.0431 |            -0.1073 |                    -0.4022 |                        -0.6548 | 57.905  | 51.1539 | 71.4071 |                          0.1423 |                     -7.1079 |                                 -1.6769 |                -10.1732 |                   -8.9975 |                  -1.1757 |               0.0026 |    -23.361  |                -20.8876 |                 -0.6816 |      -19.3794 |                    5862.45 | 53.9827 |                  47.7724 |                  43.3308 |                 -9.9432 |       24.882  |   52.0466 | -0.0166 |   99.0847 |   92.3301 |                  -0.3998 |              50      |                     -1.4421 |               0 |                1 |          -1 |                       -0.6071 |                0.0023 |                  0.6255 |
         """
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(
+            period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
+        )
         if period == "intraday" and self._historical_data[period].empty:
-            raise ValueError(
+            raise InvalidArgumentError(
                 "Please define the 'intraday_period' parameter when initializing the Toolkit."
             )
 
@@ -640,20 +637,12 @@ class MomentumTechnicals:
         | 2025-12-30 | 48.8975 |     52.4467 |
         | 2025-12-31 | 42.2704 |     45.3999 |
         """
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(
+            period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
+        )
         if period == "intraday":
             if self._historical_data[period].empty:
-                raise ValueError(
+                raise InvalidArgumentError(
                     "Please define the 'intraday_period' parameter when initializing the Toolkit."
                 )
             close_column = "Close"
@@ -767,20 +756,12 @@ class MomentumTechnicals:
         | 2025-12-30 | -56.8182 |    -20.7239 |
         | 2025-12-31 | -58.8068 |    -43.4088 |
         """
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(
+            period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
+        )
         if period == "intraday":
             if self._historical_data[period].empty:
-                raise ValueError(
+                raise InvalidArgumentError(
                     "Please define the 'intraday_period' parameter when initializing the Toolkit."
                 )
             close_column = "Close"
@@ -901,20 +882,12 @@ class MomentumTechnicals:
         | 2025-12-30 |      14.2857 |            64.2857 |    78.5714 |
         | 2025-12-31 |     100      |           -28.5714 |    71.4286 |
         """
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(
+            period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
+        )
         if period == "intraday":
             if self._historical_data[period].empty:
-                raise ValueError(
+                raise InvalidArgumentError(
                     "Please define the 'intraday_period' parameter when initializing the Toolkit."
                 )
             close_column = "Close"
@@ -1029,20 +1002,12 @@ class MomentumTechnicals:
         | 2025-12-30 | 69.184  |     67.1731 |
         | 2025-12-31 | 38.1997 |     13.3141 |
         """
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(
+            period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
+        )
         if period == "intraday":
             if self._historical_data[period].empty:
-                raise ValueError(
+                raise InvalidArgumentError(
                     "Please define the 'intraday_period' parameter when initializing the Toolkit."
                 )
             close_column = "Close"
@@ -1164,20 +1129,12 @@ class MomentumTechnicals:
         | 2025-12-30 |                -0.0074 |       -0.0247 |
         | 2025-12-31 |                -0.03   |       -0.013  |
         """
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(
+            period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
+        )
         if period == "intraday":
             if self._historical_data[period].empty:
-                raise ValueError(
+                raise InvalidArgumentError(
                     "Please define the 'intraday_period' parameter when initializing the Toolkit."
                 )
             close_column = "Close"
@@ -1322,22 +1279,13 @@ class MomentumTechnicals:
         | 2025-12-30 |  223430           |  2.75431e+07 |
         | 2025-12-31 |      -3.35421e+06 | -2.98818e+07 |
         """
-        if method not in ("standard", "cumulative"):
-            raise ValueError("Method must be standard or cumulative.")
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_option("method", method, ("standard", "cumulative"))
+        check_period(
+            period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
+        )
         if period == "intraday":
             if self._historical_data[period].empty:
-                raise ValueError(
+                raise InvalidArgumentError(
                     "Please define the 'intraday_period' parameter when initializing the Toolkit."
                 )
             close_column = "Close"
@@ -1469,20 +1417,12 @@ class MomentumTechnicals:
         | 2025-12-30 |  61.9948 |     66.0178 |
         | 2025-12-31 | nan      |     52.8916 |
         """
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(
+            period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
+        )
         if period == "intraday":
             if self._historical_data[period].empty:
-                raise ValueError(
+                raise InvalidArgumentError(
                     "Please define the 'intraday_period' parameter when initializing the Toolkit."
                 )
             close_column = "Close"
@@ -1629,19 +1569,11 @@ class MomentumTechnicals:
         | 2025-12-30 |     -0.0559 |                        -0.1205 |       -0.0646 |
         | 2025-12-31 |     -0.0509 |                        -0.1282 |       -0.0773 |
         """
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(
+            period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
+        )
         if period == "intraday" and self._historical_data[period].empty:
-            raise ValueError(
+            raise InvalidArgumentError(
                 "Please define the 'intraday_period' parameter when initializing the Toolkit."
             )
 
@@ -1759,20 +1691,12 @@ class MomentumTechnicals:
         | 2025-12-30 | -0.001  |    -13.3921 |
         | 2025-12-31 | -0.0537 |     -8.1194 |
         """
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(
+            period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
+        )
         if period == "intraday":
             if self._historical_data[period].empty:
-                raise ValueError(
+                raise InvalidArgumentError(
                     "Please define the 'intraday_period' parameter when initializing the Toolkit."
                 )
             close_column = "Close"
@@ -1915,24 +1839,13 @@ class MomentumTechnicals:
         | 2025-12-31 |  10.4608 |     13.7116 |
         """
         methods = ("standard", "rating")
-        if method not in methods:
-            raise ValueError(
-                f"Method must be one of {', '.join(methods)}, not {method}."
-            )
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_option("method", method, methods)
+        check_period(
+            period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
+        )
         if period == "intraday":
             if self._historical_data[period].empty:
-                raise ValueError(
+                raise InvalidArgumentError(
                     "Please define the 'intraday_period' parameter when initializing the Toolkit."
                 )
             close_column = "Close"
@@ -2079,20 +1992,12 @@ class MomentumTechnicals:
         | 2025-12-30 | 16.844  |  9.6926 | 20.2144 | 11.6321 |  9.0948 |
         | 2025-12-31 | 16.2588 |  9.0003 | 20.4662 | 11.3294 | 11.4565 |
         """
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(
+            period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
+        )
         if period == "intraday":
             if self._historical_data[period].empty:
-                raise ValueError(
+                raise InvalidArgumentError(
                     "Please define the 'intraday_period' parameter when initializing the Toolkit."
                 )
             close_column = "Close"
@@ -2220,20 +2125,12 @@ class MomentumTechnicals:
         | 2025-12-30 | 38.9776 |     12.4231 |
         | 2025-12-31 | 15.5101 |     -7.4365 |
         """
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(
+            period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
+        )
         if period == "intraday":
             if self._historical_data[period].empty:
-                raise ValueError(
+                raise InvalidArgumentError(
                     "Please define the 'intraday_period' parameter when initializing the Toolkit."
                 )
             close_column = "Close"
@@ -2376,20 +2273,12 @@ class MomentumTechnicals:
         | 2025-12-30 |     49819.8 |           49792.8 |          49969.9 |          47710.2 |
         | 2025-12-31 |       nan   |             nan   |          49926.3 |          47990.2 |
         """
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(
+            period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
+        )
         if period == "intraday":
             if self._historical_data[period].empty:
-                raise ValueError(
+                raise InvalidArgumentError(
                     "Please define the 'intraday_period' parameter when initializing the Toolkit."
                 )
             close_column = "Close"
@@ -2564,24 +2453,13 @@ class MomentumTechnicals:
         | 2025-12-31 |         74.4904 |         64.7032 |
         """
         methods = ("standard", "rsi")
-        if method not in methods:
-            raise ValueError(
-                f"Method must be one of {', '.join(methods)}, not {method}."
-            )
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_option("method", method, methods)
+        check_period(
+            period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
+        )
         if period == "intraday":
             if self._historical_data[period].empty:
-                raise ValueError(
+                raise InvalidArgumentError(
                     "Please define the 'intraday_period' parameter when initializing the Toolkit."
                 )
             close_column = "Close"
@@ -2805,24 +2683,13 @@ class MomentumTechnicals:
         | 2025-12-31 |      1.361  |     -1.7718 |       -3.1329 |
         """
         methods = ("absolute", "percentage")
-        if method not in methods:
-            raise ValueError(
-                f"Method must be one of {', '.join(methods)}, not {method}."
-            )
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_option("method", method, methods)
+        check_period(
+            period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
+        )
         if period == "intraday":
             if self._historical_data[period].empty:
-                raise ValueError(
+                raise InvalidArgumentError(
                     "Please define the 'intraday_period' parameter when initializing the Toolkit."
                 )
             close_column = "Close"
@@ -3087,24 +2954,13 @@ class MomentumTechnicals:
         | 2025-12-31 |  44.643  |  46.9887 |     51.5337 |
         """
         methods = ("standard", "connors", "laguerre", "dynamic", "intraday")
-        if method not in methods:
-            raise ValueError(
-                f"Method must be one of {', '.join(methods)}, not {method}."
-            )
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_option("method", method, methods)
+        check_period(
+            period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
+        )
         if period == "intraday":
             if self._historical_data[period].empty:
-                raise ValueError(
+                raise InvalidArgumentError(
                     "Please define the 'intraday_period' parameter when initializing the Toolkit."
                 )
             close_column = "Close"
@@ -3312,22 +3168,13 @@ class MomentumTechnicals:
         | 2025-12-30 |       -9.1285 |               -5.9526 |
         | 2025-12-31 |       -8.3772 |               -6.1233 |
         """
-        if method not in ("standard", "ergodic"):
-            raise ValueError("Method must be standard or ergodic.")
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_option("method", method, ("standard", "ergodic"))
+        check_period(
+            period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
+        )
         if period == "intraday":
             if self._historical_data[period].empty:
-                raise ValueError(
+                raise InvalidArgumentError(
                     "Please define the 'intraday_period' parameter when initializing the Toolkit."
                 )
             close_column = "Close"
@@ -3454,20 +3301,12 @@ class MomentumTechnicals:
         | 2025-12-30 |   0.7846 |     -0.2222 |
         | 2025-12-31 |  -0.279  |     -0.9239 |
         """
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(
+            period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
+        )
         if period == "intraday":
             if self._historical_data[period].empty:
-                raise ValueError(
+                raise InvalidArgumentError(
                     "Please define the 'intraday_period' parameter when initializing the Toolkit."
                 )
             close_column = "Close"
@@ -3580,20 +3419,12 @@ class MomentumTechnicals:
         | 2025-12-30 | 0.0709 |      0.2172 |
         | 2025-12-31 | 0.044  |      0.0372 |
         """
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(
+            period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
+        )
         if period == "intraday":
             if self._historical_data[period].empty:
-                raise ValueError(
+                raise InvalidArgumentError(
                     "Please define the 'intraday_period' parameter when initializing the Toolkit."
                 )
             close_column = "Close"
@@ -3707,20 +3538,12 @@ class MomentumTechnicals:
         | 2025-12-30 |  0.0399 | 1.571  |      0.0942 |
         | 2025-12-31 | -0.2581 | 0.7081 |     -0.3881 |
         """
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(
+            period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
+        )
         if period == "intraday":
             if self._historical_data[period].empty:
-                raise ValueError(
+                raise InvalidArgumentError(
                     "Please define the 'intraday_period' parameter when initializing the Toolkit."
                 )
             close_column = "Close"
@@ -3873,22 +3696,13 @@ class MomentumTechnicals:
         | 2025-12-30 |  -6.6618 |     11.0505 |
         | 2025-12-31 |  -5.546  |     10.5955 |
         """
-        if method not in ("standard", "accelerator"):
-            raise ValueError("Method must be standard or accelerator.")
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_option("method", method, ("standard", "accelerator"))
+        check_period(
+            period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
+        )
         if period == "intraday":
             if self._historical_data[period].empty:
-                raise ValueError(
+                raise InvalidArgumentError(
                     "Please define the 'intraday_period' parameter when initializing the Toolkit."
                 )
             close_column = "Close"
@@ -4018,20 +3832,12 @@ class MomentumTechnicals:
         | 2025-12-30 | 1.1099 | 0.8697 |
         | 2025-12-31 | 1.0576 | 0.9069 |
         """
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(
+            period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
+        )
         if period == "intraday":
             if self._historical_data[period].empty:
-                raise ValueError(
+                raise InvalidArgumentError(
                     "Please define the 'intraday_period' parameter when initializing the Toolkit."
                 )
             close_column = "Close"
@@ -4149,20 +3955,12 @@ class MomentumTechnicals:
         | 2025-12-30 |      -0.0877 |       0.1728 |
         | 2025-12-31 |       0.0063 |       0.1473 |
         """
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(
+            period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
+        )
         if period == "intraday":
             if self._historical_data[period].empty:
-                raise ValueError(
+                raise InvalidArgumentError(
                     "Please define the 'intraday_period' parameter when initializing the Toolkit."
                 )
             close_column = "Close"
@@ -4294,24 +4092,13 @@ class MomentumTechnicals:
         | 2025-12-31 | -0.0075 |  0.0553 |      0.0032 |
         """
         methods = ("percentage", "absolute")
-        if method not in methods:
-            raise ValueError(
-                f"Method must be one of {', '.join(methods)}, not {method}."
-            )
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_option("method", method, methods)
+        check_period(
+            period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
+        )
         if period == "intraday":
             if self._historical_data[period].empty:
-                raise ValueError(
+                raise InvalidArgumentError(
                     "Please define the 'intraday_period' parameter when initializing the Toolkit."
                 )
             close_column = "Close"
@@ -4454,20 +4241,12 @@ class MomentumTechnicals:
         | 2025-12-30 |  63.269  |     49.6207 |
         | 2025-12-31 |  63.0658 |     48.7037 |
         """
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(
+            period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
+        )
         if period == "intraday":
             if self._historical_data[period].empty:
-                raise ValueError(
+                raise InvalidArgumentError(
                     "Please define the 'intraday_period' parameter when initializing the Toolkit."
                 )
             close_column = "Close"
@@ -4585,20 +4364,12 @@ class MomentumTechnicals:
         | 2025-12-30 | 0.0852 | 0.743  |      0.2464 |
         | 2025-12-31 | 0.2147 | 0.374  |      0.137  |
         """
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(
+            period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
+        )
         if period == "intraday":
             if self._historical_data[period].empty:
-                raise ValueError(
+                raise InvalidArgumentError(
                     "Please define the 'intraday_period' parameter when initializing the Toolkit."
                 )
             close_column = "Close"
@@ -4715,20 +4486,12 @@ class MomentumTechnicals:
         | 2025-12-30 | 0.3891 | 0.1661 |      0.3873 |
         | 2025-12-31 | 0.3884 | 0.1701 |      0.3779 |
         """
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(
+            period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
+        )
         if period == "intraday":
             if self._historical_data[period].empty:
-                raise ValueError(
+                raise InvalidArgumentError(
                     "Please define the 'intraday_period' parameter when initializing the Toolkit."
                 )
             close_column = "Close"
@@ -4879,20 +4642,12 @@ class MomentumTechnicals:
         | 2025-12-30 | 0.1088 |        0.1192 |
         | 2025-12-31 | 0.1105 |        0.1166 |
         """
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(
+            period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
+        )
         if period == "intraday":
             if self._historical_data[period].empty:
-                raise ValueError(
+                raise InvalidArgumentError(
                     "Please define the 'intraday_period' parameter when initializing the Toolkit."
                 )
             close_column = "Close"
@@ -5031,20 +4786,12 @@ class MomentumTechnicals:
         | 2025-11 |  0.3228 |      0.3521 |
         | 2025-12 |  0.3274 |      0.357  |
         """
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(
+            period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
+        )
         if period == "intraday":
             if self._historical_data[period].empty:
-                raise ValueError(
+                raise InvalidArgumentError(
                     "Please define the 'intraday_period' parameter when initializing the Toolkit."
                 )
             close_column = "Close"
@@ -5182,20 +4929,12 @@ class MomentumTechnicals:
         | 2025-12-30 |            -0.4022 |   -0.8195 |
         | 2025-12-31 |            -0.1073 |   -0.4022 |
         """
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(
+            period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
+        )
         if period == "intraday":
             if self._historical_data[period].empty:
-                raise ValueError(
+                raise InvalidArgumentError(
                     "Please define the 'intraday_period' parameter when initializing the Toolkit."
                 )
             close_column = "Close"
@@ -5322,20 +5061,12 @@ class MomentumTechnicals:
         | 2025-12-30 | -0.6065 | 0.8526 |      0.8845 |
         | 2025-12-31 | -0.6548 | 0.6957 |      0.759  |
         """
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(
+            period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
+        )
         if period == "intraday":
             if self._historical_data[period].empty:
-                raise ValueError(
+                raise InvalidArgumentError(
                     "Please define the 'intraday_period' parameter when initializing the Toolkit."
                 )
             close_column = "Close"
@@ -5474,20 +5205,12 @@ class MomentumTechnicals:
         | 2025-12-30 | 47.7783 | 78.1645 | 57.907  |
         | 2025-12-31 | 51.1539 | 71.4073 | 57.905  |
         """
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(
+            period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
+        )
         if period == "intraday":
             if self._historical_data[period].empty:
-                raise ValueError(
+                raise InvalidArgumentError(
                     "Please define the 'intraday_period' parameter when initializing the Toolkit."
                 )
             close_column = "Close"
@@ -5618,20 +5341,12 @@ class MomentumTechnicals:
         | 2025-12-30 |  0.0877 | 0.8577 |      0.8676 |
         | 2025-12-31 |  0.1423 | 0.7679 |      0.8168 |
         """
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(
+            period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
+        )
         if period == "intraday":
             if self._historical_data[period].empty:
-                raise ValueError(
+                raise InvalidArgumentError(
                     "Please define the 'intraday_period' parameter when initializing the Toolkit."
                 )
             close_column = "Close"
@@ -5767,20 +5482,12 @@ class MomentumTechnicals:
         | 2025-12-30 |       -0.3191 |                     -6.3715 |
         | 2025-12-31 |       -1.6769 |                     -7.108  |
         """
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(
+            period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
+        )
         if period == "intraday":
             if self._historical_data[period].empty:
-                raise ValueError(
+                raise InvalidArgumentError(
                     "Please define the 'intraday_period' parameter when initializing the Toolkit."
                 )
             close_column = "Close"
@@ -5928,20 +5635,12 @@ class MomentumTechnicals:
         | 2025-12-30 | 0.0051 | 99.4606 |     80.0773 |
         | 2025-12-31 | 0.0026 | 99.7303 |     87.8871 |
         """
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(
+            period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
+        )
         if period == "intraday":
             if self._historical_data[period].empty:
-                raise ValueError(
+                raise InvalidArgumentError(
                     "Please define the 'intraday_period' parameter when initializing the Toolkit."
                 )
             close_column = "Close"
@@ -6080,20 +5779,12 @@ class MomentumTechnicals:
         | 2025-12-30 |      -20.6589 |    -20.2723 |
         | 2025-12-31 |      -20.8875 |    -23.3609 |
         """
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(
+            period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
+        )
         if period == "intraday":
             if self._historical_data[period].empty:
-                raise ValueError(
+                raise InvalidArgumentError(
                     "Please define the 'intraday_period' parameter when initializing the Toolkit."
                 )
             close_column = "Close"
@@ -6224,20 +5915,12 @@ class MomentumTechnicals:
         | 2025-12-30 | -0.7486 | 3.2821 |      3.6025 |
         | 2025-12-31 | -0.6816 | 2.1574 |      2.0585 |
         """
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(
+            period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
+        )
         if period == "intraday":
             if self._historical_data[period].empty:
-                raise ValueError(
+                raise InvalidArgumentError(
                     "Please define the 'intraday_period' parameter when initializing the Toolkit."
                 )
             close_column = "Close"
@@ -6376,20 +6059,12 @@ class MomentumTechnicals:
         | 2025-12-30 |                    3957.58 |       -3.2993 |
         | 2025-12-31 |                    3938.2  |      -19.3803 |
         """
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(
+            period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
+        )
         if period == "intraday":
             if self._historical_data[period].empty:
-                raise ValueError(
+                raise InvalidArgumentError(
                     "Please define the 'intraday_period' parameter when initializing the Toolkit."
                 )
             close_column = "Close"
@@ -6424,7 +6099,7 @@ class MomentumTechnicals:
         close_column: str = "Adj Close",
         window: int = 14,
         smooth_window: int = 5,
-        factor: float = 4.236,
+        multiplier: float = 4.236,
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
@@ -6446,7 +6121,7 @@ class MomentumTechnicals:
 
         - RSI Moving Average = EMA(RSI(Close, window), smooth_window)
         - Average Move = EMA(EMA(|RSI Moving Average(t) — RSI Moving Average(t - 1)|, 2 * window - 1), 2 * window - 1)
-        - Distance = factor * Average Move
+        - Distance = multiplier * Average Move
         - QQE(t) = max(QQE(t - 1), RSI Moving Average(t) — Distance(t)) while the RSI Moving Average stays above QQE
         - QQE(t) = min(QQE(t - 1), RSI Moving Average(t) + Distance(t)) while it stays below QQE
         - QQE(t) = RSI Moving Average(t) -/+ Distance(t) on the period it crosses QQE
@@ -6468,7 +6143,7 @@ class MomentumTechnicals:
             window (int, optional): The number of periods of the RSI. Defaults to 14.
             smooth_window (int, optional): The number of periods of the EMA of the RSI. Defaults
                 to 5.
-            factor (float, optional): The multiple of the average move of the RSI Moving Average
+            multiplier (float, optional): The multiple of the average move of the RSI Moving Average
                 that sets the distance of the QQE line. Defaults to 4.236.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
@@ -6526,20 +6201,12 @@ class MomentumTechnicals:
         | 2025-12-30 | 53.9827 |              48.8135 |
         | 2025-12-31 | 53.9827 |              47.7724 |
         """
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(
+            period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
+        )
         if period == "intraday":
             if self._historical_data[period].empty:
-                raise ValueError(
+                raise InvalidArgumentError(
                     "Please define the 'intraday_period' parameter when initializing the Toolkit."
                 )
             close_column = "Close"
@@ -6552,7 +6219,7 @@ class MomentumTechnicals:
             momentum_model.get_quantitative_qualitative_estimation,
             window,
             smooth_window,
-            factor,
+            multiplier,
         ).loc[self._start_date : self._end_date]
 
         return finalize_dataset(
@@ -6663,20 +6330,12 @@ class MomentumTechnicals:
         | 2025-12-30 |  3.8001 | 11.7892 |     -8.5015 |
         | 2025-12-31 | -9.9432 | -3.071  |    -20.6729 |
         """
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(
+            period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
+        )
         if period == "intraday":
             if self._historical_data[period].empty:
-                raise ValueError(
+                raise InvalidArgumentError(
                     "Please define the 'intraday_period' parameter when initializing the Toolkit."
                 )
             close_column = "Close"
@@ -6812,20 +6471,12 @@ class MomentumTechnicals:
         | 2025-12-30 | 50.4639 | 56.4007 |     62.9555 |
         | 2025-12-31 | 52.0466 | 55.6652 |     59.8904 |
         """
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(
+            period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
+        )
         if period == "intraday":
             if self._historical_data[period].empty:
-                raise ValueError(
+                raise InvalidArgumentError(
                     "Please define the 'intraday_period' parameter when initializing the Toolkit."
                 )
             close_column = "Close"
@@ -6950,20 +6601,12 @@ class MomentumTechnicals:
         | 2025-12-30 | -0.0122 | 0.009  |      0.01   |
         | 2025-12-31 | -0.0166 | 0      |      0.0011 |
         """
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(
+            period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
+        )
         if period == "intraday":
             if self._historical_data[period].empty:
-                raise ValueError(
+                raise InvalidArgumentError(
                     "Please define the 'intraday_period' parameter when initializing the Toolkit."
                 )
             close_column = "Close"
@@ -7082,20 +6725,12 @@ class MomentumTechnicals:
         | 2025-12-30 | 113.905  | 105.452  |
         | 2025-12-31 |  99.0846 |  92.3299 |
         """
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(
+            period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
+        )
         if period == "intraday":
             if self._historical_data[period].empty:
-                raise ValueError(
+                raise InvalidArgumentError(
                     "Please define the 'intraday_period' parameter when initializing the Toolkit."
                 )
             close_column = "Close"
@@ -7217,20 +6852,12 @@ class MomentumTechnicals:
         | 2025-12-30 | -0.2379 | 0.5319 |      0.5822 |
         | 2025-12-31 | -0.3998 | 0.0483 |     -0.1073 |
         """
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(
+            period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
+        )
         if period == "intraday":
             if self._historical_data[period].empty:
-                raise ValueError(
+                raise InvalidArgumentError(
                     "Please define the 'intraday_period' parameter when initializing the Toolkit."
                 )
             close_column = "Close"
@@ -7350,20 +6977,12 @@ class MomentumTechnicals:
         | 2025-12-30 | 58.3333 | 50      |     41.6667 |
         | 2025-12-31 | 50      | 50      |     41.6667 |
         """
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(
+            period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
+        )
         if period == "intraday":
             if self._historical_data[period].empty:
-                raise ValueError(
+                raise InvalidArgumentError(
                     "Please define the 'intraday_period' parameter when initializing the Toolkit."
                 )
             close_column = "Close"
@@ -7486,20 +7105,12 @@ class MomentumTechnicals:
         | 2025-12-30 | -1.0873 |  0.4873 |     -0.0195 |
         | 2025-12-31 | -1.4421 |  0.6285 |      0.3294 |
         """
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(
+            period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
+        )
         if period == "intraday":
             if self._historical_data[period].empty:
-                raise ValueError(
+                raise InvalidArgumentError(
                     "Please define the 'intraday_period' parameter when initializing the Toolkit."
                 )
             close_column = "Close"
@@ -7630,20 +7241,12 @@ class MomentumTechnicals:
         | 2025-12-30 |          0 |           1 |
         | 2025-12-31 |          0 |           1 |
         """
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(
+            period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
+        )
         if period == "intraday":
             if self._historical_data[period].empty:
-                raise ValueError(
+                raise InvalidArgumentError(
                     "Please define the 'intraday_period' parameter when initializing the Toolkit."
                 )
             close_column = "Close"
@@ -7763,20 +7366,12 @@ class MomentumTechnicals:
         | 2025-12-30 |      1 |      1 |           1 |
         | 2025-12-31 |     -1 |     -1 |          -1 |
         """
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(
+            period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
+        )
         if period == "intraday":
             if self._historical_data[period].empty:
-                raise ValueError(
+                raise InvalidArgumentError(
                     "Please define the 'intraday_period' parameter when initializing the Toolkit."
                 )
             close_column = "Close"
@@ -7898,20 +7493,12 @@ class MomentumTechnicals:
         | 2025-12-30 | -0.8571 |  0.1828 |      0.3518 |
         | 2025-12-31 | -0.8485 |  0.3044 |      0.2916 |
         """
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(
+            period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
+        )
         if period == "intraday":
             if self._historical_data[period].empty:
-                raise ValueError(
+                raise InvalidArgumentError(
                     "Please define the 'intraday_period' parameter when initializing the Toolkit."
                 )
             close_column = "Close"
@@ -8036,20 +7623,12 @@ class MomentumTechnicals:
         | 2025-12-30 | -0.0065 | -0.0021 |     -0.0055 |
         | 2025-12-31 | -0.0068 | -0.0081 |     -0.008  |
         """
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(
+            period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
+        )
         if period == "intraday":
             if self._historical_data[period].empty:
-                raise ValueError(
+                raise InvalidArgumentError(
                     "Please define the 'intraday_period' parameter when initializing the Toolkit."
                 )
             close_column = "Close"
@@ -8177,20 +7756,12 @@ class MomentumTechnicals:
         | 2025-12-30 | 0.7814 | 0.5129 |      0.6374 |
         | 2025-12-31 | 0.6255 | 0.1683 |      0.2356 |
         """
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(
+            period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
+        )
         if period == "intraday":
             if self._historical_data[period].empty:
-                raise ValueError(
+                raise InvalidArgumentError(
                     "Please define the 'intraday_period' parameter when initializing the Toolkit."
                 )
             close_column = "Close"
@@ -8323,20 +7894,12 @@ class MomentumTechnicals:
         | 2025-12-30 |               80.2354 | -196.881 |
         | 2025-12-31 |               48.615  | -233.537 |
         """
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(
+            period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
+        )
         if period == "intraday":
             if self._historical_data[period].empty:
-                raise ValueError(
+                raise InvalidArgumentError(
                     "Please define the 'intraday_period' parameter when initializing the Toolkit."
                 )
             close_column = "Close"
@@ -8477,20 +8040,12 @@ class MomentumTechnicals:
         | 2025-12-30 | 0.5198 |          0.4802 |        0.6786 |
         | 2025-12-31 | 0.5111 |          0.5079 |        0.5238 |
         """
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(
+            period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
+        )
         if period == "intraday":
             if self._historical_data[period].empty:
-                raise ValueError(
+                raise InvalidArgumentError(
                     "Please define the 'intraday_period' parameter when initializing the Toolkit."
                 )
             close_column = "Close"

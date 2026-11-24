@@ -9,6 +9,7 @@ from financetoolkit.portfolio.helpers import (
     get_transaction_order,
 )
 from financetoolkit.utilities import logger_model
+from financetoolkit.utilities.error_model import check_option
 from financetoolkit.utilities.statistics_model import drop_non_finite, to_period_index
 
 logger = logger_model.get_logger()
@@ -1430,11 +1431,7 @@ def get_turnover(
         pd.DataFrame: The Traded Value, the Gross Value (or Net Value) and the Turnover per
         day, 0 on days without trades.
     """
-    if denominator not in TURNOVER_DENOMINATORS:
-        raise ValueError(
-            f"The denominator must be one of {', '.join(TURNOVER_DENOMINATORS)}, not "
-            f"'{denominator}'."
-        )
+    check_option("denominator", denominator, TURNOVER_DENOMINATORS)
     traded = traded_values.reindex(position_values.index).fillna(0)
     if denominator == "gross_value":
         value = position_values.abs().sum(axis=1)

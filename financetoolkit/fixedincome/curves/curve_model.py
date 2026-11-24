@@ -7,6 +7,8 @@ import re
 import numpy as np
 import pandas as pd
 
+from financetoolkit.utilities.error_model import InvalidArgumentError
+
 # The decay parameters (in years) the fits search over, on logarithmic grids. For every grid
 # point the betas follow exactly from linear least squares; around the best point the search
 # then zooms in, on a 7 by 7 grid that shrinks threefold each round, until the decays are
@@ -416,7 +418,7 @@ def bill_yields_to_annual(
         basis = 365 / 360 if convention == "act/360" else 1.0
         growth = 1 + yields * basis * maturities
     else:
-        raise ValueError(
+        raise InvalidArgumentError(
             f"The convention must be one of {', '.join(BILL_CONVENTIONS)} or None."
         )
     years = np.where(maturities > 0, maturities, 1.0)

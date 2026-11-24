@@ -1260,7 +1260,10 @@ def get_revenue_segmentation(
     elif isinstance(tickers, list):
         ticker_list = tickers
     else:
-        raise ValueError(f"Type for the tickers ({type(tickers)}) variable is invalid.")
+        raise error_model.InvalidArgumentError(
+            "tickers must be a str or a list of str, such as 'AAPL' or ['AAPL', 'MSFT'], "
+            f"not {type(tickers).__name__}. Please pass the tickers in one of these forms."
+        )
 
     if method == "geographic":
         location = "revenue-geographic-segmentation"
@@ -1467,7 +1470,10 @@ def get_analyst_estimates(
     elif isinstance(tickers, list):
         ticker_list = tickers
     else:
-        raise ValueError(f"Type for the tickers ({type(tickers)}) variable is invalid.")
+        raise error_model.InvalidArgumentError(
+            "tickers must be a str or a list of str, such as 'AAPL' or ['AAPL', 'MSFT'], "
+            f"not {type(tickers).__name__}. Please pass the tickers in one of these forms."
+        )
 
     if not api_key:
         raise ValueError(
@@ -1597,7 +1603,10 @@ def get_profile(
     elif isinstance(tickers, list):
         ticker_list = tickers
     else:
-        raise ValueError(f"Type for the tickers ({type(tickers)}) variable is invalid.")
+        raise error_model.InvalidArgumentError(
+            "tickers must be a str or a list of str, such as 'AAPL' or ['AAPL', 'MSFT'], "
+            f"not {type(tickers).__name__}. Please pass the tickers in one of these forms."
+        )
 
     logger.info("Obtaining company profiles for %d ticker(s)", len(ticker_list))
     results = helpers.run_in_parallel(worker, [(ticker,) for ticker in ticker_list])
@@ -1707,7 +1716,10 @@ def get_quote(
     elif isinstance(tickers, list):
         ticker_list = tickers
     else:
-        raise ValueError(f"Type for the tickers ({type(tickers)}) variable is invalid.")
+        raise error_model.InvalidArgumentError(
+            "tickers must be a str or a list of str, such as 'AAPL' or ['AAPL', 'MSFT'], "
+            f"not {type(tickers).__name__}. Please pass the tickers in one of these forms."
+        )
 
     logger.info("Obtaining company quotes for %d ticker(s)", len(ticker_list))
     results = helpers.run_in_parallel(worker, [(ticker,) for ticker in ticker_list])
@@ -1802,7 +1814,10 @@ def get_rating(
     elif isinstance(tickers, list):
         ticker_list = tickers
     else:
-        raise ValueError(f"Type for the tickers ({type(tickers)}) variable is invalid.")
+        raise error_model.InvalidArgumentError(
+            "tickers must be a str or a list of str, such as 'AAPL' or ['AAPL', 'MSFT'], "
+            f"not {type(tickers).__name__}. Please pass the tickers in one of these forms."
+        )
 
     logger.info("Obtaining company ratings for %d ticker(s)", len(ticker_list))
     results = helpers.run_in_parallel(worker, [(ticker,) for ticker in ticker_list])
@@ -1904,7 +1919,10 @@ def get_earnings_calendar(
     elif isinstance(tickers, list):
         ticker_list = tickers
     else:
-        raise ValueError(f"Type for the tickers ({type(tickers)}) variable is invalid.")
+        raise error_model.InvalidArgumentError(
+            "tickers must be a str or a list of str, such as 'AAPL' or ['AAPL', 'MSFT'], "
+            f"not {type(tickers).__name__}. Please pass the tickers in one of these forms."
+        )
 
     if not api_key:
         raise ValueError(
@@ -2018,7 +2036,10 @@ def get_dividend_calendar(
     elif isinstance(tickers, list):
         ticker_list = tickers
     else:
-        raise ValueError(f"Type for the tickers ({type(tickers)}) variable is invalid.")
+        raise error_model.InvalidArgumentError(
+            "tickers must be a str or a list of str, such as 'AAPL' or ['AAPL', 'MSFT'], "
+            f"not {type(tickers).__name__}. Please pass the tickers in one of these forms."
+        )
 
     if not api_key:
         raise ValueError(
@@ -2123,7 +2144,10 @@ def get_esg_scores(
     elif isinstance(tickers, list):
         ticker_list = tickers
     else:
-        raise ValueError(f"Type for the tickers ({type(tickers)}) variable is invalid.")
+        raise error_model.InvalidArgumentError(
+            "tickers must be a str or a list of str, such as 'AAPL' or ['AAPL', 'MSFT'], "
+            f"not {type(tickers).__name__}. Please pass the tickers in one of these forms."
+        )
 
     if not api_key:
         raise ValueError(
@@ -2363,7 +2387,10 @@ def get_commitment_of_traders(
     elif isinstance(tickers, list):
         ticker_list = tickers
     else:
-        raise ValueError(f"Type for the tickers ({type(tickers)}) variable is invalid.")
+        raise error_model.InvalidArgumentError(
+            "tickers must be a str or a list of str, such as 'AAPL' or ['AAPL', 'MSFT'], "
+            f"not {type(tickers).__name__}. Please pass the tickers in one of these forms."
+        )
 
     if not api_key:
         raise ValueError(
@@ -2415,7 +2442,10 @@ def _to_ticker_list(tickers: list[str] | str) -> list[str]:
     if isinstance(tickers, list):
         return tickers
 
-    raise ValueError(f"Type for the tickers ({type(tickers)}) variable is invalid.")
+    raise error_model.InvalidArgumentError(
+        "tickers must be a str or a list of str, such as 'AAPL' or ['AAPL', 'MSFT'], "
+        f"not {type(tickers).__name__}. Please pass the tickers in one of these forms."
+    )
 
 
 def _require_fmp_api_key(api_key: str) -> None:

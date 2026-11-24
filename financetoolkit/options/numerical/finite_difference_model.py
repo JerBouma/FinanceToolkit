@@ -11,6 +11,7 @@ from scipy.special import ndtr
 
 from financetoolkit.options.helpers import validate_numeric_inputs
 from financetoolkit.options.pricing.black_scholes_model import get_black_scholes
+from financetoolkit.utilities.error_model import check_option
 
 # The weight θ of the new time level in the θ-scheme of each finite difference scheme.
 SCHEMES = {"explicit": 0.0, "implicit": 1.0, "crank_nicolson": 0.5}
@@ -81,15 +82,8 @@ def _validate(
         raise ValueError(
             f"time_to_expiration must be at least zero, received {time_to_expiration!r}."
         )
-    if scheme not in SCHEMES:
-        raise ValueError(
-            f"scheme must be one of {', '.join(SCHEMES)}, received {scheme!r}."
-        )
-    if exercise_method not in EXERCISE_METHODS:
-        raise ValueError(
-            f"exercise_method must be one of {', '.join(EXERCISE_METHODS)}, received "
-            f"{exercise_method!r}."
-        )
+    check_option("scheme", scheme, SCHEMES)
+    check_option("exercise_method", exercise_method, EXERCISE_METHODS)
     for name, value, minimum in (
         ("price_steps", price_steps, 10),
         ("time_steps", time_steps, 1),
@@ -951,12 +945,8 @@ def get_finite_difference_barrier_option(
         "brennan_schwartz",
     )
     validate_numeric_inputs(barrier=barrier, rebate=rebate)
-    if barrier_direction not in ("down", "up"):
-        raise ValueError(
-            f"barrier_direction must be 'down' or 'up', received {barrier_direction!r}."
-        )
-    if knock_type not in ("out", "in"):
-        raise ValueError(f"knock_type must be 'out' or 'in', received {knock_type!r}.")
+    check_option("barrier_direction", barrier_direction, ("down", "up"))
+    check_option("knock_type", knock_type, ("out", "in"))
     if barrier <= 0:
         raise ValueError(f"barrier must be above zero, received {barrier!r}.")
 

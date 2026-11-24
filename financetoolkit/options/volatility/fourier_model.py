@@ -9,6 +9,8 @@ import numpy as np
 from scipy.integrate import quad_vec
 from scipy.interpolate import CubicSpline
 
+from financetoolkit.utilities.error_model import check_option
+
 FOURIER_METHODS = ("lewis", "cos", "fft")
 
 # The absolute and relative tolerance of the adaptive Lewis integral, per unit of the
@@ -175,10 +177,7 @@ def get_fourier_price(
     [6.040088, 6.040088, 6.040088]
     ```
     """
-    if method not in FOURIER_METHODS:
-        raise ValueError(
-            f"The method {method!r} is not available. Choose from {', '.join(FOURIER_METHODS)}."
-        )
+    check_option("method", method, FOURIER_METHODS)
 
     strikes = np.atleast_1d(np.asarray(strike_price, dtype=float))
     if np.any(strikes <= 0):

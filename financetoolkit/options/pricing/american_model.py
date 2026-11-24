@@ -14,6 +14,7 @@ from financetoolkit.options.pricing.black_scholes_model import (
     _american_call_binomial_value,
     get_black_scholes,
 )
+from financetoolkit.utilities.error_model import check_option
 
 # The lowest volatility the American implied volatility is searched from. Below it the
 # quadratic approximations raise the exponent λ to powers that no longer fit a float, and
@@ -1568,10 +1569,7 @@ def get_american_option(
         "ju_zhong": get_ju_zhong,
         "qd_fixed_point": get_qd_fixed_point,
     }
-    if method not in functions:
-        raise ValueError(
-            f"method must be one of {', '.join(functions)}, received {method!r}."
-        )
+    check_option("method", method, functions)
     return functions[method](
         stock_price=stock_price,
         strike_price=strike_price,

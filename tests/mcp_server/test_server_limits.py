@@ -465,10 +465,10 @@ def test_the_number_of_tickers_counts_in_the_limits_only(captured):
         "portfolio",
         indicator="get_estimation_uncertainty",
         tickers=tickers,
-        simulations=100_000,
+        n_bootstrap=100_000,
     )
     assert (
-        "`simulations` times the number of tickers may be at most 1,000,000" in answer
+        "`n_bootstrap` times the number of tickers may be at most 1,000,000" in answer
     )
     assert not captured
 
@@ -476,9 +476,9 @@ def test_the_number_of_tickers_counts_in_the_limits_only(captured):
         "portfolio",
         indicator="get_estimation_uncertainty",
         tickers=tickers,
-        simulations=10_000,
+        n_bootstrap=10_000,
     )
-    assert captured[-1][1]["simulations"] == 10_000  # noqa: PLR2004
+    assert captured[-1][1]["n_bootstrap"] == 10_000  # noqa: PLR2004
     # The count is not passed on: the provider receives the tickers themselves.
     assert captured[-1][1]["tickers"] == tickers.split(",")
 

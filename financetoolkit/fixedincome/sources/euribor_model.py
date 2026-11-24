@@ -5,6 +5,7 @@ __docformat__ = "google"
 import pandas as pd
 
 from financetoolkit.fixedincome.helpers import collect_ecb_data
+from financetoolkit.utilities.error_model import check_option
 
 
 def get_euribor_rate(maturity: str, nominal: bool = True) -> pd.DataFrame:
@@ -35,8 +36,7 @@ def get_euribor_rate(maturity: str, nominal: bool = True) -> pd.DataFrame:
         ValueError: If maturity is not one of '1M', '3M', '6M' or '1Y', or if a real
             rate is requested for a maturity other than '3M'.
     """
-    if maturity not in ["1M", "3M", "6M", "1Y"]:
-        raise ValueError("Invalid maturity. Please choose from 1M, 3M, 6M, 1Y.")
+    check_option("maturity", maturity, ["1M", "3M", "6M", "1Y"])
 
     # The ECB only publishes a real (inflation-adjusted) Euribor for the 3-month tenor; the other three series do not exist and would come back as a bare HTTP 404.  # noqa: E501
     if not nominal and maturity != "3M":

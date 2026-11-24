@@ -17,6 +17,7 @@ from financetoolkit.fixedincome.curves import (
 from financetoolkit.fixedincome.fixedincome_controller import FixedIncome
 from financetoolkit.fixedincome.markets import bond_data_model, fitted_curve_model
 from financetoolkit.fixedincome.sources import treasurydirect_model
+from financetoolkit.utilities.error_model import InvalidArgumentError
 
 # A humped curve of continuously compounded zero rates on ACT/365 days, and the times the
 # QuantLib values below are read at.
@@ -153,7 +154,7 @@ def test_monotone_convex_keeps_the_discrete_forwards_and_is_continuous():
 
 
 def test_interpolation_that_does_not_exist():
-    with pytest.raises(ValueError, match="does not exist"):
+    with pytest.raises(InvalidArgumentError, match="interpolation must be one of"):
         interpolation_model.get_discount_factors([1, 2], [0.03, 0.04], 1.5, "spline")
 
 
@@ -265,7 +266,7 @@ def test_smith_wilson_against_rateslib():
 
 def test_smith_wilson_invalid():
     times, cash_flows, prices = eiopa_instruments()
-    with pytest.raises(ValueError, match="Alpha"):
+    with pytest.raises(ValueError, match="convergence speed"):
         smith_wilson_model.get_smith_wilson_curve(
             times, cash_flows, prices, 10, EIOPA_UFR, 0.0
         )
@@ -418,7 +419,7 @@ def test_fit_bond_curve_rejects_an_unidentified_fit():
 
 def test_fit_bond_curve_invalid():
     times, flows, prices = bond_inputs(synthetic_treasuries())
-    with pytest.raises(ValueError, match="does not exist"):
+    with pytest.raises(InvalidArgumentError, match="method must be one of"):
         fitted_curve_model.fit_bond_curve(times, flows, prices, method="polynomial")
     with pytest.raises(ValueError, match="at least"):
         fitted_curve_model.fit_bond_curve(
@@ -539,7 +540,7 @@ def test_get_smith_wilson_curve(recorder, fixedincome):
             last_liquid_point=20,
         )
     )
-    recorder.capture(fixedincome.get_smith_wilson_curve(alpha=0.1))
+    recorder.capture(fixedincome.get_smith_wilson_curve(convergence_speed=0.1))
 
 
 def test_get_smith_wilson_curve_keeps_the_par_curve(fixedincome):
@@ -597,6 +598,8 @@ def test_get_fitted_bond_curve_finds_the_rich_bond(fixedincome):
 
 
 def test_curve_construction_invalid(fixedincome):
-    assert fixedincome.get_forward_rate(interpolation="cubic").empty
-    assert fixedincome.get_fitted_bond_curve(method="polynomial").empty
+    with pytest.raises(InvalidArgumentError, match="interpolation must be one of"):
+        fixedincome.get_forward_rate(interpolation="cubic")
+    with pytest.raises(InvalidArgumentError, match="method must be one of"):
+        fixedincome.get_fitted_bond_curve(method="polynomial")
     assert fixedincome.get_smith_wilson_curve(last_liquid_point=0.01).empty

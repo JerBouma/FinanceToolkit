@@ -12,7 +12,12 @@ from financetoolkit.technicals.helpers import calculate_per_ticker
 from financetoolkit.technicals.overlap import overlap_model
 from financetoolkit.technicals.volatility import volatility_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
-from financetoolkit.utilities.error_model import handle_errors
+from financetoolkit.utilities.error_model import (
+    InvalidArgumentError,
+    check_option,
+    check_period,
+    handle_errors,
+)
 from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import (
     apply_rounding,
@@ -123,19 +128,11 @@ class OverlapTechnicals:
         | 2025-12-30 |                       273.255 |                            273.117 |                                    272.247 | 0.0002 |                     272.531 |                         272.403 |                     271.798 |                                    271.015 |                                       271.736 |                                  272.774 |                                 272.681 |                                    272.315 |                                   271.738 |                                  272.849 |                          275.78  |                               272.173 |                                 273.113 |            271.995 |                                  270.932 |                                   272.442 |                              269.554 |                           272.853 |                           266.256 |                                          272.648 |                                 273.181 |    273.921 |          272.6   |         272.115 |        272.232 |         272.198 |                272.182 |                                272.911 |         274.769 |               274.771 |   266.023 |       272.541 |                    273.677 |                 271.674 |                       272.6   |                       271.048 |
         | 2025-12-31 |                       272.762 |                            272.823 |                                    271.815 | 0.0001 |                     272.2   |                         272.091 |                     271.883 |                                    270.627 |                                       271.745 |                                  272.642 |                                 272.319 |                                    271.777 |                                   271.608 |                                  272.686 |                          275.262 |                               272.102 |                                 272.746 |            271.917 |                                  270.932 |                                   272.383 |                              268.893 |                           272.144 |                           265.643 |                                          272.568 |                                 272.8   |    273.672 |          272.6   |         271.641 |        271.768 |         271.484 |                271.342 |                                272.594 |         273.895 |               274.318 |   266.023 |       272.198 |                    273.062 |                 271.268 |                       272.6   |                       271.048 |
         """
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(
+            period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
+        )
         if period == "intraday" and self._historical_data[period].empty:
-            raise ValueError(
+            raise InvalidArgumentError(
                 "Please define the 'intraday_period' parameter when initializing the Toolkit."
             )
 
@@ -474,8 +471,8 @@ class OverlapTechnicals:
             "super_smoother",
             "hilbert_trendline",
         ] = "simple",
-        fast_window: int = 2,
-        slow_window: int = 30,
+        short_window: int = 2,
+        long_window: int = 30,
         volume_factor: float = 0.7,
         sigma: float = 6.0,
         offset: float = 0.85,
@@ -695,10 +692,10 @@ class OverlapTechnicals:
                 "arnaud_legoux", "volume_weighted", "mcginley", "variable_index_dynamic",
                 "fractal_adaptive", "holt_winters", "elastic_volume_weighted", "volume_adjusted",
                 "super_smoother" or "hilbert_trendline". Defaults to "simple".
-            fast_window (int, optional): The number of periods that corresponds to the fastest EMA
+            short_window (int, optional): The number of periods that corresponds to the fastest EMA
                 constant, used when the Efficiency Ratio is at its maximum (1.0). Only used when
                 method="kaufman_adaptive". Defaults to 2.
-            slow_window (int, optional): The number of periods that corresponds to the slowest EMA
+            long_window (int, optional): The number of periods that corresponds to the slowest EMA
                 constant, used when the Efficiency Ratio is at its minimum (0.0). Only used when
                 method="kaufman_adaptive". Defaults to 30.
             volume_factor (float, optional): The volume factor a of the T3, between 0 and 1. Only
@@ -742,7 +739,7 @@ class OverlapTechnicals:
         - finta's TEMA, SMMA and SSMA start their exponential averages on the first price (with
           pandas' ewm) instead of seeding them with a simple average over the window, so they
           differ during the warm-up and converge afterwards.
-        - "kaufman_adaptive": with the default `fast_window` of 2 and `slow_window` of 30, which
+        - "kaufman_adaptive": with the default `short_window` of 2 and `long_window` of 30, which
           TA-Lib fixes, the KAMA agrees with TA-Lib's KAMA.
         - "t3": each of the six EMAs is seeded with the simple average of its first `window`
           values, so the T3 starts at period 6 * (window - 1). It agrees with TA-Lib's T3 and
@@ -837,24 +834,13 @@ class OverlapTechnicals:
         """
         moving_averages = volatility_model.MOVING_AVERAGES
         methods = (*moving_averages, *MOVING_AVERAGE_WINDOWS)
-        if method not in methods:
-            raise ValueError(
-                f"Method must be one of {', '.join(methods)}, not {method}."
-            )
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_option("method", method, methods)
+        check_period(
+            period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
+        )
         if period == "intraday":
             if self._historical_data[period].empty:
-                raise ValueError(
+                raise InvalidArgumentError(
                     "Please define the 'intraday_period' parameter when initializing the Toolkit."
                 )
             close_column = "Close"
@@ -867,7 +853,7 @@ class OverlapTechnicals:
             "kaufman_adaptive": (
                 [close_column],
                 overlap_model.get_kaufman_adaptive_moving_average,
-                (window, fast_window, slow_window),
+                (window, short_window, long_window),
             ),
             "t3": (
                 [close_column],
@@ -1057,20 +1043,12 @@ class OverlapTechnicals:
         | 2025-12-30 | 0.000454 |    0.000651 |
         | 2025-12-31 | 0.000452 |    0.00066  |
         """
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(
+            period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
+        )
         if period == "intraday":
             if self._historical_data[period].empty:
-                raise ValueError(
+                raise InvalidArgumentError(
                     "Please define the 'intraday_period' parameter when initializing the Toolkit."
                 )
             close_column = "Close"
@@ -1197,24 +1175,15 @@ class OverlapTechnicals:
         | 2025-12-30 | 187.312 |     681.964 |
         | 2025-12-31 | 187.075 |     677.933 |
         """
-        if method not in ("average", "median", "typical", "weighted_close"):
-            raise ValueError(
-                f"method must be average, median, typical or weighted_close, not {method}."
-            )
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_option(
+            "method", method, ("average", "median", "typical", "weighted_close")
+        )
+        check_period(
+            period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
+        )
         if period == "intraday":
             if self._historical_data[period].empty:
-                raise ValueError(
+                raise InvalidArgumentError(
                     "Please define the 'intraday_period' parameter when initializing the Toolkit."
                 )
             close_column = "Close"
@@ -1337,22 +1306,13 @@ class OverlapTechnicals:
         | 2025-12-30 | 226.99 |     675.168 |
         | 2025-12-31 | 226.99 |     675.168 |
         """
-        if method not in ("close", "high_low"):
-            raise ValueError(f"method must be close or high_low, not {method}.")
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_option("method", method, ("close", "high_low"))
+        check_period(
+            period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
+        )
         if period == "intraday":
             if self._historical_data[period].empty:
-                raise ValueError(
+                raise InvalidArgumentError(
                     "Please define the 'intraday_period' parameter when initializing the Toolkit."
                 )
             close_column = "Close"
@@ -1486,20 +1446,12 @@ class OverlapTechnicals:
         | 2025-12-30 |      294.532 |       305.508 |      316.484 |
         | 2025-12-31 |      294.23  |       304.872 |      315.512 |
         """
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(
+            period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
+        )
         if period == "intraday":
             if self._historical_data[period].empty:
-                raise ValueError(
+                raise InvalidArgumentError(
                     "Please define the 'intraday_period' parameter when initializing the Toolkit."
                 )
             close_column = "Close"
@@ -1633,20 +1585,12 @@ class OverlapTechnicals:
         | 2025-12-30 |               215.85  |                -1 |
         | 2025-12-31 |               215.553 |                -1 |
         """
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(
+            period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
+        )
         if period == "intraday":
             if self._historical_data[period].empty:
-                raise ValueError(
+                raise InvalidArgumentError(
                     "Please define the 'intraday_period' parameter when initializing the Toolkit."
                 )
             close_column = "Close"
@@ -1783,20 +1727,12 @@ class OverlapTechnicals:
         | 2025-12-30 |                     0 |                 1 |    78.065 |
         | 2025-12-31 |                     0 |                -1 |    69.255 |
         """
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(
+            period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
+        )
         if period == "intraday":
             if self._historical_data[period].empty:
-                raise ValueError(
+                raise InvalidArgumentError(
                     "Please define the 'intraday_period' parameter when initializing the Toolkit."
                 )
             close_column = "Close"
@@ -1940,20 +1876,12 @@ class OverlapTechnicals:
         | 2025-12-30 | 675.891 |
         | 2025-12-31 | 675.847 |
         """
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(
+            period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
+        )
         if period == "intraday":
             if self._historical_data[period].empty:
-                raise ValueError(
+                raise InvalidArgumentError(
                     "Please define the 'intraday_period' parameter when initializing the Toolkit."
                 )
             close_column = "Close"
@@ -2103,20 +2031,12 @@ class OverlapTechnicals:
         | 2025-12-30 | 56.325  |     669.389 |
         | 2025-12-31 | 56.5294 |     670.742 |
         """
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(
+            period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
+        )
         if period == "intraday":
             if self._historical_data[period].empty:
-                raise ValueError(
+                raise InvalidArgumentError(
                     "Please define the 'intraday_period' parameter when initializing the Toolkit."
                 )
             close_column = "Close"
@@ -2274,20 +2194,12 @@ class OverlapTechnicals:
         | 2025-12-30 |        1.177  |         1.1791 |         1.181  |      1.1752 |      1.1731 |
         | 2025-12-31 |        1.1757 |         1.1771 |         1.1793 |      1.1734 |      1.1721 |
         """
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(
+            period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
+        )
         if period == "intraday":
             if self._historical_data[period].empty:
-                raise ValueError(
+                raise InvalidArgumentError(
                     "Please define the 'intraday_period' parameter when initializing the Toolkit."
                 )
             close_column = "Close"
@@ -2433,20 +2345,12 @@ class OverlapTechnicals:
         | 2025-12-30 |       4359.4 |    3960.5 |
         | 2025-12-31 |       4359.4 |    3960.5 |
         """
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(
+            period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
+        )
         if period == "intraday":
             if self._historical_data[period].empty:
-                raise ValueError(
+                raise InvalidArgumentError(
                     "Please define the 'intraday_period' parameter when initializing the Toolkit."
                 )
             close_column = "Close"
@@ -2585,20 +2489,12 @@ class OverlapTechnicals:
         | 2025-12-30 | 90541.8 |    84400 | 89092.3 | 88195.6 | 87470.9 | 86746.2 | 85714.3 |
         | 2025-12-31 | 90541.8 |    84400 | 89092.3 | 88195.6 | 87470.9 | 86746.2 | 85714.3 |
         """
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(
+            period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
+        )
         if period == "intraday":
             if self._historical_data[period].empty:
-                raise ValueError(
+                raise InvalidArgumentError(
                     "Please define the 'intraday_period' parameter when initializing the Toolkit."
                 )
             close_column = "Close"
@@ -2737,20 +2633,12 @@ class OverlapTechnicals:
         | 2025-12-30 |       272.335 |       266.099 |               0.8491 |              6.3103 |         2.8482 |
         | 2025-12-31 |       271.625 |       266.257 |               1.2684 |              6.056  |         2.4064 |
         """
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(
+            period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
+        )
         if period == "intraday":
             if self._historical_data[period].empty:
-                raise ValueError(
+                raise InvalidArgumentError(
                     "Please define the 'intraday_period' parameter when initializing the Toolkit."
                 )
             close_column = "Close"

@@ -31,6 +31,7 @@ from financetoolkit.technicals.volatility.volatility_model import (
     get_true_range,
     get_wilder_moving_average,
 )
+from financetoolkit.utilities.error_model import InvalidArgumentError, check_option
 
 # The Know Sure Thing combines exactly four smoothed Rate of Change components.
 KST_COMPONENT_COUNT = 4
@@ -560,10 +561,7 @@ def get_percentage_price_oscillator(
     Raises:
         ValueError: If `moving_average` is not one of `MOVING_AVERAGES`.
     """
-    if moving_average not in MOVING_AVERAGES:
-        raise ValueError(
-            f"moving_average must be one of {', '.join(MOVING_AVERAGES)}, not {moving_average}."
-        )
+    check_option("moving_average", moving_average, MOVING_AVERAGES)
 
     short_average = MOVING_AVERAGES[moving_average](prices_close, short_window)
     long_average = MOVING_AVERAGES[moving_average](prices_close, long_window)
@@ -642,10 +640,7 @@ def get_percentage_volume_oscillator(
     Raises:
         ValueError: If `moving_average` is not "exponential" or "simple".
     """
-    if moving_average not in ("exponential", "simple"):
-        raise ValueError(
-            f"moving_average must be exponential or simple, not {moving_average}."
-        )
+    check_option("moving_average", moving_average, ("exponential", "simple"))
 
     # The PVO is the Percentage Price Oscillator of the volume.
     return get_percentage_price_oscillator(
@@ -702,7 +697,9 @@ def get_detrended_price_oscillator(
     elif moving_average_type == "ema":
         moving_average = get_exponential_moving_average(prices_close, window)
     else:
-        raise ValueError("Invalid moving average type. Choose either 'sma' or 'ema'.")
+        raise InvalidArgumentError(
+            "Invalid moving average type. Choose either 'sma' or 'ema'."
+        )
 
     displacement = int(window / 2) + 1
 
@@ -1766,8 +1763,7 @@ def get_choppiness_index(
     # The index divides by log10(window), which is 0 for a single period.
     if window < MINIMUM_WINDOW:
         raise ValueError("window must be at least 2 for the Choppiness Index.")
-    if range_method not in ("high_low", "true_range"):
-        raise ValueError("range_method must be 'high_low' or 'true_range'.")
+    check_option("range_method", range_method, ("high_low", "true_range"))
 
     true_range = get_true_range(prices_high, prices_low, prices_close)
 
@@ -1995,10 +1991,7 @@ def get_absolute_price_oscillator(
     Raises:
         ValueError: If `moving_average` is not one of `MOVING_AVERAGES`.
     """
-    if moving_average not in MOVING_AVERAGES:
-        raise ValueError(
-            f"moving_average must be one of {', '.join(MOVING_AVERAGES)}, not {moving_average}."
-        )
+    check_option("moving_average", moving_average, MOVING_AVERAGES)
 
     return MOVING_AVERAGES[moving_average](
         prices_close, short_window
@@ -3036,7 +3029,7 @@ def get_swing_index(
 
 
 def get_quantitative_qualitative_estimation(
-    prices: pd.Series, window: int, smooth_window: int, factor: float
+    prices: pd.Series, window: int, smooth_window: int, multiplier: float
 ) -> pd.DataFrame:
     """
     Calculate the Quantitative Qualitative Estimation (QQE) of a given price series.
@@ -3053,7 +3046,7 @@ def get_quantitative_qualitative_estimation(
     - RSI Moving Average = EMA(RSI(Close, window), smooth_window)
     - Average Move = EMA(EMA(|RSI Moving Average(t) - RSI Moving Average(t - 1)|, 2 * window -
       1), 2 * window - 1)
-    - Distance = factor * Average Move
+    - Distance = multiplier * Average Move
     - QQE(t) = max(QQE(t - 1), RSI Moving Average(t) - Distance(t)) while the RSI Moving
       Average stays above QQE, min(QQE(t - 1), RSI Moving Average(t) + Distance(t)) while it
       stays below, and RSI Moving Average(t) -/+ Distance(t) when it crosses QQE
@@ -3083,7 +3076,7 @@ def get_quantitative_qualitative_estimation(
         prices (pd.Series): Series of prices.
         window (int): Number of periods of the RSI.
         smooth_window (int): Number of periods of the EMA of the RSI.
-        factor (float): The multiple of the average move of the RSI Moving Average that sets
+        multiplier (float): The multiple of the average move of the RSI Moving Average that sets
             the distance of the QQE line.
 
     Returns:
@@ -3093,7 +3086,7 @@ def get_quantitative_qualitative_estimation(
         get_relative_strength_index(prices, window), smooth_window
     )
     wilder_window = 2 * window - 1
-    distance = factor * get_exponential_moving_average(
+    distance = multiplier * get_exponential_moving_average(
         get_exponential_moving_average(rsi_moving_average.diff().abs(), wilder_window),
         wilder_window,
     )
@@ -3409,7 +3402,7 @@ def get_inertia(
             + get_relative_volatility_index(prices_low, rvi_window, std_window)
         ) / 2
     else:
-        raise ValueError("The method must be 'original' or 'refined'.")
+        raise InvalidArgumentError("The method must be 'original' or 'refined'.")
 
     return get_linear_regression(relative_volatility_index, window)["Linear Regression"]
 
@@ -3457,10 +3450,7 @@ def get_bias(
     Raises:
         ValueError: If `moving_average` is not one of `MOVING_AVERAGES`.
     """
-    if moving_average not in MOVING_AVERAGES:
-        raise ValueError(
-            f"moving_average must be one of {', '.join(MOVING_AVERAGES)}, not {moving_average}."
-        )
+    check_option("moving_average", moving_average, MOVING_AVERAGES)
 
     return prices / MOVING_AVERAGES[moving_average](prices, window) - 1
 
@@ -3635,7 +3625,7 @@ def get_psychological_line(
     elif method == "open":
         change = prices_close - prices_open
     else:
-        raise ValueError("The method must be 'close' or 'open'.")
+        raise InvalidArgumentError("The method must be 'close' or 'open'.")
 
     higher = (change > 0).astype(float).where(change.notna())
 
@@ -3747,10 +3737,7 @@ def get_archer_moving_average_trends(
     Raises:
         ValueError: If `moving_average` is not one of `MOVING_AVERAGES`.
     """
-    if moving_average not in MOVING_AVERAGES:
-        raise ValueError(
-            f"moving_average must be one of {', '.join(MOVING_AVERAGES)}, not {moving_average}."
-        )
+    check_option("moving_average", moving_average, MOVING_AVERAGES)
 
     short_change = MOVING_AVERAGES[moving_average](prices, short_window).diff(lookback)
     long_change = MOVING_AVERAGES[moving_average](prices, long_window).diff(lookback)

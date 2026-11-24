@@ -9,6 +9,7 @@ import pandas as pd
 from numpy.lib.stride_tricks import sliding_window_view
 
 from financetoolkit.technicals.helpers import apply_variable_smoothing
+from financetoolkit.utilities.error_model import InvalidArgumentError, check_option
 
 
 def get_moving_average(prices: pd.Series, window: int) -> pd.Series:
@@ -317,8 +318,8 @@ def apply_to_rolling_windows(
 def get_kaufman_adaptive_moving_average(
     prices: pd.Series,
     window: int = 10,
-    fast_window: int = 2,
-    slow_window: int = 30,
+    short_window: int = 2,
+    long_window: int = 30,
 ) -> pd.Series:
     """
     Calculate the Kaufman Adaptive Moving Average (KAMA) of a given price series.
@@ -337,7 +338,7 @@ def get_kaufman_adaptive_moving_average(
     - Change = |Close(t) - Close(t - window)|
     - Volatility = Sum(|Close(i) - Close(i - 1)|, window)
     - Efficiency Ratio (ER) = Change / Volatility, and 1 when Volatility ≤ Change (flat prices)
-    - Fastest SC = 2 / (fast_window + 1), Slowest SC = 2 / (slow_window + 1)
+    - Fastest SC = 2 / (short_window + 1), Slowest SC = 2 / (long_window + 1)
     - Smoothing Constant (SC) = [ER * (Fastest SC - Slowest SC) + Slowest SC]^2
     - KAMA(t) = KAMA(t-1) + SC * (Close(t) - KAMA(t-1))
 
@@ -358,9 +359,9 @@ def get_kaufman_adaptive_moving_average(
         prices (pd.Series): Series of prices.
         window (int): Number of periods over which the Efficiency Ratio is calculated.
             Defaults to 10.
-        fast_window (int): The number of periods that corresponds to the fastest EMA
+        short_window (int): The number of periods that corresponds to the fastest EMA
             constant used when the Efficiency Ratio is at its maximum (1.0). Defaults to 2.
-        slow_window (int): The number of periods that corresponds to the slowest EMA
+        long_window (int): The number of periods that corresponds to the slowest EMA
             constant used when the Efficiency Ratio is at its minimum (0.0). Defaults to 30.
 
     Returns:
@@ -381,8 +382,8 @@ def get_kaufman_adaptive_moving_average(
     efficiency_ratio = (change / volatility).where(volatility > change, 1.0)
     efficiency_ratio = efficiency_ratio.where(change.notna() & volatility.notna())
 
-    fastest_smoothing_constant = 2 / (fast_window + 1)
-    slowest_smoothing_constant = 2 / (slow_window + 1)
+    fastest_smoothing_constant = 2 / (short_window + 1)
+    slowest_smoothing_constant = 2 / (long_window + 1)
 
     smoothing_constant = (
         efficiency_ratio * (fastest_smoothing_constant - slowest_smoothing_constant)
@@ -1885,7 +1886,7 @@ def get_pivot_points(
         levels["Resistance 1"] = demark_sum / 2 - previous_low
         levels["Support 1"] = demark_sum / 2 - previous_high
     else:
-        raise ValueError(
+        raise InvalidArgumentError(
             "method must be classic, fibonacci, camarilla, woodie or demark, "
             f"not {method}."
         )
@@ -2103,8 +2104,7 @@ def get_fibonacci_retracement_levels(
     if levels is None:
         levels = [0.0, 0.236, 0.382, 0.5, 0.618, 0.786, 1.0]
 
-    if trend not in ("uptrend", "downtrend"):
-        raise ValueError("trend must be either 'uptrend' or 'downtrend'.")
+    check_option("trend", trend, ("uptrend", "downtrend"))
 
     price_range = high_prices - low_prices
 

@@ -60,13 +60,13 @@ def get_smith_wilson_curve(
     prices: np.ndarray | list,
     years: np.ndarray | list | float,
     ultimate_forward_rate: float,
-    alpha: float,
+    convergence_speed: float,
 ) -> pd.DataFrame:
     """
     Builds a discount curve with the Smith-Wilson method (Smith and Wilson, 2001), the
     method Solvency II prescribes for the risk-free rate term structures of EIOPA: it prices
     every input instrument exactly and, beyond the last of them, converges to an ultimate
-    forward rate (UFR) at a speed set by alpha.
+    forward rate (UFR) at a speed set by the convergence speed α (EIOPA's alpha).
 
     The formula is as follows:
 
@@ -104,18 +104,19 @@ def get_smith_wilson_curve(
         prices (np.ndarray | list): The price of every instrument, per 1 of notional.
         years (np.ndarray | list | float): The maturities to return the curve at, in years.
         ultimate_forward_rate (float): The UFR, annually compounded (decimal), e.g. 0.033.
-        alpha (float): The speed of convergence to the UFR, above 0; see
-            `get_smith_wilson_alpha` for EIOPA's choice.
+        convergence_speed (float): The speed α of convergence to the UFR, EIOPA's alpha,
+            above 0; see `get_smith_wilson_alpha` for EIOPA's choice.
 
     Returns:
         pd.DataFrame: The Zero Rate (annually compounded), the Discount Factor and the
         Instantaneous Forward Rate (continuously compounded) by maturity in years.
 
     Raises:
-        ValueError: If alpha is not positive or the cash flows do not fit the prices and times.
+        ValueError: If the convergence speed is not positive or the cash flows do not fit the
+            prices and times.
     """
-    if alpha <= 0:
-        raise ValueError("Alpha must be greater than 0.")
+    if convergence_speed <= 0:
+        raise ValueError("The convergence speed must be greater than 0.")
     cash_flow_times = np.asarray(cash_flow_times, dtype=float)
     cash_flows = np.atleast_2d(np.asarray(cash_flows, dtype=float))
     prices = np.atleast_1d(np.asarray(prices, dtype=float))
@@ -128,8 +129,10 @@ def get_smith_wilson_curve(
     years = np.atleast_1d(np.asarray(years, dtype=float))
     omega = np.log1p(ultimate_forward_rate)
 
-    coefficients = _coefficients(cash_flow_times, cash_flows, prices, alpha, omega)
-    wilson, slope = _wilson(years, cash_flow_times, alpha, omega)
+    coefficients = _coefficients(
+        cash_flow_times, cash_flows, prices, convergence_speed, omega
+    )
+    wilson, slope = _wilson(years, cash_flow_times, convergence_speed, omega)
     discount = np.exp(-omega * years) + wilson @ coefficients
     derivative = -omega * np.exp(-omega * years) + slope @ coefficients
 

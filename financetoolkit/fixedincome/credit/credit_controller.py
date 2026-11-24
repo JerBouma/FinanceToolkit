@@ -29,7 +29,7 @@ from financetoolkit.fixedincome.sources import (
 )
 from financetoolkit.utilities import logger_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
-from financetoolkit.utilities.error_model import handle_errors
+from financetoolkit.utilities.error_model import check_option, handle_errors
 from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import apply_rounding, finalize_dataset
 
@@ -519,8 +519,7 @@ class CreditFixedIncome:
         | 2026-07 | 0.0433 | 0.0488 | 0.0545 | 0.0643 | 0.0677 |
         | 2026-08 | 0.0431 | 0.0497 | 0.0558 | 0.0665 | 0.0702 |
         """
-        if rate not in ("spot", "par"):
-            raise ValueError(f"The rate must be 'spot' or 'par', not {rate!r}.")
+        check_option("rate", rate, ("spot", "par"))
 
         # FRED republishes the Treasury's curve, so it is used when a key is set and the
         # Treasury's files otherwise.
@@ -941,11 +940,7 @@ class CreditFixedIncome:
         """
         agency_code = esma_model.resolve_agency(agency)
 
-        if rating_type not in esma_model.RATING_TYPES:
-            raise ValueError(
-                f"The rating_type must be one of {', '.join(map(repr, esma_model.RATING_TYPES))}, "
-                f"not {rating_type!r}."
-            )
+        check_option("rating_type", rating_type, esma_model.RATING_TYPES)
         if horizon < 1:
             raise ValueError(f"The horizon must be at least 1 year, not {horizon}.")
 
@@ -1069,11 +1064,7 @@ class CreditFixedIncome:
         """
         agency_code = esma_model.resolve_agency(agency)
 
-        if rating_type not in esma_model.RATING_TYPES:
-            raise ValueError(
-                f"The rating_type must be one of {', '.join(map(repr, esma_model.RATING_TYPES))}, "
-                f"not {rating_type!r}."
-            )
+        check_option("rating_type", rating_type, esma_model.RATING_TYPES)
 
         # CEREP's periods start in 1989; a year is published in the first half of the next.
         first_year = max(pd.Timestamp(self._start_date).year, 1989)

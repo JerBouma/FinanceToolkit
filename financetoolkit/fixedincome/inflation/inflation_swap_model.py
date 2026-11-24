@@ -21,6 +21,7 @@ import pandas as pd
 
 from financetoolkit.fixedincome.bonds import bond_model
 from financetoolkit.fixedincome.helpers import discount_factors
+from financetoolkit.utilities.error_model import check_option
 
 MONTHS_PER_YEAR = 12
 
@@ -596,10 +597,7 @@ def get_inflation_swap_value(
     {'Value': 44666.61124740451, 'Inflation Leg': 1024912.5567614173, 'Fixed Leg': 980245.9455140128}
     ```
     """
-    if method not in SWAP_TYPES:
-        raise ValueError(
-            f"The method must be one of {', '.join(SWAP_TYPES)}, not {method!r}."
-        )
+    check_option("method", method, SWAP_TYPES)
     if years_to_maturity <= 0:
         raise ValueError(
             f"The years to maturity of a swap must be positive, not {years_to_maturity}."

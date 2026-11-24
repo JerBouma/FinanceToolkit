@@ -14,6 +14,7 @@ from financetoolkit.options.helpers import (
     simulation_groups,
     validate_numeric_inputs,
 )
+from financetoolkit.utilities.error_model import check_option
 from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.sources_model import record_source
 
@@ -341,7 +342,7 @@ def get_monte_carlo_option_price(
     put_option: bool = False,
     simulations: int = 10_000,
     time_steps: int = 100,
-    seed: int | None = None,
+    seed: int | None = 0,
     variance_reduction: str | None = None,
     sequence: str = "pseudo_random",
 ) -> tuple[float, float]:
@@ -405,8 +406,8 @@ def get_monte_carlo_option_price(
             option's payoff, this mainly affects how faithfully the path itself is
             simulated rather than the resulting price.
         seed (int | None): The seed used to initialize the random number generator via
-            `np.random.default_rng`, ensuring reproducible results. Defaults to None,
-            which means the results will not be reproducible.
+            `np.random.default_rng`, ensuring reproducible results; None draws new paths
+            on every call. Defaults to 0.
         variance_reduction (str | None): None, "antithetic" (needs an even number of
             simulations) or "control_variate". Defaults to None.
         sequence (str): "pseudo_random" or "sobol" (at least 32 simulations). Defaults to
@@ -587,7 +588,7 @@ def get_monte_carlo_option_prices(
     put_option: bool = False,
     simulations: int = 10_000,
     time_steps: int = 100,
-    seed: int | None = None,
+    seed: int | None = 0,
     variance_reduction: str | None = None,
     sequence: str = "pseudo_random",
 ) -> tuple[np.ndarray, np.ndarray]:
@@ -613,8 +614,8 @@ def get_monte_carlo_option_prices(
             False.
         simulations (int, optional): The number of simulated paths. Defaults to 10,000.
         time_steps (int, optional): The number of steps per path. Defaults to 100.
-        seed (int | None, optional): The seed of the random number generator. Defaults to
-            None.
+        seed (int | None, optional): The seed of the random number generator, None for new
+            paths on every call. Defaults to 0.
         variance_reduction (str | None, optional): None, "antithetic" or
             "control_variate". Defaults to None.
         sequence (str, optional): "pseudo_random" or "sobol". Defaults to "pseudo_random".
@@ -623,11 +624,7 @@ def get_monte_carlo_option_prices(
         tuple[np.ndarray, np.ndarray]: The price and its standard error per strike price,
         and per expiration (strikes by expirations) when time_to_expiration is an array.
     """
-    if variance_reduction not in VARIANCE_REDUCTIONS:
-        raise ValueError(
-            "variance_reduction must be None, 'antithetic' or 'control_variate', "
-            f"received {variance_reduction!r}."
-        )
+    check_option("variance_reduction", variance_reduction, VARIANCE_REDUCTIONS)
 
     shocks = _simulate_terminal_shocks(
         simulations,

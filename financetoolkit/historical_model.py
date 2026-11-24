@@ -654,7 +654,10 @@ def get_historical_data(
     elif isinstance(tickers, list):
         ticker_list = tickers
     else:
-        raise ValueError(f"Type for the tickers ({type(tickers)}) variable is invalid.")
+        raise error_model.InvalidArgumentError(
+            "tickers must be a str or a list of str, such as 'AAPL' or ['AAPL', 'MSFT'], "
+            f"not {type(tickers).__name__}. Please pass the tickers in one of these forms."
+        )
 
     logger.info("%s for %d ticker(s)", log_message, len(ticker_list))
     historical_data_dict: dict[str, pd.DataFrame] = {}
@@ -1113,7 +1116,10 @@ def get_historical_statistics(
     elif isinstance(tickers, list):
         ticker_list = tickers
     else:
-        raise ValueError(f"Type for the tickers ({type(tickers)}) variable is invalid.")
+        raise error_model.InvalidArgumentError(
+            "tickers must be a str or a list of str, such as 'AAPL' or ['AAPL', 'MSFT'], "
+            f"not {type(tickers).__name__}. Please pass the tickers in one of these forms."
+        )
 
     logger.info("%s for %d ticker(s)", log_message, len(ticker_list))
     results = helpers.run_in_parallel(worker, [(ticker,) for ticker in ticker_list])

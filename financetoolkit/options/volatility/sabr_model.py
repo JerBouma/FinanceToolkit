@@ -7,6 +7,8 @@ from typing import Literal
 import numpy as np
 from scipy.optimize import minimize
 
+from financetoolkit.utilities.error_model import check_option
+
 MINIMUM_OBSERVATIONS_FOR_SABR_FIT = 4
 
 # Below this |z| the ratio z / x(z) is replaced by its expansion 1 - rho * z / 2, since
@@ -94,8 +96,7 @@ def get_sabr_volatility(
         float | np.ndarray: The Black implied volatility at each strike (of the shifted
             forward when shift is not 0), NaN where F + s or K + s is not positive.
     """
-    if method not in ("hagan", "obloj"):
-        raise ValueError(f"method must be 'hagan' or 'obloj', not {method!r}.")
+    check_option("method", method, ("hagan", "obloj"))
 
     strike = np.asarray(strike_price, dtype=float) + shift
     forward = float(forward_price) + shift

@@ -6,6 +6,7 @@ import numpy as np
 from scipy.special import ndtr
 
 from financetoolkit.options.helpers import validate_numeric_inputs
+from financetoolkit.utilities.error_model import check_option
 
 
 def _barrier_term(
@@ -193,13 +194,9 @@ def get_barrier_option(
         rebate=rebate,
     )
 
-    if barrier_direction not in ("down", "up"):
-        raise ValueError(
-            f"barrier_direction must be 'down' or 'up', received {barrier_direction!r}."
-        )
+    check_option("barrier_direction", barrier_direction, ("down", "up"))
 
-    if knock_type not in ("in", "out"):
-        raise ValueError(f"knock_type must be 'in' or 'out', received {knock_type!r}.")
+    check_option("knock_type", knock_type, ("in", "out"))
 
     # The barrier terms divide by the variance, which a constant price does not have.
     if np.any(np.asarray(volatility) <= 0):

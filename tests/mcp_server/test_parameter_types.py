@@ -48,7 +48,7 @@ def call(tool, arguments):
         ("discovery", "price_higher"),
         ("discovery", "dividend_lower"),
         ("discovery", "dividend_higher"),
-        ("volatility", "atr_multiplier"),
+        ("volatility", "multiplier"),
         ("options", "time_to_expiration"),
     ],
 )

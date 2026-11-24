@@ -12,6 +12,7 @@ from scipy.stats import ncx2, norm
 from financetoolkit.fixedincome.bonds.bond_model import get_cash_flow_periods
 from financetoolkit.fixedincome.helpers import discount_factors
 from financetoolkit.fixedincome.short_rates import trinomial_tree_model
+from financetoolkit.utilities.error_model import InvalidArgumentError, check_option
 
 MODELS = ("vasicek", "cir")
 # The models of the option formulas: Hull-White and CIR++ are Vasicek and CIR shifted to fit
@@ -99,8 +100,7 @@ def calibrate_short_rate_model(
         dict[str, float]: The Speed of Mean Reversion, Long-Run Mean, Volatility, Current
         Rate and Half-Life (in years) of the model.
     """
-    if model not in MODELS:
-        raise ValueError(f"The model must be one of {', '.join(MODELS)}.")
+    check_option("model", model, MODELS)
 
     values = rates.dropna().to_numpy(dtype=float)
     if len(values) < 30:  # noqa: PLR2004
@@ -196,7 +196,7 @@ def _bond_coefficients(
             ratio * growth / (1 + ratio * decay)
         )
     else:
-        raise ValueError(f"The model must be one of {', '.join(MODELS)}.")
+        raise InvalidArgumentError(f"The model must be one of {', '.join(MODELS)}.")
 
     return log_a, big_b
 
@@ -292,7 +292,7 @@ def simulate_short_rate(
     rate: float,
     years: float = 10.0,
     steps_per_year: int = 12,
-    paths: int = 10000,
+    simulations: int = 10000,
     seed: int | None = 0,
     scheme: str = "euler",
 ) -> np.ndarray:
@@ -333,7 +333,7 @@ def simulate_short_rate(
         rate (float): The starting rate.
         years (float, optional): The horizon. Defaults to 10.
         steps_per_year (int, optional): The steps per year. Defaults to 12.
-        paths (int, optional): The number of paths. Defaults to 10,000.
+        simulations (int, optional): The number of paths. Defaults to 10,000.
         seed (int | None, optional): The random seed. Defaults to 0.
         scheme (str, optional): "euler" or "exact". Defaults to "euler".
 
@@ -359,13 +359,12 @@ def simulate_short_rate(
     array([0.04  , 0.0387, 0.0374, 0.0363, 0.0355, 0.0347])
     ```
     """
-    if scheme not in SCHEMES:
-        raise ValueError(f"The scheme must be one of {', '.join(SCHEMES)}.")
+    check_option("scheme", scheme, SCHEMES)
     rng = np.random.default_rng(seed)
     steps = int(round(years * steps_per_year))
     dt = 1 / steps_per_year
     means = np.broadcast_to(np.asarray(mean, dtype=float), (steps,))
-    rates = np.empty((paths, steps + 1))
+    rates = np.empty((simulations, steps + 1))
     rates[:, 0] = rate
 
     if scheme == "exact":
@@ -383,7 +382,7 @@ def simulate_short_rate(
                 )
         else:
             deviation = volatility * np.sqrt((1 - persistence**2) / (2 * speed))
-            shocks = rng.standard_normal((paths, steps))
+            shocks = rng.standard_normal((simulations, steps))
             for step in range(steps):
                 rates[:, step + 1] = (
                     rates[:, step] * persistence
@@ -392,7 +391,7 @@ def simulate_short_rate(
                 )
         return rates
 
-    shocks = rng.standard_normal((paths, steps))
+    shocks = rng.standard_normal((simulations, steps))
     for step in range(steps):
         current = rates[:, step]
         diffusion = volatility * np.sqrt(dt) * shocks[:, step]
@@ -443,8 +442,7 @@ def hull_white_mean(
     Returns:
         np.ndarray: The long-run mean per step.
     """
-    if scheme not in SCHEMES:
-        raise ValueError(f"The scheme must be one of {', '.join(SCHEMES)}.")
+    check_option("scheme", scheme, SCHEMES)
     steps = int(round(years * steps_per_year))
     dt = 1 / steps_per_year
     times = np.arange(steps + 2) * dt
@@ -472,10 +470,7 @@ def _check_option_model(
     their own curve from the mean and today's rate, Hull-White and CIR++ fit a zero curve,
     and the CIR formulas divide by the volatility.
     """
-    if model not in OPTION_MODELS:
-        raise ValueError(
-            f"The model must be one of {', '.join(OPTION_MODELS)}, not {model!r}."
-        )
+    check_option("model", model, OPTION_MODELS)
     if model in ("hull_white", "cir++") and zero_curve is None:
         raise ValueError(f"The {model} model is fitted to a curve; pass zero_curve.")
     if model in ("vasicek", "cir") and zero_curve is not None:
@@ -710,10 +705,7 @@ def get_zero_coupon_bond_option(
     ```
     """
     _check_option_model(model, mean, rate, zero_curve, volatility)
-    if option_type not in ("call", "put"):
-        raise ValueError(
-            f"The option type must be 'call' or 'put', not {option_type!r}."
-        )
+    check_option("option_type", option_type, ("call", "put"))
     expiry = np.asarray(option_expiry, dtype=float)
     maturity = np.asarray(bond_maturity, dtype=float)
     strike = np.asarray(strike, dtype=float)
@@ -830,10 +822,7 @@ def get_caplet(
     1051.5510824737437
     ```
     """
-    if option_type not in ("caplet", "floorlet"):
-        raise ValueError(
-            f"The option type must be 'caplet' or 'floorlet', not {option_type!r}."
-        )
+    check_option("option_type", option_type, ("caplet", "floorlet"))
     accrual = np.asarray(payment_time, dtype=float) - np.asarray(
         reset_time, dtype=float
     )
@@ -951,10 +940,7 @@ def get_swaption(
     ```
     """
     _check_option_model(model, mean, rate, zero_curve, volatility)
-    if swaption_type not in ("payer", "receiver"):
-        raise ValueError(
-            f"The swaption type must be 'payer' or 'receiver', not {swaption_type!r}."
-        )
+    check_option("swaption_type", swaption_type, ("payer", "receiver"))
     if option_expiry <= 0 or tenor <= 0:
         raise ValueError("The expiry and the tenor of the swaption must be positive.")
 

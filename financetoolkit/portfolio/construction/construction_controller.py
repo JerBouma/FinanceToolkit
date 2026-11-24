@@ -20,6 +20,7 @@ from financetoolkit.portfolio.construction.optimization.optimization_controller 
 from financetoolkit.portfolio.helpers import BENCHMARK_TICKER, PORTFOLIO_TICKER
 from financetoolkit.risk.helpers import trades_on_weekends
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
+from financetoolkit.utilities.error_model import check_period
 from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import PERIODS_PER_YEAR, apply_rounding
@@ -124,10 +125,7 @@ class PortfolioConstructionBase:
 
     def _get_loaded_assets(self, period: str, include_benchmark: bool) -> list[str]:
         """The assets with returns in the historical data of the period."""
-        if period not in PERIODS:
-            raise ValueError(
-                "Period must be daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(period, PERIODS)
         columns = self._historical_data[period]["Return"].columns
         return [
             asset for asset in self._get_assets(include_benchmark) if asset in columns
@@ -244,10 +242,7 @@ class PortfolioConstructionBase:
         Given factors keep the periods they share with the returns: their dates are read
         as the period they fall in.
         """
-        if period not in PERIODS:
-            raise ValueError(
-                "Period must be daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(period, PERIODS)
         index = self._historical_data[period]["Return"].index
         if factors is not None:
             table = pd.DataFrame(factors).astype(float)

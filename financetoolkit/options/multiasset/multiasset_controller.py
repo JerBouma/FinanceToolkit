@@ -11,7 +11,7 @@ from financetoolkit.options import helpers
 from financetoolkit.options.multiasset import multi_asset_model
 from financetoolkit.utilities import logger_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
-from financetoolkit.utilities.error_model import handle_errors
+from financetoolkit.utilities.error_model import check_option, handle_errors
 from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import apply_rounding
 
@@ -407,10 +407,7 @@ class MultiAssetOptions:
         |             25 |       0.7041 |       2.2539 |       3.8161 |
         |             30 |       0.3994 |       1.6094 |       2.9672 |
         """
-        if method not in ("bjerksund_stensland", "kirk"):
-            raise ValueError(
-                f'method must be "bjerksund_stensland" or "kirk", received {method!r}.'
-            )
+        check_option("method", method, ("bjerksund_stensland", "kirk"))
         if (
             not 0 <= strike_price_range <= MAXIMUM_SPREAD_STRIKE_RANGE
             or strike_step_size <= 0

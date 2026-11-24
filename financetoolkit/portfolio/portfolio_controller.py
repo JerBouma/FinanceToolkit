@@ -21,6 +21,7 @@ from financetoolkit.portfolio.definition_model import PortfolioDefinition
 from financetoolkit.toolkit_controller import Toolkit
 from financetoolkit.utilities import logger_model, requests_model, validation_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
+from financetoolkit.utilities.error_model import check_option, check_period
 from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import apply_rounding, to_period_index
 
@@ -1747,8 +1748,8 @@ class Portfolio:
         data's currency.
 
         Args:
-            rounding (int | None): An optional integer specifying the number of decimal places to round the
-                historical price data. If None, the default rounding value is used.
+            rounding (int | None, optional): An optional integer specifying the number of decimal places to round the
+                historical price data. If None, the default rounding value is used. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -2083,8 +2084,8 @@ class Portfolio:
         key metrics. The data is rounded to the specified precision before being returned.
 
         Args:
-            rounding (int | None): An optional integer specifying the number of decimal places to round the data.
-                If None, the default rounding precision is used.
+            rounding (int | None, optional): An optional integer specifying the number of decimal places to round the data.
+                If None, the default rounding precision is used. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -2252,8 +2253,8 @@ class Portfolio:
             exclude_sold_positions (bool): A flag indicating whether to exclude sold positions from the overview,
                 those whose sales add up to their purchases. Open positions stay, long or short, and so does the
                 Portfolio row while any position is open. Defaults to True.
-            rounding (int | None): An optional integer specifying the number of decimal places to round the data.
-                If None, the default rounding precision is used.
+            rounding (int | None, optional): An optional integer specifying the number of decimal places to round the data.
+                If None, the default rounding precision is used. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -2575,10 +2576,7 @@ class Portfolio:
         """
         pnl_method = pnl_method.upper()
 
-        if pnl_method not in ["FIFO", "LIFO", "AVERAGE"]:
-            raise ValueError(
-                "Please provide a valid method. This can be 'FIFO', 'LIFO', or 'AVERAGE'"
-            )
+        check_option("pnl_method", pnl_method, ["FIFO", "LIFO", "AVERAGE"])
 
         if not self._collect_data():
             return pd.DataFrame()
@@ -2675,10 +2673,10 @@ class Portfolio:
         earlier ones. Units are valued at the traded closing price and receive their dividends as cash.
 
         Args:
-            period (str | None): The time period for which transaction performance metrics
+            period (str | None, optional): The time period for which transaction performance metrics
                 should be calculated. This can be one of the following: 'yearly', 'quarterly',
                 'monthly', 'weekly', or 'daily'. If None, the default is 'quarterly' if
-                the 'quarterly' attribute is set to True, otherwise 'yearly'.
+                the 'quarterly' attribute is set to True, otherwise 'yearly'. Defaults to None.
             exclude_sold_positions (bool): Whether to leave out the periods without an
                 invested amount, those in which only units bought earlier were sold, and those whose only
                 purchases cost nothing (a price of 0), which have no return to measure. Defaults
@@ -3727,10 +3725,7 @@ class Portfolio:
         |     389 | VOO      | Open     | 2024-11-13   |      549.03   | 2026-11-20  |     11 |   951.61   |    0.1576 |
         """
         method = method.upper()
-        if method not in ("FIFO", "LIFO"):
-            raise ValueError(
-                "Please provide a valid method. This can be 'FIFO' or 'LIFO'."
-            )
+        check_option("method", method, ("FIFO", "LIFO"))
         if not self._collect_data():
             return pd.DataFrame()
         return apply_rounding(
@@ -3868,10 +3863,7 @@ class Portfolio:
         | Overlap Coverage         |      1      |      1      |     nan |
         """
         method = method.upper()
-        if method not in ("FIFO", "LIFO"):
-            raise ValueError(
-                "Please provide a valid method. This can be 'FIFO' or 'LIFO'."
-            )
+        check_option("method", method, ("FIFO", "LIFO"))
         if not self._collect_data():
             return pd.DataFrame()
         statistics = trades_model.get_trade_statistics(
@@ -4105,8 +4097,5 @@ class Portfolio:
     def _period_frequency(period: str) -> str:
         """The pandas frequency of a period longer than a day."""
         frequencies = {"weekly": "W", "monthly": "M", "quarterly": "Q", "yearly": "Y"}
-        if period not in frequencies:
-            raise ValueError(
-                "Period must be daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(period, frequencies)
         return frequencies[period]

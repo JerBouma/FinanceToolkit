@@ -7,6 +7,8 @@ import numpy as np
 import pandas as pd
 from scipy.special import betaincinv, betaln, log_ndtr, ndtr
 
+from financetoolkit.utilities.error_model import check_option
+
 # The binomial tree variants of calculate_tree_movements.
 BINOMIAL_TREE_METHODS = (
     "cox_ross_rubinstein",
@@ -21,7 +23,7 @@ BINOMIAL_TREE_METHODS = (
 # grows with the square of the steps.
 MAX_TIMESTEPS = 1_000
 # The most time steps whose paths are listed one by one (show_unique_combinations=False):
-# there are 2 ** timesteps of them, 65,536 at 16 steps.
+# there are 2 ** time_steps of them, 65,536 at 16 steps.
 MAX_PATH_TIMESTEPS = 16
 
 
@@ -80,7 +82,7 @@ def calculate_risk_neutral_probability(
     return risk_neutral_probability
 
 
-def _peizer_pratt_inversion(z: float, timesteps: int) -> tuple[float, float]:
+def _peizer_pratt_inversion(z: float, time_steps: int) -> tuple[float, float]:
     """
     Helper function with the Peizer-Pratt (method 2) inversion of Leisen and Reimer (1996):
     the probability p for which a binomial distribution of n (odd) steps exceeds (n — 1) / 2
@@ -91,14 +93,14 @@ def _peizer_pratt_inversion(z: float, timesteps: int) -> tuple[float, float]:
     The smaller of h and 1 — h is 1/2 * e^(—w) / (1 + √(1 — e^(—w))), with w the exponent above,
     so that it keeps its digits where h itself rounds to 0 or 1 (a large |z|).
     """
-    exponent = (z / (timesteps + 1 / 3 + 0.1 / (timesteps + 1))) ** 2 * (
-        timesteps + 1 / 6
+    exponent = (z / (time_steps + 1 / 3 + 0.1 / (time_steps + 1))) ** 2 * (
+        time_steps + 1 / 6
     )
     tail = 0.5 * np.exp(-exponent) / (1 + np.sqrt(-np.expm1(-exponent)))
     return (1 - tail, tail) if z > 0 else (tail, 1 - tail)
 
 
-def _exact_binomial_inversion(z: float, timesteps: int) -> tuple[float, float]:
+def _exact_binomial_inversion(z: float, time_steps: int) -> tuple[float, float]:
     """
     Helper function with the exact inversion of the binomial distribution: the probability
     p for which a binomial distribution of n (odd) steps has at least (n + 1) / 2 up moves
@@ -111,7 +113,7 @@ def _exact_binomial_inversion(z: float, timesteps: int) -> tuple[float, float]:
     Below a tail of about 1e-100 with few steps scipy's inverse can give NaN; p is then so small
     that I_p(a, a) = p^a / (a * B(a, a)) * (1 + O(p)) gives it to machine precision.
     """
-    half = (timesteps + 1) / 2
+    half = (time_steps + 1) / 2
     tail = float(betaincinv(half, half, ndtr(-abs(z))))
     if not np.isfinite(tail):
         tail = float(
@@ -130,7 +132,7 @@ def calculate_tree_movements(
     dividend_yield: float,
     volatility: float,
     years: float,
-    timesteps: int,
+    time_steps: int,
 ) -> tuple[float, float, float]:
     """
     Calculates the up movement, down movement and probability of an up movement of a
@@ -164,7 +166,7 @@ def calculate_tree_movements(
         dividend_yield (float): The continuous dividend yield.
         volatility (float): The volatility of the stock.
         years (float): The time to expiration in years.
-        timesteps (int): The number of time steps.
+        time_steps (int): The number of time steps.
 
     Returns:
         tuple[float, float, float]: The up movement, the down movement and the probability of
@@ -175,12 +177,9 @@ def calculate_tree_movements(
             gets an even number of steps or a strike that is not positive, or the probability is
             not between 0 and 1.
     """
-    if method not in BINOMIAL_TREE_METHODS:
-        raise ValueError(
-            f"method must be one of {', '.join(BINOMIAL_TREE_METHODS)}, received {method!r}."
-        )
+    check_option("method", method, BINOMIAL_TREE_METHODS)
 
-    time_delta = years / timesteps
+    time_delta = years / time_steps
     carry = risk_free_rate - dividend_yield
     growth = np.exp(carry * time_delta)
     drift = carry - 0.5 * volatility**2
@@ -214,10 +213,10 @@ def calculate_tree_movements(
         down_movement = 1 / up_movement
         probability = 0.5 + 0.5 * drift * time_delta / log_step
     else:
-        if timesteps % 2 == 0:
+        if time_steps % 2 == 0:
             raise ValueError(
                 f"The {method} tree is centred on the strike and needs an odd number of time "
-                f"steps, received {timesteps}; use {timesteps + 1}."
+                f"steps, received {time_steps}; use {time_steps + 1}."
             )
         if strike_price <= 0:
             raise ValueError(
@@ -233,8 +232,8 @@ def calculate_tree_movements(
             if method == "leisen_reimer"
             else _exact_binomial_inversion
         )
-        probability, complement = inversion(d2, timesteps)
-        probability_d1, complement_d1 = inversion(d1, timesteps)
+        probability, complement = inversion(d2, time_steps)
+        probability_d1, complement_d1 = inversion(d1, time_steps)
 
         # u = e^(bΔt) * p' / p and d = e^(bΔt) * (1 — p') / (1 — p), each from the probability or its
         # complement as computed, so the move on the unlikely side keeps its digits. So far in or out of the
@@ -444,15 +443,15 @@ def calculate_option_value(
     Calculates option values at each node.
 
     Args:
-    up_option_payoff (float): Option payoff in the up state
-    down_option_payoff (float): Option payoff in the down state
-    risk_free_rate (float): Risk-free interest rate
-    time_to_expiration (float): Time to expiration
-    timestep (int): Number of time steps
-    risk_neutral_probability (float): Risk-neutral probability
+        up_option_payoff (float): The option payoff in the up state.
+        down_option_payoff (float): The option payoff in the down state.
+        risk_free_rate (float): The risk-free rate, continuously compounded.
+        time_to_expiration (float): The time to expiration in years.
+        timestep (int | float): The number of time steps of the tree.
+        risk_neutral_probability (float): The risk-neutral probability of the up state.
 
     Returns:
-    float: Option value
+        float: The option value, the discounted expected payoff.
     """
     option_value = np.exp(-risk_free_rate * time_to_expiration / timestep) * (
         risk_neutral_probability * up_option_payoff
@@ -466,7 +465,7 @@ def get_option_payoffs(
     stock_price: float,
     strike_price: float,
     years: float,
-    timesteps: int,
+    time_steps: int,
     risk_free_rate: float,
     volatility: float,
     dividend_yield: float = 0,
@@ -483,7 +482,7 @@ def get_option_payoffs(
         stock_price (float): Current stock price
         strike_price (float): Option strike price
         years (float): Time to expiration in years
-        timesteps (int): Number of time steps
+        time_steps (int): Number of time steps
         risk_free_rate (float): Risk-free interest rate
         volatility (float): Volatility of the underlying stock
         dividend_yield (float, optional): Dividend yield. Defaults to 0.
@@ -509,7 +508,7 @@ def get_option_payoffs(
         stock_price=stock_price,
         strike_prices=np.array([strike_price], dtype=float),
         years=years,
-        timesteps=timesteps,
+        time_steps=time_steps,
         risk_free_rate=risk_free_rate,
         volatility=volatility,
         dividend_yield=dividend_yield,
@@ -521,7 +520,7 @@ def get_option_payoffs(
     option_payoffs = pd.DataFrame(
         trees[0],
         index=[
-            "D" * downs + "U" * (timesteps - downs) for downs in range(timesteps + 1)
+            "D" * downs + "U" * (time_steps - downs) for downs in range(time_steps + 1)
         ],
     )
 
@@ -540,7 +539,7 @@ def get_option_payoff_trees(
     stock_price: float,
     strike_prices: np.ndarray,
     years: float,
-    timesteps: int,
+    time_steps: int,
     risk_free_rate: float,
     volatility: float,
     dividend_yield: float = 0,
@@ -563,7 +562,7 @@ def get_option_payoff_trees(
         stock_price (float): Current stock price.
         strike_prices (np.ndarray): The option strike prices.
         years (float): Time to expiration in years.
-        timesteps (int): Number of time steps.
+        time_steps (int): Number of time steps.
         risk_free_rate (float): Risk-free interest rate.
         volatility (float): Volatility of the underlying stock.
         dividend_yield (float, optional): Dividend yield. Defaults to 0.
@@ -593,7 +592,7 @@ def get_option_payoff_trees(
                 dividend_yield=dividend_yield,
                 volatility=volatility,
                 years=years,
-                timesteps=timesteps,
+                time_steps=time_steps,
             )
             for strike_price in (strike_prices if centred else strike_prices[:1])
         ]
@@ -606,9 +605,9 @@ def get_option_payoff_trees(
     )
 
     # The checks of calculate_stock_prices.
-    if timesteps > MAX_TIMESTEPS:
+    if time_steps > MAX_TIMESTEPS:
         raise ValueError(
-            f"A tree of {timesteps:,} time steps is too large; use at most "
+            f"A tree of {time_steps:,} time steps is too large; use at most "
             f"{MAX_TIMESTEPS:,}."
         )
     if np.any(up_movement == down_movement):
@@ -619,22 +618,22 @@ def get_option_payoff_trees(
 
     # The stock price at every node, multiplied step by step as calculate_stock_prices does:
     # row k moves down for its first k steps and up after.
-    downs = np.arange(timesteps + 1)
-    stock_prices = np.empty((len(strike_prices), timesteps + 1, timesteps + 1))
+    downs = np.arange(time_steps + 1)
+    stock_prices = np.empty((len(strike_prices), time_steps + 1, time_steps + 1))
     stock_prices[:, :, 0] = stock_price
-    for step in range(1, timesteps + 1):
+    for step in range(1, time_steps + 1):
         stock_prices[:, :, step] = stock_prices[:, :, step - 1] * np.where(
             step <= downs, down_movement, up_movement
         )
 
     sign = -1 if put_option else 1
     strikes = strike_prices[:, None]
-    discount = np.exp(-risk_free_rate * years / timesteps)
+    discount = np.exp(-risk_free_rate * years / time_steps)
 
     values = np.full(stock_prices.shape, np.nan)
     values[:, :, -1] = np.maximum(sign * (stock_prices[:, :, -1] - strikes), 0)
 
-    for step in range(timesteps - 1, -1, -1):
+    for step in range(time_steps - 1, -1, -1):
         later = values[:, :, step + 1]
         # The down-child of row k is row k + 1, which the last row does not have.
         down_values = np.concatenate(

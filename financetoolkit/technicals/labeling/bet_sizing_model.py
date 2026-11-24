@@ -6,6 +6,8 @@ import numpy as np
 import pandas as pd
 from scipy import optimize, stats
 
+from financetoolkit.utilities.error_model import InvalidArgumentError
+
 # The fits that agree to this many decimals (on the standardized values) are one root of
 # the moment equations; the root found from the most starting points is the most likely one.
 EF3M_ROOT_DECIMALS = 6
@@ -786,7 +788,7 @@ def get_target_bet_sizes(
     elif method == "power":
         width = get_power_width(calibration_divergence, calibration_bet_size)
     else:
-        raise ValueError("method needs to be 'sigmoid' or 'power'.")
+        raise InvalidArgumentError("method needs to be 'sigmoid' or 'power'.")
 
     frame = pd.DataFrame(
         {

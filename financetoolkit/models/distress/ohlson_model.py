@@ -23,11 +23,11 @@ def get_log_of_total_assets(
 
     Args:
         total_assets (float | pd.Series | pd.DataFrame): The sum of a company's current and non-current
-        assets.
+            assets.
         price_level_index (float | pd.Series | pd.DataFrame | None, optional): The US GNP implicit
-        price deflator with 1968 = 100, of the period of the total assets (with a DataFrame of total
-        assets, a Series indexed by its columns). Defaults to None, which leaves the total assets
-        undeflated: ln(Total Assets).
+            price deflator with 1968 = 100, of the period of the total assets (with a DataFrame of total
+            assets, a Series indexed by its columns). Defaults to None, which leaves the total assets
+            undeflated: ln(Total Assets).
 
     Returns:
         float | pd.Series | pd.DataFrame: The Log of Total Assets.

@@ -13,7 +13,7 @@ from financetoolkit.options.helpers import (
 from financetoolkit.options.market import hedging_model, market_metrics_model
 from financetoolkit.utilities import logger_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
-from financetoolkit.utilities.error_model import handle_errors
+from financetoolkit.utilities.error_model import InvalidArgumentError, handle_errors
 from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import (
     apply_rounding,
@@ -702,7 +702,11 @@ class MarketOptions:
         earnings_dates = None
         if around_earnings:
             if self._earnings_function is None:
-                raise ValueError("Earnings dates are not available for this Toolkit.")
+                raise InvalidArgumentError(
+                    "The earnings dates come from the Toolkit. Please use this method from a "
+                    "Toolkit (toolkit.options), pass earnings_function when creating the Options "
+                    "class, or set around_earnings=False."
+                )
             earnings_dates = self._earnings_function()
             # Each ticker uses the first expiry after its own earnings date.
             expiration_dates = {}
@@ -1741,7 +1745,7 @@ class MarketOptions:
         put_option: bool = False,
         transaction_cost: float = 0.0,
         rebalancing_days: int = 1,
-        paths: int = 10_000,
+        simulations: int = 10_000,
         seed: int | None = 0,
         rounding: int | None = None,
         show_columns: str | list[str] | None = None,
@@ -1799,7 +1803,7 @@ class MarketOptions:
                 (0.001 is 10 basis points). Defaults to 0.0.
             rebalancing_days (int, optional): The trading days between rebalances. Defaults to
                 1, daily.
-            paths (int, optional): The number of simulated paths. Defaults to 10,000.
+            simulations (int, optional): The number of simulated paths. Defaults to 10,000.
             seed (int | None, optional): The seed of the random numbers, None for a different
                 draw on every call. Defaults to 0.
             rounding (int | None, optional): The number of decimals to round the results to.
@@ -1888,7 +1892,7 @@ class MarketOptions:
                 transaction_cost=transaction_cost,
                 steps=days,
                 rebalancing_interval=rebalancing_days,
-                paths=paths,
+                simulations=simulations,
                 seed=seed,
             )
             profit = simulation["Profit and Loss"]

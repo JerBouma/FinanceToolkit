@@ -1436,7 +1436,12 @@ class Toolkit:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2015-01-01",
+            end_date="2025-12-31",
+        )
 
         toolkit.econometrics.get_unit_root_test(period='yearly')
         ```
@@ -6933,7 +6938,10 @@ class Toolkit:
             return self._intraday_historical_data
 
         if period not in ("daily", "weekly", "monthly", "quarterly", "yearly"):
-            raise KeyError(period)
+            raise KeyError(
+                "period must be one of 'intraday', 'daily', 'weekly', 'monthly', 'quarterly' or "
+                f"'yearly', not {period!r}."
+            )
 
         self.get_historical_data(period=period)
 
@@ -6979,7 +6987,10 @@ class Toolkit:
             return self._get_module_historical_data(period)
 
         if period not in ("daily", "weekly", "monthly", "quarterly", "yearly"):
-            raise KeyError(period)
+            raise KeyError(
+                "period must be one of 'intraday', 'daily', 'weekly', 'monthly', 'quarterly' or "
+                f"'yearly', not {period!r}."
+            )
 
         daily_historical_data = self._get_module_historical_data("daily")
         settings = self._daily_historical_data_params
@@ -7059,7 +7070,10 @@ class Toolkit:
             KeyError: For any other period, as a dictionary of the periods would.
         """
         if period not in ("daily", "weekly", "monthly", "quarterly", "yearly"):
-            raise KeyError(period)
+            raise KeyError(
+                "period must be one of 'daily', 'weekly', 'monthly', 'quarterly' or "
+                f"'yearly', not {period!r}."
+            )
 
         self.get_historical_data(period=period)
 

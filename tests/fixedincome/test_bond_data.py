@@ -12,6 +12,7 @@ from financetoolkit.fixedincome import fixedincome_controller
 from financetoolkit.fixedincome.bonds import bond_model
 from financetoolkit.fixedincome.markets import bond_data_model
 from financetoolkit.fixedincome.sources import treasurydirect_model
+from financetoolkit.utilities.error_model import InvalidArgumentError
 
 
 @pytest.fixture(autouse=True)
@@ -181,7 +182,7 @@ def test_get_years_to_maturity_30_360_against_quantlib(
 
 
 def test_get_years_to_maturity_rejects_unknown_day_count():
-    with pytest.raises(ValueError, match="day count"):
+    with pytest.raises(InvalidArgumentError, match="day_count must be one of"):
         bond_data_model.get_years_to_maturity(
             date(2026, 11, 5), date(2030, 5, 31), day_count="act/360"
         )

@@ -3,6 +3,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from financetoolkit.utilities.error_model import InvalidArgumentError
+
 # The GNP implicit price deflator of the U.S. Bureau of Economic Analysis (NIPA table 1.7.9,
 # 2017 = 100) for the years the offline datasets cover, which the Ohlson O-Score deflates the
 # total assets with.
@@ -48,7 +50,8 @@ def test_get_dupont_analysis(recorder, models_module):
     recorder.capture(
         models_module.get_dupont_analysis(method="extended", growth=True, lag=[1, 2, 3])
     )
-    assert models_module.get_dupont_analysis(method="nissim_penman").empty
+    with pytest.raises(InvalidArgumentError, match="method must be one of"):
+        models_module.get_dupont_analysis(method="nissim_penman")
 
 
 def test_get_enterprise_value_breakdown(recorder, models_module):
@@ -204,14 +207,14 @@ def test_get_fulmer_h_score(recorder, models_module):
 
 def test_get_altman_z_score_models(recorder, models_module):
     for model in ("private", "non-manufacturing", "emerging"):
-        recorder.capture(models_module.get_altman_z_score(model=model))
+        recorder.capture(models_module.get_altman_z_score(method=model))
 
     # The four-variable models leave out sales, and the emerging market score is the
     # non-manufacturing score plus 3.25.
     non_manufacturing = models_module.get_altman_z_score(
-        model="non-manufacturing", rounding=10
+        method="non-manufacturing", rounding=10
     )
-    emerging = models_module.get_altman_z_score(model="emerging", rounding=10)
+    emerging = models_module.get_altman_z_score(method="emerging", rounding=10)
     assert "Sales to Total Assets" not in non_manufacturing.index.get_level_values(1)
     difference = (
         emerging.xs("Altman Z-Score", level=1)
@@ -219,7 +222,8 @@ def test_get_altman_z_score_models(recorder, models_module):
     ).stack()
     assert ((difference - 3.25).abs() < 1e-8).all()
 
-    assert models_module.get_altman_z_score(model="zeta").empty
+    with pytest.raises(InvalidArgumentError, match="method must be one of"):
+        models_module.get_altman_z_score(method="zeta")
 
 
 def test_get_taffler_z_score(recorder, models_module):
@@ -355,9 +359,10 @@ def test_intrinsic_valuation_discounts_the_free_cash_flow_to_firm(models_module)
         pd.testing.assert_frame_equal(valuation.loc[ticker], expected)
 
     # The capital expenditure and working capital are not cash flows to value a company on.
-    assert models_module.get_intrinsic_valuation(
-        0.05, 0.02, 0.10, cash_flow_type="Capital Expenditure"
-    ).empty
+    with pytest.raises(InvalidArgumentError, match="cash_flow_type must be one of"):
+        models_module.get_intrinsic_valuation(
+            0.05, 0.02, 0.10, cash_flow_type="Capital Expenditure"
+        )
     # Without a discount rate above the perpetual growth rate there is no valuation.
     assert models_module.get_intrinsic_valuation(0.05, 0.10, 0.10).empty
 
@@ -898,7 +903,8 @@ def test_get_synthetic_credit_rating(recorder, models_module, monkeypatch):
 
     recorder.capture(models_module.get_synthetic_credit_rating())
     recorder.capture(models_module.get_synthetic_credit_rating(firm_type="small"))
-    assert models_module.get_synthetic_credit_rating(firm_type="tiny").empty
+    with pytest.raises(InvalidArgumentError, match="firm_type must be one of"):
+        models_module.get_synthetic_credit_rating(firm_type="tiny")
 
 
 def test_get_peer_comparison_without_peer_data(models_module):
@@ -2650,7 +2656,8 @@ def test_discretionary_accruals_estimate_on_the_same_quarter_of_earlier_years():
 
     cross_section = models.get_discretionary_accruals(method="cross_section")
     assert cross_section.loc["A"].loc["Discretionary Accruals"].isna().all()
-    assert models.get_discretionary_accruals(method="panel").empty
+    with pytest.raises(InvalidArgumentError, match="method must be one of"):
+        models.get_discretionary_accruals(method="panel")
 
 
 def test_quarterly_intrinsic_valuation_sums_the_quarters_of_a_year():
@@ -2710,7 +2717,8 @@ def test_get_fundamental_growth_rate(recorder, models_module):
 def test_get_rule_of_40(recorder, models_module):
     recorder.capture(models_module.get_rule_of_40())
     recorder.capture(models_module.get_rule_of_40(margin="ebitda"))
-    assert models_module.get_rule_of_40(margin="operating").empty
+    with pytest.raises(InvalidArgumentError, match="margin must be one of"):
+        models_module.get_rule_of_40(margin="operating")
 
 
 def test_get_owner_earnings(recorder, models_module):
@@ -2746,7 +2754,7 @@ def test_get_cash_flow_return_on_investment(recorder, models_module):
 
 
 def test_get_beneish_five_variable_m_score(recorder, models_module):
-    five = models_module.get_beneish_m_score(model="five", rounding=10)
+    five = models_module.get_beneish_m_score(method="five", rounding=10)
     recorder.capture(five)
     eight = models_module.get_beneish_m_score(rounding=10)[five.columns]
     indices = eight.xs("Days Sales in Receivables Index", level=1)
@@ -2764,7 +2772,8 @@ def test_get_beneish_five_variable_m_score(recorder, models_module):
     pd.testing.assert_frame_equal(
         five.xs("Beneish M-Score", level=1), expected, atol=1e-8
     )
-    assert models_module.get_beneish_m_score(model="six").empty
+    with pytest.raises(InvalidArgumentError, match="method must be one of"):
+        models_module.get_beneish_m_score(method="six")
 
 
 def test_get_shumway_score(recorder, models_module, monkeypatch):
@@ -2780,7 +2789,7 @@ def test_get_shumway_score(recorder, models_module, monkeypatch):
 
     monkeypatch.setattr(models_module, "_sp500_function", sp500)
     recorder.capture(models_module.get_shumway_score())
-    recorder.capture(models_module.get_shumway_score(model="market"))
+    recorder.capture(models_module.get_shumway_score(method="market"))
 
     # Without the S&P 500, the relative size and the probability are NaN.
     monkeypatch.setattr(models_module, "_sp500_function", None)

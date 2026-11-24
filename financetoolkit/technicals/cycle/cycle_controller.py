@@ -10,7 +10,12 @@ from financetoolkit.helpers import handle_portfolio
 from financetoolkit.technicals.cycle import cycle_model
 from financetoolkit.technicals.helpers import calculate_per_ticker
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
-from financetoolkit.utilities.error_model import handle_errors
+from financetoolkit.utilities.error_model import (
+    InvalidArgumentError,
+    check_option,
+    check_period,
+    handle_errors,
+)
 from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import (
     apply_rounding,
@@ -112,19 +117,11 @@ class CycleTechnicals:
         | 2025-12-30 |                         19.3292 |                        29.9641 |            -1.2128 |               1.7906 |         0.4995 |              0.9658 |                    1 |                           275.284 |                               272.991 |                                    273.794 |                    2.1545 |                272.316 |                -0.9522 |                     -0.423  |               -0.6187 |                    -0.993  |                        -5.4973 |                     -5.5043 |         0.2628 |
         | 2025-12-31 |                         19.6066 |                        33.1911 |            -0.9892 |               3.5115 |         0.5474 |              0.9788 |                    1 |                           274.885 |                               272.887 |                                    273.772 |                    2.3417 |                272.229 |                -0.9772 |                     -0.5599 |               -0.7431 |                    -0.0523 |                        -5.4957 |                     -5.4973 |         0.3273 |
         """
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(
+            period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
+        )
         if period == "intraday" and self._historical_data[period].empty:
-            raise ValueError(
+            raise InvalidArgumentError(
                 "Please define the 'intraday_period' parameter when initializing the Toolkit."
             )
 
@@ -326,20 +323,12 @@ class CycleTechnicals:
         | 2025-12-30 | 19.3292 | 15.4975 |     18.9697 |
         | 2025-12-31 | 19.6066 | 15.3876 |     18.9366 |
         """
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(
+            period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
+        )
         if period == "intraday":
             if self._historical_data[period].empty:
-                raise ValueError(
+                raise InvalidArgumentError(
                     "Please define the 'intraday_period' parameter when initializing the Toolkit."
                 )
             close_column = "Close"
@@ -468,20 +457,12 @@ class CycleTechnicals:
         | 2025-12-30 | 29.9641 | 136.968  |     97.2947 |
         | 2025-12-31 | 33.1911 | 164.331  |    115.377  |
         """
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(
+            period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
+        )
         if period == "intraday":
             if self._historical_data[period].empty:
-                raise ValueError(
+                raise InvalidArgumentError(
                     "Please define the 'intraday_period' parameter when initializing the Toolkit."
                 )
             close_column = "Close"
@@ -598,20 +579,12 @@ class CycleTechnicals:
         | 2025-12-30 |    -1.2128 |       1.7906 |
         | 2025-12-31 |    -0.9892 |       3.5115 |
         """
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(
+            period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
+        )
         if period == "intraday":
             if self._historical_data[period].empty:
-                raise ValueError(
+                raise InvalidArgumentError(
                     "Please define the 'intraday_period' parameter when initializing the Toolkit."
                 )
             close_column = "Close"
@@ -775,24 +748,13 @@ class CycleTechnicals:
         | 2025-12-31 |      0.9788 | 0.5474 |
         """
         methods = ("standard", "mesa")
-        if method not in methods:
-            raise ValueError(
-                f"Method must be one of {', '.join(methods)}, not {method}."
-            )
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_option("method", method, methods)
+        check_period(
+            period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
+        )
         if period == "intraday":
             if self._historical_data[period].empty:
-                raise ValueError(
+                raise InvalidArgumentError(
                     "Please define the 'intraday_period' parameter when initializing the Toolkit."
                 )
             close_column = "Close"
@@ -922,20 +884,12 @@ class CycleTechnicals:
         | 2025-12-30 |      1 |      0 |           0 |
         | 2025-12-31 |      1 |      0 |           0 |
         """
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(
+            period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
+        )
         if period == "intraday":
             if self._historical_data[period].empty:
-                raise ValueError(
+                raise InvalidArgumentError(
                     "Please define the 'intraday_period' parameter when initializing the Toolkit."
                 )
             close_column = "Close"
@@ -1073,20 +1027,12 @@ class CycleTechnicals:
         | 2025-12-30 | 273.794 | 272.991 |
         | 2025-12-31 | 273.772 | 272.887 |
         """
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(
+            period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
+        )
         if period == "intraday":
             if self._historical_data[period].empty:
-                raise ValueError(
+                raise InvalidArgumentError(
                     "Please define the 'intraday_period' parameter when initializing the Toolkit."
                 )
             close_column = "Close"
@@ -1122,7 +1068,7 @@ class CycleTechnicals:
         close_column: str = "Adj Close",
         median_price: bool = True,
         window: int = 20,
-        filter: str = "band_pass",
+        method: str = "band_pass",
         delta: float = 0.1,
         rounding: int | None = None,
         growth: bool = False,
@@ -1169,8 +1115,8 @@ class CycleTechnicals:
                 or the close of `close_column`, as TA-Lib's SWAK functions do. Defaults to True.
             window (int, optional): The cutoff period of the high-pass and low-pass filters and the centre period of
                 the band-pass filter, at least 5. Defaults to 20.
-            filter (str, optional): "high_pass", "two_pole_high_pass", "band_pass", "butterworth" or "gaussian".
-                Defaults to "band_pass", the default of Ehlers' listing.
+            method (str, optional): The filter. Options are: "high_pass", "two_pole_high_pass", "band_pass",
+                "butterworth" or "gaussian". Defaults to "band_pass", the default of Ehlers' listing.
             delta (float, optional): The half bandwidth of the band-pass filter as a fraction of its centre
                 frequency, above 0 and at most 0.5. Defaults to 0.1.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
@@ -1227,20 +1173,12 @@ class CycleTechnicals:
         | 2025-12-30 | 2.1545 | 2.5467 |      3.9497 |
         | 2025-12-31 | 2.3417 | 2.4341 |      4.4016 |
         """
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(
+            period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
+        )
         if period == "intraday":
             if self._historical_data[period].empty:
-                raise ValueError(
+                raise InvalidArgumentError(
                     "Please define the 'intraday_period' parameter when initializing the Toolkit."
                 )
             close_column = "Close"
@@ -1254,7 +1192,7 @@ class CycleTechnicals:
             historical_data,
             price_columns,
             lambda *prices: cycle_model.get_swiss_army_knife_filter(
-                sum(prices) / len(prices), window, filter, delta
+                sum(prices) / len(prices), window, method, delta
             ),
         ).loc[self._start_date : self._end_date]
 
@@ -1278,7 +1216,7 @@ class CycleTechnicals:
         period: str = "daily",
         close_column: str = "Adj Close",
         window: int = 40,
-        smoothing_window: int = 10,
+        smooth_window: int = 10,
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
@@ -1316,7 +1254,7 @@ class CycleTechnicals:
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close".
             window (int, optional): The cutoff period of the high-pass filter, the longest cycle kept. Defaults to 40.
-            smoothing_window (int, optional): The critical period of the SuperSmoother. Defaults to 10.
+            smooth_window (int, optional): The critical period of the SuperSmoother. Defaults to 10.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the Even Better Sinewave.
@@ -1369,20 +1307,12 @@ class CycleTechnicals:
         | 2025-12-30 | -0.9522 | 0.9992 |      0.9989 |
         | 2025-12-31 | -0.9772 | 0.9868 |      0.9863 |
         """
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(
+            period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
+        )
         if period == "intraday":
             if self._historical_data[period].empty:
-                raise ValueError(
+                raise InvalidArgumentError(
                     "Please define the 'intraday_period' parameter when initializing the Toolkit."
                 )
             close_column = "Close"
@@ -1394,7 +1324,7 @@ class CycleTechnicals:
             [close_column],
             cycle_model.get_even_better_sinewave,
             window,
-            smoothing_window,
+            smooth_window,
         ).loc[self._start_date : self._end_date]
 
         return finalize_dataset(
@@ -1498,20 +1428,12 @@ class CycleTechnicals:
         | 2025-12-30 | -0.423  | 1.231  |      2.0333 |
         | 2025-12-31 | -0.5599 | 0.5235 |      0.8791 |
         """
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(
+            period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
+        )
         if period == "intraday":
             if self._historical_data[period].empty:
-                raise ValueError(
+                raise InvalidArgumentError(
                     "Please define the 'intraday_period' parameter when initializing the Toolkit."
                 )
             close_column = "Close"
@@ -1633,20 +1555,12 @@ class CycleTechnicals:
         | 2025-12-30 |             -5.4973 |   -5.5043 |
         | 2025-12-31 |             -5.4957 |   -5.4973 |
         """
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(
+            period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
+        )
         if period == "intraday":
             if self._historical_data[period].empty:
-                raise ValueError(
+                raise InvalidArgumentError(
                     "Please define the 'intraday_period' parameter when initializing the Toolkit."
                 )
             close_column = "Close"

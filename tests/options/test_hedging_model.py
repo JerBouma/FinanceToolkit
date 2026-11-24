@@ -16,7 +16,7 @@ def simulate(**kwargs):
         "time_to_expiration": TIME,
         "risk_free_rate": RATE,
         "volatility": VOLATILITY,
-        "paths": 20_000,
+        "simulations": 20_000,
         "seed": 1,
     }
     return hedging_model.get_delta_hedging_simulation(**{**arguments, **kwargs})
@@ -27,7 +27,7 @@ def test_the_hedging_error_shrinks_with_the_square_root_of_the_rebalances():
     # sqrt(π / 4) vega σ / sqrt(N), and the mean stays near zero.
     deviations = []
     for steps in (16, 64, 256):
-        profit = simulate(steps=steps, paths=10_000)["Profit and Loss"]
+        profit = simulate(steps=steps, simulations=10_000)["Profit and Loss"]
         approximation = hedging_model.get_hedging_error_approximation(
             STOCK_PRICE, STRIKE, TIME, RATE, VOLATILITY, steps
         )
@@ -56,7 +56,7 @@ def test_the_simulation_matches_financepy():
                 implied_volatility=0.2,
                 put_option=put_option,
                 steps=63,
-                paths=40_000,
+                simulations=40_000,
                 seed=7,
             )["Profit and Loss"]
         )
@@ -114,8 +114,8 @@ def test_dividends_are_paid_on_the_shares_held():
 
 
 def test_the_simulation_is_seeded_and_checks_its_inputs():
-    first = simulate(paths=100, steps=10)
-    second = simulate(paths=100, steps=10)
+    first = simulate(simulations=100, steps=10)
+    second = simulate(simulations=100, steps=10)
     assert first.equals(second)
     with pytest.raises(ValueError, match="positive"):
         hedging_model.get_delta_hedging_profit_and_loss(

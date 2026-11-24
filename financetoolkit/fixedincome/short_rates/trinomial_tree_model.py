@@ -8,6 +8,7 @@ from scipy.optimize import brentq
 
 from financetoolkit.fixedincome.bonds.bond_model import get_cash_flow_periods
 from financetoolkit.fixedincome.helpers import discount_factors
+from financetoolkit.utilities.error_model import check_option
 
 # Ho-Lee and Hull-White model the short rate itself (r = α + x, normal), Black-Karasinski and
 # Black-Derman-Toy its logarithm (r = e^(α + x), lognormal). Ho-Lee and Black-Derman-Toy (with
@@ -30,10 +31,7 @@ def _check_tree_inputs(model: str, speed: float, volatility: float) -> float:
     Check the model and its parameters and return the speed the tree uses: zero for the
     models without mean reversion.
     """
-    if model not in TREE_MODELS:
-        raise ValueError(
-            f"The model must be one of {', '.join(TREE_MODELS)}, not {model!r}."
-        )
+    check_option("model", model, TREE_MODELS)
     if not volatility > 0:
         raise ValueError("The volatility must be positive.")
     if model in MEAN_REVERTING_MODELS:
@@ -688,7 +686,17 @@ def get_bermudan_swaption(
 def swap_payment_times(
     option_expiry: float, tenor: float, fixed_frequency: int
 ) -> np.ndarray:
-    """The fixed payment dates in years of a swap that starts at the expiry."""
+    """
+    The fixed payment dates in years of a swap that starts at the expiry.
+
+    Args:
+        option_expiry (float): The expiry of the swaption in years, the start of the swap.
+        tenor (float): The tenor of the swap in years.
+        fixed_frequency (int): The fixed payments per year.
+
+    Returns:
+        np.ndarray: The fixed payment dates in years.
+    """
     if option_expiry <= 0 or tenor <= 0:
         raise ValueError("The expiry and the tenor of the swaption must be positive.")
     return (
@@ -722,14 +730,8 @@ def price_bermudan_swaption(
     Returns:
         float: The value per 1 of notional.
     """
-    if swaption_type not in ("payer", "receiver"):
-        raise ValueError(
-            f"The swaption type must be 'payer' or 'receiver', not {swaption_type!r}."
-        )
-    if exercise not in ("bermudan", "european"):
-        raise ValueError(
-            f"The exercise must be 'bermudan' or 'european', not {exercise!r}."
-        )
+    check_option("swaption_type", swaption_type, ("payer", "receiver"))
+    check_option("exercise", exercise, ("bermudan", "european"))
     payment_times = swap_payment_times(option_expiry, tenor, fixed_frequency)
     cash_flows = fixed_rate * np.diff(payment_times, prepend=option_expiry)
     times = tree["Times"]
@@ -851,14 +853,8 @@ def get_bond_option(
     3.63606036239939
     ```
     """
-    if option_type not in ("call", "put"):
-        raise ValueError(
-            f"The option type must be 'call' or 'put', not {option_type!r}."
-        )
-    if exercise not in ("american", "european"):
-        raise ValueError(
-            f"The exercise must be 'american' or 'european', not {exercise!r}."
-        )
+    check_option("option_type", option_type, ("call", "put"))
+    check_option("exercise", exercise, ("american", "european"))
     if not 0 < option_expiry < years_to_maturity:
         raise ValueError(
             "The option must expire after today and before the bond matures."

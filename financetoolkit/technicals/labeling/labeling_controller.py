@@ -11,7 +11,7 @@ import pandas as pd
 from financetoolkit.technicals.helpers import apply_on_own_closes
 from financetoolkit.technicals.labeling import bet_sizing_model, labeling_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
-from financetoolkit.utilities.error_model import handle_errors
+from financetoolkit.utilities.error_model import check_option, handle_errors
 from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import apply_rounding
 
@@ -203,8 +203,7 @@ class LabelingTechnicals:
         | 2025-12-22 |     -1 |      0 |           1 |
         | 2025-12-23 |      0 |      1 |           0 |
         """
-        if method not in ("cusum", "z_score"):
-            raise ValueError(f"Method must be 'cusum' or 'z_score', not {method!r}.")
+        check_option("method", method, ("cusum", "z_score"))
         closes = self._close_prices(period, close_column, traded_only=True)
 
         if method == "cusum":
@@ -507,10 +506,7 @@ class LabelingTechnicals:
         | 2025-12-22 |     -1 |     -1 |      1 |      1 |
         | 2025-12-23 |      1 |      1 |     -1 |      1 |
         """
-        if relative_to not in (None, "mean", "median", "benchmark"):
-            raise ValueError(
-                f"relative_to must be None, 'mean', 'median' or 'benchmark', not {relative_to!r}."
-            )
+        check_option("relative_to", relative_to, (None, "mean", "median", "benchmark"))
         closes = self._close_prices(period, close_column, traded_only=True)
         forward_returns = apply_on_own_closes(
             closes, lambda prices: labeling_model.get_forward_returns(prices, horizon)
@@ -885,10 +881,7 @@ class LabelingTechnicals:
         | 2025-12-30 |   4.75  |       1 |
         | 2025-12-31 |   4.125 |       1 |
         """
-        if template not in labeling_model.MATRIX_FLAG_TEMPLATES:
-            raise ValueError(
-                f"The template must be one of {', '.join(labeling_model.MATRIX_FLAG_TEMPLATES)}, not {template!r}."
-            )
+        check_option("template", template, labeling_model.MATRIX_FLAG_TEMPLATES)
         closes = self._close_prices(period, close_column, traded_only=True)
         flags = _per_ticker(
             closes,
@@ -1112,10 +1105,7 @@ class LabelingTechnicals:
         | 2025-12-15 | 0.1058 | 0.7868 |      0.5882 |
         | 2025-12-16 | 0.7306 | 0.6239 |      0.4716 |
         """
-        if method not in ("return", "time_decay"):
-            raise ValueError(
-                f"Method must be 'return' or 'time_decay', not {method!r}."
-            )
+        check_option("method", method, ("return", "time_decay"))
         if method == "time_decay" and not -1 < decay <= 1:
             raise ValueError(f"The decay must lie in (-1, 1], not {decay}.")
         closes, holding_periods = self._get_labels_or_default(
@@ -1276,10 +1266,7 @@ class LabelingTechnicals:
         | 2025-12-30 |           0 |            0 |      0     |
         | 2025-12-31 |           0 |            0 |      0     |
         """
-        if method not in ("budget", "reserve", "probability"):
-            raise ValueError(
-                f"Method must be 'budget', 'reserve' or 'probability', not {method!r}."
-            )
+        check_option("method", method, ("budget", "reserve", "probability"))
         if step_size is not None and not 0 < step_size <= 1:
             raise ValueError(f"step_size must lie in (0, 1], not {step_size}.")
 

@@ -43,6 +43,7 @@ from financetoolkit.fixedincome.credit.credit_curve_model import (
     DEFAULT_RECOVERY_RATE,
     get_survival_probability,
 )
+from financetoolkit.utilities.error_model import check_option
 
 COPULAS = ("gaussian", "student_t")
 # The finest default loss unit is a hundredth of the smallest loss given default: losses that
@@ -311,10 +312,7 @@ def _factor_nodes(
     with ν degrees of freedom on generalised Gauss-Laguerre nodes (W = 2u, u ~ Γ(ν / 2)).
     Returns the factor values, the scales (1 for the Gaussian copula) and the weights.
     """
-    if copula not in COPULAS:
-        raise ValueError(
-            f"The copula must be one of {', '.join(COPULAS)}, not {copula!r}."
-        )
+    check_option("copula", copula, COPULAS)
     if integration_points <= 1:
         raise ValueError("Use at least 2 integration points.")
     factor, factor_weights = roots_hermitenorm(integration_points)

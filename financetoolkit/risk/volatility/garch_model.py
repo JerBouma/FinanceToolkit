@@ -2338,6 +2338,13 @@ def get_measure_backcast(measure: np.ndarray) -> float:
     The backcast of the realized measure that starts the realized GARCH recursion: the
     exponentially weighted average of the first 75 measures (decay 0.94) on the days with a
     positive measure, as `get_backcast` averages the first squared returns.
+
+    Args:
+        measure (np.ndarray): The realized measure per day, such as the daily Parkinson
+            variance.
+
+    Returns:
+        float: The backcast of the realized measure.
     """
     measure = np.asarray(measure, dtype=float)
     measure = measure[np.isfinite(measure) & (measure > 0)]

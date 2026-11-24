@@ -11,7 +11,7 @@ from financetoolkit.helpers import trailing_sum
 from financetoolkit.models.quality import beneish_model, piotroski_model, quality_model
 from financetoolkit.performance.performance_model import get_beta
 from financetoolkit.utilities.dataframe_model import concat_frames, filter_shown_columns
-from financetoolkit.utilities.error_model import handle_errors
+from financetoolkit.utilities.error_model import check_option, handle_errors
 from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.sources_model import track_sources
 
@@ -326,7 +326,7 @@ class QualityModels:
     @handle_errors
     def get_beneish_m_score(
         self,
-        model: str = "eight",
+        method: str = "eight",
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
@@ -361,7 +361,7 @@ class QualityModels:
         With `trailing`, the flows are summed over the trailing periods, while the balance sheet items are taken
         at the end of each period.
 
-        The five-variable model of Beneish (1997), with model="five", leaves out SGAI, LVGI and TATA:
+        The five-variable model of Beneish (1997) leaves out SGAI, LVGI and TATA:
 
         - M-Score (five variables) = -6.065 + 0.823 * DSRI + 0.906 * GMI + 0.593 * AQI + 0.717 * SGI + 0.107 * DEPI
 
@@ -373,9 +373,9 @@ class QualityModels:
         Also known as: Beneish M-Score, earnings manipulation score.
 
         Args:
-            model (str, optional): The model: "eight" for the eight-variable model of Beneish (1999) or
-                "five" for the five-variable model of Beneish (1997), which returns its five indices
-                and score. Defaults to "eight".
+            method (str, optional): The variant of the M-Score. Options are: "eight" (the eight-variable
+                model of Beneish, 1999) or "five" (the five-variable model of Beneish, 1997, which returns its
+                five indices and score). Defaults to "eight".
             rounding (int, optional): The number of decimals to round the results to. Defaults to None.
             growth (bool, optional): Whether to calculate the growth of the values. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
@@ -438,9 +438,8 @@ class QualityModels:
         | DIS   | -2.5143 | -2.5357 | -2.6392 | -2.6963 | -2.595  |
         | NFLX  | -1.6697 | -1.3345 | -2.5628 | -2.3319 | -2.1611 |
         """
-        model = model.lower()
-        if model not in ("eight", "five"):
-            raise ValueError("The model must be 'eight' or 'five'.")
+        method = method.lower()
+        check_option("method", method, ("eight", "five"))
         # The score was estimated on yearly statements, so quarterly data is summed into a
         # year (a trailing twelve months) unless a trailing period is given.
         if trailing is None and self._quarterly:
@@ -540,7 +539,7 @@ class QualityModels:
             )
         )
 
-        if model == "five":
+        if method == "five":
             five_variables = {
                 name: beneish_m_score[name]
                 for name in [
@@ -1439,8 +1438,7 @@ class QualityModels:
         | MSFT | 0.0546 | 0.054  | 0.0346 | 0.0352 | 0.0225 | 0.0197 |
         """
         method = method.lower()
-        if method not in ("dechow_dichev", "mcnichols"):
-            raise ValueError("The method must be 'dechow_dichev' or 'mcnichols'.")
+        check_option("method", method, ("dechow_dichev", "mcnichols"))
         year = 4 if self._quarterly else 1
         trailing = year if self._quarterly else None
 

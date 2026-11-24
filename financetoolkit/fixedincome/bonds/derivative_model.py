@@ -21,6 +21,7 @@ from scipy.special import ndtr
 from financetoolkit.fixedincome.bonds import bond_model
 from financetoolkit.fixedincome.helpers import discount_factors
 from financetoolkit.fixedincome.inflation import inflation_swap_model
+from financetoolkit.utilities.error_model import check_option
 
 # The standard normal distribution, computed as scipy.stats.norm computes it, without
 # importing scipy.stats, which takes around a second and is only needed elsewhere.
@@ -186,10 +187,7 @@ def _check_method(method: str, forward_rate, strike_rate, shift: float) -> None:
         strike_rate (float | np.ndarray): The strike rate(s).
         shift (float): The displacement of the Black model.
     """
-    if method not in MODELS:
-        raise ValueError(
-            f"The method must be one of {', '.join(MODELS)}, not {method!r}."
-        )
+    check_option("method", method, MODELS)
     if method == "black" and (
         np.any(np.asarray(forward_rate, dtype=float) + shift <= 0)
         or np.any(np.asarray(strike_rate, dtype=float) + shift <= 0)
@@ -348,10 +346,7 @@ def _get_annuity_factor(
         ValueError: If neither a risk-free rate nor a discount curve is given, or the
             settlement is unknown.
     """
-    if settlement not in SETTLEMENTS:
-        raise ValueError(
-            f"The settlement must be one of {', '.join(SETTLEMENTS)}, not {settlement!r}."
-        )
+    check_option("settlement", settlement, SETTLEMENTS)
     # A whole number of periods in floating point noise (2.9999999999999996) is not a short period.  # noqa: E501
     periods = tenor * payment_frequency
     number_of_payments = max(
@@ -980,10 +975,7 @@ def get_implied_volatility(
     0.009
     ```
     """
-    if option_type not in OPTION_TYPES:
-        raise ValueError(
-            f"The option type must be one of {', '.join(OPTION_TYPES)}, not {option_type!r}."
-        )
+    check_option("option_type", option_type, OPTION_TYPES)
     _check_method(method, forward_rate, strike_rate, shift)
     if years_to_expiry <= 0 or annuity <= 0:
         raise ValueError("The years to expiry and the annuity must be positive.")
@@ -1069,10 +1061,7 @@ def _cap_floor_table(
     Returns:
         pd.DataFrame: One row per period with its terms and price.
     """
-    if option_type not in CAP_FLOOR_TYPES:
-        raise ValueError(
-            f"The option type must be one of {', '.join(CAP_FLOOR_TYPES)}, not {option_type!r}."
-        )
+    check_option("option_type", option_type, CAP_FLOOR_TYPES)
     if option_type == "collar" and floor_strike_rate is None:
         raise ValueError("A collar needs the strike rate of its floor.")
     volatilities = np.broadcast_to(
@@ -1356,10 +1345,7 @@ def get_cap_floor_implied_volatility(
     0.21999999999999997
     ```
     """
-    if option_type not in ("cap", "floor"):
-        raise ValueError(
-            f"The option type must be 'cap' or 'floor', not {option_type!r}."
-        )
+    check_option("option_type", option_type, ("cap", "floor"))
     starts, ends, forward_rates, discounts = _cap_periods(
         zero_curve, maturity, frequency
     )

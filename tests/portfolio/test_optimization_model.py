@@ -13,6 +13,7 @@ from financetoolkit.portfolio.construction.optimization import (
     estimation_model,
     optimization_model,
 )
+from financetoolkit.utilities.error_model import InvalidArgumentError
 
 # pylint: disable=missing-function-docstring
 
@@ -1263,7 +1264,7 @@ def test_expected_shortfall_contributions_match_riskfolio_and_add_up():
     returns, _ = _reference_returns()
     weights = pd.Series([0.3, 0.25, 0.2, 0.15, 0.1], index=returns.columns)
     contributions = optimization_model.get_expected_shortfall_contributions(
-        weights, returns, 0.95
+        weights, returns, 0.05
     )
     portfolio = returns @ weights
     shortfall = -portfolio[portfolio <= portfolio.quantile(0.05)].mean()
@@ -1552,11 +1553,11 @@ def test_the_cdar_of_the_minimum_cdar_portfolio_is_its_objective():
     returns, _ = _reference_returns()
     weights = optimization_model.get_minimum_drawdown_weights(returns)
     drawdowns = optimization_model.get_drawdowns(returns @ weights)
-    cdar = optimization_model.get_expected_tail_loss(drawdowns, 0.95)
+    cdar = optimization_model.get_expected_tail_loss(drawdowns, 0.05)
 
     # Every other portfolio, e.g. equal weights, has a higher CDaR.
     equal = optimization_model.get_drawdowns(returns.mean(axis=1))
-    assert cdar < optimization_model.get_expected_tail_loss(equal, 0.95)
+    assert cdar < optimization_model.get_expected_tail_loss(equal, 0.05)
     # 500 periods at 95%: the average of exactly the 25 largest drawdowns.
     assert cdar == pytest.approx(drawdowns.nlargest(25).mean())
 
@@ -1565,10 +1566,10 @@ def test_expected_tail_loss_counts_a_fraction_of_the_boundary_loss():
     losses = np.arange(1, 11, dtype=float)
 
     # The worst 15% of ten losses: 10 in full and half of 9.
-    assert optimization_model.get_expected_tail_loss(losses, 0.85) == pytest.approx(
+    assert optimization_model.get_expected_tail_loss(losses, 0.15) == pytest.approx(
         (10 + 0.5 * 9) / 1.5
     )
-    assert optimization_model.get_expected_tail_loss(losses, 0.8) == pytest.approx(9.5)
+    assert optimization_model.get_expected_tail_loss(losses, 0.2) == pytest.approx(9.5)
 
 
 def test_maximum_omega_and_cvar_ratio_match_riskfolio_and_skfolio():
@@ -1593,7 +1594,7 @@ def test_maximum_omega_and_cvar_ratio_match_riskfolio_and_skfolio():
         atol=1e-6,
     )
     np.testing.assert_allclose(
-        optimization_model.get_maximum_cvar_ratio_weights(returns, 0.95, 1e-4),
+        optimization_model.get_maximum_cvar_ratio_weights(returns, 0.05, 1e-4),
         [0.1160064356, 0.1761774468, 0.2405297615, 0, 0.4672863516],
         atol=1e-6,
     )
@@ -1604,7 +1605,7 @@ def test_ratio_optimizers_need_a_return_above_the_threshold_and_take_constraints
     with pytest.raises(ValueError, match="minimum acceptable return"):
         optimization_model.get_maximum_omega_weights(returns, 0.01)
     with pytest.raises(ValueError, match="risk free rate"):
-        optimization_model.get_maximum_cvar_ratio_weights(returns, 0.95, 0.01)
+        optimization_model.get_maximum_cvar_ratio_weights(returns, 0.05, 0.01)
 
     for optimizer in (
         optimization_model.get_maximum_omega_weights,
@@ -1750,20 +1751,18 @@ def test_expected_shortfall_contributions_count_a_fraction_of_the_boundary_perio
     weights = pd.Series([0.3, 0.25, 0.2, 0.15, 0.1], index=returns.columns)
 
     # Riskfolio-Lib Risk_Contribution(rm="CVaR"), with tails of 22.5 and 13.5 periods.
-    for confidence_level, reference in (
-        (0.955, [0.0071414198, 0.006284051, 0.0043148177, 0.0035652219, 0.0007657886]),
-        (0.973, [0.0079713688, 0.0068635433, 0.0046414049, 0.0035747537, 0.0009117271]),
+    for alpha, reference in (
+        (0.045, [0.0071414198, 0.006284051, 0.0043148177, 0.0035652219, 0.0007657886]),
+        (0.027, [0.0079713688, 0.0068635433, 0.0046414049, 0.0035747537, 0.0009117271]),
     ):
         contributions = optimization_model.get_expected_shortfall_contributions(
-            weights, returns, confidence_level
+            weights, returns, alpha
         )
         np.testing.assert_allclose(
             contributions["Risk Contribution"], reference, atol=1e-9
         )
         assert contributions["Risk Contribution"].sum() == pytest.approx(
-            optimization_model.get_expected_tail_loss(
-                -(returns @ weights), confidence_level
-            )
+            optimization_model.get_expected_tail_loss(-(returns @ weights), alpha)
         )
 
 
@@ -1775,8 +1774,8 @@ def test_tail_probabilities_sum_to_one_with_a_fraction_on_the_boundary():
     np.testing.assert_allclose(probabilities, [0, 0.4, 0, 0.4, 0.2])
     assert probabilities.sum() == pytest.approx(1)
     # A tail shorter than a period is the largest loss.
-    assert optimization_model.get_expected_tail_loss(losses, 0.99) == pytest.approx(10)
-    with pytest.raises(ValueError, match="confidence level"):
+    assert optimization_model.get_expected_tail_loss(losses, 0.01) == pytest.approx(10)
+    with pytest.raises(InvalidArgumentError, match="alpha is a tail probability"):
         optimization_model.get_tail_probabilities(losses, 1)
 
 
@@ -1958,7 +1957,7 @@ def test_historical_risk_contributions_add_up_to_the_measure(risk_measure):
         "semideviation": np.sqrt((portfolio.clip(upper=0) ** 2).mean()),
         "mad": (portfolio - portfolio.mean()).abs().mean(),
         "cdar": optimization_model.get_expected_tail_loss(
-            optimization_model.get_drawdowns(portfolio), 0.95
+            optimization_model.get_drawdowns(portfolio), 0.05
         ),
     }[risk_measure]
     assert contributions["Risk Contribution"].sum() == pytest.approx(measure)
@@ -1981,7 +1980,7 @@ def test_historical_risk_contributions_add_up_to_the_measure(risk_measure):
 
 def test_historical_risk_contributions_refuse_an_unknown_measure():
     returns, _ = _reference_returns()
-    with pytest.raises(ValueError, match="risk measure"):
+    with pytest.raises(InvalidArgumentError, match="risk_measure must be one of"):
         optimization_model.get_historical_risk_contributions(
             pd.Series(0.2, index=returns.columns), returns, "variance"
         )
@@ -2236,7 +2235,7 @@ def test_codependence_sets_the_correlation_that_is_clustered():
     a, b = returns["A"].to_numpy(), returns["B"].to_numpy()
     signs = np.sign(a[:, None] - a[None, :]) * np.sign(b[:, None] - b[None, :])
     assert kendall.loc["A", "B"] == pytest.approx(signs.sum() / (len(a) * (len(a) - 1)))
-    with pytest.raises(ValueError, match="codependence"):
+    with pytest.raises(InvalidArgumentError, match="method must be one of"):
         optimization_model.get_codependence(returns, covariance, "euclidean")
 
     # The Pearson correlation of the covariance is the default of the clustering.
@@ -2692,7 +2691,7 @@ def test_denoised_and_detoned_covariances_match_the_libraries():
         ],
         atol=1e-15,
     )
-    with pytest.raises(ValueError, match="denoising"):
+    with pytest.raises(InvalidArgumentError, match="method must be one of"):
         optimization_model.get_denoised_covariance(returns, "clipped")
 
 
@@ -2768,7 +2767,9 @@ def test_comoment_matrices_match_performance_analytics():
     # PerformanceAnalytics M3.MM, M4.MM and M3.ewma (λ = 1 - 2 / 181, of the demeaned
     # returns), written out as the sums of Kronecker products of the R functions.
     assert np.allclose(
-        estimation_model.get_coskewness_matrix(returns).iloc[0, :5],
+        estimation_model.get_coskewness_matrix(
+            returns, standardized_moments=False
+        ).iloc[0, :5],
         [
             2.714127856e-08,
             -2.269730157e-07,
@@ -2779,7 +2780,9 @@ def test_comoment_matrices_match_performance_analytics():
         atol=1e-17,
     )
     assert np.allclose(
-        estimation_model.get_cokurtosis_matrix(returns).iloc[1, :5],
+        estimation_model.get_cokurtosis_matrix(
+            returns, standardized_moments=False
+        ).iloc[1, :5],
         [
             5.142156415e-08,
             6.726514486e-08,
@@ -2790,7 +2793,9 @@ def test_comoment_matrices_match_performance_analytics():
         atol=1e-17,
     )
     assert np.allclose(
-        estimation_model.get_coskewness_matrix(returns, "exponential").iloc[2, :5],
+        estimation_model.get_coskewness_matrix(
+            returns, "exponential", standardized_moments=False
+        ).iloc[2, :5],
         [
             4.874726938e-07,
             6.265450241e-07,
@@ -2801,7 +2806,9 @@ def test_comoment_matrices_match_performance_analytics():
         atol=1e-17,
     )
     assert np.allclose(
-        estimation_model.get_cokurtosis_matrix(returns, "semi").iloc[0, :5],
+        estimation_model.get_cokurtosis_matrix(
+            returns, "semi", standardized_moments=False
+        ).iloc[0, :5],
         [
             6.064906238e-08,
             3.378784769e-08,
@@ -2811,7 +2818,7 @@ def test_comoment_matrices_match_performance_analytics():
         ],
         atol=1e-17,
     )
-    standardized = estimation_model.get_cokurtosis_matrix(returns, standardize=True)
+    standardized = estimation_model.get_cokurtosis_matrix(returns)
     centred = returns - returns.mean()
     assert standardized.loc["A", ("A", "A", "A")] == pytest.approx(
         (centred["A"] ** 4).mean() / (centred["A"] ** 2).mean() ** 2
@@ -2827,7 +2834,7 @@ def test_bootstrap_estimates_cover_the_averages():
     # Moving blocks run in consecutive periods.
     assert (np.diff(indices[:10]) == 1).all()
     table, lower, upper = estimation_model.get_bootstrap_estimates(
-        returns, simulations=500
+        returns, n_bootstrap=500
     )
     assert (table["Lower"] < table["Expected Return"]).all()
     assert (table["Upper"] > table["Expected Return"]).all()
@@ -2838,7 +2845,7 @@ def test_bootstrap_estimates_cover_the_averages():
         table["Standard Error"], returns.std() / np.sqrt(len(returns)), rtol=0.15
     )
     normal, _, _ = estimation_model.get_bootstrap_estimates(
-        returns, "normal", simulations=500
+        returns, "normal", n_bootstrap=500
     )
     assert np.allclose(
         normal["Standard Error"], returns.std() / np.sqrt(len(returns)), rtol=0.15
@@ -3105,7 +3112,7 @@ def test_finite_difference_risk_contributions_match_riskfolio():
         (returns @ weights).to_frame(), "maximum_drawdown"
     )
     assert table["Risk Contribution"].sum() == pytest.approx(measure.iloc[0], rel=1e-6)
-    with pytest.raises(ValueError, match="risk measure"):
+    with pytest.raises(InvalidArgumentError, match="risk_measure must be one of"):
         optimization_model.get_finite_difference_risk_contributions(
             weights, returns, "range"
         )
@@ -3461,7 +3468,7 @@ def test_mean_risk_weights_take_constraints_and_refuse_bad_input():
         assert weights.abs().sum() <= 1.3 + 1e-7
         assert weights["E"] <= 0.25 + 1e-7
         assert weights[["A", "B"]].sum() <= 0.4 + 1e-7
-    with pytest.raises(ValueError, match="risk measure"):
+    with pytest.raises(InvalidArgumentError, match="risk_measure must be one of"):
         optimization_model.get_mean_risk_weights(returns, "variance")
     with pytest.raises(ValueError, match="target return"):
         optimization_model.get_mean_risk_weights(returns, "mad", target_return=1.0)
@@ -3726,7 +3733,7 @@ def test_distributionally_robust_cvar_weights_match_skfolio(
 ):
     np.testing.assert_allclose(
         optimization_model.get_distributionally_robust_cvar_weights(
-            _heavy_tailed_returns(), 0.95, radius, risk_aversion
+            _heavy_tailed_returns(), 0.05, radius, risk_aversion
         ),
         expected,
         atol=1e-7,
@@ -3736,22 +3743,22 @@ def test_distributionally_robust_cvar_weights_match_skfolio(
 def test_worst_case_cvar_grows_with_the_radius_up_to_a_total_loss():
     returns = _heavy_tailed_returns()
     weights = pd.Series([0.5, 0.1, 0.1, 0.1, 0.1, 0.1], index=list("ABCDEF"))
-    historical = optimization_model.get_expected_tail_loss(-(returns @ weights), 0.95)
+    historical = optimization_model.get_expected_tail_loss(-(returns @ weights), 0.05)
     assert np.isclose(
-        optimization_model.get_worst_case_cvar(returns, weights, 0.95, 0.0), historical
+        optimization_model.get_worst_case_cvar(returns, weights, 0.05, 0.0), historical
     )
     # For a small radius the worst case moves the asset with the largest weight down in
     # the tail periods: the CVaR rises by ε max w / (1 - β).
     assert np.isclose(
-        optimization_model.get_worst_case_cvar(returns, weights, 0.95, 0.01),
+        optimization_model.get_worst_case_cvar(returns, weights, 0.05, 0.01),
         historical + 0.01 * 0.5 / 0.05,
     )
     # Returns cannot fall below -100%, so no distribution loses more than everything.
     assert np.isclose(
-        optimization_model.get_worst_case_cvar(returns, weights, 0.95, 2.0), 1
+        optimization_model.get_worst_case_cvar(returns, weights, 0.05, 2.0), 1
     )
     with pytest.raises(ValueError, match="radius"):
-        optimization_model.get_distributionally_robust_cvar_weights(returns, 0.95, -0.1)
+        optimization_model.get_distributionally_robust_cvar_weights(returns, 0.05, -0.1)
 
 
 def test_hierarchical_risk_parity_with_other_risk_measures_matches_riskfolio():
@@ -3807,7 +3814,7 @@ def test_hierarchical_risk_parity_with_other_risk_measures_matches_riskfolio():
         optimization_model.get_hierarchical_risk_parity_weights(
             covariance, risk_measure="cvar"
         )
-    with pytest.raises(ValueError, match="risk measure must be one of"):
+    with pytest.raises(InvalidArgumentError, match="risk_measure must be one of"):
         optimization_model.get_hierarchical_risk_parity_weights(
             covariance, returns=returns, risk_measure="evar"
         )
@@ -3847,7 +3854,7 @@ def test_hierarchical_equal_risk_contribution_with_other_risk_measures_and_herc2
         )
         np.testing.assert_allclose(weights, reference, atol=1e-9)
 
-    with pytest.raises(ValueError, match="within the clusters"):
+    with pytest.raises(InvalidArgumentError, match="within_clusters must be one of"):
         optimization_model.get_hierarchical_equal_risk_contribution_weights(
             covariance, within_clusters="minimum_variance"
         )
@@ -3932,7 +3939,7 @@ def test_standardized_silhouette_matches_scikit_learn_and_finds_the_blocks():
         covariance, cluster_criterion="standardized_silhouette"
     )
     assert labels.tolist() == [0, 0, 0, 0, 1, 1, 1, 2, 2, 2]
-    with pytest.raises(ValueError, match="cluster criterion"):
+    with pytest.raises(InvalidArgumentError, match="cluster_criterion must be one of"):
         optimization_model.get_hierarchical_clusters(
             covariance, cluster_criterion="elbow"
         )
@@ -4603,7 +4610,9 @@ def test_the_robust_covariances_are_fixed_points(method):
     second = estimation_model.get_robust_covariance(returns + noise, method)[1]
     np.testing.assert_allclose(first, second, rtol=1e-8)
     assert first.equals(estimation_model.get_robust_covariance(returns, method)[1])
-    with pytest.raises(ValueError, match="mm, rocke"):
+    with pytest.raises(
+        InvalidArgumentError, match="method must be one of 'mm' or 'rocke'"
+    ):
         estimation_model.get_robust_covariance(returns, "tyler")
     with pytest.raises(ValueError, match="twice as many periods"):
         estimation_model.get_robust_covariance(returns.iloc[:8], method)

@@ -17,7 +17,15 @@ ZERO_RATES = np.array(
 
 def test_vasicek_calibration_recovers_the_parameters():
     paths = short_rate_model.simulate_short_rate(
-        "vasicek", 0.5, 0.04, 0.01, 0.02, years=200, steps_per_year=52, paths=1, seed=1
+        "vasicek",
+        0.5,
+        0.04,
+        0.01,
+        0.02,
+        years=200,
+        steps_per_year=52,
+        simulations=1,
+        seed=1,
     )
     parameters = short_rate_model.calibrate_short_rate_model(
         pd.Series(paths[0]), "vasicek", periods_per_year=52
@@ -58,7 +66,7 @@ def test_model_yields_start_at_the_short_rate(model):
 
 def test_cir_simulation_stays_at_or_above_zero():
     paths = short_rate_model.simulate_short_rate(
-        "cir", 0.2, 0.01, 0.2, 0.005, years=5, paths=500
+        "cir", 0.2, 0.01, 0.2, 0.005, years=5, simulations=500
     )
     assert (paths >= 0).all()
 

@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 
 from financetoolkit.models import helpers
+from financetoolkit.utilities.error_model import check_option
 
 # The coefficients of Model 1 of Dechow, Ge, Larson and Sloan (2011), and the share of firms
 # with a misstatement in their sample, which scales the probability into the F-Score.
@@ -565,10 +566,7 @@ def get_modified_jones_accruals(
         Discretionary Accruals, scaled by the beginning total assets; the last two NaN where
         fewer than `min_observations` observations are available.
     """
-    if method not in {"time_series", "cross_section"}:
-        raise ValueError(
-            f"The method {method} is not supported, use 'time_series' or 'cross_section'."
-        )
+    check_option("method", method, ("cross_section", "time_series"))
     coefficient_count = len(JONES_REGRESSORS) + intercept
     if min_observations < coefficient_count:
         raise ValueError(

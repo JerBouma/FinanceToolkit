@@ -6,6 +6,7 @@ import pandas as pd
 
 from financetoolkit.cache import policy_model
 from financetoolkit.economics.helpers import collect_cached_data
+from financetoolkit.utilities.error_model import check_option
 from financetoolkit.utilities.excel_model import read_excel
 from financetoolkit.utilities.requests_model import get_request
 
@@ -127,14 +128,8 @@ def get_industry_file_name(dataset: str, region: str) -> str:
     Raises:
         ValueError: When the dataset or region is not available.
     """
-    if dataset not in INDUSTRY_DATASETS:
-        raise ValueError(
-            f"The dataset must be one of {', '.join(INDUSTRY_DATASETS)}, not '{dataset}'."
-        )
-    if region not in INDUSTRY_REGIONS:
-        raise ValueError(
-            f"The region must be one of {', '.join(INDUSTRY_REGIONS)}, not '{region}'."
-        )
+    check_option("dataset", dataset, INDUSTRY_DATASETS)
+    check_option("region", region, INDUSTRY_REGIONS)
 
     us_file, regional_prefix = INDUSTRY_DATASETS[dataset]
     suffix = INDUSTRY_REGIONS[region]

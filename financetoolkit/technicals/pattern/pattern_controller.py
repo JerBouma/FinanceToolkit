@@ -13,7 +13,11 @@ from financetoolkit.technicals.helpers import (
 from financetoolkit.technicals.pattern import pattern_model
 from financetoolkit.utilities import factor_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
-from financetoolkit.utilities.error_model import handle_errors
+from financetoolkit.utilities.error_model import (
+    InvalidArgumentError,
+    check_period,
+    handle_errors,
+)
 from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import (
     PERIODS_PER_YEAR,
@@ -269,13 +273,10 @@ class PatternTechnicals:
         | 2025-12-19 |      1 |      0 |           0 |
         | 2025-12-31 |      0 |     -1 |           0 |
         """
-        if period not in PERIODS:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(period, PERIODS)
         if period == "intraday":
             if self._historical_data[period].empty:
-                raise ValueError(
+                raise InvalidArgumentError(
                     "Please define the 'intraday_period' parameter when initializing the Toolkit."
                 )
             close_column = "Close"
@@ -419,13 +420,10 @@ class PatternTechnicals:
         | 2025-12-30 | 272.349 | 273.128 | 271.335 | 272.115 |
         | 2025-12-31 | 272.232 | 272.73  | 270.807 | 271.641 |
         """
-        if period not in PERIODS:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(period, PERIODS)
         if period == "intraday":
             if self._historical_data[period].empty:
-                raise ValueError(
+                raise InvalidArgumentError(
                     "Please define the 'intraday_period' parameter when initializing the Toolkit."
                 )
             close_column = "Close"
@@ -556,13 +554,10 @@ class PatternTechnicals:
         | 2025-12-29 |      1 |      1 |           0 |
         | 2025-12-30 |      0 |      0 |           1 |
         """
-        if period not in PERIODS:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(period, PERIODS)
         if period == "intraday":
             if self._historical_data[period].empty:
-                raise ValueError(
+                raise InvalidArgumentError(
                     "Please define the 'intraday_period' parameter when initializing the Toolkit."
                 )
             close_column = "Close"
@@ -689,13 +684,10 @@ class PatternTechnicals:
         | 2025-12-30 |           0 |            2 |               0 |                0 |
         | 2025-12-31 |           1 |            0 |               0 |                0 |
         """
-        if period not in PERIODS:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(period, PERIODS)
         if period == "intraday":
             if self._historical_data[period].empty:
-                raise ValueError(
+                raise InvalidArgumentError(
                     "Please define the 'intraday_period' parameter when initializing the Toolkit."
                 )
             close_column = "Close"
@@ -814,13 +806,10 @@ class PatternTechnicals:
         | 2025-11-25 |      0 |      1 |           0 |
         | 2025-12-26 |      0 |      0 |          -1 |
         """
-        if period not in PERIODS:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(period, PERIODS)
         if period == "intraday":
             if self._historical_data[period].empty:
-                raise ValueError(
+                raise InvalidArgumentError(
                     "Please define the 'intraday_period' parameter when initializing the Toolkit."
                 )
             close_column = "Close"
@@ -982,13 +971,10 @@ class PatternTechnicals:
         | 2025-06-27 |      0 |      0 |           1 |
         | 2025-09-15 |      1 |      0 |           0 |
         """
-        if period not in PERIODS:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(period, PERIODS)
         if period == "intraday":
             if self._historical_data[period].empty:
-                raise ValueError(
+                raise InvalidArgumentError(
                     "Please define the 'intraday_period' parameter when initializing the Toolkit."
                 )
             close_column = "Close"

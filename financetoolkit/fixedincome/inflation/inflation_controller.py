@@ -21,7 +21,7 @@ from financetoolkit.fixedincome.markets.markets_controller import MarketsFixedIn
 from financetoolkit.fixedincome.sources import bundesbank_model
 from financetoolkit.utilities import logger_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
-from financetoolkit.utilities.error_model import handle_errors
+from financetoolkit.utilities.error_model import check_option, handle_errors
 from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import apply_rounding
 
@@ -55,11 +55,7 @@ class InflationFixedIncome(MarketsFixedIncome):
         Returns:
             pd.Series: The real yields (decimals) by maturity in years, named after the day.
         """
-        if country not in REAL_COUPON_FREQUENCIES:
-            raise ValueError(
-                f"No real yield curve is available for {country}. Choose from "
-                f"{', '.join(REAL_COUPON_FREQUENCIES)}."
-            )
+        check_option("country", country, REAL_COUPON_FREQUENCIES)
         end_date = date or self._end_date
         start_date = (
             datetime.strptime(end_date, "%Y-%m-%d") - timedelta(days=21)

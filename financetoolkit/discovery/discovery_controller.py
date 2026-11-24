@@ -166,7 +166,7 @@ class Discovery:
         Also known as: find companies, lookup stocks, ticker search, instrument search.
 
         Args:
-            query (str): A query to search for, e.g. 'META'.
+            query (str | None, optional): A query to search for, e.g. 'META'. Defaults to None, but a query is required.
             search_method (str, optional): The field to search against. Valid options are 'symbol', 'name',
                 'cik', 'cusip', and 'isin'. Defaults to 'name'.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -1191,8 +1191,9 @@ class Discovery:
             pages (int, optional): The number of pages to collect, each page is a
                 separate API call, e.g. pages=5 makes 5 calls. Defaults to 1.
             limit (int, optional): The number of articles to return per page. Defaults to 100.
-            start_date (str, optional): The start date to filter data with.
-            end_date (str, optional): The end date to filter data with.
+            start_date (str | None, optional): The start date to filter data with.
+                Defaults to None, which sets no start date.
+            end_date (str | None, optional): The end date to filter data with. Defaults to None, which sets no end date.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -1313,8 +1314,9 @@ class Discovery:
             pages (int, optional): The number of pages to collect, each page is a
                 separate API call, e.g. pages=5 makes 5 calls. Defaults to 1.
             limit (int, optional): The number of articles to return per page. Defaults to 100.
-            start_date (str, optional): The start date to filter data with.
-            end_date (str, optional): The end date to filter data with.
+            start_date (str | None, optional): The start date to filter data with.
+                Defaults to None, which sets no start date.
+            end_date (str | None, optional): The end date to filter data with. Defaults to None, which sets no end date.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -1493,8 +1495,9 @@ class Discovery:
             pages (int, optional): The number of pages to collect, each page is a
                 separate API call, e.g. pages=5 makes 5 calls. Defaults to 1.
             limit (int, optional): The number of articles to return per page. Defaults to 100.
-            start_date (str, optional): The start date to filter data with.
-            end_date (str, optional): The end date to filter data with.
+            start_date (str | None, optional): The start date to filter data with.
+                Defaults to None, which sets no start date.
+            end_date (str | None, optional): The end date to filter data with. Defaults to None, which sets no end date.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -1567,8 +1570,9 @@ class Discovery:
             pages (int, optional): The number of pages to collect, each page is a
                 separate API call, e.g. pages=5 makes 5 calls. Defaults to 1.
             limit (int, optional): The number of articles to return per page. Defaults to 100.
-            start_date (str, optional): The start date to filter data with.
-            end_date (str, optional): The end date to filter data with.
+            start_date (str | None, optional): The start date to filter data with.
+                Defaults to None, which sets no start date.
+            end_date (str | None, optional): The end date to filter data with. Defaults to None, which sets no end date.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -1638,8 +1642,9 @@ class Discovery:
             pages (int, optional): The number of pages to collect, each page is a
                 separate API call, e.g. pages=5 makes 5 calls. Defaults to 1.
             limit (int, optional): The number of articles to return per page. Defaults to 100.
-            start_date (str, optional): The start date to filter data with.
-            end_date (str, optional): The end date to filter data with.
+            start_date (str | None, optional): The start date to filter data with.
+                Defaults to None, which sets no start date.
+            end_date (str | None, optional): The end date to filter data with. Defaults to None, which sets no end date.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -1707,8 +1712,9 @@ class Discovery:
             pages (int, optional): The number of pages to collect, each page is a
                 separate API call, e.g. pages=5 makes 5 calls. Defaults to 1.
             limit (int, optional): The number of articles to return per page. Defaults to 100.
-            start_date (str, optional): The start date to filter data with.
-            end_date (str, optional): The end date to filter data with.
+            start_date (str | None, optional): The start date to filter data with.
+                Defaults to None, which sets no start date.
+            end_date (str | None, optional): The end date to filter data with. Defaults to None, which sets no end date.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -1783,8 +1789,9 @@ class Discovery:
         Also known as: IPO pipeline, upcoming listings.
 
         Args:
-            start_date (str, optional): The start date to filter data with.
-            end_date (str, optional): The end date to filter data with.
+            start_date (str | None, optional): The start date to filter data with.
+                Defaults to None, which sets no start date.
+            end_date (str | None, optional): The end date to filter data with. Defaults to None, which sets no end date.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -1840,8 +1847,9 @@ class Discovery:
         Also known as: pre-IPO SEC filings, IPO regulatory disclosures.
 
         Args:
-            start_date (str, optional): The start date to filter data with.
-            end_date (str, optional): The end date to filter data with.
+            start_date (str | None, optional): The start date to filter data with.
+                Defaults to None, which sets no start date.
+            end_date (str | None, optional): The end date to filter data with. Defaults to None, which sets no end date.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -1897,8 +1905,9 @@ class Discovery:
         Also known as: IPO pricing details, S-1/424B4 filings.
 
         Args:
-            start_date (str, optional): The start date to filter data with.
-            end_date (str, optional): The end date to filter data with.
+            start_date (str | None, optional): The start date to filter data with.
+                Defaults to None, which sets no start date.
+            end_date (str | None, optional): The end date to filter data with. Defaults to None, which sets no end date.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -1953,8 +1962,9 @@ class Discovery:
         Also known as: split schedule, upcoming stock splits.
 
         Args:
-            start_date (str, optional): The start date to filter data with.
-            end_date (str, optional): The end date to filter data with.
+            start_date (str | None, optional): The start date to filter data with.
+                Defaults to None, which sets no start date.
+            end_date (str | None, optional): The end date to filter data with. Defaults to None, which sets no end date.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none

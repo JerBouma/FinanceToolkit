@@ -10,7 +10,12 @@ from financetoolkit import currencies_model
 from financetoolkit.etf import etf_model
 from financetoolkit.portfolio import portfolio_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
-from financetoolkit.utilities.error_model import handle_errors
+from financetoolkit.utilities.error_model import (
+    InvalidArgumentError,
+    check_option,
+    check_period,
+    handle_errors,
+)
 from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import PERIODS_PER_YEAR, apply_rounding
@@ -938,10 +943,7 @@ class ETF:
         | Beta                | 0.9994 | 1.0014 | 0.9996 |
         | R Squared           | 0.9999 | 0.9999 | 0.9999 |
         """
-        if period not in PERIODS_PER_YEAR:
-            raise ValueError(
-                "Period must be daily, weekly, monthly, quarterly or yearly."
-            )
+        check_period(period, PERIODS_PER_YEAR)
         full = self._historical()["Adj Close"]
         if BENCHMARK_TICKER not in full:
             raise ValueError(
@@ -1394,8 +1396,9 @@ class ETF:
         return and the level that converts a contribution into points.
         """
         if self._prices_function is None:
-            raise ValueError(
-                "Prices of the holdings are not available for this Toolkit."
+            raise InvalidArgumentError(
+                "The prices of the holdings come from the Toolkit. Please use this method from a "
+                "Toolkit (toolkit.etf), or pass prices_function when creating the ETF class."
             )
 
         weights = {
@@ -1639,12 +1642,12 @@ class ETF:
         | Remainder              |         0.0008 | nan      |         0.0004 |    2.9928 |
         | Total                  |         1      |  -0.0091 |        -0.0091 |  -69.3287 |
         """
-        if group_by not in ("holding", "sector"):
-            raise ValueError("group_by must be 'holding' or 'sector'.")
+        check_option("group_by", group_by, ("holding", "sector"))
 
         if group_by == "sector" and self._sector_function is None:
-            raise ValueError(
-                "The sectors of the holdings are not available for this Toolkit."
+            raise InvalidArgumentError(
+                "The sectors of the holdings come from the Toolkit. Please use this method from a "
+                "Toolkit (toolkit.etf), or pass sector_function when creating the ETF class."
             )
 
         tables = {}
@@ -1762,8 +1765,10 @@ class ETF:
         if wanted is not None and wanted - {asset.upper() for asset in priced}:
             # Not every name is a holding, so the others are matched against the sectors.
             if self._sector_function is None:
-                raise ValueError(
-                    "The sectors of the holdings are not available for this Toolkit."
+                raise InvalidArgumentError(
+                    "The sectors of the holdings come from the Toolkit. Please use this method "
+                    "from a Toolkit (toolkit.etf), or pass sector_function when creating the ETF "
+                    "class."
                 )
             sectors = self._sector_function(priced)
             known = {asset.upper() for asset in priced} | set(

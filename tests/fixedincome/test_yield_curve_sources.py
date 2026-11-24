@@ -18,6 +18,7 @@ from financetoolkit.fixedincome.sources import (
     norgesbank_model,
     riksbank_model,
 )
+from financetoolkit.utilities.error_model import InvalidArgumentError
 
 
 @pytest.fixture(autouse=True)
@@ -299,10 +300,12 @@ def test_credit_methods_need_a_fred_key_and_valid_arguments():
     # The Moody's yields are only on FRED; the HQM curve also comes from the Treasury.
     without_key = FixedIncome(fred_api_key="")
     assert without_key.get_moodys_corporate_bond_yields().empty
-    assert without_key.get_hqm_corporate_bond_yield_curve(rate="forward").empty
+    with pytest.raises(InvalidArgumentError, match="rate must be one of"):
+        without_key.get_hqm_corporate_bond_yield_curve(rate="forward")
 
     with_key = FixedIncome(fred_api_key="key")
-    assert with_key.get_hqm_corporate_bond_yield_curve(rate="forward").empty
+    with pytest.raises(InvalidArgumentError, match="rate must be one of"):
+        with_key.get_hqm_corporate_bond_yield_curve(rate="forward")
     assert with_key.get_moodys_corporate_bond_yields(period="hourly").empty
 
 

@@ -8,6 +8,7 @@ import pytest
 
 from financetoolkit.cache.cache_controller import clear_active_cache
 from financetoolkit.fixedincome.sources import ecb_model as fixedincome_ecb_model
+from financetoolkit.utilities.error_model import InvalidArgumentError
 
 
 @pytest.fixture(autouse=True)
@@ -207,8 +208,10 @@ def test_ecb_series_by_area_name_the_euro_area(monkeypatch):
 def test_new_methods_refuse_unknown_options():
     from financetoolkit import Economics, FixedIncome
 
-    assert FixedIncome().get_eiopa_risk_free_rate(curve="forward").empty
-    assert FixedIncome().get_bank_of_england_yield_curve(curve="corporate").empty
+    with pytest.raises(InvalidArgumentError, match="curve must be one of"):
+        FixedIncome().get_eiopa_risk_free_rate(curve="forward")
+    with pytest.raises(InvalidArgumentError, match="curve must be one of"):
+        FixedIncome().get_bank_of_england_yield_curve(curve="corporate")
     assert FixedIncome().get_bank_of_england_yield_curve(curve="inflation").empty
     assert (
         Economics(gmdb_source=False)

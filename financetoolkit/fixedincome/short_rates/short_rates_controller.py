@@ -16,7 +16,7 @@ from financetoolkit.fixedincome.short_rates import (
 from financetoolkit.fixedincome.swaps import swap_model
 from financetoolkit.utilities import logger_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
-from financetoolkit.utilities.error_model import handle_errors
+from financetoolkit.utilities.error_model import check_option, handle_errors
 from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import apply_rounding
 
@@ -225,7 +225,7 @@ class ShortRatesFixedIncome(CurvesFixedIncome):
         period: str = "daily",
         years: float = 10,
         steps_per_year: int = 12,
-        paths: int = 10000,
+        simulations: int = 10000,
         seed: int | None = 0,
         scheme: str = "euler",
         rounding: int | None = None,
@@ -282,7 +282,7 @@ class ShortRatesFixedIncome(CurvesFixedIncome):
                 Defaults to "daily".
             years (float, optional): The horizon in years. Defaults to 10.
             steps_per_year (int, optional): The steps per year. Defaults to 12.
-            paths (int, optional): The number of simulated paths. Defaults to 10,000.
+            simulations (int, optional): The number of simulated paths. Defaults to 10,000.
             seed (int | None, optional): The random seed, None for a different simulation
                 every time. Defaults to 0.
             scheme (str, optional): "euler" or "exact". Defaults to "euler".
@@ -325,18 +325,12 @@ class ShortRatesFixedIncome(CurvesFixedIncome):
             period, ["daily", "weekly", "monthly"], "short rate simulation"
         )
         model = model.lower().replace("-", "_").replace(" ", "_")
-        if model not in SHORT_RATE_SIMULATION_MODELS:
+        check_option("model", model, SHORT_RATE_SIMULATION_MODELS)
+        check_option("scheme", scheme, short_rate_model.SCHEMES)
+        if simulations * years * steps_per_year > MAX_SIMULATED_VALUES:
             raise ValueError(
-                f"The model must be one of {', '.join(SHORT_RATE_SIMULATION_MODELS)}, not {model!r}."
-            )
-        if scheme not in short_rate_model.SCHEMES:
-            raise ValueError(
-                f"The scheme must be one of {', '.join(short_rate_model.SCHEMES)}, not {scheme!r}."
-            )
-        if paths * years * steps_per_year > MAX_SIMULATED_VALUES:
-            raise ValueError(
-                f"The simulation of {paths:,} paths over {years * steps_per_year:,.0f} steps is "
-                f"too large; keep paths times steps under {MAX_SIMULATED_VALUES:,}."
+                f"The simulation of {simulations:,} paths over {years * steps_per_year:,.0f} steps is "
+                f"too large; keep simulations times steps under {MAX_SIMULATED_VALUES:,}."
             )
 
         curve = self._yield_curves(country, period)[country]
@@ -383,7 +377,7 @@ class ShortRatesFixedIncome(CurvesFixedIncome):
             parameters["Current Rate"],
             years=years,
             steps_per_year=steps_per_year,
-            paths=paths,
+            simulations=simulations,
             seed=seed,
             scheme=scheme,
         )
@@ -558,14 +552,8 @@ class ShortRatesFixedIncome(CurvesFixedIncome):
             period, ["daily", "weekly", "monthly"], "swaption price"
         )
         model = model.lower().replace("-", "_").replace(" ", "_")
-        if model not in SWAPTION_MODELS:
-            raise ValueError(
-                f"The model must be one of {', '.join(SWAPTION_MODELS)}, not {model!r}."
-            )
-        if exercise not in ("european", "bermudan"):
-            raise ValueError(
-                f"The exercise must be 'european' or 'bermudan', not {exercise!r}."
-            )
+        check_option("model", model, SWAPTION_MODELS)
+        check_option("exercise", exercise, ("european", "bermudan"))
         if exercise == "bermudan" and model != "hull_white":
             raise ValueError(
                 "Bermudan swaptions are valued on a Hull-White tree; use model='hull_white'."

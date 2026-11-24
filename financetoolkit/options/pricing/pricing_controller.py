@@ -20,7 +20,7 @@ from financetoolkit.options.pricing import (
 )
 from financetoolkit.utilities import logger_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
-from financetoolkit.utilities.error_model import handle_errors
+from financetoolkit.utilities.error_model import check_option, handle_errors
 from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import (
     apply_rounding,
@@ -192,10 +192,7 @@ class PricingOptions:
         |            205 |       4.3748 |       8.5321 |      11.9824 |
         |            210 |       3.3136 |       7.1649 |      10.4811 |
         """
-        if dividends not in ("yield", "escrowed", "haug_haug_lewis"):
-            raise ValueError(
-                f'dividends must be "yield", "escrowed" or "haug_haug_lewis", received {dividends!r}.'
-            )
+        check_option("dividends", dividends, ("yield", "escrowed", "haug_haug_lewis"))
         if dividends != "yield" and dividend_yield is not None:
             raise ValueError(
                 'A dividend_yield is only used with dividends="yield"; the other methods use the cash dividends.'
@@ -320,7 +317,7 @@ class PricingOptions:
         strike_price_range: float = 0.25,
         strike_step_size: float = 5,
         time_to_expiration: float = 1,
-        timesteps: int = 10,
+        time_steps: int = 10,
         risk_free_rate: float | None = None,
         dividend_yield: float | None = None,
         show_input_info: bool = False,
@@ -437,7 +434,7 @@ class PricingOptions:
             strike prices will be 75, 80, 85, ..., 120 and 125 if the current stock price is 100.
             time_to_expiration (float): The number of years to use for the time to expiration. Defaults to 1 which equals
             one year.
-            timesteps (int): The number of time steps to use for the binomial tree. Defaults to 10 which equals 10
+            time_steps (int): The number of time steps to use for the binomial tree. Defaults to 10 which equals 10
             time steps. This will be evenly distributed over the time to expiration.
             risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None, which
             uses the Toolkit's risk-free rate on the pricing date: the 10-year Treasury yield unless the Toolkit's
@@ -462,7 +459,7 @@ class PricingOptions:
 
         Returns:
             pd.DataFrame: Binomial Trees values containing the tickers, strike prices and movements as the index and the
-            timesteps as the columns.
+            time steps as the columns.
 
         As an example:
 
@@ -477,7 +474,7 @@ class PricingOptions:
         )
 
         binomial_model = toolkit.options.get_binomial_model(
-            strike_price_range=0, strike_step_size=1, timesteps=5
+            strike_price_range=0, strike_step_size=1, time_steps=5
         )
 
         binomial_model.loc["KO"]
@@ -494,20 +491,17 @@ class PricingOptions:
         | (70, 'DDDDU') |     nan      |     nan      |     nan      |     nan      |       0      |       0      |
         | (70, 'DDDDD') |     nan      |     nan      |     nan      |     nan      |     nan      |       0      |
         """
-        if method not in binomial_trees_model.BINOMIAL_TREE_METHODS:
-            raise ValueError(
-                f"method must be one of {', '.join(binomial_trees_model.BINOMIAL_TREE_METHODS)}, received {method!r}."
-            )
+        check_option("method", method, binomial_trees_model.BINOMIAL_TREE_METHODS)
 
-        if method in ("leisen_reimer", "exact_inversion") and timesteps % 2 == 0:
+        if method in ("leisen_reimer", "exact_inversion") and time_steps % 2 == 0:
             # Both trees put the strike between the two middle nodes at expiration, which needs an odd count.
             logger.info(
                 "The %s tree needs an odd number of time steps, so %s steps are used instead of %s.",
                 method,
-                timesteps + 1,
-                timesteps,
+                time_steps + 1,
+                time_steps,
             )
-            timesteps += 1
+            time_steps += 1
 
         start_date = self._pricing_date(start_date)
         stock_price = self._prices.loc[start_date]
@@ -524,8 +518,8 @@ class PricingOptions:
             stock_price=stock_price,
             strike_step_size=strike_step_size,
             strike_price_range=strike_price_range,
-            # A tree per strike holds (timesteps + 1)² values.
-            values_per_strike=(timesteps + 1) ** 2,
+            # A tree per strike holds (time_steps + 1)² values.
+            values_per_strike=(time_steps + 1) ** 2,
         )
 
         binomial_trees: dict[str, tuple[list[float], np.ndarray]] = {}
@@ -551,7 +545,7 @@ class PricingOptions:
                     stock_price=float(stock_price.loc[ticker]),
                     strike_prices=np.asarray(strike_prices, dtype=float),
                     years=time_to_expiration,
-                    timesteps=timesteps,
+                    time_steps=time_steps,
                     risk_free_rate=float(risk_free_rate),
                     volatility=float(volatility.loc[ticker]),
                     dividend_yield=float(dividend_yield_value[ticker]),
@@ -620,7 +614,7 @@ class PricingOptions:
         self,
         start_date: str | None = None,
         time_to_expiration: float = 1,
-        timesteps: int = 10,
+        time_steps: int = 10,
         risk_free_rate: float | None = None,
         show_unique_combinations: bool = False,
         show_input_info: bool = False,
@@ -666,7 +660,7 @@ class PricingOptions:
             last date of the historical data.
             time_to_expiration (float): The number of years to use for the time to expiration. Defaults to 1 which equals
             one year.
-            timesteps (int): The number of time steps to use for the binomial tree. Defaults to 10 which equals 10
+            time_steps (int): The number of time steps to use for the binomial tree. Defaults to 10 which equals 10
             time steps. This will be evenly distributed over the time to expiration.
             risk_free_rate (float, optional): The risk free rate shown with show_input_info; it does not affect the
             simulated prices. Defaults to None, which uses the Toolkit's risk-free rate on the pricing date: the
@@ -687,7 +681,7 @@ class PricingOptions:
 
         Returns:
             pd.DataFrame: Simulated Stock Price values containing the tickers and movements as the index and the
-            timesteps as the columns.
+            time steps as the columns.
 
         As an example:
 
@@ -702,7 +696,7 @@ class PricingOptions:
         )
 
         stock_price_simulation = toolkit.options.get_stock_price_simulation(
-            timesteps=5, show_unique_combinations=True
+            time_steps=5, show_unique_combinations=True
         )
 
         stock_price_simulation.loc["AMD"]
@@ -742,7 +736,7 @@ class PricingOptions:
                 down_movement,
             ) = binomial_trees_model.calculate_up_and_down_movements(
                 volatility=volatility.loc[ticker],
-                time_delta=time_to_expiration / timesteps,
+                time_delta=time_to_expiration / time_steps,
             )
 
             stock_price_simulation[ticker] = (
@@ -750,7 +744,7 @@ class PricingOptions:
                     stock_price=stock_price.loc[ticker],
                     up_movement=up_movement,
                     down_movement=down_movement,
-                    period_length=timesteps,
+                    period_length=time_steps,
                     show_unique_combinations=show_unique_combinations,
                 )
             )
@@ -1572,19 +1566,19 @@ class PricingOptions:
         |             46 |       5.3505 |       5.507  |       5.6935 |
         |             47 |       6.3345 |       6.449  |       6.5986 |
         """
-        if method not in (
-            "qd_plus",
-            "barone_adesi_whaley",
-            "ju_zhong",
-            "qd_fixed_point",
-            "finite_difference",
-            "bjerksund_stensland",
-            "bjerksund_stensland_1993",
-        ):
-            raise ValueError(
-                'method must be "qd_plus", "barone_adesi_whaley", "ju_zhong", "qd_fixed_point", "finite_difference", '
-                f'"bjerksund_stensland" or "bjerksund_stensland_1993", received {method!r}.'
-            )
+        check_option(
+            "method",
+            method,
+            (
+                "qd_plus",
+                "barone_adesi_whaley",
+                "ju_zhong",
+                "qd_fixed_point",
+                "finite_difference",
+                "bjerksund_stensland",
+                "bjerksund_stensland_1993",
+            ),
+        )
 
         start_date = self._pricing_date(start_date)
         stock_price = self._prices.loc[start_date]
@@ -2122,7 +2116,7 @@ class PricingOptions:
         dividend_yield: float | None = None,
         simulations: int = 10_000,
         time_steps: int = 100,
-        seed: int | None = None,
+        seed: int | None = 0,
         show_standard_error: bool = False,
         show_input_info: bool = False,
         rounding: int | None = None,
@@ -2190,8 +2184,8 @@ class PricingOptions:
         As it is a simulation, the result comes with sampling error. Set
         ``show_standard_error=True`` to additionally return the standard error of each
         estimate — as a rule of thumb, the true price lies within plus or minus 2 times
-        the standard error roughly 95% of the time. Pass a ``seed`` (as the example does)
-        to make the results reproducible; without one every call draws new paths.
+        the standard error roughly 95% of the time. The seed makes the results reproducible;
+        without one (None) every call draws new paths.
 
         See: Boyle, P. P. (1977), "Options: A Monte Carlo Approach", Journal of Financial
         Economics, 4(3), 323-338; Longstaff, F. A., & Schwartz, E. S. (2001), "Valuing American
@@ -2227,7 +2221,7 @@ class PricingOptions:
             simulations (int, optional): The number of simulated stock price paths. Defaults to 10,000.
             time_steps (int, optional): The number of time steps used to build each simulated path. Defaults to 100.
             seed (int | None, optional): The seed used to initialize the random number generator, ensuring
-            reproducible results. Defaults to None, which means the results will not be reproducible.
+            reproducible results; None draws new paths on every call. Defaults to 0.
             show_standard_error (bool, optional): Whether to also return the standard error of each Monte Carlo
             estimate as a second DataFrame. Defaults to False.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
@@ -2652,14 +2646,8 @@ class PricingOptions:
         |            710 |      11.6473 |      21.6308 |      28.5162 |
         |            720 |       9.4508 |      19.0403 |      25.9385 |
         """
-        if barrier_direction not in ("down", "up", "double"):
-            raise ValueError(
-                f"barrier_direction must be 'down', 'up' or 'double', received {barrier_direction!r}."
-            )
-        if barrier_window not in ("full", "start", "end"):
-            raise ValueError(
-                f"barrier_window must be 'full', 'start' or 'end', received {barrier_window!r}."
-            )
+        check_option("barrier_direction", barrier_direction, ("down", "up", "double"))
+        check_option("barrier_window", barrier_window, ("full", "start", "end"))
         if (
             monitoring != "continuous"
             and monitoring not in path_dependent_model.MONITORING_INTERVALS
@@ -2863,7 +2851,7 @@ class PricingOptions:
         dividend_yield: float | None = None,
         simulations: int = 10_000,
         time_steps: int = 100,
-        seed: int | None = None,
+        seed: int | None = 0,
         show_input_info: bool = False,
         rounding: int | None = None,
         standardize: bool = False,
@@ -2927,7 +2915,7 @@ class PricingOptions:
         (days / 365), n is the number of fixings, G and A are the geometric and arithmetic average and N is
         the cumulative standard normal distribution.
 
-        The Monte Carlo prices are reproducible with a ``seed``, and all strike prices of an expiry are priced
+        The Monte Carlo prices are reproducible with a seed, and all strike prices of an expiry are priced
         on the same paths. Its standard error is around 0.1% of the price with the defaults.
 
         See: Kemna, A. G. Z., & Vorst, A. C. F. (1990), "A Pricing Method for Options Based on Average Asset
@@ -2973,8 +2961,8 @@ class PricingOptions:
             simulations (int, optional): The number of simulated paths of method="monte_carlo". Defaults to 10,000.
             time_steps (int, optional): The fixings that approximate a continuous average with method="monte_carlo"
             (fixings, when given, take their place). Defaults to 100.
-            seed (int | None, optional): The seed of the random number generator of method="monte_carlo", which makes
-            the results reproducible. Defaults to None, which draws new paths on every call.
+            seed (int | None, optional): The seed of the random number generator of the Monte Carlo method, which
+            makes the results reproducible; None draws new paths on every call. Defaults to 0.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
@@ -3031,10 +3019,7 @@ class PricingOptions:
         |            134 |       0.0066 |       0.0885 |       0.2507 |
         """
         methods = ("geometric", "turnbull_wakeman", "curran", "monte_carlo")
-        if method not in methods:
-            raise ValueError(
-                f"method must be one of {', '.join(methods)}, received {method!r}."
-            )
+        check_option("method", method, methods)
         if fixings is not None and (
             isinstance(fixings, bool) or not isinstance(fixings, int) or fixings < 1
         ):
@@ -3317,10 +3302,7 @@ class PricingOptions:
         |            210 |       6.7797 |      14.8381 |      21.9116 |
         TABLE_LOOKBACK
         """
-        if strike_type not in ("fixed", "floating"):
-            raise ValueError(
-                f"strike_type must be 'fixed' or 'floating', received {strike_type!r}."
-            )
+        check_option("strike_type", strike_type, ("fixed", "floating"))
         if not 0 < lookback_period <= 1:
             raise ValueError(
                 f"lookback_period must be above 0 and at most 1, received {lookback_period!r}."
@@ -3417,7 +3399,7 @@ class PricingOptions:
     def get_touch_option(
         self,
         start_date: str | None = None,
-        touch_type: str = "one-touch",
+        option_type: str = "one-touch",
         barrier_percentage: float = 0.9,
         upper_barrier_percentage: float = 1.1,
         payment: str = "expiration",
@@ -3437,12 +3419,12 @@ class PricingOptions:
 
         A touch option is a binary option on whether the stock price touches a barrier before expiration:
 
-        - One-touch (touch_type="one-touch"): pays the cash payout once the barrier at barrier_percentage of the
-          stock price is touched, at that moment (payment="hit") or at expiration (payment="expiration").
-        - No-touch (touch_type="no-touch"): pays the cash payout at expiration when the barrier is never touched.
-        - Double one-touch (touch_type="double-one-touch"): pays at expiration when either the lower barrier
+        - One-touch: pays the cash payout once the barrier at barrier_percentage of the
+          stock price is touched, at that moment or at expiration (see payment).
+        - No-touch: pays the cash payout at expiration when the barrier is never touched.
+        - Double one-touch: pays at expiration when either the lower barrier
           (barrier_percentage) or the upper barrier (upper_barrier_percentage) is touched.
-        - Double no-touch (touch_type="double-no-touch"): pays at expiration when the stock price stays between
+        - Double no-touch: pays at expiration when the stock price stays between
           the two barriers.
 
         A barrier below the stock price (barrier_percentage below 1) is touched when the price falls to it, one
@@ -3489,13 +3471,13 @@ class PricingOptions:
             start from; a date without prices (a weekend or a holiday) uses the last trading day before it, and a
             ticker without a price on that day is left out with a warning. Defaults to None, which uses the
             last date of the historical data.
-            touch_type (str, optional): "one-touch", "no-touch", "double-one-touch" or "double-no-touch". Defaults to
-            "one-touch".
+            option_type (str, optional): The kind of touch option. Options are: "one-touch", "no-touch",
+            "double-one-touch" or "double-no-touch". Defaults to "one-touch".
             barrier_percentage (float, optional): The barrier (the lower barrier of a double touch option) as a
             percentage of the current stock price. Defaults to 0.9, 90% of the current stock price.
             upper_barrier_percentage (float, optional): The upper barrier of a double touch option as a percentage of
             the current stock price. Defaults to 1.1, 110% of the current stock price.
-            payment (str, optional): When a one-touch option pays: "expiration" or "hit". The other touch options pay
+            payment (str, optional): When a one-touch option pays. Options are: "expiration" or "hit". The other touch options pay
             at expiration. Defaults to "expiration".
             cash_payout (float, optional): The cash amount paid. Defaults to 1.0.
             monitoring (str, optional): How often the barrier is checked: "continuous", "daily" (252 times a year),
@@ -3525,7 +3507,7 @@ class PricingOptions:
             columns.
 
         Raises:
-            ValueError: If touch_type, payment or monitoring is not one of its values, a touch option other than the
+            ValueError: If option_type, payment or monitoring is not one of its values, a touch option other than the
                 one-touch is asked to pay at the hit, the barrier is at the current stock price or a double touch
                 option's barriers do not lie on either side of it.
 
@@ -3542,7 +3524,7 @@ class PricingOptions:
         )
 
         touch_option = toolkit.options.get_touch_option(
-            touch_type="double-no-touch", barrier_percentage=0.9, upper_barrier_percentage=1.1,
+            option_type="double-no-touch", barrier_percentage=0.9, upper_barrier_percentage=1.1,
             expiration_time_range=91,
         )
 
@@ -3557,18 +3539,12 @@ class PricingOptions:
         | KO       |       0.9991 |       0.9028 |       0.6768 |       0.4958 |
         TABLE_TOUCH
         """
-        touch_types = ("one-touch", "no-touch", "double-one-touch", "double-no-touch")
-        if touch_type not in touch_types:
+        option_types = ("one-touch", "no-touch", "double-one-touch", "double-no-touch")
+        check_option("option_type", option_type, option_types)
+        check_option("payment", payment, ("expiration", "hit"))
+        if payment == "hit" and option_type != "one-touch":
             raise ValueError(
-                f"touch_type must be one of {', '.join(touch_types)}, received {touch_type!r}."
-            )
-        if payment not in ("expiration", "hit"):
-            raise ValueError(
-                f"payment must be 'expiration' or 'hit', received {payment!r}."
-            )
-        if payment == "hit" and touch_type != "one-touch":
-            raise ValueError(
-                f"Only a one-touch option pays at the hit; a {touch_type} option pays at expiration."
+                f"Only a one-touch option pays at the hit; a {option_type} option pays at expiration."
             )
         if (
             monitoring != "continuous"
@@ -3577,7 +3553,7 @@ class PricingOptions:
             raise ValueError(
                 f"monitoring must be 'continuous', 'daily', 'weekly' or 'monthly', received {monitoring!r}."
             )
-        double = touch_type.startswith("double")
+        double = option_type.startswith("double")
         if double and not barrier_percentage < 1 < upper_barrier_percentage:
             raise ValueError(
                 f"A double touch option needs barrier_percentage below 1 and upper_barrier_percentage above 1 "
@@ -3634,7 +3610,7 @@ class PricingOptions:
                 "risk_free_rate": float(risk_free_rate),
                 "volatility": ticker_volatility,
                 "dividend_yield": float(dividend_yield_value[ticker]),
-                "touch_type": touch_type,
+                "option_type": option_type,
                 "cash_payout": float(cash_payout),
             }
 

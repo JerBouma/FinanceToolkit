@@ -8,6 +8,7 @@ from scipy.interpolate import BSpline
 from scipy.optimize import brentq, least_squares
 
 from financetoolkit.fixedincome.curves import curve_model
+from financetoolkit.utilities.error_model import check_option
 
 METHODS = ("nelson_siegel", "svensson", "exponential_spline", "cubic_spline")
 
@@ -424,10 +425,7 @@ def fit_bond_curve(
         ValueError: If the method does not exist, there are fewer bonds than parameters or
             the Nelson-Siegel or Svensson fit is not identified.
     """
-    if method not in METHODS:
-        raise ValueError(
-            f"The method {method!r} does not exist. Choose from {', '.join(METHODS)}."
-        )
+    check_option("method", method, METHODS)
     cash_flow_times = np.atleast_2d(np.asarray(cash_flow_times, dtype=float))
     cash_flows = np.atleast_2d(np.asarray(cash_flows, dtype=float))
     prices = np.asarray(prices, dtype=float)

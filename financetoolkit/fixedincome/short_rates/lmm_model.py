@@ -30,6 +30,7 @@ import numpy as np
 import pandas as pd
 
 from financetoolkit.fixedincome.helpers import discount_factors
+from financetoolkit.utilities.error_model import check_option
 
 
 def _check_tenor(
@@ -171,7 +172,7 @@ def _evolve(
     times: np.ndarray,
     volatilities: np.ndarray,
     loadings: np.ndarray,
-    paths: int,
+    simulations: int,
     seed: int | None,
     steps_per_year: int,
     last_reset: int,
@@ -186,8 +187,8 @@ def _evolve(
     correlation = loadings @ loadings.T
     generator = np.random.default_rng(seed)
 
-    log_forwards = np.tile(np.log(forward_rates), (paths, 1))
-    result = np.full((paths, last_reset + 1, count), np.nan)
+    log_forwards = np.tile(np.log(forward_rates), (simulations, 1))
+    result = np.full((simulations, last_reset + 1, count), np.nan)
     clock = 0.0
     for reset in range(last_reset + 1):
         length = times[reset] - clock
@@ -211,7 +212,7 @@ def _evolve(
                 weights @ np.tril(correlation[alive, alive]).T
             )
             shocks = (
-                generator.standard_normal((paths, loadings.shape[1]))
+                generator.standard_normal((simulations, loadings.shape[1]))
                 @ loadings[alive].T
             )
             log_forwards[:, alive] += (
@@ -229,7 +230,7 @@ def simulate_lmm_forwards(
     correlation: np.ndarray | None = None,
     correlation_decay: float | None = None,
     factors: int | None = None,
-    paths: int = 10000,
+    simulations: int = 10000,
     seed: int | None = 0,
     steps_per_year: int = 12,
 ) -> np.ndarray:
@@ -285,7 +286,7 @@ def simulate_lmm_forwards(
             Defaults to None.
         factors (int | None, optional): The number of factors; None keeps the full rank of
             the correlation. Defaults to None.
-        paths (int, optional): The number of paths. Defaults to 10,000.
+        simulations (int, optional): The number of paths. Defaults to 10,000.
         seed (int | None, optional): The random seed. Defaults to 0.
         steps_per_year (int, optional): The fewest steps per year between reset times.
             Defaults to 12.
@@ -320,15 +321,15 @@ def simulate_lmm_forwards(
         raise ValueError(
             "Pass one positive forward rate per period, one fewer than the times."
         )
-    if paths < 1 or steps_per_year < 1:
-        raise ValueError("The paths and the steps per year must be at least 1.")
+    if simulations < 1 or steps_per_year < 1:
+        raise ValueError("The simulations and the steps per year must be at least 1.")
     loadings = get_lmm_factor_loadings(times, correlation, correlation_decay, factors)
     return _evolve(
         forward_rates,
         times,
         volatilities,
         loadings,
-        paths,
+        simulations,
         seed,
         steps_per_year,
         len(forward_rates) - 1,
@@ -352,7 +353,7 @@ def get_lmm_cap(
     correlation_decay: float | None = None,
     factors: int | None = None,
     option_type: str = "caplet",
-    paths: int = 10000,
+    simulations: int = 10000,
     seed: int | None = 0,
     steps_per_year: int = 12,
     notional: float = 1.0,
@@ -406,7 +407,7 @@ def get_lmm_cap(
         factors (int | None, optional): The number of factors; None keeps the full rank of
             the correlation. Defaults to None.
         option_type (str, optional): "caplet" or "floorlet". Defaults to "caplet".
-        paths (int, optional): The number of paths. Defaults to 10,000.
+        simulations (int, optional): The number of paths. Defaults to 10,000.
         seed (int | None, optional): The random seed. Defaults to 0.
         steps_per_year (int, optional): The fewest steps per year between reset times.
             Defaults to 12.
@@ -442,10 +443,7 @@ def get_lmm_cap(
     4.0         5415.756767       96.762061
     ```
     """
-    if option_type not in ("caplet", "floorlet"):
-        raise ValueError(
-            f"The option type must be 'caplet' or 'floorlet', not {option_type!r}."
-        )
+    check_option("option_type", option_type, ("caplet", "floorlet"))
     times, volatilities = _check_tenor(times, volatilities)
     discounts, forward_rates = _curve_forwards(zero_curve, times)
     forwards = simulate_lmm_forwards(
@@ -455,7 +453,7 @@ def get_lmm_cap(
         correlation,
         correlation_decay,
         factors,
-        paths,
+        simulations,
         seed,
         steps_per_year,
     )
@@ -470,7 +468,7 @@ def get_lmm_cap(
     return pd.DataFrame(
         {
             "Price": payoffs.mean(axis=0),
-            "Standard Error": payoffs.std(axis=0, ddof=1) / np.sqrt(paths),
+            "Standard Error": payoffs.std(axis=0, ddof=1) / np.sqrt(simulations),
         },
         index=pd.Index(times[:-1], name="Reset Time"),
     )
@@ -485,7 +483,7 @@ def get_lmm_swaption(
     correlation_decay: float | None = None,
     factors: int | None = None,
     swaption_type: str = "payer",
-    paths: int = 10000,
+    simulations: int = 10000,
     seed: int | None = 0,
     steps_per_year: int = 12,
     notional: float = 1.0,
@@ -539,7 +537,7 @@ def get_lmm_swaption(
             the correlation. Defaults to None.
         swaption_type (str, optional): "payer" (the right to pay the fixed rate) or
             "receiver". Defaults to "payer".
-        paths (int, optional): The number of paths. Defaults to 10,000.
+        simulations (int, optional): The number of paths. Defaults to 10,000.
         seed (int | None, optional): The random seed. Defaults to 0.
         steps_per_year (int, optional): The fewest steps per year until the expiry.
             Defaults to 12.
@@ -570,21 +568,25 @@ def get_lmm_swaption(
     Standard Error      283.622494
     ```
     """
-    if swaption_type not in ("payer", "receiver"):
-        raise ValueError(
-            f"The swaption type must be 'payer' or 'receiver', not {swaption_type!r}."
-        )
+    check_option("swaption_type", swaption_type, ("payer", "receiver"))
     times, volatilities = _check_tenor(times, volatilities)
     if times[0] <= 0:
         raise ValueError("The swaption must expire after today.")
-    if paths <= 1 or steps_per_year < 1:
+    if simulations <= 1 or steps_per_year < 1:
         raise ValueError(
-            "The paths must be at least 2 and the steps per year at least 1."
+            "The simulations must be at least 2 and the steps per year at least 1."
         )
     discounts, forward_rates = _curve_forwards(zero_curve, times)
     loadings = get_lmm_factor_loadings(times, correlation, correlation_decay, factors)
     forwards = _evolve(
-        forward_rates, times, volatilities, loadings, paths, seed, steps_per_year, 0
+        forward_rates,
+        times,
+        volatilities,
+        loadings,
+        simulations,
+        seed,
+        steps_per_year,
+        0,
     )[:, 0, :]
     accruals = np.diff(times)
     bonds = 1 / np.cumprod(1 + accruals * forwards, axis=1)
@@ -601,7 +603,7 @@ def get_lmm_swaption(
     return pd.Series(
         {
             "Price": payoffs.mean(),
-            "Standard Error": payoffs.std(ddof=1) / np.sqrt(paths),
+            "Standard Error": payoffs.std(ddof=1) / np.sqrt(simulations),
         }
     )
 

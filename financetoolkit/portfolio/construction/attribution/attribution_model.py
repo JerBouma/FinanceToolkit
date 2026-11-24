@@ -6,6 +6,8 @@ import numpy as np
 import pandas as pd
 from scipy.optimize import brentq
 
+from financetoolkit.utilities.error_model import check_option
+
 # Peak-to-trough dates of the S&P 500 in well-known market stress episodes, used as the
 # default historical scenarios of a stress test.
 HISTORICAL_SCENARIOS: dict[str, tuple[str, str]] = {
@@ -172,8 +174,7 @@ def get_linking_coefficients(
     Returns:
         pd.Series: The linking coefficient per sub-period.
     """
-    if linking not in LINKING_METHODS:
-        raise ValueError(f"linking must be one of {', '.join(LINKING_METHODS)}.")
+    check_option("linking", linking, LINKING_METHODS)
 
     returns = portfolio_returns.astype(float)
     benchmark = benchmark_returns.reindex(returns.index).astype(float)

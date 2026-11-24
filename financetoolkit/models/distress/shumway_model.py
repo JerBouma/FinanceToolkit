@@ -164,7 +164,7 @@ def get_shumway_score(
     relative_size: pd.DataFrame,
     excess_return: pd.DataFrame,
     sigma: pd.DataFrame,
-    model: str = "combined",
+    method: str = "combined",
 ) -> pd.DataFrame:
     """
     The hazard score of Shumway (2001), Table 6: the logit of the probability of bankruptcy
@@ -181,19 +181,20 @@ def get_shumway_score(
         relative_size (pd.DataFrame): RELSIZE, ln(Market Value of Equity / Total Market Value).
         excess_return (pd.DataFrame): EXRET, the past year's return above the market's.
         sigma (pd.DataFrame): SIGMA, the monthly idiosyncratic volatility.
-        model (str, optional): "combined" or "market". Defaults to "combined".
+        method (str, optional): The variant of the hazard model. Options are: "combined" or
+            "market". Defaults to "combined".
 
     Returns:
         pd.DataFrame: The hazard score H.
     """
-    coefficients = COEFFICIENTS[model]
+    coefficients = COEFFICIENTS[method]
     score = (
         coefficients["Constant"]
         + coefficients["RELSIZE"] * relative_size
         + coefficients["EXRET"] * excess_return
         + coefficients["SIGMA"] * sigma
     )
-    if model == "combined":
+    if method == "combined":
         score = (
             score
             + coefficients["NI/TA"] * net_income_to_total_assets

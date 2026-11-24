@@ -433,7 +433,9 @@ instructions: >-
   benchmark ticker (SPY unless benchmark_ticker says otherwise). Keep answers small:
   limit=-5 gives the last five periods (5 the first five), show_columns keeps the named
   fields, and start_date/end_date or period narrow the range; an answer that is still
-  too large is cut, with a note. rank=true turns a value per period and ticker (or
+  too large is cut, with a note. sample='weekly' (or monthly, quarterly, yearly) keeps
+  the last daily row of each period: window=200 with sample='weekly' gives the 200-day
+  average once a week, where period='weekly' would make it a 200-week one. rank=true turns a value per period and ticker (or
   country) into a ranking per period, with each one's gap to its neighbour (e.g. the
   worst return and how far it fell beyond the next worst). rebase_to='2020' (or a
   range such as '1340-1347' or '2020-01:2020-06') indexes a time series to 100 at its

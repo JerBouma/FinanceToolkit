@@ -62,6 +62,7 @@ from financetoolkit.mcp_server.registry.diagnostics_model import (
     summarize_reasons,
 )
 from financetoolkit.mcp_server.registry.formatting_model import (
+    SAMPLE_PERIODS,
     convert_to_period,
     country_names,
     filled_day_notes,
@@ -72,6 +73,7 @@ from financetoolkit.mcp_server.registry.formatting_model import (
     observed_period,
     parse_base_window,
     rebase_result,
+    sample_rows,
     select_rows,
     signal_rows,
     skipped_periods_note,
@@ -293,6 +295,15 @@ _PARAM_DESCRIPTIONS: dict[str, str] = {
         "earnings calendar) are selected per ticker. For ETF holdings the "
         "largest (or, negative, the smallest) by weight, and for a list (e.g. news or a "
         "screener) its length. 0 returns every row."
+    ),
+    "sample": (
+        "'weekly', 'monthly', 'quarterly' or 'yearly': keeps the last row of each calendar "
+        "week, month, quarter or year of a daily or intraday answer (dates as columns: the "
+        "last column), including the latest period that has not ended, with the real dates "
+        "of those rows. Unlike period, which resamples the prices first (a 200-day average "
+        "on weekly prices is a 200-week one), the indicator is calculated on daily data and "
+        "read once per period, e.g. window=200 with sample='weekly' for the 200-day average "
+        "every week. Applied before limit, so limit=-10 gives the last ten periods."
     ),
     "gmdb_forecasts": (
         "Set to true to include the years the Global Macro Database projects (IMF World "
@@ -2579,6 +2590,14 @@ class ToolRegistry:
                     f"whole number, e.g. 5 for the first five rows or -5 for the last "
                     f"five, not {raw_limit!r}."
                 )
+            # sample keeps the last row of every week, month, quarter or year of a daily
+            # answer (a 200-day average read weekly), before limit selects from those rows.
+            sample = str(kwargs.pop("sample", None) or "").strip().lower() or None
+            if sample is not None and sample not in SAMPLE_PERIODS:
+                return (
+                    f"Invalid input for `{tool_name}` (`{method_name}`): sample must be one "
+                    f"of {', '.join(SAMPLE_PERIODS)}, not {sample!r}."
+                )
             row_selection = None
             # 0 asks for every row: no selection, and no MCP default limit either (the 25
             # largest holdings of an ETF), so the indicator's own default of all rows holds.
@@ -3046,6 +3065,16 @@ class ToolRegistry:
                             "signal in the period, so "
                             f"{'it is' if len(quiet) == 1 else 'they are'} left out."
                         )
+                # After rebase_to (its base is the average over every day of the window)
+                # and before limit, so limit=-10 gives the last ten weeks.
+                if sample is not None and isinstance(result, pd.DataFrame | pd.Series):
+                    result, sample_note = sample_rows(result, sample)
+                    notes.append(sample_note)
+                elif sample is not None:
+                    notes.append(
+                        f"sample={sample!r} was not applied: the answer is not a table "
+                        "with dates as its rows or columns."
+                    )
                 # After the check for missing tickers, which needs every row of a column.
                 if row_selection and isinstance(result, dict):
                     result = {
@@ -3534,6 +3563,14 @@ class ToolRegistry:
                 POS,
                 default=None,
                 annotation=_annotate_with_description("rebase_to", str | None),
+            )
+        )
+        sig_params.append(
+            P(
+                "sample",
+                POS,
+                default=None,
+                annotation=_annotate_with_description("sample", str | None),
             )
         )
         sig_params.append(

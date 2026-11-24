@@ -518,6 +518,80 @@ def convert_to_period(
     return converted
 
 
+# The calendar periods an answer can be sampled to, with their pandas frequency. A week runs
+# from Monday to Sunday, so a market that trades at the weekend keeps its Sunday.
+SAMPLE_PERIODS = {"weekly": "W-SUN", "monthly": "M", "quarterly": "Q", "yearly": "Y"}
+SAMPLE_PERIOD_NAMES = {
+    "weekly": "week",
+    "monthly": "month",
+    "quarterly": "quarter",
+    "yearly": "year",
+}
+
+
+def sample_rows(
+    data: pd.DataFrame | pd.Series, sample: str
+) -> tuple[pd.DataFrame | pd.Series, str]:
+    """
+    Keeps the last row with a value in each calendar week, month, quarter or year of a daily
+    or intraday answer, including the latest period that has not ended yet. The rows keep
+    their own dates, so a weekly sample of a 200-day moving average is that average on the
+    last trading day of every week. A table with its dates as columns is sampled by column,
+    and rows of a date and an item keep every row of the chosen dates.
+
+    Args:
+        data (pd.DataFrame | pd.Series): The answer.
+        sample (str): "weekly", "monthly", "quarterly" or "yearly".
+
+    Returns:
+        tuple[pd.DataFrame | pd.Series, str]: The sampled answer and a note on what was done,
+        or the answer unchanged and a note on why, when it has no dates or is not finer than
+        the sample.
+    """
+    by_columns = isinstance(data, pd.DataFrame) and has_period_columns(data)
+    table = data.T if by_columns else data
+    axis = "columns" if by_columns else "rows"
+
+    if not _is_time_index(table.index):
+        return data, (
+            f"sample={sample!r} was not applied: the answer has no dates as its rows or "
+            "columns."
+        )
+
+    dates = table.index.get_level_values(0)
+    observed = observed_period(dates.unique()) or (
+        observed_period(dates.unique().to_timestamp())
+        if isinstance(dates, pd.PeriodIndex)
+        else None
+    )
+    if observed != "daily":
+        return data, (
+            f"sample={sample!r} was not applied: the answer is "
+            f"{observed or 'a single date'} already, as coarse as {sample} or coarser."
+        )
+
+    timestamps = (
+        dates.to_timestamp()
+        if isinstance(dates, pd.PeriodIndex)
+        else dates.tz_localize(None)
+    )
+    periods = timestamps.to_period(SAMPLE_PERIODS[sample])
+    # The last date with a value per period; a row without any value is not a reading.
+    has_value = (
+        table.notna().any(axis=1) if isinstance(table, pd.DataFrame) else table.notna()
+    ).to_numpy()
+    if not has_value.any():
+        return data, f"sample={sample!r} was not applied: the answer has no values."
+    last_dates = pd.Series(timestamps[has_value]).groupby(periods[has_value]).max()
+    sampled = table[timestamps.isin(last_dates)]
+    before, after = len(dates.unique()), len(last_dates)
+
+    return (sampled.T if by_columns else sampled), (
+        f"Sampled to the last {axis[:-1]} of each {SAMPLE_PERIOD_NAMES[sample]} "
+        f"({after} of {before} {axis})."
+    )
+
+
 SKIPPED_PERIODS_SHOWN = 3
 
 

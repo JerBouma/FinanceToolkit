@@ -7,6 +7,7 @@ from scipy.interpolate import CubicHermiteSpline, CubicSpline
 
 from financetoolkit.fixedincome.bonds import bond_model
 from financetoolkit.fixedincome.curves import curve_model
+from financetoolkit.utilities.error_model import check_option
 
 # The ways a zero-coupon curve is read between its maturities. "linear_par" is the curve
 # of get_zero_coupon_curve: the par yields interpolated linearly to every coupon date
@@ -232,11 +233,7 @@ def _read(
     last maturity with the zero rate held at the last one, as the other curves of the
     Finance Toolkit do.
     """
-    if interpolation not in INTERPOLATIONS:
-        raise ValueError(
-            f"The interpolation {interpolation!r} does not exist. Choose from "
-            f"{', '.join(INTERPOLATIONS)}."
-        )
+    check_option("interpolation", interpolation, INTERPOLATIONS)
     maturities = np.asarray(maturities, dtype=float)
     zero_rates = np.asarray(zero_rates, dtype=float)
     order = np.argsort(maturities)
@@ -413,11 +410,7 @@ def bootstrap_zero_curve(
         ValueError: If the interpolation does not exist, no maturity is a year or less, or
             the bootstrap does not converge.
     """
-    if interpolation not in INTERPOLATIONS:
-        raise ValueError(
-            f"The interpolation {interpolation!r} does not exist. Choose from "
-            f"{', '.join(INTERPOLATIONS)}."
-        )
+    check_option("interpolation", interpolation, INTERPOLATIONS)
     maturities = np.asarray(maturities, dtype=float)
     par_yields = np.asarray(par_yields, dtype=float)
     order = np.argsort(maturities)

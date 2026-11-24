@@ -11,7 +11,7 @@ from financetoolkit.economics.helpers import (
 from financetoolkit.fixedincome.sources import ecb_model, euribor_model, fed_model
 from financetoolkit.utilities import logger_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
-from financetoolkit.utilities.error_model import handle_errors
+from financetoolkit.utilities.error_model import InvalidArgumentError, handle_errors
 from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import finalize_dataset
 
@@ -397,7 +397,7 @@ class PolicyFixedIncome:
         elif rate == "SOFR":
             fed_data = fed_model.get_secured_overnight_financing_rate()
         else:
-            raise ValueError(
+            raise InvalidArgumentError(
                 "Rate must be one of 'EFFR', 'OBFR', 'TGCR', 'BGCR' or 'SOFR'."
             )
 

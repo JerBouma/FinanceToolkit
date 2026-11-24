@@ -10,6 +10,7 @@ from financetoolkit.economics.sources import bls_model, treasury_model
 from financetoolkit.fixedincome.fixedincome_controller import FixedIncome
 from financetoolkit.fixedincome.inflation import inflation_swap_model
 from financetoolkit.fixedincome.sources import bundesbank_model
+from financetoolkit.utilities.error_model import InvalidArgumentError
 
 DAYS = pd.bdate_range("2026-11-02", "2026-11-20").to_period("D")
 
@@ -115,8 +116,9 @@ def test_inflation_swap_rate_is_the_zero_coupon_breakeven(fixedincome):
     assert (rates["Date"] == "2026-11-20").all()
 
 
-def test_inflation_swap_rate_of_an_unknown_country_is_empty(fixedincome):
-    assert fixedincome.get_inflation_swap_rate(country="Japan").empty
+def test_inflation_swap_rate_of_an_unknown_country_raises(fixedincome):
+    with pytest.raises(InvalidArgumentError, match="country must be one of"):
+        fixedincome.get_inflation_swap_rate(country="Japan")
 
 
 def test_get_forward_inflation_index(recorder, fixedincome):

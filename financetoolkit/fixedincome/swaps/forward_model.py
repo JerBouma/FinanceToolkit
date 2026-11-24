@@ -11,6 +11,7 @@ import numpy as np
 import pandas as pd
 
 from financetoolkit.fixedincome.helpers import discount_factors
+from financetoolkit.utilities.error_model import check_option
 
 # The days in a year of the day counts a forward rate agreement can accrue on. The curve's
 # times are years of 365 days, so an ACT/360 accrual is 365 / 360 times as long.
@@ -68,10 +69,7 @@ def get_forward_rate_agreement(
     Raises:
         ValueError: If the end is not after the start, or the day count is unknown.
     """
-    if day_count not in DAY_COUNTS:
-        raise ValueError(
-            f"The day count must be one of {', '.join(DAY_COUNTS)}, not {day_count!r}."
-        )
+    check_option("day_count", day_count, DAY_COUNTS)
     if end <= start or start < 0:
         raise ValueError(
             f"A forward rate agreement runs from a start ({start}) of at least 0 to a later "

@@ -41,7 +41,7 @@ def test_get_shumway_score_and_probability():
     )
 
     market = shumway_model.get_shumway_score(
-        0.0, 0.0, frame([[-10.0]]), frame([[0.2]]), frame([[0.1]]), model="market"
+        0.0, 0.0, frame([[-10.0]]), frame([[0.2]]), frame([[0.1]]), method="market"
     )
     assert market.iloc[0, 0] == pytest.approx(
         -12.027 - 0.503 * -10 - 2.072 * 0.2 + 9.834 * 0.1

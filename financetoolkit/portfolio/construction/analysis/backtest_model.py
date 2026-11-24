@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 
 from financetoolkit.risk import risk_model
+from financetoolkit.utilities.error_model import check_option
 from financetoolkit.utilities.logger_model import get_logger
 
 logger = get_logger()
@@ -34,11 +35,7 @@ def get_rebalancing_dates(
     Returns:
         list: The rebalancing dates, in order.
     """
-    if rebalancing not in REBALANCING_PERIODS:
-        raise ValueError(
-            f"The rebalancing must be one of {', '.join(REBALANCING_PERIODS)}, not "
-            f"'{rebalancing}'."
-        )
+    check_option("rebalancing", rebalancing, REBALANCING_PERIODS)
     period_ends = (
         pd.Series(index, index=index)
         .groupby(index.asfreq(REBALANCING_PERIODS[rebalancing]))

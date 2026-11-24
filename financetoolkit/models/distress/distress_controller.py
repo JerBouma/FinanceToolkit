@@ -28,7 +28,7 @@ from financetoolkit.models.valuation import damodaran_model
 from financetoolkit.options import options_model
 from financetoolkit.ratios import liquidity_model, valuation_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
-from financetoolkit.utilities.error_model import handle_errors
+from financetoolkit.utilities.error_model import check_option, handle_errors
 from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import (
@@ -51,7 +51,7 @@ class DistressModels:
     def get_altman_z_score(
         self,
         diluted: bool = True,
-        model: str = "original",
+        method: str = "original",
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
@@ -103,9 +103,10 @@ class DistressModels:
         Args:
             diluted (bool, optional): Whether to use diluted shares outstanding in the market value of equity of
                 the "original" model. Defaults to True.
-            model (str, optional): The model to use: "original" (listed manufacturers, market value of
-                equity), "private" (Z', book value of equity), "non-manufacturing" (Z'', book value of equity,
-                no sales term) or "emerging" (Z''-EM, Z'' plus 3.25). Defaults to "original".
+            method (str, optional): The variant of the Altman Z-Score. Options are: "original" (listed
+                manufacturers, market value of equity), "private" (Z', book value of equity), "non-manufacturing"
+                (Z'', book value of equity, no sales term) or "emerging" (Z''-EM, Z'' plus 3.25). Defaults to
+                "original".
             rounding (int, optional): The number of decimals to round the results to. Defaults to None.
             growth (bool, optional): Whether to calculate the growth of the values. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
@@ -163,7 +164,7 @@ class DistressModels:
             end_date="2025-12-31",
         )
 
-        toolkit.models.get_altman_z_score(model="non-manufacturing").xs("Altman Z-Score", level=1)
+        toolkit.models.get_altman_z_score(method="non-manufacturing").xs("Altman Z-Score", level=1)
         ```
 
         Which returns:
@@ -178,11 +179,7 @@ class DistressModels:
         # year (a trailing twelve months) unless a trailing period is given.
         if trailing is None and self._quarterly:
             trailing = 4
-        if model not in altman_model.ALTMAN_COEFFICIENTS:
-            raise ValueError(
-                f"Invalid model {model!r}. Please choose from: "
-                f"{', '.join(altman_model.ALTMAN_COEFFICIENTS)}."
-            )
+        check_option("method", method, altman_model.ALTMAN_COEFFICIENTS)
 
         altman_z_score = {}
 
@@ -219,7 +216,7 @@ class DistressModels:
             )
         )
 
-        if model == "original":
+        if method == "original":
             share_prices = self._period_prices()
 
             average_shares = self._income_statement.loc[
@@ -254,7 +251,7 @@ class DistressModels:
             )
 
         # The Z''-Score and Z''-EM score have no sales term.
-        if model in ("original", "private"):
+        if method in ("original", "private"):
             revenue = self._income_statement.loc[:, "Revenue", :]
             altman_z_score["Sales to Total Assets"] = (
                 altman_model.get_sales_to_total_assets_ratio(
@@ -275,7 +272,7 @@ class DistressModels:
             ],
             equity_to_total_liabilities_ratio=altman_z_score[equity_ratio_name],
             sales_to_total_assets_ratio=altman_z_score.get("Sales to Total Assets"),
-            model=model,
+            method=method,
         )
 
         # The models were estimated on non-financial companies. A company without any cost
@@ -305,7 +302,7 @@ class DistressModels:
             altman_results = add_score_zone(
                 altman_results,
                 "Altman Z-Score",
-                list(altman_model.ALTMAN_CUT_OFFS[model]),
+                list(altman_model.ALTMAN_CUT_OFFS[method]),
                 ["Distress", "Grey", "Safe"],
             )
 
@@ -1932,7 +1929,7 @@ class DistressModels:
     @handle_errors
     def get_shumway_score(
         self,
-        model: str = "combined",
+        method: str = "combined",
         rounding: int | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
@@ -1945,7 +1942,7 @@ class DistressModels:
         than one per company, and found that the market variables predict bankruptcy better than
         most accounting ratios.
 
-        The model is Table 6 of the paper, panel B (model="combined") or panel A (model="market"):
+        The model is Table 6 of the paper, panel B (the combined model) or panel A (the market model):
 
             - Combined: H = -13.303 - 1.982 NI/TA + 3.593 TL/TA - 0.467 RELSIZE - 1.809 EXRET +
               5.791 SIGMA
@@ -1977,9 +1974,9 @@ class DistressModels:
         Also known as: Shumway hazard model, hazard model bankruptcy probability, Shumway score.
 
         Args:
-            model (str, optional): "combined" for the market and accounting variables (Table 6,
-                panel B) or "market" for the market variables only (panel A), which also works
-                for companies without statements. Defaults to "combined".
+            method (str, optional): The variant of the hazard model. Options are: "combined" (the
+                market and accounting variables, Table 6, panel B) or "market" (the market variables only,
+                panel A, which also works for companies without statements). Defaults to "combined".
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -2044,9 +2041,8 @@ class DistressModels:
         | Shumway Score                       | -8.9366 | -6.2785 | -6.3123 | -5.9556 | -7.0292 |
         | Bankruptcy Probability              |  0.0001 |  0.0019 |  0.0018 |  0.0026 |  0.0009 |
         """
-        model = model.lower()
-        if model not in ("combined", "market"):
-            raise ValueError("The model must be 'combined' or 'market'.")
+        method = method.lower()
+        check_option("method", method, ("combined", "market"))
 
         balance = self._balance_sheet_statement
         periods = balance.columns
@@ -2099,7 +2095,7 @@ class DistressModels:
                 "SIGMA",
             ),
         }
-        if model == "combined":
+        if method == "combined":
             total_assets = self._rows(balance, "Total Assets")
             total_assets = total_assets.where(total_assets > 0)
             net_income = trailing_sum(
@@ -2119,11 +2115,11 @@ class DistressModels:
             relative_size=variables["RELSIZE"],
             excess_return=variables["EXRET"],
             sigma=variables["SIGMA"],
-            model=model,
+            method=method,
         )
 
         results = {}
-        if model == "combined":
+        if method == "combined":
             results["Net Income to Total Assets (NI/TA)"] = variables["NI/TA"]
             results["Liabilities to Total Assets (TL/TA)"] = variables["TL/TA"]
         results["Relative Size (RELSIZE)"] = variables["RELSIZE"]
@@ -2236,10 +2232,7 @@ class DistressModels:
         | ('T', 'Pre-tax Cost of Debt')       | 0.0233   | 0.2196  | 0.0486  | 0.0532   | 0.0518  |
         """
         firm_type = firm_type.lower()
-        if firm_type not in ("auto", "large", "small", "financial"):
-            raise ValueError(
-                "The firm type must be 'auto', 'large', 'small' or 'financial'."
-            )
+        check_option("firm_type", firm_type, ("auto", "large", "small", "financial"))
 
         table = damodaran_model.get_synthetic_rating_table()
         if table.empty:

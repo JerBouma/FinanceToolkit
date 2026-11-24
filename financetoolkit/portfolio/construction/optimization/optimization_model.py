@@ -33,6 +33,11 @@ from financetoolkit.risk import risk_model
 from financetoolkit.risk.distribution import dispersion_model
 from financetoolkit.risk.drawdown import drawdown_model
 from financetoolkit.risk.value_at_risk import cvar_model, evar_model, var_model
+from financetoolkit.utilities.error_model import (
+    InvalidArgumentError,
+    check_option,
+    validate_alpha,
+)
 
 # pylint: disable=too-many-arguments,too-many-locals
 
@@ -970,11 +975,7 @@ def get_denoised_covariance(
         tuple[pd.DataFrame, int]: The covariance matrix per period and the number of
             eigenvalues kept as signal (those above the Marčenko-Pastur upper edge).
     """
-    if method not in DENOISE_METHODS:
-        raise ValueError(
-            f"The denoising method must be one of {', '.join(DENOISE_METHODS)}, not "
-            f"'{method}'."
-        )
+    check_option("method", method, DENOISE_METHODS)
     if not 0 <= alpha <= 1:
         raise ValueError(
             "The share of the noise correlations kept must lie between 0 and 1."
@@ -1351,7 +1352,7 @@ def get_expected_returns(
             returns, ranking, periods_per_year
         )
     else:
-        raise ValueError(
+        raise InvalidArgumentError(
             f"The expected returns must be one of {', '.join(EXPECTED_RETURN_METHODS)}, "
             f"not '{method}'."
         )
@@ -2158,7 +2159,7 @@ def get_codependence(
     gerber_statistic: int = 1,
     components: int = 1,
     bins: str | int = "freedman",
-    tail_level: float = 0.05,
+    alpha: float = 0.05,
     gnpr_theta: float = 0.5,
     gnpr_bandwidth: float = 0.01,
 ) -> pd.DataFrame:
@@ -2222,7 +2223,7 @@ def get_codependence(
         bins (str | int, optional): The number of histogram bins of
             "mutual_information", or "freedman" or "hacine_gharbi". Defaults to
             "freedman".
-        tail_level (float, optional): The share of the lowest returns that forms the
+        alpha (float, optional): The share of the lowest returns that forms the
             tail of "lower_tail". Defaults to 0.05.
         gnpr_theta (float, optional): The weight θ of the co-movement in "gnpr", between 0
             and 1. Defaults to 0.5.
@@ -2232,11 +2233,7 @@ def get_codependence(
     Returns:
         pd.DataFrame: The codependence matrix, in the order of the covariance matrix.
     """
-    if method not in CODEPENDENCE_METHODS:
-        raise ValueError(
-            f"The codependence must be one of {', '.join(CODEPENDENCE_METHODS)}, not "
-            f"'{method}'."
-        )
+    check_option("method", method, CODEPENDENCE_METHODS)
     if method == "gnpr":
         return (
             1
@@ -2277,7 +2274,7 @@ def get_codependence(
         )[0]
     if method == "lower_tail":
         return estimation_model.get_lower_tail_dependence_matrix(
-            returns[covariance.index], tail_level
+            returns[covariance.index], alpha
         )
     return returns[covariance.index].corr(method=method)
 
@@ -2290,7 +2287,7 @@ def get_codependence_distance(
     gerber_statistic: int = 1,
     components: int = 1,
     bins: str | int = "freedman",
-    tail_level: float = 0.05,
+    alpha: float = 0.05,
     gnpr_theta: float = 0.5,
     gnpr_bandwidth: float = 0.01,
 ) -> pd.DataFrame:
@@ -2323,7 +2320,8 @@ def get_codependence_distance(
         components (int, optional): The components "detoned" removes. Defaults to 1.
         bins (str | int, optional): The histogram bins of "mutual_information".
             Defaults to "freedman".
-        tail_level (float, optional): The tail of "lower_tail". Defaults to 0.05.
+        alpha (float, optional): The share of the lowest returns that forms the tail
+            of the lower tail dependence. Defaults to 0.05.
         gnpr_theta (float, optional): The weight θ of "gnpr". Defaults to 0.5.
         gnpr_bandwidth (float, optional): The histogram bin width of "gnpr". Defaults to
             0.01.
@@ -2345,7 +2343,7 @@ def get_codependence_distance(
             gerber_statistic,
             components,
             bins,
-            tail_level,
+            alpha,
             gnpr_theta,
             gnpr_bandwidth,
         ).to_numpy(dtype=float)
@@ -2370,7 +2368,7 @@ def get_codependence_similarity(
     gerber_statistic: int = 1,
     components: int = 1,
     bins: str | int = "freedman",
-    tail_level: float = 0.05,
+    alpha: float = 0.05,
     gnpr_theta: float = 0.5,
     gnpr_bandwidth: float = 0.01,
 ) -> pd.DataFrame:
@@ -2401,7 +2399,8 @@ def get_codependence_similarity(
         components (int, optional): The components "detoned" removes. Defaults to 1.
         bins (str | int, optional): The histogram bins of "mutual_information".
             Defaults to "freedman".
-        tail_level (float, optional): The tail of "lower_tail". Defaults to 0.05.
+        alpha (float, optional): The share of the lowest returns that forms the tail
+            of the lower tail dependence. Defaults to 0.05.
         gnpr_theta (float, optional): The weight θ of "gnpr". Defaults to 0.5.
         gnpr_bandwidth (float, optional): The histogram bin width of "gnpr". Defaults to
             0.01.
@@ -2417,7 +2416,7 @@ def get_codependence_similarity(
         gerber_statistic,
         components,
         bins,
-        tail_level,
+        alpha,
         gnpr_theta,
         gnpr_bandwidth,
     )
@@ -2442,7 +2441,7 @@ def get_hierarchical_risk_parity_weights(
     distance: pd.DataFrame | None = None,
     returns: pd.DataFrame | None = None,
     risk_measure: str = "variance",
-    confidence_level: float = 0.95,
+    alpha: float = 0.05,
     minimum_acceptable_return: float | str = 0.0,
     similarity: pd.DataFrame | None = None,
 ) -> pd.Series:
@@ -2491,8 +2490,8 @@ def get_hierarchical_risk_parity_weights(
             Defaults to None.
         risk_measure (str, optional): The risk measure of the splits, a key of
             HIERARCHICAL_RISK_MEASURES. Defaults to "variance".
-        confidence_level (float, optional): The confidence level of the tail measures.
-            Defaults to 0.95.
+        alpha (float, optional): The tail probability of the tail measures, e.g. 0.05 for the worst 5% of
+            periods. Defaults to 0.05.
         minimum_acceptable_return (float | str, optional): The threshold of the
             semideviation and lower partial moment per period, or "mean". Defaults to 0.
         similarity (pd.DataFrame | None, optional): The similarity matrix of
@@ -2529,7 +2528,7 @@ def get_hierarchical_risk_parity_weights(
     data = None
     if risk_measure not in ("variance", "volatility") and returns is not None:
         data = returns[covariance.index].dropna(how="any").to_numpy(dtype=float)
-    measure = (risk_measure, confidence_level, minimum_acceptable_return)
+    measure = (risk_measure, alpha, minimum_acceptable_return)
     asset_risk = get_hierarchical_risk(np.eye(len(sigma)), sigma, data, *measure)
     if not (asset_risk > 0).all():
         raise ValueError(
@@ -2557,18 +2556,18 @@ def get_hierarchical_risk_parity_weights(
         )
         for i in range(0, len(clusters), 2):
             left, right = clusters[i], clusters[i + 1]
-            alpha = 1 - risk[i] / (risk[i] + risk[i + 1])
+            split = 1 - risk[i] / (risk[i] + risk[i + 1])
             # The weight of the cluster being split, which all its assets still share.
             parent = weights[left[0]]
-            alpha = min(
-                upper[left].sum() / parent, max(lower[left].sum() / parent, alpha)
+            split = min(
+                upper[left].sum() / parent, max(lower[left].sum() / parent, split)
             )
-            alpha = 1 - min(
+            split = 1 - min(
                 upper[right].sum() / parent,
-                max(lower[right].sum() / parent, 1 - alpha),
+                max(lower[right].sum() / parent, 1 - split),
             )
-            weights[left] *= alpha
-            weights[right] *= 1 - alpha
+            weights[left] *= split
+            weights[right] *= 1 - split
 
     return _as_series(weights, covariance.index)
 
@@ -2646,16 +2645,8 @@ def get_hierarchical_clusters(
         tuple[np.ndarray, np.ndarray]: The linkage matrix of the clustering and the
             cluster of every asset, numbered from 0.
     """
-    if cluster_criterion not in CLUSTER_CRITERIA:
-        raise ValueError(
-            f"The cluster criterion must be one of {', '.join(CLUSTER_CRITERIA)}, not "
-            f"'{cluster_criterion}'."
-        )
-    if linkage_method not in LINKAGE_METHODS:
-        raise ValueError(
-            f"The linkage method must be one of {', '.join(LINKAGE_METHODS)}, not "
-            f"'{linkage_method}'."
-        )
+    check_option("cluster_criterion", cluster_criterion, CLUSTER_CRITERIA)
+    check_option("linkage_method", linkage_method, LINKAGE_METHODS)
     count = len(covariance)
     if count < 2:  # noqa: PLR2004
         raise ValueError("At least two assets are needed.")
@@ -3008,7 +2999,7 @@ def get_hierarchical_equal_risk_contribution_weights(
     distance: pd.DataFrame | None = None,
     returns: pd.DataFrame | None = None,
     risk_measure: str = "variance",
-    confidence_level: float = 0.95,
+    alpha: float = 0.05,
     minimum_acceptable_return: float | str = 0.0,
     within_clusters: str = "inverse_risk",
     cluster_criterion: str = "two_difference_gap",
@@ -3067,8 +3058,8 @@ def get_hierarchical_equal_risk_contribution_weights(
             Defaults to None.
         risk_measure (str, optional): The risk measure of the clusters, a key of
             HIERARCHICAL_RISK_MEASURES. Defaults to "variance".
-        confidence_level (float, optional): The confidence level of the tail measures.
-            Defaults to 0.95.
+        alpha (float, optional): The tail probability of the tail measures, e.g. 0.05 for the worst 5% of
+            periods. Defaults to 0.05.
         minimum_acceptable_return (float | str, optional): The threshold of the
             semideviation and lower partial moment per period, or "mean". Defaults to 0.
         within_clusters (str, optional): The weights within a cluster: "inverse_risk"
@@ -3098,11 +3089,7 @@ def get_hierarchical_equal_risk_contribution_weights(
             "Hierarchical Equal Risk Contribution holds long positions only; the minimum "
             "weight cannot be negative."
         )
-    if within_clusters not in ("inverse_risk", "equal"):
-        raise ValueError(
-            "The weights within the clusters must be 'inverse_risk' or 'equal', not "
-            f"'{within_clusters}'."
-        )
+    check_option("within_clusters", within_clusters, ("inverse_risk", "equal"))
     matrix, labels = get_hierarchical_clusters(
         covariance,
         linkage_method,
@@ -3116,7 +3103,7 @@ def get_hierarchical_equal_risk_contribution_weights(
     data = None
     if risk_measure not in ("variance", "volatility") and returns is not None:
         data = returns[covariance.index].dropna(how="any").to_numpy(dtype=float)
-    measure = (risk_measure, confidence_level, minimum_acceptable_return)
+    measure = (risk_measure, alpha, minimum_acceptable_return)
     asset_risk = get_hierarchical_risk(np.eye(len(sigma)), sigma, data, *measure)
     if not (asset_risk > 0).all():
         raise ValueError(
@@ -3148,9 +3135,9 @@ def get_hierarchical_equal_risk_contribution_weights(
             [label for label, assets in enumerate(leaves) if assets <= branch]
             for branch in branches
         )
-        alpha = 1 - risk[left].sum() / (risk[left].sum() + risk[right].sum())
-        cluster_weights[left] *= alpha
-        cluster_weights[right] *= 1 - alpha
+        split = 1 - risk[left].sum() / (risk[left].sum() + risk[right].sum())
+        cluster_weights[left] *= split
+        cluster_weights[right] *= 1 - split
         nodes.extend([node.get_left(), node.get_right()])
 
     weights = weights * cluster_weights[labels]
@@ -3188,7 +3175,7 @@ def get_nested_clustered_optimization_weights(
     distance: pd.DataFrame | None = None,
     returns: pd.DataFrame | None = None,
     risk_measure: str = "variance",
-    confidence_level: float = 0.95,
+    alpha: float = 0.05,
     minimum_acceptable_return: float | str = 0.0,
     cluster_criterion: str = "two_difference_gap",
     similarity: pd.DataFrame | None = None,
@@ -3246,8 +3233,8 @@ def get_nested_clustered_optimization_weights(
             Defaults to None.
         risk_measure (str, optional): The risk measure of "minimum_variance" and
             "risk_parity", a key of HIERARCHICAL_RISK_MEASURES. Defaults to "variance".
-        confidence_level (float, optional): The confidence level of the tail measures.
-            Defaults to 0.95.
+        alpha (float, optional): The tail probability of the tail measures, e.g. 0.05 for the worst 5% of
+            periods. Defaults to 0.05.
         minimum_acceptable_return (float | str, optional): The threshold of the
             semideviation and lower partial moment per period, or "mean". Defaults to 0.
         cluster_criterion (str, optional): How the number of clusters is chosen when it
@@ -3262,19 +3249,11 @@ def get_nested_clustered_optimization_weights(
     Returns:
         pd.Series: The weight per asset.
     """
-    if objective not in NESTED_CLUSTERED_OBJECTIVES:
-        raise ValueError(
-            f"The objective must be one of {', '.join(NESTED_CLUSTERED_OBJECTIVES)}, not "
-            f"'{objective}'."
-        )
+    check_option("objective", objective, NESTED_CLUSTERED_OBJECTIVES)
     _validate_covariance(covariance)
     on_returns = risk_measure not in ("variance", "volatility")
     if on_returns:
-        if risk_measure not in HIERARCHICAL_RISK_MEASURES:
-            raise ValueError(
-                "The risk measure must be one of "
-                f"{', '.join(HIERARCHICAL_RISK_MEASURES)}, not '{risk_measure}'."
-            )
+        check_option("risk_measure", risk_measure, HIERARCHICAL_RISK_MEASURES)
         if objective == "maximum_sharpe":
             raise ValueError(
                 "The maximum Sharpe objective takes the variance only; use "
@@ -3298,17 +3277,17 @@ def get_nested_clustered_optimization_weights(
                 return get_risk_budgeting_weights(
                     data,
                     risk_measure,
-                    confidence_level=confidence_level,
+                    alpha=alpha,
                     minimum_acceptable_return=minimum_acceptable_return,
                 )
             if risk_measure == "cvar":
-                return get_minimum_cvar_weights(data, confidence_level)
+                return get_minimum_cvar_weights(data, alpha)
             if risk_measure == "cdar":
-                return get_minimum_drawdown_weights(data, "cdar", confidence_level)
+                return get_minimum_drawdown_weights(data, "cdar", alpha)
             return get_mean_risk_weights(
                 data,
                 risk_measure,
-                confidence_level=confidence_level,
+                alpha=alpha,
                 minimum_acceptable_return=minimum_acceptable_return,
             )
         if objective == "minimum_variance":
@@ -3365,7 +3344,7 @@ def get_nested_clustered_optimization_weights(
 
 def get_minimum_cvar_weights(
     returns: pd.DataFrame,
-    confidence_level: float = 0.95,
+    alpha: float = 0.05,
     minimum_weight: float | dict[str, float] = 0.0,
     maximum_weight: float | dict[str, float] = 1.0,
     groups: pd.DataFrame | None = None,
@@ -3382,8 +3361,8 @@ def get_minimum_cvar_weights(
 
     Args:
         returns (pd.DataFrame): The returns per period, one column per asset.
-        confidence_level (float, optional): The confidence level of the CVaR, e.g. 0.95 for
-            the average of the worst 5% of periods. Defaults to 0.95.
+        alpha (float, optional): The tail probability of the CVaR, e.g. 0.05 for the
+            average of the worst 5% of periods. Defaults to 0.05.
         minimum_weight (float | dict[str, float], optional): The lowest weight of every
             asset, or per asset ({"AAPL": 0.05}, the others 0); a negative value allows
             a short position. Defaults to 0.
@@ -3408,8 +3387,7 @@ def get_minimum_cvar_weights(
     Returns:
         pd.Series: The weight per asset.
     """
-    if not 0 < confidence_level < 1:
-        raise ValueError("The confidence level must lie between 0 and 1.")
+    validate_alpha(alpha)
 
     data = returns.dropna(how="any").to_numpy()
     periods, assets = data.shape
@@ -3434,7 +3412,7 @@ def get_minimum_cvar_weights(
         [
             np.zeros(variables),
             [1.0],
-            np.full(periods, 1 / ((1 - confidence_level) * periods)),
+            np.full(periods, 1 / (alpha * periods)),
         ]
     )
     # Shortfall_t >= -r_t'w - VaR, written as -r_t'w - VaR - shortfall_t <= 0. Sparse, since
@@ -3478,9 +3456,7 @@ def get_minimum_cvar_weights(
     return _as_series(result.x[:assets], returns.columns)
 
 
-def get_tail_probabilities(
-    losses: np.ndarray | pd.Series, confidence_level: float
-) -> np.ndarray:
+def get_tail_probabilities(losses: np.ndarray | pd.Series, alpha: float) -> np.ndarray:
     """
     The weight of every period in the expected tail loss of Rockafellar and Uryasev
     (2002): 1 / ((1 - α)T) for each of the ⌊(1 - α)T⌋ largest losses, the remaining
@@ -3490,17 +3466,16 @@ def get_tail_probabilities(
 
     Args:
         losses (np.ndarray | pd.Series): The losses per period, a loss being positive.
-        confidence_level (float): The confidence level α, e.g. 0.95 for the worst 5%.
+        alpha (float): The tail probability α, e.g. 0.05 for the worst 5%.
 
     Returns:
         np.ndarray: The weight of every period, in the order of the losses.
     """
-    if not 0 < confidence_level < 1:
-        raise ValueError("The confidence level must lie between 0 and 1.")
+    validate_alpha(alpha)
     losses = np.asarray(losses, dtype=float)
     if len(losses) == 0:
         raise ValueError("There are no losses to take the tail of.")
-    tail = (1 - confidence_level) * len(losses)
+    tail = alpha * len(losses)
     # A tail of 62.75 periods holds the 62 largest losses in full and three quarters of
     # the 63rd; the stable sort keeps the earliest of tied losses first.
     order = np.argsort(-losses, kind="stable")
@@ -3512,9 +3487,7 @@ def get_tail_probabilities(
     return probabilities
 
 
-def get_expected_tail_loss(
-    losses: np.ndarray | pd.Series, confidence_level: float
-) -> float:
+def get_expected_tail_loss(losses: np.ndarray | pd.Series, alpha: float) -> float:
     """
     The average of the worst 1 - α share of the losses, the minimum over ζ of
     ζ + Σ max(0, L_t - ζ) / ((1 - α)T) (Rockafellar and Uryasev, 2002). It counts a
@@ -3524,13 +3497,13 @@ def get_expected_tail_loss(
 
     Args:
         losses (np.ndarray | pd.Series): The losses per period, a loss being positive.
-        confidence_level (float): The confidence level α, e.g. 0.95 for the worst 5%.
+        alpha (float): The tail probability α, e.g. 0.05 for the worst 5%.
 
     Returns:
         float: The expected tail loss.
     """
     losses = np.asarray(losses, dtype=float)
-    return float(get_tail_probabilities(losses, confidence_level) @ losses)
+    return float(get_tail_probabilities(losses, alpha) @ losses)
 
 
 def get_drawdowns(returns: pd.Series | pd.DataFrame) -> pd.Series | pd.DataFrame:
@@ -3557,7 +3530,7 @@ DRAWDOWN_MEASURES = ("cdar", "maximum", "average")
 def get_minimum_drawdown_weights(
     returns: pd.DataFrame,
     measure: str = "cdar",
-    confidence_level: float = 0.95,
+    alpha: float = 0.05,
     minimum_weight: float | dict[str, float] = 0.0,
     maximum_weight: float | dict[str, float] = 1.0,
     groups: pd.DataFrame | None = None,
@@ -3582,8 +3555,8 @@ def get_minimum_drawdown_weights(
         returns (pd.DataFrame): The returns per period, one column per asset.
         measure (str, optional): The drawdown measure: "cdar", "maximum" or "average".
             Defaults to "cdar".
-        confidence_level (float, optional): The confidence level of the CDaR, e.g. 0.95 for
-            the average of the worst 5% of drawdowns. Defaults to 0.95.
+        alpha (float, optional): The tail probability of the CDaR, e.g. 0.05 for the
+            average of the worst 5% of drawdowns. Defaults to 0.05.
         minimum_weight (float | dict[str, float], optional): The lowest weight of every
             asset, or per asset ({"AAPL": 0.05}, the others 0); a negative value allows
             a short position. Defaults to 0.
@@ -3607,12 +3580,8 @@ def get_minimum_drawdown_weights(
     Returns:
         pd.Series: The weight per asset.
     """
-    if measure not in DRAWDOWN_MEASURES:
-        raise ValueError(
-            f"The measure must be one of {', '.join(DRAWDOWN_MEASURES)}, not '{measure}'."
-        )
-    if not 0 < confidence_level < 1:
-        raise ValueError("The confidence level must lie between 0 and 1.")
+    check_option("measure", measure, DRAWDOWN_MEASURES)
+    validate_alpha(alpha)
 
     data = returns.dropna(how="any").to_numpy()
     periods, assets = data.shape
@@ -3656,7 +3625,7 @@ def get_minimum_drawdown_weights(
             [
                 np.zeros(variables + periods),
                 [1.0],
-                np.full(periods, 1 / ((1 - confidence_level) * periods)),
+                np.full(periods, 1 / (alpha * periods)),
             ]
         )
         extra = [(None, None)] + [(0, None)] * periods
@@ -3866,7 +3835,7 @@ def get_maximum_omega_weights(
 
 def get_maximum_cvar_ratio_weights(
     returns: pd.DataFrame,
-    confidence_level: float = 0.95,
+    alpha: float = 0.05,
     risk_free_rate: float = 0.0,
     minimum_weight: float | dict[str, float] = 0.0,
     maximum_weight: float | dict[str, float] = 1.0,
@@ -3893,8 +3862,8 @@ def get_maximum_cvar_ratio_weights(
 
     Args:
         returns (pd.DataFrame): The returns per period, one column per asset.
-        confidence_level (float, optional): The confidence level of the CVaR, e.g. 0.95 for
-            the average of the worst 5% of periods. Defaults to 0.95.
+        alpha (float, optional): The tail probability of the CVaR, e.g. 0.05 for the
+            average of the worst 5% of periods. Defaults to 0.05.
         risk_free_rate (float, optional): The risk free rate per period. Defaults to 0.
         minimum_weight (float | dict[str, float], optional): The lowest weight of every
             asset, or per asset ({"AAPL": 0.05}, the others 0); a negative value allows
@@ -3923,8 +3892,7 @@ def get_maximum_cvar_ratio_weights(
     Returns:
         pd.Series: The weight per asset.
     """
-    if not 0 < confidence_level < 1:
-        raise ValueError("The confidence level must lie between 0 and 1.")
+    validate_alpha(alpha)
     data = returns.dropna(how="any").to_numpy()
     periods, assets = data.shape
     if periods == 0:
@@ -3973,7 +3941,7 @@ def get_maximum_cvar_ratio_weights(
                     [
                         np.zeros(variables + 1),
                         [1.0],
-                        np.full(periods, 1 / ((1 - confidence_level) * periods)),
+                        np.full(periods, 1 / (alpha * periods)),
                     ]
                 )[None, :]
             ),
@@ -4088,12 +4056,12 @@ class RiskProgramme(NamedTuple):
 def get_risk_measure_programme(
     data: np.ndarray,
     risk_measure: str,
-    confidence_level: float = 0.95,
+    alpha: float = 0.05,
     minimum_acceptable_return: float | str = 0.0,
 ) -> RiskProgramme:
     """
     The linear programme of a risk measure of the portfolio's returns X_t = r_t'w over T
-    periods, with α the confidence level:
+    periods, with α the tail probability:
 
     - "mad": the mean absolute deviation Σ |X_t - X̄| / T, as 2 Σ d_t / T with
       d_t ≥ -(r_t - r̄)'w and d_t ≥ 0, since the deviations below and above the mean are
@@ -4102,10 +4070,10 @@ def get_risk_measure_programme(
       the minimum acceptable return or each asset's mean (Bawa, 1975).
     - "worst_realization": the largest loss m ≥ -r_t'w (Young, 1998).
     - "range": the largest gain plus the largest loss, m_G ≥ r_t'w and m_L ≥ -r_t'w.
-    - "cvar": the Conditional Value at Risk ζ + Σ s_t / ((1 - α)T) with
+    - "cvar": the Conditional Value at Risk ζ + Σ s_t / (αT) with
       s_t ≥ -r_t'w - ζ and s_t ≥ 0 (Rockafellar and Uryasev, 2000).
     - "cvar_range": the CVaR of the losses plus that of the gains, the average of the best
-      1 - α share of the returns minus the average of the worst (Cajas, 2021).
+      α share of the returns minus the average of the worst (Cajas, 2021).
     - "cdar": the Conditional Drawdown at Risk of the uncompounded cumulative returns, with
       running peaks u_t ≥ Σ_(s≤t) r_s'w, u_t ≥ u_(t-1), u_t ≥ 0 and the CVaR programme on
       the drawdowns u_t - Σ_(s≤t) r_s'w (Chekhlov, Uryasev and Zabarankin, 2005).
@@ -4136,8 +4104,8 @@ def get_risk_measure_programme(
     Args:
         data (np.ndarray): The T × N returns, without missing values.
         risk_measure (str): The risk measure, see above.
-        confidence_level (float, optional): The confidence level α of the tail measures.
-            Defaults to 0.95.
+        alpha (float, optional): The tail probability α of the tail measures, e.g. 0.05 for the worst
+            5% of periods. Defaults to 0.05.
         minimum_acceptable_return (float | str, optional): The threshold τ of the lower
             partial moment per period, or "mean" for each asset's mean. Defaults to 0.
 
@@ -4147,7 +4115,6 @@ def get_risk_measure_programme(
     periods, assets = data.shape
     scale = np.max(np.abs(data)) or 1.0
     data = data / scale
-    alpha = 1 - confidence_level
     identity = sparse.eye(periods, format="csr")
     ones = sparse.csr_matrix(np.ones((periods, 1)))
     returns = sparse.csr_matrix(data)
@@ -4245,7 +4212,7 @@ def get_risk_measure_programme(
         weights, auxiliary = sparse.csr_matrix((0, assets)), sparse.csr_matrix((0, 1))
         cost, bounds, upper = np.ones(1), [(None, None)], np.zeros(0)
     else:
-        raise ValueError(
+        raise InvalidArgumentError(
             f"The risk measure must be one of {', '.join(LINEAR_RISK_MEASURES)}, not "
             f"'{risk_measure}'."
         )
@@ -4324,7 +4291,7 @@ def get_owa_risk(
     data: np.ndarray,
     weights: np.ndarray,
     risk_measure: str,
-    confidence_level: float = 0.95,
+    alpha: float = 0.05,
 ) -> tuple[float, np.ndarray]:
     """
     An ordered weighted average Σ c_i X_(i) of the portfolio's returns X_t = r_t'w sorted
@@ -4349,8 +4316,8 @@ def get_owa_risk(
         data (np.ndarray): The T × N returns, without missing values.
         weights (np.ndarray): The weight per asset.
         risk_measure (str): One of OWA_RISK_MEASURES.
-        confidence_level (float, optional): The confidence level of the Tail Gini
-            measures. Defaults to 0.95.
+        alpha (float, optional): The tail probability of the Tail Gini measures.
+            Defaults to 0.05.
 
     Returns:
         tuple[float, np.ndarray]: The measure and its subgradient.
@@ -4359,10 +4326,10 @@ def get_owa_risk(
     if risk_measure == "gini_mean_difference":
         coefficients = dispersion_model.get_owa_gmd_weights(periods)
     elif risk_measure in ("tail_gini", "tail_gini_range"):
-        tail = dispersion_model.get_owa_tail_gini_weights(periods, 1 - confidence_level)
+        tail = dispersion_model.get_owa_tail_gini_weights(periods, alpha)
         coefficients = -tail + (tail[::-1] if risk_measure == "tail_gini_range" else 0)
     else:
-        raise ValueError(
+        raise InvalidArgumentError(
             f"The risk measure must be one of {', '.join(OWA_RISK_MEASURES)}, not "
             f"'{risk_measure}'."
         )
@@ -4373,7 +4340,7 @@ def get_owa_risk(
 def get_mean_risk_measure(
     returns: pd.DataFrame,
     risk_measure: str,
-    confidence_level: float = 0.95,
+    alpha: float = 0.05,
     minimum_acceptable_return: float | str = 0.0,
 ) -> pd.Series:
     """
@@ -4391,15 +4358,14 @@ def get_mean_risk_measure(
     Args:
         returns (pd.DataFrame): The returns per period, one column per asset or portfolio.
         risk_measure (str): A key of MEAN_RISK_MEASURES.
-        confidence_level (float, optional): The confidence level of the tail measures.
-            Defaults to 0.95.
+        alpha (float, optional): The tail probability of the tail measures, e.g. 0.05 for the worst 5% of
+            periods. Defaults to 0.05.
         minimum_acceptable_return (float | str, optional): The threshold of the
             semideviation and lower partial moment per period, or "mean". Defaults to 0.
 
     Returns:
         pd.Series: The risk measure per column.
     """
-    alpha = 1 - confidence_level
     returns = returns.dropna(how="any")
     if risk_measure == "mad":
         measure = (returns - returns.mean()).abs().mean()
@@ -4420,25 +4386,21 @@ def get_mean_risk_measure(
     elif risk_measure == "tail_gini_range":
         measure = dispersion_model.get_risk_range(returns, "tail_gini", alpha)
     elif risk_measure == "cvar":
-        measure = (-returns).apply(
-            get_expected_tail_loss, confidence_level=confidence_level
-        )
+        measure = (-returns).apply(get_expected_tail_loss, alpha=alpha)
     elif risk_measure == "cvar_range":
-        measure = (-returns).apply(
-            get_expected_tail_loss, confidence_level=confidence_level
-        ) + returns.apply(get_expected_tail_loss, confidence_level=confidence_level)
-    elif risk_measure == "cdar":
-        measure = get_drawdowns(returns).apply(
-            get_expected_tail_loss, confidence_level=confidence_level
+        measure = (-returns).apply(get_expected_tail_loss, alpha=alpha) + returns.apply(
+            get_expected_tail_loss, alpha=alpha
         )
+    elif risk_measure == "cdar":
+        measure = get_drawdowns(returns).apply(get_expected_tail_loss, alpha=alpha)
     elif risk_measure == "maximum_drawdown":
         measure = get_drawdowns(returns).max()
     elif risk_measure == "average_drawdown":
         measure = get_drawdowns(returns).mean()
     elif risk_measure == "ulcer_index":
-        measure = risk_model.get_ui(returns, rolling=None, compounded=False)
+        measure = risk_model.get_ui(returns, rolling=None, compound_returns=False)
     else:
-        raise ValueError(
+        raise InvalidArgumentError(
             f"The risk measure must be one of {', '.join(MEAN_RISK_MEASURES)}, not "
             f"'{risk_measure}'."
         )
@@ -4449,7 +4411,7 @@ def get_mean_risk_contributions(
     weights: pd.Series,
     returns: pd.DataFrame,
     risk_measure: str,
-    confidence_level: float = 0.95,
+    alpha: float = 0.05,
     minimum_acceptable_return: float | str = 0.0,
 ) -> pd.Series:
     """
@@ -4464,8 +4426,8 @@ def get_mean_risk_contributions(
         weights (pd.Series): The weight per asset.
         returns (pd.DataFrame): The returns per period, one column per asset.
         risk_measure (str): A key of MEAN_RISK_MEASURES or RISK_BUDGETING_MEASURES.
-        confidence_level (float, optional): The confidence level of the tail measures.
-            Defaults to 0.95.
+        alpha (float, optional): The tail probability of the tail measures, e.g. 0.05 for the worst 5% of
+            periods. Defaults to 0.05.
         minimum_acceptable_return (float | str, optional): The threshold of the
             semideviation and lower partial moment per period, or "mean". Defaults to 0.
 
@@ -4485,7 +4447,7 @@ def get_mean_risk_contributions(
             index=returns.index,
         ),
         risk_measure,
-        confidence_level,
+        alpha,
         minimum_acceptable_return,
     ).to_numpy()
     marginal = (measures[:assets] - measures[assets:-1]) / (2 * FINITE_DIFFERENCE_STEP)
@@ -4498,7 +4460,7 @@ def get_mean_risk_weights(
     objective: str = "minimum_risk",
     target_return: float | None = None,
     risk_free_rate: float = 0.0,
-    confidence_level: float = 0.95,
+    alpha: float = 0.05,
     minimum_acceptable_return: float | str = 0.0,
     minimum_weight: float | dict[str, float] = 0.0,
     maximum_weight: float | dict[str, float] = 1.0,
@@ -4541,8 +4503,8 @@ def get_mean_risk_weights(
             minimum risk portfolio must have. Defaults to None, no target.
         risk_free_rate (float, optional): The risk free rate per period of the ratio.
             Defaults to 0.
-        confidence_level (float, optional): The confidence level of the CVaR, the CVaR
-            range, the CDaR and the Tail Gini measures. Defaults to 0.95.
+        alpha (float, optional): The tail probability of the CVaR, the CVaR range, the
+            CDaR and the Tail Gini measures, e.g. 0.05 for the worst 5%. Defaults to 0.05.
         minimum_acceptable_return (float | str, optional): The threshold per period of
             the semideviation and the lower partial moment, or "mean" for each asset's
             mean. Defaults to 0.
@@ -4573,20 +4535,11 @@ def get_mean_risk_weights(
     Returns:
         pd.Series: The weight per asset.
     """
-    if risk_measure not in MEAN_RISK_MEASURES:
-        raise ValueError(
-            f"The risk measure must be one of {', '.join(MEAN_RISK_MEASURES)}, not "
-            f"'{risk_measure}'."
-        )
-    if objective not in MEAN_RISK_OBJECTIVES:
-        raise ValueError(
-            f"The objective must be one of {', '.join(MEAN_RISK_OBJECTIVES)}, not "
-            f"'{objective}'."
-        )
+    check_option("risk_measure", risk_measure, MEAN_RISK_MEASURES)
+    check_option("objective", objective, MEAN_RISK_OBJECTIVES)
     if target_return is not None and objective != "minimum_risk":
         raise ValueError("A target return applies to the minimum risk objective only.")
-    if not 0 < confidence_level < 1:
-        raise ValueError("The confidence level must lie between 0 and 1.")
+    validate_alpha(alpha)
     if (
         isinstance(minimum_acceptable_return, str)
         and minimum_acceptable_return != "mean"
@@ -4671,7 +4624,7 @@ def get_mean_risk_weights(
         return _as_series(weights, returns.columns)
 
     programme = get_risk_measure_programme(
-        data, risk_measure, confidence_level, minimum_acceptable_return
+        data, risk_measure, alpha, minimum_acceptable_return
     )
     scaled = data / (np.max(np.abs(data)) or 1.0)
     ratio = objective == "maximum_ratio"
@@ -4693,7 +4646,7 @@ def get_mean_risk_weights(
 
     def owa_cut(weights):
         """The cut θ ≥ g'w of an ordered weighted average at the weights."""
-        slope = get_owa_risk(scaled, weights, risk_measure, confidence_level)[1]
+        slope = get_owa_risk(scaled, weights, risk_measure, alpha)[1]
         return np.concatenate([slope, np.zeros(width - assets - 1), [-1.0]])
 
     def cuts(x):
@@ -4706,7 +4659,7 @@ def get_mean_risk_weights(
         The solution with θ the measure itself and, for the ratio, scaled down to
         ρ(y) ≤ 1, which the homogeneous constraints allow.
         """
-        risk = get_owa_risk(scaled, x[:assets], risk_measure, confidence_level)[0]
+        risk = get_owa_risk(scaled, x[:assets], risk_measure, alpha)[0]
         if ratio:
             if risk <= 0:
                 return None
@@ -4793,7 +4746,7 @@ def get_mean_risk_weights(
             get_mean_risk_weights(
                 returns,
                 risk_measure,
-                confidence_level=confidence_level,
+                alpha=alpha,
                 minimum_weight=minimum_weight,
                 maximum_weight=maximum_weight,
                 groups=groups,
@@ -4804,7 +4757,7 @@ def get_mean_risk_weights(
                 maximum_turnover=maximum_turnover,
             ).to_numpy(),
             risk_measure,
-            confidence_level,
+            alpha,
         )[0]
         if lowest <= 0:
             raise ValueError(
@@ -4867,7 +4820,7 @@ def get_risk_budgeting_weights(
     returns: pd.DataFrame,
     risk_measure: str = "cvar",
     risk_budget: pd.Series | None = None,
-    confidence_level: float = 0.95,
+    alpha: float = 0.05,
     minimum_acceptable_return: float | str = 0.0,
     minimum_weight: float | dict[str, float] = 0.0,
     maximum_weight: float | dict[str, float] = 1.0,
@@ -4908,8 +4861,8 @@ def get_risk_budgeting_weights(
             contribute, positive for every asset; it is scaled to sum to one. A budget for
             an asset outside the portfolio, or an asset without one, raises a ValueError
             that names them. Defaults to None, an equal share each.
-        confidence_level (float, optional): The confidence level of the tail measures.
-            Defaults to 0.95.
+        alpha (float, optional): The tail probability of the tail measures, e.g. 0.05 for the worst 5% of
+            periods. Defaults to 0.05.
         minimum_acceptable_return (float | str, optional): The threshold of the
             semideviation and lower partial moment, 0 or "mean" (any other threshold
             does not scale with the weights). Defaults to 0.
@@ -4926,18 +4879,9 @@ def get_risk_budgeting_weights(
     Returns:
         pd.Series: The weight per asset.
     """
-    if risk_measure not in RISK_BUDGETING_MEASURES:
-        raise ValueError(
-            f"The risk measure must be one of volatility, "
-            f"{', '.join(RISK_BUDGETING_MEASURES)}, not '{risk_measure}'."
-        )
-    if not 0 < confidence_level < 1:
-        raise ValueError("The confidence level must lie between 0 and 1.")
-    if minimum_acceptable_return not in (0, "mean"):
-        raise ValueError(
-            "Risk budgeting needs a measure that scales with the weights: the minimum "
-            "acceptable return must be 0 or 'mean'."
-        )
+    check_option("risk_measure", risk_measure, RISK_BUDGETING_MEASURES)
+    validate_alpha(alpha)
+    check_option("minimum_acceptable_return", minimum_acceptable_return, (0, "mean"))
     data = returns.dropna(how="any").to_numpy(dtype=float)
     periods, assets = data.shape
     if periods < 2:  # noqa: PLR2004
@@ -5010,7 +4954,7 @@ def get_risk_budgeting_weights(
         return _as_series(result.x / result.x.sum(), returns.columns)
 
     programme = get_risk_measure_programme(
-        data, risk_measure, confidence_level, minimum_acceptable_return
+        data, risk_measure, alpha, minimum_acceptable_return
     )
     scaled = data / (np.max(np.abs(data)) or 1.0)
     auxiliary = len(programme.cost)
@@ -5028,7 +4972,7 @@ def get_risk_budgeting_weights(
 
     def owa_cut(point):
         """The cut θ ≥ g'y of an ordered weighted average at the point."""
-        slope = get_owa_risk(scaled, point, risk_measure, confidence_level)[1]
+        slope = get_owa_risk(scaled, point, risk_measure, alpha)[1]
         return np.concatenate([slope, [-1.0]]), 0.0
 
     def cuts(x):
@@ -5043,9 +4987,7 @@ def get_risk_budgeting_weights(
             return None
         x = x * max(1.0, np.exp(-budget @ np.log(x[:assets])))
         if owa:
-            x[assets] = get_owa_risk(
-                scaled, x[:assets], risk_measure, confidence_level
-            )[0]
+            x[assets] = get_owa_risk(scaled, x[:assets], risk_measure, alpha)[0]
         return x
 
     starting = [tangent(ones)] + ([owa_cut(ones)] if owa else [])
@@ -5091,15 +5033,13 @@ def get_risk_budgeting_weights(
     # an optimum that does not touch the cap is the optimum without it.
     lowest = get_owa_risk(
         scaled,
-        get_mean_risk_weights(
-            returns, risk_measure, confidence_level=confidence_level
-        ).to_numpy(),
+        get_mean_risk_weights(returns, risk_measure, alpha=alpha).to_numpy(),
         risk_measure,
-        confidence_level,
+        alpha,
     )[0]
     if lowest <= 0:
         raise ValueError(unbounded)
-    cap = 2 * get_owa_risk(scaled, ones, risk_measure, confidence_level)[0] / lowest
+    cap = 2 * get_owa_risk(scaled, ones, risk_measure, alpha)[0] / lowest
     for _ in range(RISK_BUDGETING_CAP_RAISES):
         solution = get_cutting_plane_solution(
             np.concatenate([np.zeros(assets), programme.cost]),
@@ -5166,7 +5106,7 @@ def get_hierarchical_risk(
     covariance: np.ndarray,
     returns: np.ndarray | None = None,
     risk_measure: str = "variance",
-    confidence_level: float = 0.95,
+    alpha: float = 0.05,
     minimum_acceptable_return: float | str = 0.0,
 ) -> np.ndarray:
     """
@@ -5183,19 +5123,15 @@ def get_hierarchical_risk(
             for the measures besides the variance and volatility. Defaults to None.
         risk_measure (str, optional): A key of HIERARCHICAL_RISK_MEASURES. Defaults to
             "variance".
-        confidence_level (float, optional): The confidence level of the tail measures.
-            Defaults to 0.95.
+        alpha (float, optional): The tail probability of the tail measures, e.g. 0.05 for the worst 5% of
+            periods. Defaults to 0.05.
         minimum_acceptable_return (float | str, optional): The threshold of the
             semideviation and lower partial moment per period, or "mean". Defaults to 0.
 
     Returns:
         np.ndarray: The risk of every portfolio.
     """
-    if risk_measure not in HIERARCHICAL_RISK_MEASURES:
-        raise ValueError(
-            f"The risk measure must be one of {', '.join(HIERARCHICAL_RISK_MEASURES)}, "
-            f"not '{risk_measure}'."
-        )
+    check_option("risk_measure", risk_measure, HIERARCHICAL_RISK_MEASURES)
     if risk_measure in ("variance", "volatility"):
         variance = np.einsum("ik,ij,jk->k", weights, covariance, weights)
         return variance if risk_measure == "variance" else np.sqrt(variance)
@@ -5204,7 +5140,7 @@ def get_hierarchical_risk(
     return get_mean_risk_measure(
         pd.DataFrame(returns @ weights),
         risk_measure,
-        confidence_level,
+        alpha,
         minimum_acceptable_return,
     ).to_numpy()
 
@@ -5682,11 +5618,7 @@ def get_minimum_tracking_error_weights(
     Returns:
         pd.Series: The weight per asset, without the benchmark.
     """
-    if objective not in ("tracking_error", "information_ratio"):
-        raise ValueError(
-            "The objective must be 'tracking_error' or 'information_ratio', not "
-            f"'{objective}'."
-        )
+    check_option("objective", objective, ("tracking_error", "information_ratio"))
     if benchmark not in covariance.index:
         raise ValueError(f"The covariance matrix holds no benchmark '{benchmark}'.")
     _validate_covariance(covariance)
@@ -5857,10 +5789,7 @@ def get_growth_optimal_weights(
     Returns:
         pd.Series: The weight per asset, summing to the fraction times the net exposure.
     """
-    if method not in ("exact", "approximate"):
-        raise ValueError(
-            f"The method must be 'exact' or 'approximate', not '{method}'."
-        )
+    check_option("method", method, ("exact", "approximate"))
     if fraction <= 0:
         raise ValueError("The fraction must be positive.")
 
@@ -6003,16 +5932,8 @@ def get_resampled_efficient_weights(
             efficient portfolio. A draw without a solution, e.g. one in which no asset
             beats the risk free rate for the maximum Sharpe ratio, is left out.
     """
-    if objective not in RESAMPLED_OBJECTIVES:
-        raise ValueError(
-            f"The objective must be one of {', '.join(RESAMPLED_OBJECTIVES)}, not "
-            f"'{objective}'."
-        )
-    if resampling not in RESAMPLING_METHODS:
-        raise ValueError(
-            f"The resampling must be one of {', '.join(RESAMPLING_METHODS)}, not "
-            f"'{resampling}'."
-        )
+    check_option("objective", objective, RESAMPLED_OBJECTIVES)
+    check_option("resampling", resampling, RESAMPLING_METHODS)
     if resamples < 1:
         raise ValueError("At least one resample is needed.")
     data = returns.dropna(how="any")
@@ -6496,7 +6417,7 @@ def get_risk_contributions(
 
 
 def get_expected_shortfall_contributions(
-    weights: pd.Series, returns: pd.DataFrame, confidence_level: float = 0.95
+    weights: pd.Series, returns: pd.DataFrame, alpha: float = 0.05
 ) -> pd.DataFrame:
     """
     How much each asset adds to the historical expected shortfall (CVaR) of a portfolio
@@ -6521,21 +6442,20 @@ def get_expected_shortfall_contributions(
     Args:
         weights (pd.Series): The weight per asset.
         returns (pd.DataFrame): The returns per period, one column per asset.
-        confidence_level (float, optional): The confidence level, e.g. 0.95 for the
-            worst 5% of periods. Defaults to 0.95.
+        alpha (float, optional): The tail probability, e.g. 0.05 for the worst 5% of
+            periods. Defaults to 0.05.
 
     Returns:
         pd.DataFrame: The Weight, Marginal Contribution (-Σ p_t r_i,t), Risk
         Contribution (the weight times the marginal contribution) and Percentage
         Contribution per asset, as losses per period.
     """
-    if not 0 < confidence_level < 1:
-        raise ValueError("The confidence level must lie between 0 and 1.")
+    validate_alpha(alpha)
     returns = returns.dropna(how="any")
     if returns.empty:
         raise ValueError("No period has a return for every asset.")
     weights = weights.reindex(returns.columns).fillna(0)
-    probabilities = get_tail_probabilities(-(returns @ weights), confidence_level)
+    probabilities = get_tail_probabilities(-(returns @ weights), alpha)
 
     marginal = -(probabilities @ returns.to_numpy())
     contribution = weights.to_numpy() * marginal
@@ -6561,7 +6481,7 @@ def get_historical_risk_contributions(
     weights: pd.Series,
     returns: pd.DataFrame,
     risk_measure: str = "semideviation",
-    confidence_level: float = 0.95,
+    alpha: float = 0.05,
 ) -> pd.DataFrame:
     """
     How much each asset adds to a risk measure of a portfolio's historical returns
@@ -6604,18 +6524,14 @@ def get_historical_risk_contributions(
         returns (pd.DataFrame): The returns per period, one column per asset.
         risk_measure (str, optional): "semideviation", "mad" or "cdar". Defaults to
             "semideviation".
-        confidence_level (float, optional): The confidence level of the CDaR, e.g. 0.95
-            for the average of the worst 5% of drawdowns. Defaults to 0.95.
+        alpha (float, optional): The tail probability of the CDaR, e.g. 0.05 for the
+            average of the worst 5% of drawdowns. Defaults to 0.05.
 
     Returns:
         pd.DataFrame: The Weight, Marginal Contribution (∂ρ/∂w_i), Risk Contribution (the
         weight times the marginal contribution) and Percentage Contribution per asset.
     """
-    if risk_measure not in HISTORICAL_RISK_MEASURES:
-        raise ValueError(
-            f"The risk measure must be one of {', '.join(HISTORICAL_RISK_MEASURES)}, "
-            f"not '{risk_measure}'."
-        )
+    check_option("risk_measure", risk_measure, HISTORICAL_RISK_MEASURES)
     returns = returns.dropna(how="any")
     if returns.empty:
         raise ValueError("No period has a return for every asset.")
@@ -6645,9 +6561,7 @@ def get_historical_risk_contributions(
         )
         peaks = np.maximum.accumulate(records)[1:]
         drawdowns = cumulative[peaks] - cumulative[1:]
-        probabilities = get_tail_probabilities(
-            drawdowns @ weights.to_numpy(), confidence_level
-        )
+        probabilities = get_tail_probabilities(drawdowns @ weights.to_numpy(), alpha)
         marginal = probabilities @ drawdowns
 
     contribution = weights.to_numpy() * marginal
@@ -6691,7 +6605,7 @@ ENTROPIC_FINITE_DIFFERENCE_STEP = 1e-4
 
 
 def get_risk_measure(
-    returns: pd.DataFrame, risk_measure: str, confidence_level: float = 0.95
+    returns: pd.DataFrame, risk_measure: str, alpha: float = 0.05
 ) -> pd.Series:
     """
     A risk measure of every column of returns (each a portfolio), from the Risk module's
@@ -6705,13 +6619,12 @@ def get_risk_measure(
     Args:
         returns (pd.DataFrame): The returns per period, one column per portfolio.
         risk_measure (str): One of FINITE_DIFFERENCE_RISK_MEASURES.
-        confidence_level (float, optional): The confidence level of the tail measures.
-            Defaults to 0.95.
+        alpha (float, optional): The tail probability of the tail measures, e.g. 0.05 for the worst 5% of
+            periods. Defaults to 0.05.
 
     Returns:
         pd.Series: The risk measure per column, positive for a loss.
     """
-    alpha = 1 - confidence_level
     if risk_measure == "var":
         measure = -var_model.get_var_historic(returns, alpha)
     elif risk_measure == "evar":
@@ -6727,21 +6640,23 @@ def get_risk_measure(
     elif risk_measure == "kurtosis":
         measure = dispersion_model.get_central_moment(returns, order=4) ** 0.5
     elif risk_measure == "maximum_drawdown":
-        measure = -drawdown_model.get_maximum_drawdown(returns, compounded=False)
+        measure = -drawdown_model.get_maximum_drawdown(returns, compound_returns=False)
     elif risk_measure == "average_drawdown":
         measure = -drawdown_model.get_average_drawdown(
-            returns, method="observation", compounded=False
+            returns, method="observation", compound_returns=False
         )
     elif risk_measure == "drawdown_at_risk":
-        measure = -drawdown_model.get_drawdown_at_risk(returns, alpha, compounded=False)
+        measure = -drawdown_model.get_drawdown_at_risk(
+            returns, alpha, compound_returns=False
+        )
     elif risk_measure == "entropic_drawdown_at_risk":
         measure = -drawdown_model.get_entropic_drawdown_at_risk(
-            returns, alpha, compounded=False
+            returns, alpha, compound_returns=False
         )
     elif risk_measure == "ulcer_index":
-        measure = risk_model.get_ui(returns, rolling=None, compounded=False)
+        measure = risk_model.get_ui(returns, rolling=None, compound_returns=False)
     else:
-        raise ValueError(
+        raise InvalidArgumentError(
             f"The risk measure must be one of {', '.join(FINITE_DIFFERENCE_RISK_MEASURES)}, "
             f"not '{risk_measure}'."
         )
@@ -6752,7 +6667,7 @@ def get_finite_difference_risk_contributions(
     weights: pd.Series,
     returns: pd.DataFrame,
     risk_measure: str = "maximum_drawdown",
-    confidence_level: float = 0.95,
+    alpha: float = 0.05,
 ) -> pd.DataFrame:
     """
     How much each asset adds to a risk measure of a portfolio's historical returns (Euler
@@ -6787,18 +6702,14 @@ def get_finite_difference_risk_contributions(
         returns (pd.DataFrame): The returns per period, one column per asset.
         risk_measure (str, optional): One of FINITE_DIFFERENCE_RISK_MEASURES. Defaults to
             "maximum_drawdown".
-        confidence_level (float, optional): The confidence level of the tail measures.
-            Defaults to 0.95.
+        alpha (float, optional): The tail probability of the tail measures, e.g. 0.05 for the worst 5% of
+            periods. Defaults to 0.05.
 
     Returns:
         pd.DataFrame: The Weight, Marginal Contribution (∂ρ/∂w_i), Risk Contribution and
         Percentage Contribution per asset.
     """
-    if risk_measure not in FINITE_DIFFERENCE_RISK_MEASURES:
-        raise ValueError(
-            f"The risk measure must be one of {', '.join(FINITE_DIFFERENCE_RISK_MEASURES)}, "
-            f"not '{risk_measure}'."
-        )
+    check_option("risk_measure", risk_measure, FINITE_DIFFERENCE_RISK_MEASURES)
     returns = returns.dropna(how="any")
     if returns.empty:
         raise ValueError("No period has a return for every asset.")
@@ -6818,7 +6729,7 @@ def get_finite_difference_risk_contributions(
     measures = get_risk_measure(
         pd.DataFrame(returns.to_numpy(dtype=float) @ shifted, index=returns.index),
         risk_measure,
-        confidence_level,
+        alpha,
     ).to_numpy()
     measure = measures[-1]
     marginal = (measures[:assets] - measures[assets : 2 * assets]) / (2 * step)
@@ -7018,11 +6929,7 @@ def get_discrete_allocation(
         Weight and Weight (the amount over the portfolio value), and a "Leftover Cash" row
         with the amount that is not invested.
     """
-    if method not in DISCRETE_ALLOCATION_METHODS:
-        raise ValueError(
-            f"The method must be one of {', '.join(DISCRETE_ALLOCATION_METHODS)}, "
-            f"not '{method}'."
-        )
+    check_option("method", method, DISCRETE_ALLOCATION_METHODS)
     if not portfolio_value > 0:
         raise ValueError("The portfolio value must be above zero.")
     prices = prices.reindex(weights.index).astype(float)
@@ -7124,7 +7031,7 @@ def get_portfolio_risk_metrics(
     returns: pd.Series | pd.DataFrame,
     periods_per_year: int,
     risk_free_rate: float = 0.0,
-    confidence_level: float = 0.95,
+    alpha: float = 0.05,
 ) -> pd.DataFrame:
     """
     The return and risk of the return series of a portfolio, with the formulas of the
@@ -7149,15 +7056,14 @@ def get_portfolio_risk_metrics(
         periods_per_year (int): The number of periods in a year, e.g. 252 for daily data.
         risk_free_rate (float, optional): The average annualized risk free rate over the
             periods. Defaults to 0.
-        confidence_level (float, optional): The confidence level of the Value at Risk and
-            the Conditional Value at Risk, e.g. 0.95 for the worst 5% of periods.
-            Defaults to 0.95.
+        alpha (float, optional): The tail probability of the Value at Risk and the
+            Conditional Value at Risk, e.g. 0.05 for the worst 5% of periods.
+            Defaults to 0.05.
 
     Returns:
         pd.DataFrame: The measures as rows, one column per portfolio.
     """
-    if not 0 < confidence_level < 1:
-        raise ValueError("The confidence level must lie between 0 and 1.")
+    validate_alpha(alpha)
     returns = returns.to_frame() if isinstance(returns, pd.Series) else returns
     excess = returns - risk_free_rate / periods_per_year
     annualization = np.sqrt(periods_per_year)
@@ -7172,10 +7078,8 @@ def get_portfolio_risk_metrics(
             "Sortino Ratio": performance_model.get_sortino_ratio(excess)
             * annualization,
             "Maximum Drawdown": risk_model.get_max_drawdown(returns),
-            "Value at Risk": var_model.get_var_historic(returns, 1 - confidence_level),
-            "Conditional Value at Risk": cvar_model.get_cvar_historic(
-                returns, 1 - confidence_level
-            ),
+            "Value at Risk": var_model.get_var_historic(returns, alpha),
+            "Conditional Value at Risk": cvar_model.get_cvar_historic(returns, alpha),
         }
     ).T
 
@@ -7441,11 +7345,7 @@ def get_worst_case_return(
     Returns:
         float: The worst-case expected return.
     """
-    if uncertainty not in WORST_CASE_UNCERTAINTY:
-        raise ValueError(
-            f"The uncertainty must be one of {', '.join(WORST_CASE_UNCERTAINTY)}, not "
-            f"'{uncertainty}'."
-        )
+    check_option("uncertainty", uncertainty, WORST_CASE_UNCERTAINTY)
     if not 0 < confidence_level < 1:
         raise ValueError("The confidence level must lie between 0 and 1.")
     assets = mean_covariance.index
@@ -7551,16 +7451,8 @@ def get_worst_case_mean_variance_weights(
     Returns:
         pd.Series: The weight per asset.
     """
-    if uncertainty not in WORST_CASE_UNCERTAINTY:
-        raise ValueError(
-            f"The uncertainty must be one of {', '.join(WORST_CASE_UNCERTAINTY)}, not "
-            f"'{uncertainty}'."
-        )
-    if objective not in WORST_CASE_OBJECTIVES:
-        raise ValueError(
-            f"The objective must be one of {', '.join(WORST_CASE_OBJECTIVES)}, not "
-            f"'{objective}'."
-        )
+    check_option("uncertainty", uncertainty, WORST_CASE_UNCERTAINTY)
+    check_option("objective", objective, WORST_CASE_OBJECTIVES)
     if (target_return is None) == (objective == "minimum_variance"):
         raise ValueError(
             "A target return goes with the minimum_variance objective, which needs one."
@@ -7790,22 +7682,22 @@ class WassersteinProgramme(NamedTuple):
 
 def get_wasserstein_cvar_programme(
     returns: np.ndarray,
-    confidence_level: float = 0.95,
+    alpha: float = 0.05,
     wasserstein_radius: float = 0.0005,
     risk_aversion: float = 1.0,
     mean_weight: float = 1.0,
 ) -> WassersteinProgramme:
     """
     The linear programme of the worst-case expectation of
-    -m X + ρ (τ + max(-X - τ, 0) / (1 - β)), with X = ξ'w the portfolio return, over
+    -m X + ρ (τ + max(-X - τ, 0) / α), with X = ξ'w the portfolio return, over
     every distribution of the asset returns ξ within a type-1 Wasserstein ball of radius
     ε around the T historical returns (Mohajerin Esfahani and Kuhn, 2018). The transport
     cost is the 1-norm of the change in the returns, and returns cannot fall below -100%
-    (ξ ≥ -1). Minimized over τ it is the worst case of -m E[X] + ρ CVaR_β(-X).
+    (ξ ≥ -1). Minimized over τ it is the worst case of -m E[X] + ρ CVaR_α(-X).
 
     The loss is the maximum of two linear pieces ℓ_k(ξ) = c_k w'ξ + b_k τ, with
-    c_1 = -m, b_1 = ρ, c_2 = -m - ρ / (1 - β) and b_2 = ρ (1 - 1 / (1 - β)), the pieces
-    of the paper's Section 7.1 with α = 1 - β. By its duality (Theorem 4.2; Corollary
+    c_1 = -m, b_1 = ρ, c_2 = -m - ρ / α and b_2 = ρ (1 - 1 / α), the pieces of
+    the paper's Section 7.1. By its duality (Theorem 4.2; Corollary
     5.1 for piecewise affine losses on a polyhedral support) the worst case equals
     min λε + Σ s_t / T over λ ≥ 0 with s_t ≥ sup_(ξ ≥ -1) ℓ_k(ξ) - λ‖ξ - ξ_t‖₁ for
     both pieces. The supremum separates per asset: moving ξ_j up gains c_k w_j - λ per
@@ -7825,8 +7717,8 @@ def get_wasserstein_cvar_programme(
     Args:
         returns (np.ndarray): The returns per period (rows) and asset (columns), above
             -100%.
-        confidence_level (float, optional): The confidence level β of the CVaR.
-            Defaults to 0.95.
+        alpha (float, optional): The tail probability α of the CVaR, e.g. 0.05 for the
+            worst 5% of periods. Defaults to 0.05.
         wasserstein_radius (float, optional): The radius ε of the Wasserstein ball, in
             the units of the returns per period. Defaults to 0.0005.
         risk_aversion (float, optional): The weight ρ of the CVaR. Defaults to 1.
@@ -7837,8 +7729,7 @@ def get_wasserstein_cvar_programme(
         WassersteinProgramme: The cost of every variable, the rows' coefficients of the
             weights and of (τ, λ, s, y), and the bounds of (τ, λ, s, y).
     """
-    if not 0 < confidence_level < 1:
-        raise ValueError("The confidence level must lie between 0 and 1.")
+    validate_alpha(alpha)
     if wasserstein_radius < 0:
         raise ValueError("The Wasserstein radius cannot be negative.")
     if risk_aversion < 0 or mean_weight < 0:
@@ -7848,7 +7739,7 @@ def get_wasserstein_cvar_programme(
     periods, assets = returns.shape
     if np.any(returns < -1):
         raise ValueError("A return below -100% is not possible.")
-    tail = 1 / (1 - confidence_level)
+    tail = 1 / alpha
     slopes = np.array([-mean_weight, -mean_weight - risk_aversion * tail])
     intercepts = np.array([risk_aversion, risk_aversion * (1 - tail)])
     growth = sparse.csr_matrix(1 + returns)
@@ -7914,7 +7805,7 @@ def get_wasserstein_cvar_programme(
 def get_worst_case_cvar(
     returns: pd.DataFrame,
     weights: pd.Series,
-    confidence_level: float = 0.95,
+    alpha: float = 0.05,
     wasserstein_radius: float = 0.0005,
 ) -> float:
     """
@@ -7928,8 +7819,8 @@ def get_worst_case_cvar(
     Args:
         returns (pd.DataFrame): The returns per period, one column per asset.
         weights (pd.Series): The weight per asset.
-        confidence_level (float, optional): The confidence level of the CVaR. Defaults
-            to 0.95.
+        alpha (float, optional): The tail probability of the CVaR, e.g. 0.05 for the
+            worst 5% of periods. Defaults to 0.05.
         wasserstein_radius (float, optional): The radius ε of the Wasserstein ball, in
             the units of the returns per period. Defaults to 0.0005.
 
@@ -7940,7 +7831,7 @@ def get_worst_case_cvar(
     if len(data) == 0:
         raise ValueError("No period has a return for every asset.")
     programme = get_wasserstein_cvar_programme(
-        data, confidence_level, wasserstein_radius, 1.0, 0.0
+        data, alpha, wasserstein_radius, 1.0, 0.0
     )
     fixed = programme.weights @ weights.reindex(returns.columns).fillna(0).to_numpy(
         dtype=float
@@ -7959,7 +7850,7 @@ def get_worst_case_cvar(
 
 def get_distributionally_robust_cvar_weights(
     returns: pd.DataFrame,
-    confidence_level: float = 0.95,
+    alpha: float = 0.05,
     wasserstein_radius: float = 0.0005,
     risk_aversion: float = 1.0,
     minimum_weight: float | dict[str, float] = 0.0,
@@ -7972,7 +7863,7 @@ def get_distributionally_robust_cvar_weights(
     maximum_turnover: float | None = None,
 ) -> pd.Series:
     """
-    The portfolio that minimizes the worst case of -E[X] + ρ CVaR_β(-X), with X the
+    The portfolio that minimizes the worst case of -E[X] + ρ CVaR_α(-X), with X the
     portfolio return, over every distribution within a type-1 Wasserstein ball of radius
     ε around the historical returns (Mohajerin Esfahani and Kuhn, 2018, Section 7.1),
     solved exactly as one linear programme with HiGHS (see get_wasserstein_cvar_programme). At a
@@ -7985,8 +7876,8 @@ def get_distributionally_robust_cvar_weights(
 
     Args:
         returns (pd.DataFrame): The returns per period, one column per asset.
-        confidence_level (float, optional): The confidence level β of the CVaR, e.g.
-            0.95 for the average of the worst 5% of periods. Defaults to 0.95.
+        alpha (float, optional): The tail probability α of the CVaR, e.g. 0.05 for the
+            average of the worst 5% of periods. Defaults to 0.05.
         wasserstein_radius (float, optional): The radius ε of the Wasserstein ball: the
             average total change in the returns of the assets (the 1-norm) per period that
             the distributions considered may have. Defaults to 0.0005.
@@ -8030,7 +7921,7 @@ def get_distributionally_robust_cvar_weights(
         maximum_turnover,
     )
     programme = get_wasserstein_cvar_programme(
-        data, confidence_level, wasserstein_radius, risk_aversion
+        data, alpha, wasserstein_radius, risk_aversion
     )
     count = constraints.assets
     variables = len(constraints.bounds)

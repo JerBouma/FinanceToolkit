@@ -27,6 +27,7 @@ from scipy.stats import norm
 
 from financetoolkit.fixedincome.bonds.bond_model import get_cash_flow_periods
 from financetoolkit.fixedincome.helpers import discount_factors
+from financetoolkit.utilities.error_model import check_option
 
 # The swaption integral runs over the first factor at expiry within this many standard
 # deviations of its mean: the density beyond 12 standard deviations is below 1e-32.
@@ -281,10 +282,7 @@ def get_g2_zero_coupon_bond_option(
     ```
     """
     _check_parameters(speed_x, speed_y, volatility_x, volatility_y, correlation)
-    if option_type not in ("call", "put"):
-        raise ValueError(
-            f"The option type must be 'call' or 'put', not {option_type!r}."
-        )
+    check_option("option_type", option_type, ("call", "put"))
     expiry = np.asarray(option_expiry, dtype=float)
     maturity = np.asarray(bond_maturity, dtype=float)
     strike = np.asarray(strike, dtype=float)
@@ -424,10 +422,7 @@ def get_g2_swaption(
         raise ValueError(
             "The swaption integral needs a correlation strictly within -1 and 1."
         )
-    if swaption_type not in ("payer", "receiver"):
-        raise ValueError(
-            f"The swaption type must be 'payer' or 'receiver', not {swaption_type!r}."
-        )
+    check_option("swaption_type", swaption_type, ("payer", "receiver"))
     if option_expiry <= 0 or tenor <= 0:
         raise ValueError("The expiry and the tenor of the swaption must be positive.")
 

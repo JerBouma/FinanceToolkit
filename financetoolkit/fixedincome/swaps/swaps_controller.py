@@ -21,7 +21,7 @@ from financetoolkit.fixedincome.sources import eiopa_model
 from financetoolkit.fixedincome.swaps import forward_model, swap_model
 from financetoolkit.utilities import logger_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
-from financetoolkit.utilities.error_model import handle_errors
+from financetoolkit.utilities.error_model import check_option, handle_errors
 from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import apply_rounding
 
@@ -75,10 +75,7 @@ class SwapsFixedIncome(MarketsFixedIncome):
         Returns:
             pd.Series: The annually compounded zero-coupon rates by maturity in years.
         """
-        if curve not in CURVES:
-            raise ValueError(
-                f"The curve must be one of {', '.join(CURVES)}, not {curve!r}."
-            )
+        check_option("curve", curve, CURVES)
         if curve == "government":
             return self._latest_zero_curve(country, date)
 
@@ -96,11 +93,7 @@ class SwapsFixedIncome(MarketsFixedIncome):
             if not term_structures.empty
             else []
         )
-        if country not in countries:
-            raise ValueError(
-                f"EIOPA publishes no risk-free rate term structure for {country} in the months "
-                f"before {end_date}. It covers {', '.join(countries)}."
-            )
+        check_option("country", country, countries)
         term_structure = term_structures[country].dropna(how="all")
         # Only the months that ended by the day, so the curve is not ahead of it.
         term_structure = term_structure[
@@ -340,10 +333,7 @@ class SwapsFixedIncome(MarketsFixedIncome):
         | 12x18 |  1      | 1.5    |     0.0463 |
         | 12x24 |  1      | 2      |     0.0475 |
         """
-        if day_count not in forward_model.DAY_COUNTS:
-            raise ValueError(
-                f"The day count must be one of {', '.join(forward_model.DAY_COUNTS)}, not {day_count!r}."
-            )
+        check_option("day_count", day_count, forward_model.DAY_COUNTS)
         zero_curve = self._swap_zero_curve(curve, country, date)
 
         rows = {}
@@ -807,10 +797,7 @@ class SwapsFixedIncome(MarketsFixedIncome):
         exchange_rates = exchange_rates.loc[: pd.Period(end_date, "D")]
 
         def spot_per_dollar(country: str) -> float:
-            if country not in exchange_rates:
-                raise ValueError(
-                    f"The BIS publishes no daily exchange rate for {country}."
-                )
+            check_option("country", country, exchange_rates)
             rates = exchange_rates[country].dropna()
             if rates.empty:
                 raise ValueError(

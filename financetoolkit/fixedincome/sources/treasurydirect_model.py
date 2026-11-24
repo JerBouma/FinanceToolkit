@@ -13,6 +13,7 @@ from financetoolkit.cache import policy_model
 from financetoolkit.cache.cache_controller import get_active_cache
 from financetoolkit.economics.helpers import collect_cached_data, require_columns
 from financetoolkit.utilities import logger_model
+from financetoolkit.utilities.error_model import check_option
 from financetoolkit.utilities.requests_model import TOOLKIT_HEADERS, get_request
 from financetoolkit.utilities.sources_model import record_url
 
@@ -262,10 +263,7 @@ def get_auctioned_securities(
     Raises:
         ValueError: When the security type is unknown or the answer has no auctions.
     """
-    if security_type not in AUCTIONED_TYPES:
-        raise ValueError(
-            f"The security type must be one of {', '.join(AUCTIONED_TYPES)}, not {security_type}."
-        )
+    check_option("security_type", security_type, AUCTIONED_TYPES)
     query = f"?format=json&type={security_type}"
     if security_term:
         query += f"&securityTerm={security_term}"

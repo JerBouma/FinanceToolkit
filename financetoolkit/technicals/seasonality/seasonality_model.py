@@ -7,6 +7,8 @@ import calendar
 import numpy as np
 import pandas as pd
 
+from financetoolkit.utilities.error_model import InvalidArgumentError
+
 # The weights of the 3, 6, 9 and 12-month returns in the relative strength rating, so the
 # latest quarter weighs most. Investor's Business Daily keeps its own rating's formula to itself; this weighting
 # is the common public approximation of it.
@@ -67,7 +69,7 @@ def get_seasonality(
         groups = dates.weekday
         labels = {day: calendar.day_name[day] for day in range(7)}
     else:
-        raise ValueError(
+        raise InvalidArgumentError(
             f"The frequency must be 'month' or 'weekday', not {frequency!r}."
         )
 

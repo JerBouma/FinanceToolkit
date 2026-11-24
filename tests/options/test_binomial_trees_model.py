@@ -35,7 +35,7 @@ def test_binomial_tree_refuses_too_many_time_steps():
 
 
 def test_listing_every_path_is_limited_to_a_few_time_steps():
-    """Every path of the tree is 2 ** timesteps of them, so only short trees are listed."""
+    """Every path of the tree is 2 ** time_steps of them, so only short trees are listed."""
     paths = binomial_trees_model.calculate_stock_prices(
         100, 1.1, 1 / 1.1, 3, show_unique_combinations=False
     )
@@ -83,7 +83,7 @@ def test_the_strike_grid_covers_the_whole_range_in_positive_steps():
     assert strikes(101.0, 5, 0) == [100]
 
 
-def _tree_price(method, timesteps=101, put=False, american=False, **inputs):
+def _tree_price(method, time_steps=101, put=False, american=False, **inputs):
     values = {
         "stock_price": 100.0,
         "strike_price": 95.0,
@@ -93,7 +93,7 @@ def _tree_price(method, timesteps=101, put=False, american=False, **inputs):
         "dividend_yield": 0.02,
     } | inputs
     tree = binomial_trees_model.get_option_payoffs(
-        timesteps=timesteps,
+        time_steps=time_steps,
         put_option=put,
         american_option=american,
         method=method,
@@ -124,8 +124,8 @@ def test_the_exact_inversion_tree_prices_a_european_option_at_black_scholes():
     # BinomialJ4VanillaEngine, Joshi's fourth order expansion of that inverse, gives
     # 15.464211426910 at 101 steps against Black-Scholes 15.464211545469.
     black_scholes = 15.46421154546934
-    for timesteps in (5, 25, 101):
-        assert _tree_price("exact_inversion", timesteps) == pytest.approx(
+    for time_steps in (5, 25, 101):
+        assert _tree_price("exact_inversion", time_steps) == pytest.approx(
             black_scholes, abs=1e-10
         )
     assert _tree_price("exact_inversion") == pytest.approx(15.464211426910, abs=2e-7)
@@ -142,7 +142,7 @@ def test_the_cox_ross_rubinstein_tree_is_the_default():
 def test_the_strike_centred_trees_need_an_odd_number_of_steps():
     for method in ("leisen_reimer", "exact_inversion"):
         with pytest.raises(ValueError, match="odd number of time steps"):
-            _tree_price(method, timesteps=10)
+            _tree_price(method, time_steps=10)
 
     with pytest.raises(ValueError, match="method must be one of"):
         _tree_price("eqp")
@@ -152,7 +152,7 @@ def test_a_tree_without_a_valid_probability_is_refused():
     # At a volatility this small e^(σ²Δt) rounds to 1, so Tian's up and down movements are
     # equal and the probability is 0 / 0.
     with pytest.raises(ValueError, match="does not give a valid tree"):
-        _tree_price("tian", timesteps=11, volatility=1e-10)
+        _tree_price("tian", time_steps=11, volatility=1e-10)
 
 
 @pytest.mark.parametrize("method", ["leisen_reimer", "exact_inversion"])
@@ -174,7 +174,7 @@ def test_a_strike_with_a_certain_outcome_gets_its_value(
         stock_price=100,
         strike_price=strike,
         years=years,
-        timesteps=11,
+        time_steps=11,
         risk_free_rate=0.04,
         volatility=volatility,
         put_option=put_option,
@@ -205,7 +205,7 @@ def _backward_induction(
     stock_price,
     strike_price,
     years,
-    timesteps,
+    time_steps,
     rate,
     up,
     down,
@@ -214,17 +214,17 @@ def _backward_induction(
     american,
 ):
     """A plain scalar backward induction of a recombining tree, node by node."""
-    discount = np.exp(-rate * years / timesteps)
+    discount = np.exp(-rate * years / time_steps)
     sign = -1 if put else 1
     values = [
         max(
             sign
-            * (stock_price * down**downs * up ** (timesteps - downs) - strike_price),
+            * (stock_price * down**downs * up ** (time_steps - downs) - strike_price),
             0,
         )
-        for downs in range(timesteps + 1)
+        for downs in range(time_steps + 1)
     ]
-    for step in range(timesteps - 1, -1, -1):
+    for step in range(time_steps - 1, -1, -1):
         values = [
             discount
             * (probability * values[downs] + (1 - probability) * values[downs + 1])
@@ -249,12 +249,12 @@ def test_the_trees_of_all_strikes_at_once_match_a_scalar_backward_induction(
     method, put_option, american_option
 ):
     strikes = np.arange(80.0, 125.0, 5.0)
-    timesteps = 21
+    time_steps = 21
     trees, ups, downs, probabilities = binomial_trees_model.get_option_payoff_trees(
         stock_price=100.0,
         strike_prices=strikes,
         years=0.75,
-        timesteps=timesteps,
+        time_steps=time_steps,
         risk_free_rate=0.04,
         volatility=0.3,
         dividend_yield=0.01,
@@ -263,7 +263,7 @@ def test_the_trees_of_all_strikes_at_once_match_a_scalar_backward_induction(
         method=method,
     )
 
-    assert trees.shape == (len(strikes), timesteps + 1, timesteps + 1)
+    assert trees.shape == (len(strikes), time_steps + 1, time_steps + 1)
     # Node k exists from step k on.
     assert np.isnan(trees[:, 1, 0]).all()
     assert not np.isnan(trees[:, 1, 1]).any()
@@ -273,7 +273,7 @@ def test_the_trees_of_all_strikes_at_once_match_a_scalar_backward_induction(
                 100.0,
                 strike,
                 0.75,
-                timesteps,
+                time_steps,
                 0.04,
                 ups[position],
                 downs[position],
@@ -287,7 +287,7 @@ def test_the_trees_of_all_strikes_at_once_match_a_scalar_backward_induction(
             100.0,
             float(strike),
             0.75,
-            timesteps,
+            time_steps,
             0.04,
             0.3,
             0.01,

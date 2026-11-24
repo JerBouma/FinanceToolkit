@@ -8,6 +8,7 @@ from financetoolkit.portfolio.construction.construction_controller import (
     PortfolioConstruction,
 )
 from financetoolkit.portfolio.construction.optimization import optimization_model
+from financetoolkit.utilities.error_model import InvalidArgumentError
 
 # pylint: disable=missing-function-docstring,redefined-outer-name
 
@@ -223,11 +224,11 @@ def test_get_mean_risk_weights(recorder, portfolio_module):
     )
 
     # The minimum CVaR portfolio, recorded without its ratio column.
-    for confidence_level in (0.95, 0.99):
+    for alpha in (0.05, 0.01):
         recorder.capture(
             portfolio_module.get_mean_risk_weights(
                 risk_measure="cvar",
-                confidence_level=confidence_level,
+                alpha=alpha,
                 include_benchmark=True,
             ).drop(columns="CVaR Ratio")
         )
@@ -245,7 +246,7 @@ def test_get_mean_risk_weights(recorder, portfolio_module):
         portfolio_module.get_mean_risk_weights(
             risk_measure="cvar",
             objective="maximum_ratio",
-            confidence_level=0.99,
+            alpha=0.01,
             include_benchmark=True,
         )
     )
@@ -266,7 +267,8 @@ def test_get_mean_risk_weights(recorder, portfolio_module):
     assert portfolio_module.get_mean_risk_weights(
         risk_measure="cdar", net_exposure=0, minimum_weight=-1, include_benchmark=True
     ).empty
-    assert portfolio_module.get_mean_risk_weights(risk_measure="cvaR").empty
+    with pytest.raises(InvalidArgumentError, match="risk_measure must be one of"):
+        portfolio_module.get_mean_risk_weights(risk_measure="cvaR")
 
 
 def test_get_risk_parity_weights_risk_measure(recorder, portfolio_module):
@@ -439,7 +441,8 @@ def test_get_look_through_exposure(recorder, test_toolkit):
     recorder.capture(construction.get_look_through_exposure())
     recorder.capture(construction.get_look_through_exposure(by="country"))
     recorder.capture(construction.get_look_through_exposure(by="holdings"))
-    assert construction.get_look_through_exposure(by="industry").empty
+    with pytest.raises(InvalidArgumentError, match="by must be one of"):
+        construction.get_look_through_exposure(by="industry")
 
 
 def test_get_brinson_attribution(recorder, test_toolkit):
@@ -482,10 +485,10 @@ def test_get_brinson_attribution_linked(recorder, test_toolkit):
 
 def test_get_brinson_attribution_invalid_period_and_linking(test_toolkit):
     construction = _offline_construction(test_toolkit)
-    assert construction.get_brinson_attribution(period="hourly").empty
-    assert construction.get_brinson_attribution(
-        period="monthly", linking="frongello"
-    ).empty
+    with pytest.raises(InvalidArgumentError, match="period must be weekly"):
+        construction.get_brinson_attribution(period="hourly")
+    with pytest.raises(InvalidArgumentError, match="linking must be one of"):
+        construction.get_brinson_attribution(period="monthly", linking="frongello")
 
 
 def test_get_brinson_attribution_looks_through_funds(test_toolkit):
@@ -994,10 +997,10 @@ def test_get_resampled_efficient_weights(recorder, portfolio_module):
         resamples=50, maximum_weight=0.4, include_benchmark=True, rounding=10
     )
     assert (capped["Weight"].drop("Portfolio") <= 0.4 + 1e-8).all()
-    assert portfolio_module.get_resampled_efficient_weights(objective="best").empty
-    assert portfolio_module.get_resampled_efficient_weights(
-        resampling="jackknife"
-    ).empty
+    with pytest.raises(InvalidArgumentError, match="objective must be one of"):
+        portfolio_module.get_resampled_efficient_weights(objective="best")
+    with pytest.raises(InvalidArgumentError, match="resampling must be one of"):
+        portfolio_module.get_resampled_efficient_weights(resampling="jackknife")
 
 
 def test_the_backtest_runs_the_clustering_drawdown_and_ratio_optimizers(
@@ -1112,7 +1115,7 @@ def test_get_risk_contributions_of_historical_measures(recorder, portfolio_modul
 def test_get_portfolio_risk_metrics(recorder, portfolio_module):
     recorder.capture(portfolio_module.get_portfolio_risk_metrics())
     metrics = portfolio_module.get_portfolio_risk_metrics(
-        weights={"AAPL": 0.7, "MSFT": 0.3}, period="weekly", confidence_level=0.9
+        weights={"AAPL": 0.7, "MSFT": 0.3}, period="weekly", alpha=0.1
     )
     recorder.capture(metrics)
     assert list(metrics.columns) == ["Portfolio", "Benchmark"]
@@ -1131,7 +1134,8 @@ def test_get_discrete_allocation(recorder, portfolio_module):
 
 
 def test_get_discrete_allocation_invalid_method(portfolio_module):
-    assert portfolio_module.get_discrete_allocation(method="round").empty
+    with pytest.raises(InvalidArgumentError, match="method must be one of"):
+        portfolio_module.get_discrete_allocation(method="round")
 
 
 def test_the_ledoit_wolf_targets_shrink_the_sample_covariance(portfolio_module):
@@ -1189,7 +1193,8 @@ def test_the_clustering_optimizers_take_a_codependence(portfolio_module, method)
         )["Weight"]
         assert weights.drop("Portfolio").sum() == pytest.approx(1, abs=1e-4)
 
-    assert getattr(portfolio_module, method)(codependence="euclidean").empty
+    with pytest.raises(InvalidArgumentError, match="codependence must be one of"):
+        getattr(portfolio_module, method)(codependence="euclidean")
 
 
 def test_black_litterman_with_the_market_risk_aversion(portfolio_module):
@@ -1353,7 +1358,8 @@ def test_get_asset_clusters(recorder, portfolio_module):
             cluster_criterion="standardized_silhouette", include_benchmark=True
         )
     )
-    assert portfolio_module.get_asset_clusters(method="k_means").empty
+    with pytest.raises(InvalidArgumentError, match="method must be one of"):
+        portfolio_module.get_asset_clusters(method="k_means")
 
 
 def test_get_coskewness_and_cokurtosis_matrix(recorder, portfolio_module):
@@ -1376,13 +1382,13 @@ def test_get_coskewness_and_cokurtosis_matrix(recorder, portfolio_module):
 
 
 def test_get_estimation_uncertainty(recorder, portfolio_module):
-    table = portfolio_module.get_estimation_uncertainty(simulations=200)
+    table = portfolio_module.get_estimation_uncertainty(n_bootstrap=200)
     recorder.capture(table)
     assert (table["Lower"] < table["Expected Return"]).all()
     assert (table["Upper"] > table["Expected Return"]).all()
     recorder.capture(
         portfolio_module.get_estimation_uncertainty(
-            method="normal", simulations=200, output="covariance", rounding=6
+            method="normal", n_bootstrap=200, output="covariance", rounding=6
         )
     )
 
@@ -1936,7 +1942,8 @@ def test_get_random_matrix_statistics(recorder, portfolio_module):
     recorder.capture(eigenvalues)
     assert eigenvalues["Eigenvalue"].sum() == pytest.approx(3, abs=1e-3)
     assert summary["Signal Eigenvalues"].iloc[0] == eigenvalues["Signal"].sum()
-    assert portfolio_module.get_random_matrix_statistics(output="pdf").empty
+    with pytest.raises(InvalidArgumentError, match="output must be one of"):
+        portfolio_module.get_random_matrix_statistics(output="pdf")
 
 
 def test_get_expected_returns_estimate_centroid(recorder, portfolio_module):

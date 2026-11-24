@@ -12,6 +12,7 @@ from scipy.special import ndtr, ndtri, owens_t
 from scipy.stats import qmc
 
 from financetoolkit.utilities import logger_model
+from financetoolkit.utilities.error_model import check_option
 
 logger = logger_model.get_logger()
 
@@ -117,7 +118,7 @@ def define_strike_prices(
                 f"values each, {option_values:,} option values; at most {MAX_OPTION_VALUES:,} "
                 "can be calculated per ticker. Please use a larger strike_step_size, a smaller "
                 "strike_price_range, or fewer expirations (expiration_time_range), tree "
-                "steps (timesteps) or simulations."
+                "steps (time_steps) or simulations."
             )
 
         strike_prices_per_ticker[ticker] = (
@@ -534,11 +535,7 @@ def _validate_monte_carlo(
         sequence (str): "pseudo_random" or "sobol".
         antithetic (bool): Whether the paths come in antithetic pairs.
     """
-    if sequence not in MONTE_CARLO_SEQUENCES:
-        raise ValueError(
-            f"sequence must be one of {', '.join(MONTE_CARLO_SEQUENCES)}, received "
-            f"{sequence!r}."
-        )
+    check_option("sequence", sequence, MONTE_CARLO_SEQUENCES)
     if not isinstance(simulations, int) or isinstance(simulations, bool):
         raise ValueError(f"simulations must be an integer, received {simulations!r}.")
     if not isinstance(time_steps, int) or time_steps <= 0:

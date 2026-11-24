@@ -5,6 +5,8 @@ import math
 import numpy as np
 import pandas as pd
 
+from financetoolkit.utilities.error_model import InvalidArgumentError
+
 # The largest gap between the price at a solved yield or spread and the price it solves for,
 # as a share of that price (0.1%).
 RESIDUAL_PRICE_TOLERANCE = 0.001
@@ -1473,7 +1475,7 @@ def get_amortizing_cash_flows(
         # payment the falling interest leaves.
         principal = (payment - par_value * rate) * (1 + rate) ** np.arange(count)
     else:
-        raise ValueError(
+        raise InvalidArgumentError(
             f"The amortization must be one of {', '.join(AMORTIZATIONS)}, got {amortization}."
         )
 

@@ -15,6 +15,7 @@ from financetoolkit.technicals.overlap import overlap_model
 from financetoolkit.technicals.overlap.overlap_model import (
     get_exponential_moving_average,
 )
+from financetoolkit.utilities.error_model import InvalidArgumentError, check_option
 
 # Number of trading days used to annualize realized volatility.
 TRADING_DAYS_PER_YEAR = 252
@@ -499,7 +500,7 @@ def get_keltner_channels(
     prices_close: pd.Series,
     window: int,
     atr_window: int,
-    atr_multiplier: float,
+    multiplier: float,
     method: str = "exponential",
 ) -> pd.DataFrame:
     """
@@ -514,18 +515,18 @@ def get_keltner_channels(
     The formula is as follows:
 
     - Middle Line = EMA(Close, window)
-    - Upper Line = Middle Line + atr_multiplier * ATR(atr_window)
-    - Lower Line = Middle Line - atr_multiplier * ATR(atr_window)
+    - Upper Line = Middle Line + multiplier * ATR(atr_window)
+    - Lower Line = Middle Line - multiplier * ATR(atr_window)
 
     With `method="original"`, the channel is Keltner's own, centred on a simple average of
     the typical price with the average daily range as its width:
 
     - Typical Price = (High + Low + Close) / 3
     - Middle Line = SMA(Typical Price, window)
-    - Upper Line = Middle Line + atr_multiplier * SMA(High - Low, window)
-    - Lower Line = Middle Line - atr_multiplier * SMA(High - Low, window)
+    - Upper Line = Middle Line + multiplier * SMA(High - Low, window)
+    - Lower Line = Middle Line - multiplier * SMA(High - Low, window)
 
-    Keltner used a 10-day average and one average range (`atr_multiplier` = 1) on either
+    Keltner used a 10-day average and one average range (a `multiplier` of 1) on either
     side; `atr_window` is not used by the original channel.
 
     Also known as: Keltner Bands, Keltner's ten-day moving average rule.
@@ -547,7 +548,7 @@ def get_keltner_channels(
           `overlap_model.get_exponential_moving_average`), so the channel starts on period
           `window` - 1 or `atr_window` - 1, whichever is later.
         - The original channel agrees with ta's `KeltnerChannel(window, original_version=True)`
-          with `atr_multiplier` = 1; it starts on period `window` - 1.
+          with a `multiplier` of 1; it starts on period `window` - 1.
 
     Args:
         prices_high (pd.Series): Series of high prices.
@@ -555,7 +556,7 @@ def get_keltner_channels(
         prices_close (pd.Series): Series of closing prices.
         window (int): Number of periods for the Exponential Moving Average (the middle line).
         atr_window (int): Number of periods for ATR calculation.
-        atr_multiplier (float): Multiplier for ATR (or, for the original channel, the
+        multiplier (float): Multiplier for ATR (or, for the original channel, the
             average range) to determine channel width.
         method (str): "exponential" for the EMA of the close with ATR bands, or "original"
             for Keltner's simple average of the typical price with average range bands.
@@ -574,10 +575,10 @@ def get_keltner_channels(
             prices_high, prices_low, prices_close, atr_window
         )
     else:
-        raise ValueError("The method must be 'exponential' or 'original'.")
+        raise InvalidArgumentError("The method must be 'exponential' or 'original'.")
 
-    upper_line = middle_line + atr_multiplier * band_width
-    lower_line = middle_line - atr_multiplier * band_width
+    upper_line = middle_line + multiplier * band_width
+    lower_line = middle_line - multiplier * band_width
 
     return pd.concat(
         [upper_line, middle_line, lower_line],
@@ -782,10 +783,7 @@ def get_bollinger_bands(
     Raises:
         ValueError: If `moving_average` is not one of `MOVING_AVERAGES`.
     """
-    if moving_average not in MOVING_AVERAGES:
-        raise ValueError(
-            f"moving_average must be one of {', '.join(MOVING_AVERAGES)}, not {moving_average}."
-        )
+    check_option("moving_average", moving_average, MOVING_AVERAGES)
 
     rolling_mean = MOVING_AVERAGES[moving_average](prices, window)
     rolling_std = prices.rolling(window=window).std(ddof=0)
@@ -1051,7 +1049,7 @@ def get_acceleration_bands(
     prices_low: pd.Series,
     prices_close: pd.Series,
     window: int,
-    factor: float,
+    multiplier: float,
 ) -> pd.DataFrame:
     """
     Calculate Headley's Acceleration Bands of a given price series.
@@ -1063,7 +1061,7 @@ def get_acceleration_bands(
 
     The formula is as follows:
 
-    - Range Ratio = factor * (High - Low) / (High + Low)
+    - Range Ratio = multiplier * (High - Low) / (High + Low)
     - Upper Band = SMA(High * (1 + Range Ratio), window)
     - Middle Band = SMA(Close, window)
     - Lower Band = SMA(Low * (1 - Range Ratio), window)
@@ -1076,19 +1074,19 @@ def get_acceleration_bands(
     Referenced against TA-Lib's ACCBANDS (https://ta-lib.org/functions/accbands.html).
 
     Notes:
-        - Equals TA-Lib's ACCBANDS (factor 4) and pandas-ta-classic's accbands.
+        - Equals TA-Lib's ACCBANDS (multiplier 4) and pandas-ta-classic's accbands.
 
     Args:
         prices_high (pd.Series): Series of high prices.
         prices_low (pd.Series): Series of low prices.
         prices_close (pd.Series): Series of closing prices.
         window (int): Number of periods of the simple averages.
-        factor (float): Multiplier of the relative range, 4 in Headley's definition.
+        multiplier (float): Multiplier of the relative range, 4 in Headley's definition.
 
     Returns:
         pd.DataFrame: Upper Band, Middle Band and Lower Band in price units.
     """
-    range_ratio = factor * (prices_high - prices_low) / (prices_high + prices_low)
+    range_ratio = multiplier * (prices_high - prices_low) / (prices_high + prices_low)
 
     upper_band = (prices_high * (1 + range_ratio)).rolling(window=window).mean()
     middle_band = prices_close.rolling(window=window).mean()
@@ -1754,7 +1752,7 @@ def get_price_bands(
     prices: pd.Series,
     window: int = 20,
     num_std_dev: float = 2,
-    fast_window: int = 2,
+    short_window: int = 2,
     moving_average: str = "simple",
 ) -> pd.DataFrame:
     """
@@ -1769,7 +1767,7 @@ def get_price_bands(
     The formula is as follows:
 
     - Middle Band = SMA(Close, window), or another moving average of `moving_average`
-    - Deviation = Middle Band - SMA(Close, fast_window)
+    - Deviation = Middle Band - SMA(Close, short_window)
     - Width = Population Standard Deviation(Deviation, window)
     - Upper Band = Middle Band + num_std_dev * Width
     - Lower Band = Middle Band - num_std_dev * Width
@@ -1784,7 +1782,7 @@ def get_price_bands(
     Notes:
         - The standard deviation is the population one (dividing by `window`), as in TTR's
           PBands and in the Bollinger Bands.
-        - With `fast_window` = 1 the fast average is the price itself, and the width is the
+        - With `short_window` = 1 the fast average is the price itself, and the width is the
           standard deviation of the price around a moving average, not around its own mean.
         - TTR's PBands can also centre the bands (`centered=TRUE`), which adds the moving
           average of the deviation divided by the width to the middle band. That adds a number
@@ -1796,7 +1794,7 @@ def get_price_bands(
         window (int): Number of periods of the moving average and the standard deviation.
             Defaults to 20.
         num_std_dev (float): Number of standard deviations of the bands. Defaults to 2.
-        fast_window (int): Number of periods of the fast moving average. Defaults to 2.
+        short_window (int): Number of periods of the fast moving average. Defaults to 2.
         moving_average (str): The moving average of both averages, one of `MOVING_AVERAGES`
             (the window-only methods of `get_moving_average`). Defaults to "simple".
 
@@ -1806,13 +1804,10 @@ def get_price_bands(
     Raises:
         ValueError: If `moving_average` is not one of `MOVING_AVERAGES`.
     """
-    if moving_average not in MOVING_AVERAGES:
-        raise ValueError(
-            f"moving_average must be one of {', '.join(MOVING_AVERAGES)}, not {moving_average}."
-        )
+    check_option("moving_average", moving_average, MOVING_AVERAGES)
 
     middle_band = MOVING_AVERAGES[moving_average](prices, window)
-    fast_average = MOVING_AVERAGES[moving_average](prices, fast_window)
+    fast_average = MOVING_AVERAGES[moving_average](prices, short_window)
     width = (middle_band - fast_average).rolling(window=window).std(ddof=0)
 
     return pd.concat(

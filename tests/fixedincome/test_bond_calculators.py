@@ -13,6 +13,7 @@ from financetoolkit.fixedincome.bonds import bond_model, bonds_controller
 from financetoolkit.fixedincome.curves import yieldcurve_model
 from financetoolkit.fixedincome.markets import bond_data_model
 from financetoolkit.fixedincome.sources import treasurydirect_model
+from financetoolkit.utilities.error_model import InvalidArgumentError
 
 PRICE_DATE = date(2026, 11, 5)
 
@@ -184,7 +185,7 @@ def test_bill_measures_follow_the_bond_equivalent_yield(fixedincome):
             "912797WN3", "Modified Duration"
         ]
     )
-    assert fixedincome.get_duration(bonds="912797WN3", duration_type="modified").loc[
+    assert fixedincome.get_duration(bonds="912797WN3", method="modified").loc[
         "912797WN3", "Modified Duration"
     ] == pytest.approx(bill["Modified Duration"])
 
@@ -228,7 +229,8 @@ def test_duration_types(fixedincome):
             function(100, bond["Coupon"], years, yield_to_maturity, 2), rel=1e-4
         )
 
-    assert fixedincome.get_duration("average").empty
+    with pytest.raises(InvalidArgumentError, match="method must be one of"):
+        fixedincome.get_duration("average")
 
 
 def test_key_rate_durations_add_up_to_the_curve_duration(fixedincome):

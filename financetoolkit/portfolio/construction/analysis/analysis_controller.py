@@ -17,7 +17,12 @@ from financetoolkit.portfolio.construction.optimization import (
 from financetoolkit.portfolio.helpers import BENCHMARK_TICKER, PORTFOLIO_TICKER
 from financetoolkit.risk.helpers import get_observations_per_year
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
-from financetoolkit.utilities.error_model import handle_errors
+from financetoolkit.utilities.error_model import (
+    check_option,
+    check_period,
+    handle_errors,
+    validate_alpha,
+)
 from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import PERIODS_PER_YEAR
@@ -86,7 +91,7 @@ class AnalysisConstruction:
         self,
         weights: dict[str, float] | None = None,
         risk_measure: str = "volatility",
-        confidence_level: float = 0.95,
+        alpha: float = 0.05,
         period: str = "daily",
         covariance: str = "sample",
         covariance_span: int = 180,
@@ -120,7 +125,7 @@ class AnalysisConstruction:
           Σ |r_p,t - μ_p| / T, with the marginal contribution
           Σ sign(r_p,t - μ_p)(r_i,t - μ_i) / T. Per period, not annualized.
         - risk_measure="cdar": the Conditional Drawdown at Risk, the average of the
-          worst 1 - α share of the drawdowns of the uncompounded cumulative return (the
+          worst α share of the drawdowns of the uncompounded cumulative return (the
           drawdowns the minimum drawdown optimization minimizes). Each drawdown is the
           sum of the assets' drawdowns from the portfolio's peak, so the marginal
           contribution of an asset is its average drawdown over the portfolio's worst
@@ -173,10 +178,9 @@ class AnalysisConstruction:
                 "lower_partial_moment", "kurtosis", "maximum_drawdown",
                 "average_drawdown", "drawdown_at_risk", "entropic_drawdown_at_risk" or
                 "ulcer_index". Defaults to "volatility".
-            confidence_level (float, optional): The confidence level of the tail
-                measures (the expected shortfall, CDaR, VaR, EVaR, Tail Gini, Drawdown at
-                Risk and EDaR), e.g. 0.95 for the worst 5% of periods or drawdowns.
-                Defaults to 0.95.
+            alpha (float, optional): The tail probability of the tail measures (the
+                expected shortfall, CDaR, VaR, EVaR, Tail Gini, Drawdown at Risk and EDaR),
+                e.g. 0.05 for the worst 5% of periods or drawdowns. Defaults to 0.05.
             period (str, optional): The frequency of the returns (daily, weekly, monthly,
                 quarterly or yearly). Defaults to "daily".
             covariance (str, optional): The estimator of the covariance matrix: "sample"
@@ -266,17 +270,14 @@ class AnalysisConstruction:
         | XOM     |      0.1 |                  0.0136 |              0.0014 |                    0.0518 |
         | Total   |      1   |                nan      |              0.0263 |                    1      |
         """
+        validate_alpha(alpha)
         measures = (
             "volatility",
             "cvar",
             *optimization_model.HISTORICAL_RISK_MEASURES,
             *optimization_model.FINITE_DIFFERENCE_RISK_MEASURES,
         )
-        if risk_measure not in measures:
-            raise ValueError(
-                f"The risk measure must be one of {', '.join(measures)}, not "
-                f"'{risk_measure}'."
-            )
+        check_option("risk_measure", risk_measure, measures)
         # Only the assets held decide the periods, so an asset left out of the weights with
         # a shorter history does not shorten the sample.
         resolved = self._get_held_weights(weights, period, include_benchmark)
@@ -293,15 +294,15 @@ class AnalysisConstruction:
             )
         elif risk_measure == "cvar":
             table = optimization_model.get_expected_shortfall_contributions(
-                resolved, returns, confidence_level
+                resolved, returns, alpha
             )
         elif risk_measure in optimization_model.FINITE_DIFFERENCE_RISK_MEASURES:
             table = optimization_model.get_finite_difference_risk_contributions(
-                resolved, returns, risk_measure, confidence_level
+                resolved, returns, risk_measure, alpha
             )
         else:
             table = optimization_model.get_historical_risk_contributions(
-                resolved, returns, risk_measure, confidence_level
+                resolved, returns, risk_measure, alpha
             )
         table.index.name = "Asset"
         table.loc["Total"] = [
@@ -447,7 +448,7 @@ class AnalysisConstruction:
     def get_portfolio_risk_metrics(
         self,
         weights: dict[str, float] | None = None,
-        confidence_level: float = 0.95,
+        alpha: float = 0.05,
         period: str = "daily",
         include_benchmark: bool = False,
         rounding: int | None = None,
@@ -468,7 +469,7 @@ class AnalysisConstruction:
         - Sortino Ratio: the average return above the risk free rate over its downside
           deviation below zero, annualized with √P (Sortino and Price, 1994).
         - Maximum Drawdown: the largest fall of the compounded value from its peak.
-        - Value at Risk: the 1 - α quantile of the returns per period (historical).
+        - Value at Risk: the α quantile of the returns per period (historical).
         - Conditional Value at Risk: the average return at or below the Value at Risk
           per period (historical).
 
@@ -490,9 +491,9 @@ class AnalysisConstruction:
             weights (dict[str, float] | None, optional): The weight per asset. Defaults to
                 None, which uses the latest weights of the Portfolio the Toolkit came from,
                 or equal weights.
-            confidence_level (float, optional): The confidence level of the Value at Risk
-                and the Conditional Value at Risk, e.g. 0.95 for the worst 5% of periods.
-                Defaults to 0.95.
+            alpha (float, optional): The tail probability of the Value at Risk and the
+                Conditional Value at Risk, e.g. 0.05 for the worst 5% of periods.
+                Defaults to 0.05.
             period (str, optional): The frequency of the returns (daily, weekly, monthly,
                 quarterly or yearly). Defaults to "daily".
             include_benchmark (bool, optional): Whether to include the benchmark as an
@@ -542,6 +543,7 @@ class AnalysisConstruction:
         """
         # Only the assets held decide the periods, so an asset left out of the weights with
         # a shorter history does not shorten the sample.
+        validate_alpha(alpha)
         resolved = self._get_held_weights(weights, period, include_benchmark)
         returns = self._get_returns(period, include_benchmark, resolved.index.tolist())
         series = {PORTFOLIO_TICKER: returns @ resolved}
@@ -552,7 +554,7 @@ class AnalysisConstruction:
             pd.DataFrame(series),
             self._get_periods_per_year(period, returns.index),
             self._get_risk_free_rate(period, returns.index),
-            confidence_level,
+            alpha,
         )
         return self._round(metrics, rounding)
 
@@ -885,10 +887,7 @@ class AnalysisConstruction:
         | Equal Weight             |              0.1407 |                  0.1624 |         0.6519 |            -0.1594 |             0.0388 |             0.0005 |             0.1582 |                   0.8381 |
         | Benchmark                |              0.1285 |                  0.1799 |         0.545  |            -0.221  |           nan      |           nan      |           nan      |                 nan      |
         """
-        if output not in ("summary", "returns", "weights"):
-            raise ValueError(
-                f"The output must be 'summary', 'returns' or 'weights', not '{output}'."
-            )
+        check_option("output", output, ("summary", "returns", "weights"))
         if isinstance(methods, str):
             methods = [
                 method.strip() for method in methods.split(",") if method.strip()
@@ -1699,10 +1698,7 @@ class AnalysisConstruction:
         | Eigenvalue 8 |       0.3178 |               0.0397 | False    |
         """
         outputs = ("summary", "eigenvalues")
-        if output not in outputs:
-            raise ValueError(
-                f"The output must be one of {', '.join(outputs)}, not '{output}'."
-            )
+        check_option("output", output, outputs)
         returns = self._get_returns(period, include_benchmark)
         periods, assets = returns.shape
         eigenvalues = np.linalg.eigvalsh(returns.corr().to_numpy())[::-1]
@@ -1758,7 +1754,7 @@ class AnalysisConstruction:
         gerber_statistic: int = 1,
         components: int = 1,
         bins: str | int = "freedman",
-        tail_level: float = 0.05,
+        alpha: float = 0.05,
         gnpr_theta: float = 0.5,
         gnpr_bandwidth: float = 0.01,
         include_benchmark: bool = False,
@@ -1785,7 +1781,7 @@ class AnalysisConstruction:
           bins (natural logarithms); distance the variation of information
           (H(X) + H(Y) - 2 I(X, Y)) / H(X, Y) (Meilă, 2007).
         - "lower_tail": the lower tail dependence, P(r_j ≤ q_j(α) | r_i ≤ q_i(α)) with
-          α = tail_level; distance -ln λ (λ at least 1e-8).
+          α = alpha; distance -ln λ (λ at least 1e-8).
         - "absolute_angular": |ρ| of the "pearson" correlation, distance √(1 - |ρ|)
           (López de Prado, 2020, chapter 3), and "squared_angular": ρ², distance
           √(1 - ρ²), the same construction on the squared correlation, which put
@@ -1845,7 +1841,7 @@ class AnalysisConstruction:
                 "mutual_information", or the rule per pair: "freedman" (Freedman and
                 Diaconis, skfolio's default) or "hacine_gharbi" (Riskfolio-Lib's numBins,
                 López de Prado). Defaults to "freedman".
-            tail_level (float, optional): The share of the lowest returns that forms the
+            alpha (float, optional): The share of the lowest returns that forms the
                 tail of "lower_tail". Defaults to 0.05.
             gnpr_theta (float, optional): The weight θ of the co-movement in "gnpr",
                 between 0 and 1. Defaults to 0.5.
@@ -1919,7 +1915,7 @@ class AnalysisConstruction:
             gerber_statistic,
             components,
             bins,
-            tail_level,
+            alpha,
             gnpr_theta,
             gnpr_bandwidth,
         )
@@ -2053,10 +2049,7 @@ class AnalysisConstruction:
         | JNJ  |         2 |
         | XOM  |         3 |
         """
-        if method not in ("hierarchical", "ftca", "onc"):
-            raise ValueError(
-                f"The method must be hierarchical, ftca or onc, not '{method}'."
-            )
+        check_option("method", method, ("hierarchical", "ftca", "onc"))
         returns = self._get_returns(period, include_benchmark)
         covariance_matrix = optimization_model.get_covariance_matrix(
             returns,
@@ -2106,7 +2099,7 @@ class AnalysisConstruction:
         method: str = "sample",
         period: str = "daily",
         span: int = 180,
-        standardize: bool = True,
+        standardized_moments: bool = True,
         include_benchmark: bool = False,
         rounding: int | None = None,
         show_columns: str | list[str] | None = None,
@@ -2142,12 +2135,12 @@ class AnalysisConstruction:
         Also known as: coskewness, third co-moment matrix, M3.
 
         Args:
-            method (str, optional): "sample", "exponential", "semi" or "ccc_garch".
-                Defaults to "sample".
+            method (str, optional): The estimator of the co-moments. Options are:
+                "sample", "exponential", "semi" or "ccc_garch". Defaults to "sample".
             period (str, optional): The frequency of the returns (daily, weekly, monthly,
                 quarterly or yearly). Defaults to "daily".
             span (int, optional): The span in periods of "exponential". Defaults to 180.
-            standardize (bool, optional): Whether to divide by the product of the
+            standardized_moments (bool, optional): Whether to divide by the product of the
                 standard deviations, so the diagonal m_iii is the skewness of each asset
                 and the entries are comparable across frequencies. Defaults to True.
             include_benchmark (bool, optional): Whether to include the benchmark as an
@@ -2196,7 +2189,10 @@ class AnalysisConstruction:
         | JNJ  | 0.0257 | -0.0169 | -0.168  |
         """
         matrix = estimation_model.get_coskewness_matrix(
-            self._get_returns(period, include_benchmark), method, span, standardize
+            self._get_returns(period, include_benchmark),
+            method,
+            span,
+            standardized_moments,
         )
         return self._round(matrix, rounding)
 
@@ -2206,7 +2202,7 @@ class AnalysisConstruction:
         method: str = "sample",
         period: str = "daily",
         span: int = 180,
-        standardize: bool = True,
+        standardized_moments: bool = True,
         include_benchmark: bool = False,
         rounding: int | None = None,
         show_columns: str | list[str] | None = None,
@@ -2239,12 +2235,12 @@ class AnalysisConstruction:
         Also known as: cokurtosis, fourth co-moment matrix, M4, semi cokurtosis.
 
         Args:
-            method (str, optional): "sample", "exponential", "semi" or "ccc_garch".
-                Defaults to "sample".
+            method (str, optional): The estimator of the co-moments. Options are:
+                "sample", "exponential", "semi" or "ccc_garch". Defaults to "sample".
             period (str, optional): The frequency of the returns (daily, weekly, monthly,
                 quarterly or yearly). Defaults to "daily".
             span (int, optional): The span in periods of "exponential". Defaults to 180.
-            standardize (bool, optional): Whether to divide by the product of the
+            standardized_moments (bool, optional): Whether to divide by the product of the
                 standard deviations, so the diagonal m_iiii is the kurtosis of each asset
                 (3 for a normal distribution, not the excess). Defaults to True.
             include_benchmark (bool, optional): Whether to include the benchmark as an
@@ -2290,7 +2286,10 @@ class AnalysisConstruction:
         | MSFT | 6.0896 | 4.8517 |
         """
         matrix = estimation_model.get_cokurtosis_matrix(
-            self._get_returns(period, include_benchmark), method, span, standardize
+            self._get_returns(period, include_benchmark),
+            method,
+            span,
+            standardized_moments,
         )
         return self._round(matrix, rounding)
 
@@ -2299,7 +2298,7 @@ class AnalysisConstruction:
         self,
         method: str = "stationary",
         period: str = "daily",
-        simulations: int = 1000,
+        n_bootstrap: int = 1000,
         block_size: int = 3,
         confidence_level: float = 0.95,
         seed: int | None = 0,
@@ -2349,7 +2348,7 @@ class AnalysisConstruction:
                 Defaults to "stationary".
             period (str, optional): The frequency of the returns (daily, weekly, monthly,
                 quarterly or yearly). Defaults to "daily".
-            simulations (int, optional): The number of simulated histories. Defaults to
+            n_bootstrap (int, optional): The number of simulated histories. Defaults to
                 1000 (as skfolio; Riskfolio-Lib draws 6000).
             block_size (int, optional): The (average) number of periods in a block.
                 Defaults to 3 (as Riskfolio-Lib's window).
@@ -2403,15 +2402,12 @@ class AnalysisConstruction:
         | JNJ  |            0.0987 | -0.0518 |  0.2328 |           0.0756 |
         | XOM  |            0.2911 |  0.063  |  0.5191 |           0.1179 |
         """
-        if output not in ("expected_returns", "covariance"):
-            raise ValueError(
-                f"The output must be expected_returns or covariance, not '{output}'."
-            )
+        check_option("output", output, ("expected_returns", "covariance"))
         returns = self._get_returns(period, include_benchmark)
         table, lower, upper = estimation_model.get_bootstrap_estimates(
             returns,
             method,
-            simulations,
+            n_bootstrap,
             block_size,
             confidence_level,
             seed,
@@ -2574,22 +2570,22 @@ class AnalysisConstruction:
         returns: pd.DataFrame,
         covariance_matrix: pd.DataFrame,
         risk_measure: str,
-        confidence_level: float,
+        alpha: float,
     ) -> pd.DataFrame:
         """The risk contributions of the assets to one of the risk measures."""
         if risk_measure == "volatility":
             return optimization_model.get_risk_contributions(weights, covariance_matrix)
         if risk_measure == "cvar":
             return optimization_model.get_expected_shortfall_contributions(
-                weights, returns, confidence_level
+                weights, returns, alpha
             )
         if risk_measure in optimization_model.FINITE_DIFFERENCE_RISK_MEASURES:
             return optimization_model.get_finite_difference_risk_contributions(
-                weights, returns, risk_measure, confidence_level
+                weights, returns, risk_measure, alpha
             )
         if risk_measure in optimization_model.HISTORICAL_RISK_MEASURES:
             return optimization_model.get_historical_risk_contributions(
-                weights, returns, risk_measure, confidence_level
+                weights, returns, risk_measure, alpha
             )
         measures = (
             "volatility",
@@ -2607,7 +2603,7 @@ class AnalysisConstruction:
         self,
         weights: dict[str, float] | None = None,
         risk_measure: str = "volatility",
-        confidence_level: float = 0.95,
+        alpha: float = 0.05,
         selection: str = "ols",
         factors: pd.DataFrame | None = None,
         region: str = "United States",
@@ -2651,8 +2647,8 @@ class AnalysisConstruction:
                 or equal weights.
             risk_measure (str, optional): A risk measure of get_risk_contributions, e.g.
                 "volatility", "cvar" or "maximum_drawdown". Defaults to "volatility".
-            confidence_level (float, optional): The confidence level of the tail
-                measures. Defaults to 0.95.
+            alpha (float, optional): The tail probability of the tail measures, e.g.
+                0.05 for the worst 5% of periods. Defaults to 0.05.
             selection (str, optional): How the loadings are estimated: "ols", "forward",
                 "backward" or "pcr" (see get_factor_loadings). Defaults to "ols".
             factors (pd.DataFrame | None, optional): The factor returns, one column per
@@ -2710,6 +2706,7 @@ class AnalysisConstruction:
         | Other    |   nan      |                nan      |              0      |                    0      |
         | Total    |   nan      |                nan      |              0.1855 |                    1      |
         """
+        validate_alpha(alpha)
         resolved = self._get_held_weights(weights, period, include_benchmark)
         returns, factor_returns = self._align_factors(
             self._get_returns(period, include_benchmark, resolved.index.tolist()),
@@ -2720,7 +2717,7 @@ class AnalysisConstruction:
             returns,
             returns.cov() * self._get_periods_per_year(period, returns.index),
             risk_measure,
-            confidence_level,
+            alpha,
         )
         # A measure homogeneous of a higher order splits its Euler sum by that order, so
         # the factor contributions add up to the measure itself.
@@ -2895,10 +2892,7 @@ class AnalysisConstruction:
         | XOM  |         0.2911 |             0.264  |             0.2702 |                 0.2762 |
         """
         outputs = ("moments", "covariance", "probabilities", "summary")
-        if output not in outputs:
-            raise ValueError(
-                f"The output must be one of {', '.join(outputs)}, not '{output}'."
-            )
+        check_option("output", output, outputs)
         returns = self._get_returns(period, include_benchmark)
         periods_per_year = self._get_periods_per_year(period, returns.index)
 
@@ -3097,10 +3091,7 @@ class AnalysisConstruction:
         | 2024   |  0.1263 |  0.0396 | -0.0087 |  0.0116 |      0.1689 |
         | 2025   |  0.0598 |  0.04   |  0.0889 |  0.0187 |      0.2074 |
         """
-        if period not in PERIODS_PER_YEAR:
-            raise ValueError(
-                "Period must be daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(period, PERIODS_PER_YEAR)
         resolved = self._get_held_weights(weights, "daily", include_benchmark)
         assets = resolved.index.tolist()
         fixed_weights = not (weights is None and self._portfolio_weights)

@@ -154,16 +154,16 @@ def test_the_barriers_and_touches_match_quantlib():
             **inputs, barrier=barrier
         ) == pytest.approx(at_expiration, abs=1e-9)
         assert path_dependent_model.get_touch_option(
-            **inputs, barrier=barrier, touch_type="no-touch"
+            **inputs, barrier=barrier, option_type="no-touch"
         ) == pytest.approx(no_touch, abs=1e-9)
 
     # AnalyticDoubleBarrierBinaryEngine, barriers 85 and 115.
-    for touch_type, expected in (
+    for option_type, expected in (
         ("double-no-touch", 0.0099711082),
         ("double-one-touch", 0.9419100665),
     ):
         assert path_dependent_model.get_double_touch_option(
-            **inputs, lower_barrier=85.0, upper_barrier=115.0, touch_type=touch_type
+            **inputs, lower_barrier=85.0, upper_barrier=115.0, option_type=option_type
         ) == pytest.approx(expected, abs=1e-9)
 
 
@@ -350,7 +350,7 @@ def test_one_touch_and_no_touch_add_up_to_the_discounted_cash():
     for barrier in (80.0, 125.0):
         one_touch = path_dependent_model.get_touch_option(**INPUTS, barrier=barrier)
         no_touch = path_dependent_model.get_touch_option(
-            **INPUTS, barrier=barrier, touch_type="no-touch"
+            **INPUTS, barrier=barrier, option_type="no-touch"
         )
         at_hit = path_dependent_model.get_touch_option(
             **INPUTS, barrier=barrier, payment="hit"
@@ -363,7 +363,7 @@ def test_one_touch_and_no_touch_add_up_to_the_discounted_cash():
         **INPUTS, lower_barrier=85.0, upper_barrier=115.0
     )
     double_no_touch = path_dependent_model.get_double_touch_option(
-        **INPUTS, lower_barrier=85.0, upper_barrier=115.0, touch_type="double-no-touch"
+        **INPUTS, lower_barrier=85.0, upper_barrier=115.0, option_type="double-no-touch"
     )
     assert double_one_touch + double_no_touch == pytest.approx(np.exp(-0.05))
 
@@ -418,7 +418,7 @@ def test_the_payoffs_at_expiration():
     assert path_dependent_model.get_touch_option(**expired, barrier=90.0) == 0.0
     assert (
         path_dependent_model.get_touch_option(
-            **expired, barrier=90.0, touch_type="no-touch"
+            **expired, barrier=90.0, option_type="no-touch"
         )
         == 1.0
     )
@@ -436,7 +436,7 @@ def test_touch_options_tend_to_the_deterministic_path_at_a_low_volatility():
             100, 103, 0.05, volatility, 1, 0.01
         ) == pytest.approx(np.exp(-0.05), rel=1e-9)
         assert path_dependent_model.get_touch_option(
-            100, 103, 0.05, volatility, 1, 0.01, touch_type="no-touch"
+            100, 103, 0.05, volatility, 1, 0.01, option_type="no-touch"
         ) == pytest.approx(0.0, abs=1e-12)
         assert path_dependent_model.get_touch_option(
             100, 110, 0.05, volatility, 1, 0.01, payment="hit"

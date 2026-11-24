@@ -16,7 +16,7 @@ from financetoolkit.fixedincome.markets import bond_data_model
 from financetoolkit.fixedincome.markets.markets_controller import MarketsFixedIncome
 from financetoolkit.utilities import logger_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
-from financetoolkit.utilities.error_model import handle_errors
+from financetoolkit.utilities.error_model import check_option, handle_errors
 from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import apply_rounding
 
@@ -645,7 +645,7 @@ class BondsFixedIncome(MarketsFixedIncome):
     @handle_errors
     def get_duration(
         self,
-        duration_type: str = "modified",
+        method: str = "modified",
         bonds: list[str] | str | None = None,
         issuer: list[str] | str | None = None,
         etfs: list[str] | str | None = None,
@@ -692,8 +692,8 @@ class BondsFixedIncome(MarketsFixedIncome):
         Also known as: Macaulay duration, modified duration, bond price sensitivity.
 
         Args:
-            duration_type (str, optional): The duration: "modified", "macaulay", "effective" or
-                "dollar". Defaults to "modified".
+            method (str, optional): The duration measure. Options are: "modified", "macaulay",
+                "effective" or "dollar". Defaults to "modified".
             bonds (list[str] | str | None, optional): CUSIPs or ISINs, see
                 `collect_bond_statistics`. Defaults to None.
             issuer (list[str] | str | None, optional): Part of an issuer's name, such as
@@ -742,11 +742,9 @@ class BondsFixedIncome(MarketsFixedIncome):
         | 912810RU4 | Bond            |   0.0288 | 2046-11-15 |  70.0312 |             13.6289 |
         | 912810UW6 | Bond            |   0.0512 | 2056-08-15 |  98.125  |             14.8801 |
         """
-        name = DURATION_TYPES.get(duration_type.lower())
-        if name is None:
-            raise ValueError(
-                "Please input a valid duration type ('macaulay', 'modified', 'effective' or 'dollar')"
-            )
+        method = method.lower()
+        check_option("method", method, DURATION_TYPES)
+        name = DURATION_TYPES[method]
         selection = self._select_bonds(
             bonds, issuer, etfs, maturity_start, maturity_end, date
         )
@@ -993,7 +991,7 @@ class BondsFixedIncome(MarketsFixedIncome):
         """
         Calculates the key rate durations of individual bonds on the Treasury zero-coupon curve:
         the price sensitivity to a shock at a single maturity ("key rate") of the curve while every
-        other point is held fixed. Whereas `get_duration` with `duration_type='effective'` assumes the
+        other point is held fixed. Whereas the effective duration of `get_duration` assumes the
         entire curve shifts in parallel, key rate durations show which segment of the curve a bond's
         price is exposed to. Because cash flows are discounted using linear interpolation between the
         curve's maturities, a shock at an inner maturity tapers off towards its neighbours and has no
@@ -1218,8 +1216,7 @@ class BondsFixedIncome(MarketsFixedIncome):
         | 912810RU4 | 2046-11-15 |  0.0002 |  0.0005 |  0.001  |  0.0019 |  0.0097 | -0.1131 | -0.0003 |
         | 912810UW6 | 2056-08-15 |  0      |  0      |  0      |  0.0001 |  0.0003 | -0.0024 | -0.1471 |
         """
-        if method not in ("par", "forward"):
-            raise ValueError('The method must be "par" or "forward".')
+        check_option("method", method, ("par", "forward"))
 
         selection = self._select_bonds(
             bonds, issuer, etfs, maturity_start, maturity_end, date

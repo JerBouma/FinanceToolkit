@@ -3,6 +3,7 @@ import pandas as pd
 import pytest
 
 from financetoolkit.models.distress import altman_model
+from financetoolkit.utilities.error_model import InvalidArgumentError
 
 
 def test_get_working_capital_to_total_assets_ratio(recorder):
@@ -95,7 +96,7 @@ def test_get_altman_z_score_models():
     }
 
     for model, value in expected.items():
-        score = altman_model.get_altman_z_score(**ratios, model=model)
+        score = altman_model.get_altman_z_score(**ratios, method=model)
         assert abs(score.iloc[0] - value) < 1e-12
 
     # The four-variable models have no sales term, so they ignore it and work without it.
@@ -103,11 +104,11 @@ def test_get_altman_z_score_models():
         k: v for k, v in ratios.items() if k != "sales_to_total_assets_ratio"
     }
     assert altman_model.get_altman_z_score(
-        **without_sales, model="non-manufacturing"
-    ).equals(altman_model.get_altman_z_score(**ratios, model="non-manufacturing"))
+        **without_sales, method="non-manufacturing"
+    ).equals(altman_model.get_altman_z_score(**ratios, method="non-manufacturing"))
 
     with pytest.raises(ValueError, match="Sales to Total Assets"):
-        altman_model.get_altman_z_score(**without_sales, model="private")
+        altman_model.get_altman_z_score(**without_sales, method="private")
 
-    with pytest.raises(ValueError, match="Invalid model"):
-        altman_model.get_altman_z_score(**ratios, model="zeta")
+    with pytest.raises(InvalidArgumentError, match="method must be one of"):
+        altman_model.get_altman_z_score(**ratios, method="zeta")

@@ -175,7 +175,7 @@ def get_delta_hedging_simulation(
     steps: int = 63,
     rebalancing_interval: int = 1,
     drift: float | None = None,
-    paths: int = 10_000,
+    simulations: int = 10_000,
     seed: int | None = 0,
 ) -> pd.DataFrame:
     """
@@ -211,7 +211,7 @@ def get_delta_hedging_simulation(
             Defaults to 1.
         drift (float | None, optional): The expected return μ of the stock. Defaults to None,
             the risk free rate.
-        paths (int, optional): The number of simulated paths. Defaults to 10,000.
+        simulations (int, optional): The number of simulated paths. Defaults to 10,000.
         seed (int | None, optional): The seed of the random numbers, None for a different draw
             on every call. Defaults to 0.
 
@@ -219,19 +219,21 @@ def get_delta_hedging_simulation(
         pd.DataFrame: Per path the Option Value, Payoff, Transaction Costs and Profit and
         Loss of get_delta_hedging_profit_and_loss, and the Final Stock Price.
     """
-    if steps < 1 or paths < 1:
+    if steps < 1 or simulations < 1:
         raise ValueError("The simulation needs at least one step and one path.")
     if volatility <= 0:
         raise ValueError("The volatility must be positive.")
 
     step = time_to_expiration / steps
     drift = risk_free_rate if drift is None else drift
-    shocks = np.random.default_rng(seed).standard_normal((paths, steps))
+    shocks = np.random.default_rng(seed).standard_normal((simulations, steps))
     log_returns = (
         drift - dividend_yield - volatility**2 / 2
     ) * step + volatility * np.sqrt(step) * shocks
     prices = stock_price * np.exp(
-        np.concatenate([np.zeros((paths, 1)), np.cumsum(log_returns, axis=1)], axis=1)
+        np.concatenate(
+            [np.zeros((simulations, 1)), np.cumsum(log_returns, axis=1)], axis=1
+        )
     )
 
     result = get_delta_hedging_profit_and_loss(

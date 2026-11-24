@@ -14,6 +14,7 @@ from scipy.special import logsumexp
 from financetoolkit.portfolio.helpers import get_linear_regression, get_view_vector
 from financetoolkit.risk.dependence import copula_model
 from financetoolkit.risk.volatility import garch_model
+from financetoolkit.utilities.error_model import InvalidArgumentError, check_option
 
 # pylint: disable=too-many-arguments,too-many-locals
 
@@ -241,8 +242,7 @@ def get_gerber_covariance(
     """
     if not 0 < threshold < 1:
         raise ValueError("The Gerber threshold must lie between 0 and 1.")
-    if statistic not in GERBER_STATISTICS:
-        raise ValueError("The Gerber statistic must be 0, 1 or 2.")
+    check_option("statistic", statistic, GERBER_STATISTICS)
     values = returns.to_numpy(dtype=float)
     volatility = values.std(axis=0, ddof=1)
     if np.any(volatility <= 0):
@@ -685,8 +685,7 @@ def get_geodesic_shrinkage_covariance(
     """
     if not 0 <= shrinkage <= 1:
         raise ValueError("The shrinkage intensity must lie between 0 and 1.")
-    if target not in ("scaled_identity", "diagonal"):
-        raise ValueError("The target must be 'scaled_identity' or 'diagonal'.")
+    check_option("target", target, ("scaled_identity", "diagonal"))
     sample = returns.cov().to_numpy(dtype=float)
     try:
         np.linalg.cholesky(sample)
@@ -884,11 +883,7 @@ def get_number_of_bins(
     Returns:
         int: The number of bins.
     """
-    if method not in BIN_METHODS:
-        raise ValueError(
-            f"The bins must be a number or one of {', '.join(BIN_METHODS)}, not "
-            f"'{method}'."
-        )
+    check_option("method", method, BIN_METHODS)
     periods = len(first)
     if method == "hacine_gharbi":
         correlation = 1.0 if second is None else float(np.corrcoef(first, second)[0, 1])
@@ -995,12 +990,12 @@ def get_mutual_information_matrix(
 
 
 def get_lower_tail_dependence_matrix(
-    returns: pd.DataFrame, tail_level: float = 0.05
+    returns: pd.DataFrame, alpha: float = 0.05
 ) -> pd.DataFrame:
     """
     The lower tail dependence of every pair of assets: the share of the periods in which
-    one asset fell into its lowest tail_level of returns in which the other did too,
-    λ_ij = P(r_j ≤ q_j(α) | r_i ≤ q_i(α)) at α = tail_level, with q(α) the empirical
+    one asset fell into its lowest alpha share of returns in which the other did too,
+    λ_ij = P(r_j ≤ q_j(α) | r_i ≤ q_i(α)) at α = alpha, with q(α) the empirical
     quantile. It measures how often assets crash together, which the correlation, an
     average over all periods, does not show.
 
@@ -1017,20 +1012,23 @@ def get_lower_tail_dependence_matrix(
     Args:
         returns (pd.DataFrame): The returns per period, one column per asset, without
             missing values.
-        tail_level (float, optional): The share α of the lowest returns that forms the
+        alpha (float, optional): The share α of the lowest returns that forms the
             tail, between 0 and 0.5. Defaults to 0.05.
 
     Returns:
         pd.DataFrame: The lower tail dependence matrix, with ones on the diagonal.
     """
-    if not 0 < tail_level < 0.5:  # noqa: PLR2004
-        raise ValueError("The tail level must lie between 0 and 0.5.")
+    if not 0 < alpha < 0.5:  # noqa: PLR2004
+        raise InvalidArgumentError(
+            f"alpha is the share of the lowest returns that forms the tail, between 0 and 0.5, "
+            f"e.g. 0.05, not {alpha!r}. Please pass a value between 0 and 0.5 as alpha."
+        )
     columns = returns.columns
     matrix = np.eye(len(columns))
     for i in range(len(columns)):
         for j in range(i + 1, len(columns)):
             matrix[i, j] = matrix[j, i] = copula_model.get_tail_dependence_coefficient(
-                returns.iloc[:, i], returns.iloc[:, j], q=1 - tail_level
+                returns.iloc[:, i], returns.iloc[:, j], q=1 - alpha
             )["Lower Tail Dependence"]
     return pd.DataFrame(matrix, index=columns, columns=columns)
 
@@ -1115,10 +1113,7 @@ def get_comoment_weights(periods: int, method: str, span: int) -> np.ndarray:
     Returns:
         np.ndarray: The weight of every period, oldest first.
     """
-    if method not in COMOMENT_METHODS:
-        raise ValueError(
-            f"The method must be one of {', '.join(COMOMENT_METHODS)}, not '{method}'."
-        )
+    check_option("method", method, COMOMENT_METHODS)
     if method != "exponential":
         return np.full(periods, 1 / periods)
     if span < 1:
@@ -1131,7 +1126,7 @@ def get_coskewness_matrix(
     returns: pd.DataFrame,
     method: str = "sample",
     span: int = 180,
-    standardize: bool = False,
+    standardized_moments: bool = True,
 ) -> pd.DataFrame:
     """
     The coskewness matrix M3, the third co-moments of the returns: N rows and N² columns
@@ -1155,7 +1150,7 @@ def get_coskewness_matrix(
       residuals at the next-period volatilities (see get_ccc_garch_covariance),
       referenced against the m3 of PortfolioAnalytics' CCCgarch.MM.
 
-    With standardize, every m_ijk is divided by σ_i σ_j σ_k, with σ² = Σ_t w_t
+    With standardized moments, every m_ijk is divided by σ_i σ_j σ_k, with σ² = Σ_t w_t
     (r_t - μ)² the weighted second moment of the full deviations, so the diagonal m_iii is
     the moment skewness of each asset.
 
@@ -1167,12 +1162,12 @@ def get_coskewness_matrix(
     Args:
         returns (pd.DataFrame): The returns per period, one column per asset, without
             missing values.
-        method (str, optional): "sample", "exponential", "semi" or "ccc_garch". Defaults
-            to "sample".
+        method (str, optional): The estimator of the co-moments. Options are: "sample",
+            "exponential", "semi" or "ccc_garch". Defaults to "sample".
         span (int, optional): The span in periods of the "exponential" weights.
             Defaults to 180.
-        standardize (bool, optional): Whether to divide by the product of the standard
-            deviations. Defaults to False.
+        standardized_moments (bool, optional): Whether to divide by the product of the
+            standard deviations. Defaults to True.
 
     Returns:
         pd.DataFrame: The coskewness matrix, one row per asset i and one column per pair
@@ -1189,7 +1184,7 @@ def get_coskewness_matrix(
         deviations = np.minimum(deviations, 0)
     pairs = (deviations[:, :, None] * deviations[:, None, :]).reshape(periods, -1)
     matrix = (deviations * weights[:, None]).T @ pairs
-    if standardize:
+    if standardized_moments:
         matrix = matrix / np.einsum("i,j,k->ijk", *[volatility] * 3).reshape(assets, -1)
     return pd.DataFrame(
         matrix,
@@ -1202,7 +1197,7 @@ def get_cokurtosis_matrix(
     returns: pd.DataFrame,
     method: str = "sample",
     span: int = 180,
-    standardize: bool = False,
+    standardized_moments: bool = True,
 ) -> pd.DataFrame:
     """
     The cokurtosis matrix M4, the fourth co-moments of the returns: N rows and N³ columns
@@ -1224,7 +1219,7 @@ def get_cokurtosis_matrix(
       get_ccc_garch_covariance), referenced against the m4 of PortfolioAnalytics'
       CCCgarch.MM.
 
-    With standardize, every m_ijkl is divided by σ_i σ_j σ_k σ_l, with σ² = Σ_t w_t
+    With standardized moments, every m_ijkl is divided by σ_i σ_j σ_k σ_l, with σ² = Σ_t w_t
     (r_t - μ)² the weighted second moment of the full deviations, so the diagonal m_iiii
     is the moment kurtosis of each asset (3 for a normal distribution, not the excess).
 
@@ -1235,12 +1230,12 @@ def get_cokurtosis_matrix(
     Args:
         returns (pd.DataFrame): The returns per period, one column per asset, without
             missing values.
-        method (str, optional): "sample", "exponential", "semi" or "ccc_garch". Defaults
-            to "sample".
+        method (str, optional): The estimator of the co-moments. Options are: "sample",
+            "exponential", "semi" or "ccc_garch". Defaults to "sample".
         span (int, optional): The span in periods of the "exponential" weights.
             Defaults to 180.
-        standardize (bool, optional): Whether to divide by the product of the standard
-            deviations. Defaults to False.
+        standardized_moments (bool, optional): Whether to divide by the product of the
+            standard deviations. Defaults to True.
 
     Returns:
         pd.DataFrame: The cokurtosis matrix, one row per asset i and one column per
@@ -1258,7 +1253,7 @@ def get_cokurtosis_matrix(
     pairs = (deviations[:, :, None] * deviations[:, None, :]).reshape(periods, -1)
     # The N² × N² square form, whose rows (i, j) and columns (k, l) reshape to N × N³.
     matrix = ((pairs * weights[:, None]).T @ pairs).reshape(assets, -1)
-    if standardize:
+    if standardized_moments:
         matrix = matrix / np.einsum("i,j,k,l->ijkl", *[volatility] * 4).reshape(
             assets, -1
         )
@@ -1355,7 +1350,7 @@ def get_bootstrap_indices(
 def get_bootstrap_estimates(
     returns: pd.DataFrame,
     method: str = "stationary",
-    simulations: int = 1000,
+    n_bootstrap: int = 1000,
     block_size: int = 3,
     confidence_level: float = 0.95,
     seed: int | None = 0,
@@ -1391,7 +1386,7 @@ def get_bootstrap_estimates(
             missing values.
         method (str, optional): "stationary", "circular", "moving" or "normal". Defaults
             to "stationary".
-        simulations (int, optional): The number of simulated histories. Defaults to 1000,
+        n_bootstrap (int, optional): The number of simulated histories. Defaults to 1000,
             as skfolio's bootstrap uncertainty sets (Riskfolio-Lib draws 6000).
         block_size (int, optional): The (average) number of periods in a block. Defaults
             to 3.
@@ -1405,28 +1400,25 @@ def get_bootstrap_estimates(
             (the average), its Lower and Upper bound and its Standard Error; the lower
             bounds of the covariance matrix; and its upper bounds, all per period.
     """
-    if method not in BOOTSTRAP_METHODS:
-        raise ValueError(
-            f"The method must be one of {', '.join(BOOTSTRAP_METHODS)}, not '{method}'."
-        )
+    check_option("method", method, BOOTSTRAP_METHODS)
     if not 0 < confidence_level < 1:
         raise ValueError("The confidence level must lie between 0 and 1.")
-    if simulations < 2:  # noqa: PLR2004
-        raise ValueError("At least two simulations are needed.")
+    if n_bootstrap < 2:  # noqa: PLR2004
+        raise ValueError("At least two bootstrap samples are needed.")
     values = returns.to_numpy(dtype=float)
     periods, assets = values.shape
     generator = np.random.default_rng(seed)
     average = values.mean(axis=0)
     sample = np.cov(values, rowvar=False)
 
-    means = np.empty((simulations, assets))
-    covariances = np.empty((simulations, assets, assets))
+    means = np.empty((n_bootstrap, assets))
+    covariances = np.empty((n_bootstrap, assets, assets))
     indices = (
-        get_bootstrap_indices(periods, method, block_size, generator, simulations)
+        get_bootstrap_indices(periods, method, block_size, generator, n_bootstrap)
         if method != "normal"
         else None
     )
-    for simulation in range(simulations):
+    for simulation in range(n_bootstrap):
         history = (
             generator.multivariate_normal(average, sample, size=periods)
             if indices is None
@@ -1504,13 +1496,8 @@ def get_stepwise_factors(
         list[str]: The selected factors, in the order they were selected (forward) or in
         the order of the factors (backward).
     """
-    if direction not in ("forward", "backward"):
-        raise ValueError("The direction must be forward or backward.")
-    if criterion not in SELECTION_CRITERIA:
-        raise ValueError(
-            f"The criterion must be one of {', '.join(SELECTION_CRITERIA)}, not "
-            f"'{criterion}'."
-        )
+    check_option("direction", direction, ("forward", "backward"))
+    check_option("criterion", criterion, SELECTION_CRITERIA)
     target = returns.to_numpy(dtype=float)
 
     def fit(names: list[str]) -> dict:
@@ -1662,11 +1649,7 @@ def get_factor_loadings(
     Returns:
         pd.DataFrame: Per asset the Intercept (per period) and the loading of every factor.
     """
-    if selection not in FACTOR_SELECTIONS:
-        raise ValueError(
-            f"The selection must be one of {', '.join(FACTOR_SELECTIONS)}, not "
-            f"'{selection}'."
-        )
+    check_option("selection", selection, FACTOR_SELECTIONS)
     if not returns.index.equals(factors.index):
         raise ValueError("The returns and the factors must cover the same periods.")
     loadings = pd.DataFrame(
@@ -2013,8 +1996,7 @@ def get_opinion_pooling(
     Returns:
         pd.Series: The pooled probability of every scenario, summing to one.
     """
-    if method not in POOLING_METHODS:
-        raise ValueError("The pooling method must be linear or logarithmic.")
+    check_option("method", method, POOLING_METHODS)
     if divergence_penalty < 0:
         raise ValueError("The divergence penalty must not be negative.")
     opinions = probabilities.to_numpy(dtype=float).T
@@ -2645,11 +2627,7 @@ def get_robust_covariance(
     Returns:
         tuple[pd.Series, pd.DataFrame]: The location and the covariance matrix per period.
     """
-    if method not in ROBUST_COVARIANCE_METHODS:
-        raise ValueError(
-            f"The robust covariance must be one of {', '.join(ROBUST_COVARIANCE_METHODS)}, "
-            f"not '{method}'."
-        )
+    check_option("method", method, ROBUST_COVARIANCE_METHODS)
     if not 0.5 <= efficiency <= 0.99:  # noqa: PLR2004
         raise ValueError("The efficiency must lie between 0.5 and 0.99.")
     data = returns.to_numpy(dtype=float)

@@ -33,7 +33,7 @@ from financetoolkit.fixedincome.helpers import maturity_key, parse_maturities
 from financetoolkit.fixedincome.sources import eiopa_model, fmp_model
 from financetoolkit.utilities import logger_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
-from financetoolkit.utilities.error_model import handle_errors
+from financetoolkit.utilities.error_model import check_option, handle_errors
 from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import apply_rounding, finalize_dataset
 
@@ -563,7 +563,7 @@ class CurvesFixedIncome:
         country: str = "United States",
         date: str | None = None,
         ultimate_forward_rate: float = 0.033,
-        alpha: float | None = None,
+        convergence_speed: float | None = None,
         last_liquid_point: float | None = None,
         rounding: int | None = None,
         show_columns: str | list[str] | None = None,
@@ -591,8 +591,8 @@ class CurvesFixedIncome:
         Euro Area and German curves are zero-coupon curves, so every maturity is a
         zero-coupon bond.
 
-        Alpha sets how fast the forward rate converges to the UFR. By default it is set as
-        EIOPA does: the smallest alpha of at least 0.05 for which the instantaneous forward
+        The convergence speed α, EIOPA's alpha, sets how fast the forward rate converges to
+        the UFR. By default it is set as EIOPA does: the smallest alpha of at least 0.05 for which the instantaneous forward
         rate at the convergence point lies within a basis point of ω, with the convergence
         point at the later of 60 years and the last liquid point plus 40 years (see
         `smith_wilson_model.get_smith_wilson_alpha`).
@@ -625,8 +625,8 @@ class CurvesFixedIncome:
                 before it with a curve. Defaults to None, the end date.
             ultimate_forward_rate (float, optional): The UFR, annually compounded (decimal);
                 EIOPA publishes it every year per currency. Defaults to 0.033.
-            alpha (float | None, optional): The speed of convergence, above 0. Defaults to
-                None, EIOPA's convergence criterion.
+            convergence_speed (float | None, optional): The speed α of convergence to the UFR,
+                EIOPA's alpha, above 0. Defaults to None, EIOPA's convergence criterion.
             last_liquid_point (float | None, optional): The longest maturity, in years, whose
                 quote the curve keeps. Defaults to None, the longest maturity of the curve.
             rounding (int | None, optional): The number of decimals to round the results
@@ -719,8 +719,8 @@ class CurvesFixedIncome:
             )
         prices = np.array([price for _, _, price in instruments])
 
-        if alpha is None:
-            alpha = smith_wilson_model.get_smith_wilson_alpha(
+        if convergence_speed is None:
+            convergence_speed = smith_wilson_model.get_smith_wilson_alpha(
                 cash_flow_times,
                 cash_flows,
                 prices,
@@ -734,12 +734,17 @@ class CurvesFixedIncome:
             dtype=float,
         )
         curve = smith_wilson_model.get_smith_wilson_curve(
-            cash_flow_times, cash_flows, prices, years, ultimate_forward_rate, alpha
+            cash_flow_times,
+            cash_flows,
+            prices,
+            years,
+            ultimate_forward_rate,
+            convergence_speed,
         )
         curve.index = pd.Index(
             [maturity_key(value) for value in years], name="Maturity"
         )
-        curve["Alpha"] = alpha
+        curve["Alpha"] = convergence_speed
 
         return apply_rounding(
             curve, rounding if rounding is not None else self._rounding
@@ -1522,10 +1527,7 @@ class CurvesFixedIncome:
             datetime.strptime(end_date, "%Y-%m-%d") - timedelta(days=21)
         ).strftime("%Y-%m-%d")
         sources = self._get_country_yield_curves(start_date)
-        if country not in sources:
-            raise ValueError(
-                f"No daily yield curve is available for {country}. Choose from {', '.join(sources)}."
-            )
+        check_option("country", country, sources)
         curve = sources[country]()
         curve = curve.loc[: pd.Period(end_date, "D")].dropna(how="all")
         if curve.empty:
@@ -1820,7 +1822,7 @@ class CurvesFixedIncome:
         self,
         countries: list[str] | str = "United States",
         period: str = "daily",
-        svensson: bool = True,
+        method: str = "svensson",
         maturities: list[float | str] | str | None = None,
         rounding: int | None = None,
         show_columns: str | list[str] | None = None,
@@ -1842,7 +1844,7 @@ class CurvesFixedIncome:
         Svensson adds a second curvature β3 with its own decay τ2, which fits the long end
         better. With the dozen maturities a government curve has, the six Svensson
         parameters are weakly identified, as the level and the second curvature can offset
-        each other; set svensson=False for the three factors to read as level, slope and
+        each other; the Nelson-Siegel model has three factors that read as level, slope and
         curvature (Diebold and Li, 2006).
 
         Given the decays the betas follow exactly from least squares, so the decays are
@@ -1876,8 +1878,9 @@ class CurvesFixedIncome:
                 `get_zero_coupon_curve`. Defaults to "United States".
             period (str, optional): Whether to fit the daily, weekly or monthly curves.
                 Defaults to "daily".
-            svensson (bool, optional): Whether to fit the Svensson model (True) or the
-                Nelson-Siegel model (False). Defaults to True.
+            method (str, optional): The model to fit. Options are: "svensson" (the six
+                parameters of Svensson, 1994) or "nelson_siegel" (the three factors of Nelson and
+                Siegel, 1987). Defaults to "svensson".
             maturities (list[float | str] | str | None, optional): The maturities, in years or
                 as labels such as "3M" and "10Y" (a list or a comma-separated string), to
                 return the fitted zero-coupon yields at instead of the parameters. Defaults
@@ -1914,6 +1917,8 @@ class CurvesFixedIncome:
         | 2026-10-22 |   0.0397 |  -0.0161 |   0.0313 |  -0.0385 |  1.1471 |  1.8929 |                         0 |
         | 2026-10-23 |   0.0395 |  -0.0154 |   0.0365 |  -0.0462 |  1.2162 |  1.8245 |                         0 |
         """
+        check_option("method", method, ("svensson", "nelson_siegel"))
+        svensson = method == "svensson"
         # A number of years (also written as a string, "0.5") is labeled "0.5Y".
         labels = [
             (
@@ -2486,10 +2491,9 @@ class CurvesFixedIncome:
         | 2026-07 |                0.0283 |                     0.0415 |                 0.0316 |                      0.0468 |                 0.0337 |                      0.0518 |                 0.0335 |                      0.0443 |                  0.0332 |                       0.0375 |
         | 2026-09 |                0.0327 |                     0.0445 |                 0.0358 |                      0.0501 |                 0.0351 |                      0.0533 |                 0.0342 |                      0.0447 |                  0.0335 |                       0.0376 |
         """
-        if curve not in {**eiopa_model.CURVES, **eiopa_model.SHOCKED_CURVES}:
-            raise ValueError(
-                f"The curve must be one of {', '.join({**eiopa_model.CURVES, **eiopa_model.SHOCKED_CURVES})}, not {curve!r}."
-            )
+        check_option(
+            "curve", curve, {**eiopa_model.CURVES, **eiopa_model.SHOCKED_CURVES}
+        )
         if countries is not None and not isinstance(countries, str | list | tuple):
             raise TypeError(
                 "The countries must be a name or a list of names, such as 'Euro Area' or "
@@ -2724,8 +2728,7 @@ class CurvesFixedIncome:
                 )
                 + "(countries='United Kingdom')."
             )
-        if curve not in ("nominal", "ois"):
-            raise ValueError(f"The curve must be 'nominal' or 'ois', not {curve!r}.")
+        check_option("curve", curve, ("nominal", "ois"))
         period = validate_period(
             period, ["daily", "weekly", "monthly"], "Bank of England yield curve"
         )

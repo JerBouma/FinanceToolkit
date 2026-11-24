@@ -4,6 +4,7 @@ __docformat__ = "google"
 
 import pandas as pd
 
+from financetoolkit.utilities.error_model import check_option
 from financetoolkit.utilities.statistics_model import drop_non_finite
 
 
@@ -197,7 +198,7 @@ def get_altman_z_score(
     ),
     equity_to_total_liabilities_ratio: float | pd.Series | pd.DataFrame,
     sales_to_total_assets_ratio: float | pd.Series | pd.DataFrame | None = None,
-    model: str = "original",
+    method: str = "original",
 ) -> float | pd.Series | pd.DataFrame:
     """
     The Altman Z-Score is a financial metric used to measure a company's solvency and the likelihood that it will
@@ -231,8 +232,8 @@ def get_altman_z_score(
         the others.
         sales_to_total_assets_ratio (float | pd.Series | pd.DataFrame | None, optional): The Sales to Total Assets
         Ratio, which the "original" and "private" models need. Defaults to None.
-        model (str, optional): The model: "original", "private", "non-manufacturing" or "emerging". Defaults to
-        "original".
+        method (str, optional): The variant of the Altman Z-Score. Options are: "original", "private",
+            "non-manufacturing" or "emerging". Defaults to "original".
 
     Returns:
         float | pd.Series | pd.DataFrame: The Altman Z-Score of the chosen model.
@@ -273,12 +274,9 @@ def get_altman_z_score(
     - Altman, Edward I. "An Emerging Market Credit Scoring System for Corporate Bonds." Emerging Markets
     Review, Vol. 6, No. 4, 2005, pp. 311-323.
     """
-    if model not in ALTMAN_COEFFICIENTS:
-        raise ValueError(
-            f"Invalid model {model!r}. Please choose from: {', '.join(ALTMAN_COEFFICIENTS)}."
-        )
+    check_option("method", method, ALTMAN_COEFFICIENTS)
 
-    x1, x2, x3, x4, x5, constant = ALTMAN_COEFFICIENTS[model]
+    x1, x2, x3, x4, x5, constant = ALTMAN_COEFFICIENTS[method]
 
     score = (
         constant
@@ -291,7 +289,7 @@ def get_altman_z_score(
     if x5:
         if sales_to_total_assets_ratio is None:
             raise ValueError(
-                f"The {model} Altman Z-Score needs the Sales to Total Assets Ratio."
+                f"The {method} Altman Z-Score needs the Sales to Total Assets Ratio."
             )
         score = score + x5 * sales_to_total_assets_ratio
 

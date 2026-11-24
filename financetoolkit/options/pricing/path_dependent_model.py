@@ -18,6 +18,7 @@ from financetoolkit.options.pricing.exotics_model import (
     _barrier_term,
     get_barrier_option,
 )
+from financetoolkit.utilities.error_model import check_option
 
 # The shift of Broadie, Glasserman and Kou (1997), β = -ζ(1/2) / √(2π), with ζ the Riemann
 # zeta function: a barrier watched every Δt years prices as a continuous barrier moved
@@ -659,7 +660,7 @@ def get_monte_carlo_asian_options(
     put_option: bool = False,
     fixings: int = 100,
     simulations: int = 10_000,
-    seed: int | None = None,
+    seed: int | None = 0,
 ) -> tuple[np.ndarray, np.ndarray]:
     """
     Calculate the Monte Carlo price of arithmetic-average price Asian options with the
@@ -689,7 +690,8 @@ def get_monte_carlo_asian_options(
         fixings (int): The number of equally spaced fixings, the last at expiration, which are
             also the steps of each path. Defaults to 100.
         simulations (int): The number of simulated paths. Defaults to 10,000.
-        seed (int | None): The seed of the random number generator. Defaults to None.
+        seed (int | None): The seed of the random number generator, None for new paths on
+            every call. Defaults to 0.
 
     Returns:
         tuple[np.ndarray, np.ndarray]: The price and its standard error per strike price.
@@ -1125,10 +1127,7 @@ def get_lookback_option(
         lookback_period=lookback_period,
     )
     _validate_volatility(volatility)
-    if strike_type not in ("fixed", "floating"):
-        raise ValueError(
-            f"strike_type must be 'fixed' or 'floating', received {strike_type!r}."
-        )
+    check_option("strike_type", strike_type, ("fixed", "floating"))
     if not 0 < lookback_period <= 1:
         raise ValueError(
             f"lookback_period must be above 0 and at most 1, received {lookback_period!r}."
@@ -1349,8 +1348,7 @@ def get_double_barrier_option(
         time_to_expiration=time_to_expiration,
     )
     _validate_volatility(volatility)
-    if knock_type not in ("in", "out"):
-        raise ValueError(f"knock_type must be 'in' or 'out', received {knock_type!r}.")
+    check_option("knock_type", knock_type, ("in", "out"))
     if lower_barrier >= upper_barrier:
         raise ValueError(
             f"lower_barrier ({lower_barrier}) must be below upper_barrier ({upper_barrier})."
@@ -1620,16 +1618,9 @@ def get_partial_time_barrier_option(
         time_to_expiration=time_to_expiration,
     )
     _validate_volatility(volatility)
-    if barrier_direction not in ("down", "up"):
-        raise ValueError(
-            f"barrier_direction must be 'down' or 'up', received {barrier_direction!r}."
-        )
-    if knock_type not in ("in", "out"):
-        raise ValueError(f"knock_type must be 'in' or 'out', received {knock_type!r}.")
-    if barrier_window not in ("start", "end"):
-        raise ValueError(
-            f"barrier_window must be 'start' or 'end', received {barrier_window!r}."
-        )
+    check_option("barrier_direction", barrier_direction, ("down", "up"))
+    check_option("knock_type", knock_type, ("in", "out"))
+    check_option("barrier_window", barrier_window, ("start", "end"))
     if not 0 < window_share <= 1:
         raise ValueError(
             f"window_share must be above 0 and at most 1, received {window_share!r}."
@@ -1853,12 +1844,8 @@ def get_soft_barrier_option(
         time_to_expiration=time_to_expiration,
     )
     _validate_volatility(volatility)
-    if barrier_direction not in ("down", "up"):
-        raise ValueError(
-            f"barrier_direction must be 'down' or 'up', received {barrier_direction!r}."
-        )
-    if knock_type not in ("in", "out"):
-        raise ValueError(f"knock_type must be 'in' or 'out', received {knock_type!r}.")
+    check_option("barrier_direction", barrier_direction, ("down", "up"))
+    check_option("knock_type", knock_type, ("in", "out"))
 
     arguments = {
         "stock_price": stock_price,
@@ -2002,7 +1989,7 @@ def get_touch_option(
     volatility: float,
     time_to_expiration: float,
     dividend_yield: float = 0.0,
-    touch_type: str = "one-touch",
+    option_type: str = "one-touch",
     cash_payout: float = 1.0,
     payment: str = "expiration",
 ) -> float:
@@ -2033,7 +2020,8 @@ def get_touch_option(
         volatility (float): The volatility of the stock.
         time_to_expiration (float): The time to expiration in years.
         dividend_yield (float): The continuous dividend yield. Defaults to 0.
-        touch_type (str): "one-touch" or "no-touch". Defaults to "one-touch".
+        option_type (str): The kind of touch option. Options are: "one-touch" or "no-touch".
+            Defaults to "one-touch".
         cash_payout (float): The cash paid. Defaults to 1.
         payment (str): When a one-touch pays, "expiration" or "hit". A no-touch pays at
             expiration. Defaults to "expiration".
@@ -2042,7 +2030,7 @@ def get_touch_option(
         float: The touch option value.
 
     Raises:
-        ValueError: if touch_type or payment is not one of its values, a no-touch is asked to
+        ValueError: if option_type or payment is not one of its values, a no-touch is asked to
             pay at the hit or volatility is not positive.
 
     Notes:
@@ -2060,15 +2048,9 @@ def get_touch_option(
         cash_payout=cash_payout,
     )
     _validate_volatility(volatility)
-    if touch_type not in ("one-touch", "no-touch"):
-        raise ValueError(
-            f"touch_type must be 'one-touch' or 'no-touch', received {touch_type!r}."
-        )
-    if payment not in ("expiration", "hit"):
-        raise ValueError(
-            f"payment must be 'expiration' or 'hit', received {payment!r}."
-        )
-    if touch_type == "no-touch" and payment == "hit":
+    check_option("option_type", option_type, ("one-touch", "no-touch"))
+    check_option("payment", payment, ("expiration", "hit"))
+    if option_type == "no-touch" and payment == "hit":
         raise ValueError("A no-touch option pays at expiration, not at a hit.")
 
     discount = np.exp(-risk_free_rate * max(time_to_expiration, 0.0))
@@ -2076,7 +2058,7 @@ def get_touch_option(
 
     if barrier == stock_price or time_to_expiration <= 0:
         touched = barrier == stock_price
-        if touch_type == "one-touch":
+        if option_type == "one-touch":
             return float(one_touch_paid) if touched else 0.0
         return 0.0 if touched else float(cash_payout * discount)
 
@@ -2093,7 +2075,7 @@ def get_touch_option(
         carry = risk_free_rate - dividend_yield
         hit_time = log_barrier / carry if carry else np.inf
         touched = 0 < hit_time <= time_to_expiration
-        if touch_type == "no-touch":
+        if option_type == "no-touch":
             return 0.0 if touched else float(cash_payout * discount)
         if not touched:
             return 0.0
@@ -2106,7 +2088,7 @@ def get_touch_option(
     # (H / S)^p * N(y) is taken as e^(p * h + ln N(y)): at a low volatility the powers
     # μ ± λ and 2μ grow like 1/σ², so the power overflows where N is 0, while the product
     # tends to the deterministic answer (the forward path S * e^((r - q)t) reaches H or not).
-    if touch_type == "one-touch" and payment == "hit":
+    if option_type == "one-touch" and payment == "hit":
         lambda_ = np.sqrt(mu**2 + 2 * risk_free_rate / volatility**2)
         z = log_barrier / deviation + lambda_ * deviation
         return float(
@@ -2128,7 +2110,7 @@ def get_touch_option(
     )
     touch_probability = min(max(float(touch_probability), 0.0), 1.0)
 
-    if touch_type == "one-touch":
+    if option_type == "one-touch":
         return float(cash_payout * discount * touch_probability)
 
     return float(cash_payout * discount * (1 - touch_probability))
@@ -2142,7 +2124,7 @@ def get_double_touch_option(
     volatility: float,
     time_to_expiration: float,
     dividend_yield: float = 0.0,
-    touch_type: str = "double-one-touch",
+    option_type: str = "double-one-touch",
     cash_payout: float = 1.0,
 ) -> float:
     """
@@ -2168,15 +2150,15 @@ def get_double_touch_option(
         volatility (float): The volatility of the stock.
         time_to_expiration (float): The time to expiration in years.
         dividend_yield (float): The continuous dividend yield. Defaults to 0.
-        touch_type (str): "double-one-touch" or "double-no-touch". Defaults to
-            "double-one-touch".
+        option_type (str): The kind of double touch option. Options are:
+            "double-one-touch" or "double-no-touch". Defaults to "double-one-touch".
         cash_payout (float): The cash paid. Defaults to 1.
 
     Returns:
         float: The double touch option value.
 
     Raises:
-        ValueError: if touch_type is not one of its values, the lower barrier is not below
+        ValueError: if option_type is not one of its values, the lower barrier is not below
             the upper barrier or volatility is not positive.
 
     Notes:
@@ -2195,11 +2177,7 @@ def get_double_touch_option(
         cash_payout=cash_payout,
     )
     _validate_volatility(volatility)
-    if touch_type not in ("double-one-touch", "double-no-touch"):
-        raise ValueError(
-            "touch_type must be 'double-one-touch' or 'double-no-touch', "
-            f"received {touch_type!r}."
-        )
+    check_option("option_type", option_type, ("double-one-touch", "double-no-touch"))
     if lower_barrier >= upper_barrier:
         raise ValueError(
             f"lower_barrier ({lower_barrier}) must be below upper_barrier ({upper_barrier})."
@@ -2228,7 +2206,7 @@ def get_double_touch_option(
         )
         stay = min(max(stay, 0.0), 1.0)
 
-    if touch_type == "double-no-touch":
+    if option_type == "double-no-touch":
         return float(cash_payout * discount * stay)
 
     return float(cash_payout * discount * (1 - stay))

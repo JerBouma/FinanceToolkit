@@ -36,7 +36,7 @@ def test_caplets_converge_to_black(correlation_decay, factors, option_type):
         correlation_decay=correlation_decay,
         factors=factors,
         option_type=option_type,
-        paths=20000,
+        simulations=20000,
     )
     discounts = discount_factors(CURVE, TIMES)
     forwards = (discounts[:-1] / discounts[1:] - 1) / np.diff(TIMES)
@@ -54,7 +54,7 @@ def test_caplets_converge_to_black(correlation_decay, factors, option_type):
 
 def test_a_fixed_first_caplet_is_its_intrinsic_value():
     times = np.array([0.0, 0.5, 1.0])
-    caplets = lmm_model.get_lmm_cap(CURVE, times, 0.2, 0.01, paths=100)
+    caplets = lmm_model.get_lmm_cap(CURVE, times, 0.2, 0.01, simulations=100)
     discounts = discount_factors(CURVE, times)
     forward = (discounts[0] / discounts[1] - 1) / 0.5
     assert caplets["Price"].iloc[0] == pytest.approx(
@@ -91,7 +91,7 @@ def test_swaption_matches_black_with_the_rebonato_volatility(
         0.04,
         correlation_decay=correlation_decay,
         factors=factors,
-        paths=20000,
+        simulations=20000,
     )
     volatility = lmm_model.get_rebonato_swaption_volatility(
         CURVE, times, 0.2, correlation_decay=correlation_decay, factors=factors
@@ -120,7 +120,7 @@ def test_swaption_matches_financepy_monte_carlo():
         0.2,
         0.036,
         correlation_decay=0.1,
-        paths=200000,
+        simulations=200000,
         steps_per_year=1,
     )
     assert swaption["Price"] == pytest.approx(
@@ -130,7 +130,7 @@ def test_swaption_matches_financepy_monte_carlo():
 
 def test_payer_less_receiver_is_the_forward_swap():
     times = np.array([2, 3, 4, 5, 6, 7.0])
-    common = {"correlation_decay": 0.1, "factors": 3, "paths": 20000}
+    common = {"correlation_decay": 0.1, "factors": 3, "simulations": 20000}
     payer = lmm_model.get_lmm_swaption(CURVE, times, 0.2, 0.04, **common)
     receiver = lmm_model.get_lmm_swaption(
         CURVE, times, 0.2, 0.04, swaption_type="receiver", **common
@@ -167,10 +167,10 @@ def test_factor_loadings():
 def test_simulation_is_seeded_and_stable():
     arguments = ([0.03, 0.032, 0.034], [1, 2, 3, 4], [0.2, 0.19, 0.18])
     first = lmm_model.simulate_lmm_forwards(
-        *arguments, correlation_decay=0.2, factors=2, paths=500, seed=7
+        *arguments, correlation_decay=0.2, factors=2, simulations=500, seed=7
     )
     again = lmm_model.simulate_lmm_forwards(
-        *arguments, correlation_decay=0.2, factors=2, paths=500, seed=7
+        *arguments, correlation_decay=0.2, factors=2, simulations=500, seed=7
     )
     np.testing.assert_array_equal(first, again)
     assert first.shape == (500, 3, 3)
@@ -182,7 +182,7 @@ def test_simulation_is_seeded_and_stable():
         [0.2, 0.19, 0.18 + 1e-12],
         correlation_decay=0.2 + 1e-12,
         factors=2,
-        paths=500,
+        simulations=500,
         seed=7,
     )
     np.testing.assert_allclose(moved, first, rtol=1e-9)

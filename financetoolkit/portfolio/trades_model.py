@@ -7,6 +7,7 @@ import pandas as pd
 
 from financetoolkit.portfolio.helpers import get_transaction_order, to_timestamps
 from financetoolkit.portfolio.overview_model import match_lots
+from financetoolkit.utilities.error_model import check_option
 
 TRADE_COLUMNS = [
     "Ticker",
@@ -80,12 +81,7 @@ def get_trades(
         without exit costs.
     """
     method = method.upper()
-    if method not in ("FIFO", "LIFO"):
-        raise ValueError(
-            f"The method must be 'FIFO' or 'LIFO', not '{method}': a trade pairs the "
-            "transaction that opened units with the one that closed them, which an average "
-            "cost does not."
-        )
+    check_option("method", method, ("FIFO", "LIFO"))
 
     ordered = transactions.iloc[
         get_transaction_order(

@@ -13,6 +13,7 @@ from scipy.integrate import quad
 
 from financetoolkit.fixedincome.credit import cds_model, credit_curve_model
 from financetoolkit.fixedincome.helpers import discount_factors
+from financetoolkit.utilities.error_model import InvalidArgumentError
 
 CURVE = pd.Series(
     [0.038, 0.04, 0.041, 0.043, 0.044, 0.045, 0.047], index=[1, 2, 3, 5, 7, 10, 30.0]
@@ -337,7 +338,7 @@ def test_cds_option_parity_and_front_end_protection():
     assert no_knockout["Value"] == pytest.approx(
         payer["Value"] + no_knockout["Front-End Protection"], rel=1e-12
     )
-    with pytest.raises(ValueError, match="option type"):
+    with pytest.raises(InvalidArgumentError, match="option_type must be one of"):
         cds_model.get_cds_option(**terms, option_type="straddle")
     with pytest.raises(ValueError, match="before the maturity"):
         cds_model.get_cds_option(**{**terms, "option_expiry": 7})

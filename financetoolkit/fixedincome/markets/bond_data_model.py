@@ -11,6 +11,7 @@ from dateutil.relativedelta import relativedelta
 
 from financetoolkit.fixedincome.bonds import bond_model
 from financetoolkit.fixedincome.curves import curve_model
+from financetoolkit.utilities.error_model import check_option
 
 # US Treasuries and corporate bonds pay their coupon twice a year.
 FREQUENCY = 2
@@ -170,10 +171,7 @@ def get_years_to_maturity(
     Raises:
         ValueError: If the day count convention is not "act/act" or "30/360".
     """
-    if day_count not in DAY_COUNTS:
-        raise ValueError(
-            f"The day count convention must be one of {', '.join(DAY_COUNTS)}, got {day_count}."
-        )
+    check_option("day_count", day_count, DAY_COUNTS)
     if maturity <= settlement:
         return np.nan
 

@@ -10,6 +10,8 @@ __docformat__ = "google"
 
 import numpy as np
 
+from financetoolkit.utilities.error_model import check_option
+
 # Repo rates are simple interest on actual/360, the US money market convention.
 DAYS_IN_YEAR = 360
 
@@ -127,7 +129,7 @@ def get_implied_repo_rate(
 
 
 def get_conversion_factor(
-    coupon: float, years: int, months: int, rounding: str = "quarter"
+    coupon: float, years: int, months: int, maturity_rounding: str = "quarter"
 ) -> float:
     """
     Calculate the conversion factor of a deliverable into a US Treasury futures contract with
@@ -161,24 +163,23 @@ def get_conversion_factor(
         coupon (float): The annual coupon rate of the deliverable (decimal).
         years (int): The whole years from the first day of the delivery month to maturity.
         months (int): The whole months beyond those years (0 to 11), before rounding.
-        rounding (str, optional): "quarter" or "month", see above. Defaults to "quarter".
+        maturity_rounding (str, optional): How the time to maturity is rounded down. Options
+            are: "quarter" (whole quarters) or "month" (whole months), see above. Defaults to
+            "quarter".
 
     Returns:
         float: The conversion factor, rounded to four decimals.
 
     Raises:
-        ValueError: If the rounding is not "quarter" or "month".
+        InvalidArgumentError: If the maturity rounding is not "quarter" or "month".
     """
-    if rounding not in MONTH_ROUNDING:
-        raise ValueError(
-            f"The rounding must be one of {', '.join(MONTH_ROUNDING)}, not {rounding}."
-        )
+    check_option("maturity_rounding", maturity_rounding, MONTH_ROUNDING)
 
-    step = MONTH_ROUNDING[rounding]
+    step = MONTH_ROUNDING[maturity_rounding]
     z = months // step * step
     # From seven months on, the first coupon falls in the second half year.
     second_half = z >= 7  # noqa: PLR2004
-    v = (3 if rounding == "quarter" else z - 6) if second_half else z
+    v = (3 if maturity_rounding == "quarter" else z - 6) if second_half else z
     half_yield = 1 + CONVERSION_FACTOR_YIELD / 2
 
     a = 1 / half_yield ** (v / 6)

@@ -9,6 +9,7 @@ import pandas as pd
 from numpy.lib.stride_tricks import sliding_window_view
 
 from financetoolkit.technicals.overlap import overlap_model
+from financetoolkit.utilities.error_model import InvalidArgumentError, check_option
 
 # The bar on which the filters start from zero and the bars left empty while they settle: the indicators that
 # only need the period start on bar 12 and show a value from bar 32, those that also need the phase over a full
@@ -503,7 +504,7 @@ def get_mesa_adaptive_moving_average(
 def get_swiss_army_knife_filter(
     prices: pd.Series,
     window: int = 20,
-    filter: str = "band_pass",
+    method: str = "band_pass",
     delta: float = 0.1,
 ) -> pd.Series:
     """
@@ -547,8 +548,9 @@ def get_swiss_army_knife_filter(
         prices (pd.Series): Series of prices.
         window (int): The cutoff period of the high-pass and low-pass filters and the
             centre period of the band-pass filter, at least 5. Defaults to 20.
-        filter (str): "high_pass", "two_pole_high_pass", "band_pass", "butterworth" or
-            "gaussian". Defaults to "band_pass", the default of Ehlers' listing.
+        method (str): The filter. Options are: "high_pass", "two_pole_high_pass",
+            "band_pass", "butterworth" or "gaussian". Defaults to "band_pass", the default of
+            Ehlers' listing.
         delta (float): The half bandwidth of the band-pass filter as a fraction of its
             centre frequency, between 0 and 0.5. Defaults to 0.1.
 
@@ -564,27 +566,28 @@ def get_swiss_army_knife_filter(
     angle = 2 * math.pi / window
     c0, b0, b1, b2, a1, a2 = 1.0, 1.0, 0.0, 0.0, 0.0, 0.0
 
-    if filter == "high_pass":
+    if method == "high_pass":
         alpha = (math.cos(angle) + math.sin(angle) - 1) / math.cos(angle)
         c0, b1, a1 = 1 - alpha / 2, -1.0, 1 - alpha
-    elif filter in ["two_pole_high_pass", "butterworth", "gaussian"]:
+    elif method in ["two_pole_high_pass", "butterworth", "gaussian"]:
         beta = 2.415 * (1 - math.cos(angle))
         alpha = -beta + math.sqrt(beta * beta + 2 * beta)
         a1, a2 = 2 * (1 - alpha), -(1 - alpha) * (1 - alpha)
-        if filter == "two_pole_high_pass":
+        if method == "two_pole_high_pass":
             c0, b1, b2 = (1 - alpha / 2) * (1 - alpha / 2), -2.0, 1.0
-        elif filter == "butterworth":
+        elif method == "butterworth":
             c0, b1, b2 = alpha * alpha / 4, 2.0, 1.0
         else:
             c0 = alpha * alpha
-    elif filter == "band_pass":
+    elif method == "band_pass":
         beta = math.cos(angle)
         gamma = 1 / math.cos(2 * angle * delta)
         alpha = gamma - math.sqrt(gamma * gamma - 1)
         c0, b2, a1, a2 = (1 - alpha) / 2, -1.0, beta * (1 + alpha), -alpha
     else:
-        raise ValueError(
-            "Filter must be high_pass, two_pole_high_pass, band_pass, butterworth or gaussian."
+        raise InvalidArgumentError(
+            "method must be one of 'high_pass', 'two_pole_high_pass', 'band_pass', 'butterworth' "
+            f"or 'gaussian', not {method!r}. Please pass one of these as method."
         )
 
     clean = prices.dropna()
@@ -651,8 +654,7 @@ def get_super_smoother_filter(
     Returns:
         pd.Series: The smoothed prices in price units.
     """
-    if poles not in [2, 3]:
-        raise ValueError("The number of poles must be 2 or 3.")
+    check_option("poles", poles, [2, 3])
 
     clean = prices.dropna()
     price = clean.to_numpy(dtype=float)
@@ -687,7 +689,7 @@ def get_super_smoother_filter(
 
 
 def get_even_better_sinewave(
-    prices: pd.Series, window: int = 40, smoothing_window: int = 10
+    prices: pd.Series, window: int = 40, smooth_window: int = 10
 ) -> pd.Series:
     """
     Calculate Ehlers' Even Better Sinewave of a price series.
@@ -725,7 +727,7 @@ def get_even_better_sinewave(
         prices (pd.Series): Series of prices.
         window (int): The cutoff period of the high-pass filter, the longest cycle kept.
             Defaults to 40.
-        smoothing_window (int): The critical period of the SuperSmoother. Defaults to 10.
+        smooth_window (int): The critical period of the SuperSmoother. Defaults to 10.
 
     Returns:
         pd.Series: The Even Better Sinewave, between -1 and 1.
@@ -735,8 +737,8 @@ def get_even_better_sinewave(
     bars = len(price)
 
     alpha = (1 - math.sin(2 * math.pi / window)) / math.cos(2 * math.pi / window)
-    a = math.exp(-math.sqrt(2) * math.pi / smoothing_window)
-    b = 2 * a * math.cos(math.sqrt(2) * math.pi / smoothing_window)
+    a = math.exp(-math.sqrt(2) * math.pi / smooth_window)
+    b = 2 * a * math.cos(math.sqrt(2) * math.pi / smooth_window)
     c2, c3 = b, -a * a
     c1 = 1 - c2 - c3
 

@@ -162,14 +162,14 @@ class DrawdownRisk:
             returns = self._historical_data[period]["Return"]
             conditional_drawdown_at_risk = (
                 risk_model.get_rolling_conditional_drawdown_at_risk(
-                    returns, alpha, rolling, compounded=compound_returns
+                    returns, alpha, rolling, compound_returns=compound_returns
                 )
             )
         else:
             returns = self._get_returns(period, within_period)
 
             conditional_drawdown_at_risk = risk_model.get_conditional_drawdown_at_risk(
-                returns, alpha, compounded=compound_returns
+                returns, alpha, compound_returns=compound_returns
             )
 
         if rolling or within_period:
@@ -316,7 +316,7 @@ class DrawdownRisk:
                 returns,
                 window=window,
                 alpha=alpha,
-                compounded=compound_returns,
+                compound_returns=compound_returns,
                 window_size=rolling,
             )
         )
@@ -445,7 +445,7 @@ class DrawdownRisk:
         returns = self._get_measure_returns(period, within_period, rolling, growth)
 
         drawdown_at_risk = drawdown_model.get_drawdown_at_risk(
-            returns, alpha=alpha, compounded=compound_returns, window_size=rolling
+            returns, alpha=alpha, compound_returns=compound_returns, window_size=rolling
         )
 
         return self._finalize_measure(
@@ -573,7 +573,7 @@ class DrawdownRisk:
         returns = self._get_measure_returns(period, within_period, rolling, growth)
 
         entropic_drawdown_at_risk = drawdown_model.get_entropic_drawdown_at_risk(
-            returns, alpha=alpha, compounded=compound_returns, window_size=rolling
+            returns, alpha=alpha, compound_returns=compound_returns, window_size=rolling
         )
 
         return self._finalize_measure(
@@ -709,7 +709,7 @@ class DrawdownRisk:
         returns = self._get_measure_returns(period, within_period, rolling, growth)
 
         maximum_drawdown = drawdown_model.get_maximum_drawdown(
-            returns, compounded=compound_returns, window_size=rolling
+            returns, compound_returns=compound_returns, window_size=rolling
         )
 
         return self._finalize_measure(
@@ -1498,7 +1498,9 @@ class DrawdownRisk:
 
         returns = self._within_historical_data[period]["Return"]
 
-        ulcer_index = risk_model.get_ui(returns, window, compounded=compound_returns)
+        ulcer_index = risk_model.get_ui(
+            returns, window, compound_returns=compound_returns
+        )
 
         ulcer_index = ulcer_index.loc[self._start_date : self._end_date]
 
@@ -1767,7 +1769,7 @@ class DrawdownRisk:
         average_drawdown = drawdown_model.get_average_drawdown(
             returns,
             method=method,
-            compounded=compound_returns,
+            compound_returns=compound_returns,
             window_size=rolling,
         )
 

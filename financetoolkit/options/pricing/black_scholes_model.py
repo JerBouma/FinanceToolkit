@@ -10,6 +10,7 @@ from scipy.optimize import brentq
 from scipy.special import log_ndtr, ndtr
 
 from financetoolkit.options.helpers import validate_numeric_inputs
+from financetoolkit.utilities.error_model import check_option
 
 # The volatility range the implied volatility is solved within.
 MINIMUM_IMPLIED_VOLATILITY = 1e-6
@@ -647,11 +648,7 @@ def get_binary_option(
         cash_payout=cash_payout,
     )
 
-    if option_type not in ("cash-or-nothing", "asset-or-nothing"):
-        raise ValueError(
-            "option_type must be either 'cash-or-nothing' or 'asset-or-nothing', "
-            f"received {option_type!r}."
-        )
+    check_option("option_type", option_type, ("cash-or-nothing", "asset-or-nothing"))
 
     d1 = get_d1(
         stock_price=stock_price,
@@ -1517,8 +1514,7 @@ def get_bjerksund_stensland(
     if np.any(np.asarray(volatility) <= 0):
         raise ValueError(f"volatility must be positive, received {volatility!r}.")
 
-    if method not in ("2002", "1993"):
-        raise ValueError(f'method must be "2002" or "1993", received {method!r}.')
+    check_option("method", method, ("2002", "1993"))
 
     call = (
         _bjerksund_stensland_call
@@ -1766,10 +1762,7 @@ def get_black_scholes_cash_dividends(
         https://www.quantlib.org. For S = K = 100, r = 5%, σ = 30%, T = 1 and a dividend of
         2 after 30 days, the escrowed call is 13.0133 and the Haug-Haug-Lewis call 13.0325.
     """
-    if method not in ("escrowed", "haug_haug_lewis"):
-        raise ValueError(
-            f'method must be "escrowed" or "haug_haug_lewis", received {method!r}.'
-        )
+    check_option("method", method, ("escrowed", "haug_haug_lewis"))
     if volatility <= 0:
         raise ValueError(f"volatility must be positive, received {volatility!r}.")
 

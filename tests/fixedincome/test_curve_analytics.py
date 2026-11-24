@@ -79,7 +79,7 @@ def test_zero_coupon_curve_needs_a_short_maturity(fixedincome):
 
 
 def test_nelson_siegel_svensson(fixedincome):
-    parameters = fixedincome.get_nelson_siegel_svensson(svensson=False)
+    parameters = fixedincome.get_nelson_siegel_svensson(method="nelson_siegel")
     us = parameters["United States"]
 
     assert list(us.columns) == [
@@ -220,7 +220,7 @@ def test_short_rate_model(fixedincome, monkeypatch):
 @pytest.mark.parametrize("model", ["hull_white", "vasicek", "cir"])
 def test_short_rate_simulation(fixedincome, model, scheme):
     simulation = fixedincome.get_short_rate_simulation(
-        model=model, years=2, steps_per_year=4, paths=2000, scheme=scheme
+        model=model, years=2, steps_per_year=4, simulations=2000, scheme=scheme
     )
 
     assert list(simulation.columns) == ["Mean", "5%", "25%", "50%", "75%", "95%"]
@@ -234,7 +234,7 @@ def test_short_rate_simulation(fixedincome, model, scheme):
 def test_short_rate_simulation_is_bounded(fixedincome, monkeypatch):
     monkeypatch.setenv("FINANCETOOLKIT_STRICT_ERRORS", "1")
     with pytest.raises(ValueError, match="too large"):
-        fixedincome.get_short_rate_simulation(paths=10_000_000, years=10)
+        fixedincome.get_short_rate_simulation(simulations=10_000_000, years=10)
     with pytest.raises(ValueError, match="scheme must be one of"):
         fixedincome.get_short_rate_simulation(scheme="milstein")
 

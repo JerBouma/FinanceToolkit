@@ -8,6 +8,7 @@ import pytest
 
 from financetoolkit.fixedincome.bonds import derivative_model
 from financetoolkit.fixedincome.inflation import inflation_swap_model
+from financetoolkit.utilities.error_model import InvalidArgumentError
 
 
 def test_get_annuity_factor(recorder):
@@ -435,7 +436,7 @@ def test_implied_volatility_bounds():
     assert derivative_model.get_implied_volatility(
         price, 0.03, 0.03, 4.0, method="bachelier"
     ) == pytest.approx(0.5, rel=1e-10)
-    with pytest.raises(ValueError, match="option type"):
+    with pytest.raises(InvalidArgumentError, match="option_type must be one of"):
         derivative_model.get_implied_volatility(0.01, 0.03, 0.03, 1, option_type="x")
     with pytest.raises(ValueError, match="positive"):
         derivative_model.get_implied_volatility(0.01, 0.03, 0.03, 0)

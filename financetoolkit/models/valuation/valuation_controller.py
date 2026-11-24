@@ -21,7 +21,11 @@ from financetoolkit.models.valuation import (
 from financetoolkit.performance.performance_model import get_beta
 from financetoolkit.ratios import valuation_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
-from financetoolkit.utilities.error_model import handle_errors
+from financetoolkit.utilities.error_model import (
+    InvalidArgumentError,
+    check_option,
+    handle_errors,
+)
 from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import (
@@ -1375,8 +1379,7 @@ class ValuationModels:
         | PEP  | 6.926e+09  | 6.095e+09 | 6.737e+09 | 6.379e+09 | 6.358e+09 |
         """
         method = method.lower()
-        if method not in ("total", "greenwald"):
-            raise ValueError("The method must be 'total' or 'greenwald'.")
+        check_option("method", method, ("total", "greenwald"))
         periods_per_year = 4 if self._quarterly else 1
 
         def flow(statement: pd.DataFrame, row: str) -> pd.DataFrame:
@@ -1986,15 +1989,11 @@ class ValuationModels:
         | CRM  |  18.2502 |  11.8861 |  51.1607 |  67.9382 | nan     |
         | INTU | 102.101  |  60.4477 |  99.9192 |  97.2924 | 173.485 |
         """
-        if cash_flow_type not in [
-            "Free Cash Flow to Firm",
-            "Free Cash Flow",
-            "Operating Cash Flow",
-        ]:
-            raise ValueError(
-                "Invalid cash flow type. Please choose from the following: 'Free Cash Flow to Firm', "
-                "'Free Cash Flow', 'Operating Cash Flow'"
-            )
+        check_option(
+            "cash_flow_type",
+            cash_flow_type,
+            ["Free Cash Flow to Firm", "Free Cash Flow", "Operating Cash Flow"],
+        )
 
         # The growth and discount rates are annual, so a quarterly base cash flow is the trailing twelve months.
         if trailing is None and self._quarterly:
@@ -4036,8 +4035,7 @@ class ValuationModels:
         reported Free Cash Flow and Operating Cash Flow are after interest.
         """
         valid = ["Free Cash Flow to Firm", "Free Cash Flow", "Operating Cash Flow"]
-        if cash_flow_type not in valid:
-            raise ValueError(f"The cash flow type must be one of: {', '.join(valid)}.")
+        check_option("cash_flow_type", cash_flow_type, valid)
 
         def summed(statement: pd.DataFrame, row: str) -> pd.DataFrame:
             return self._calendar_sum(statement, row, trailing)
@@ -4649,7 +4647,10 @@ class ValuationModels:
         | ('MSFT', 'Dividend Yield')             |    0.0065 |        0.008  |      0.009  |          0.5 |      10 |
         """
         if self._peer_function is None:
-            raise ValueError("Peer data is not available for this Toolkit.")
+            raise InvalidArgumentError(
+                "The peer data comes from the Toolkit. Please use this method from a Toolkit "
+                "(toolkit.models), or pass peer_function when creating the Models class."
+            )
 
         result = self._peer_function(peers)
         return apply_rounding(

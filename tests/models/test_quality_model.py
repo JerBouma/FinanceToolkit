@@ -5,6 +5,7 @@ import pandas as pd
 import pytest
 
 from financetoolkit.models.quality import quality_model
+from financetoolkit.utilities.error_model import InvalidArgumentError
 
 PERIODS = ["2021", "2022", "2023"]
 
@@ -373,7 +374,7 @@ def test_modified_jones_cross_section_explains_accruals_that_follow_the_model():
 
 def test_modified_jones_rejects_unknown_methods_and_too_few_observations():
     company = jones_company(6)
-    with pytest.raises(ValueError, match="not supported"):
+    with pytest.raises(InvalidArgumentError, match="method must be one of"):
         quality_model.get_modified_jones_accruals(
             net_income=company["revenue"],
             operating_cash_flow=company["revenue"],

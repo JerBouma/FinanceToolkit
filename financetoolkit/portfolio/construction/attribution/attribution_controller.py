@@ -8,7 +8,11 @@ import pandas as pd
 from financetoolkit.portfolio.construction.attribution import attribution_model
 from financetoolkit.portfolio.construction.optimization import estimation_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
-from financetoolkit.utilities.error_model import handle_errors
+from financetoolkit.utilities.error_model import (
+    InvalidArgumentError,
+    check_option,
+    handle_errors,
+)
 from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.sources_model import track_sources
 
@@ -40,8 +44,10 @@ class AttributionConstruction:
     def _get_prices(self, tickers: list[str], start: str, end: str) -> pd.DataFrame:
         """The daily prices of other tickers over a date range."""
         if self._price_function is None:
-            raise ValueError(
-                "Prices of other tickers are not available for this Toolkit."
+            raise InvalidArgumentError(
+                "The prices of other tickers come from the Toolkit. Please use this method from a "
+                "Toolkit (toolkit.portfolio), or pass price_function when creating the "
+                "PortfolioConstruction class."
             )
         return self._price_function(tickers, start, end)
 
@@ -189,7 +195,11 @@ class AttributionConstruction:
         when the company profiles the sectors and countries of stocks come from are missing.
         """
         if self._fund_function is None:
-            raise ValueError("Fund data is not available for this Toolkit.")
+            raise InvalidArgumentError(
+                "The fund holdings come from the Toolkit. Please use this method from a Toolkit "
+                "(toolkit.portfolio), or pass fund_function when creating the "
+                "PortfolioConstruction class."
+            )
 
         funds = self._fund_function(by, assets)
         exposures: dict[str, pd.Series] = {}
@@ -289,8 +299,7 @@ class AttributionConstruction:
         | Cash & Others          |     0.0004 |               0      |            0.0004 |
         | Real Estate            |     0      |               0.0175 |           -0.0175 |
         """
-        if by not in ("sector", "country", "holdings"):
-            raise ValueError("by must be 'sector', 'country' or 'holdings'.")
+        check_option("by", by, ("sector", "country", "holdings"))
 
         assets = self._get_assets()
         resolved = self._resolve_weights(weights, assets)
@@ -471,14 +480,11 @@ class AttributionConstruction:
         | Total                  |                1   |             1      |             0.2596 |             0.1798 |             -0.0077 |             0.0233 |               0.0642 |         0.0798 |
         """
         if period is not None and period not in SUB_PERIODS:
-            raise ValueError(
-                f"period must be {', '.join(SUB_PERIODS)}, or left out to attribute the whole "
-                "range as one period."
+            raise InvalidArgumentError(
+                f"period must be {', '.join(SUB_PERIODS)}, not {period!r}. Please pass one of "
+                "these as period, or leave it out to attribute the whole range as one period."
             )
-        if linking not in attribution_model.LINKING_METHODS:
-            raise ValueError(
-                f"linking must be one of {', '.join(attribution_model.LINKING_METHODS)}."
-            )
+        check_option("linking", linking, attribution_model.LINKING_METHODS)
         if not self._benchmark_name or self._fund_function is None:
             raise ValueError("The attribution needs a benchmark fund, e.g. SPY.")
 

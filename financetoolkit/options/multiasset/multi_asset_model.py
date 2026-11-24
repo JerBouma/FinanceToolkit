@@ -16,6 +16,7 @@ from financetoolkit.options.options_model import (
     SIMULATION_CHUNK_SIZE,
 )
 from financetoolkit.options.pricing.american_model import get_qd_plus
+from financetoolkit.utilities.error_model import check_option
 
 # Below this volatility (of the ratio of two prices, or of a spread) the two-asset formulas, which
 # divide by it, have no meaning: the prices move as one.
@@ -360,10 +361,7 @@ def get_spread_option(
     _validate_two_assets(
         first_volatility, second_volatility, correlation, time_to_expiration
     )
-    if method not in ("bjerksund_stensland", "kirk"):
-        raise ValueError(
-            f'method must be "bjerksund_stensland" or "kirk", received {method!r}.'
-        )
+    check_option("method", method, ("bjerksund_stensland", "kirk"))
 
     sign = -1 if put_option else 1
 
@@ -730,11 +728,11 @@ def get_rainbow_option(
     _validate_two_assets(
         first_volatility, second_volatility, correlation, time_to_expiration
     )
-    if option_type not in ("call_on_max", "call_on_min", "put_on_max", "put_on_min"):
-        raise ValueError(
-            'option_type must be "call_on_max", "call_on_min", "put_on_max" or '
-            f'"put_on_min", received {option_type!r}.'
-        )
+    check_option(
+        "option_type",
+        option_type,
+        ("call_on_max", "call_on_min", "put_on_max", "put_on_min"),
+    )
     if min(first_stock_price, second_stock_price, strike_price) <= 0:
         raise ValueError("The prices and the strike price must be positive.")
     volatility = _ratio_volatility(first_volatility, second_volatility, correlation)
@@ -1056,8 +1054,7 @@ def get_basket_option(
     ```
     """
     validate_numeric_inputs(strike_price=strike_price)
-    if method not in ("levy", "gentle"):
-        raise ValueError(f'method must be "levy" or "gentle", received {method!r}.')
+    check_option("method", method, ("levy", "gentle"))
     forwards, weights, volatilities, correlation_matrix = _basket_inputs(
         stock_prices,
         weights,

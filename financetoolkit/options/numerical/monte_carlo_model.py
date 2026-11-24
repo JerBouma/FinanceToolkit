@@ -15,6 +15,7 @@ from financetoolkit.options.helpers import (
 )
 from financetoolkit.options.options_model import SIMULATION_CHUNK_SIZE
 from financetoolkit.options.pricing.black_scholes_model import get_black_scholes
+from financetoolkit.utilities.error_model import check_option
 
 # The most prices (paths times time steps times series) a function that keeps whole paths
 # holds at once, about 160 MB.
@@ -51,11 +52,7 @@ def _variance_reduction(variance_reduction: str | None) -> None:
     Args:
         variance_reduction (str | None): The variance reduction.
     """
-    if variance_reduction not in VARIANCE_REDUCTIONS:
-        raise ValueError(
-            "variance_reduction must be None, 'antithetic' or 'control_variate', "
-            f"received {variance_reduction!r}."
-        )
+    check_option("variance_reduction", variance_reduction, VARIANCE_REDUCTIONS)
 
 
 def simulate_gbm_paths(
@@ -330,10 +327,7 @@ def simulate_heston_paths(
         time_to_expiration=time_to_expiration,
         dividend_yield=dividend_yield,
     )
-    if scheme not in HESTON_SCHEMES:
-        raise ValueError(
-            f"scheme must be one of {', '.join(HESTON_SCHEMES)}, received {scheme!r}."
-        )
+    check_option("scheme", scheme, HESTON_SCHEMES)
     if (
         stock_price <= 0
         or variance < 0
@@ -544,12 +538,8 @@ def get_monte_carlo_barrier_option(
         dividend_yield=dividend_yield,
     )
     _variance_reduction(variance_reduction)
-    if barrier_direction not in ("down", "up"):
-        raise ValueError(
-            f"barrier_direction must be 'down' or 'up', received {barrier_direction!r}."
-        )
-    if knock_type not in ("out", "in"):
-        raise ValueError(f"knock_type must be 'out' or 'in', received {knock_type!r}.")
+    check_option("barrier_direction", barrier_direction, ("down", "up"))
+    check_option("knock_type", knock_type, ("out", "in"))
 
     antithetic = variance_reduction == "antithetic"
     paths = simulate_gbm_paths(
@@ -770,10 +760,7 @@ def get_longstaff_schwartz_option_prices(
         dividend_yield=dividend_yield,
     )
     _variance_reduction(variance_reduction)
-    if basis not in LEAST_SQUARES_BASES:
-        raise ValueError(
-            f"basis must be one of {', '.join(LEAST_SQUARES_BASES)}, received {basis!r}."
-        )
+    check_option("basis", basis, LEAST_SQUARES_BASES)
     if not isinstance(degree, int) or degree < 1:
         raise ValueError(f"degree must be a positive integer, received {degree!r}.")
 
@@ -1073,15 +1060,8 @@ def get_longstaff_schwartz_basket_option(
     validate_numeric_inputs(
         strike_price=strike_price, time_to_expiration=time_to_expiration
     )
-    if variance_reduction not in (None, "antithetic"):
-        raise ValueError(
-            f"variance_reduction must be None or 'antithetic', received "
-            f"{variance_reduction!r}."
-        )
-    if basket_type not in ("weighted", "maximum"):
-        raise ValueError(
-            f"basket_type must be 'weighted' or 'maximum', received {basket_type!r}."
-        )
+    check_option("variance_reduction", variance_reduction, (None, "antithetic"))
+    check_option("basket_type", basket_type, ("weighted", "maximum"))
     prices = np.asarray(stock_prices, dtype=float)
     units = np.broadcast_to(np.asarray(weights, dtype=float), prices.shape)
     sign = -1 if put_option else 1

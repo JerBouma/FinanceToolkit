@@ -13,7 +13,11 @@ from financetoolkit.portfolio.construction.optimization import (
 )
 from financetoolkit.portfolio.helpers import BENCHMARK_TICKER, PORTFOLIO_TICKER
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
-from financetoolkit.utilities.error_model import handle_errors
+from financetoolkit.utilities.error_model import (
+    check_option,
+    handle_errors,
+    validate_alpha,
+)
 from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.sources_model import track_sources
 
@@ -218,7 +222,7 @@ class OptimizationConstruction:
         weights: pd.Series,
         returns: pd.DataFrame,
         risk_measure: str,
-        confidence_level: float,
+        alpha: float,
         minimum_acceptable_return: float | str,
         rounding: int | None,
     ) -> pd.DataFrame:
@@ -233,7 +237,7 @@ class OptimizationConstruction:
             optimization_model.get_mean_risk_measure(
                 returns.assign(**{PORTFOLIO_TICKER: returns @ weights}),
                 risk_measure,
-                confidence_level,
+                alpha,
                 minimum_acceptable_return,
             )
         )
@@ -1156,7 +1160,7 @@ class OptimizationConstruction:
         sector_bounds: dict[str, tuple[float, float]] | None = None,
         country_bounds: dict[str, tuple[float, float]] | None = None,
         risk_measure: str = "volatility",
-        confidence_level: float = 0.95,
+        alpha: float = 0.05,
         include_benchmark: bool = False,
         rounding: int | None = None,
         show_columns: str | list[str] | None = None,
@@ -1268,8 +1272,9 @@ class OptimizationConstruction:
                 zero return), "gini_mean_difference", "tail_gini", "cvar_range",
                 "tail_gini_range", "ulcer_index", "cvar" or "cdar". Defaults to
                 "volatility".
-            confidence_level (float, optional): The confidence level of the CVaR, CDaR,
-                CVaR range and Tail Gini measures. Defaults to 0.95.
+            alpha (float, optional): The tail probability of the CVaR, CDaR, CVaR
+                range and Tail Gini measures, e.g. 0.05 for the worst 5% of periods.
+                Defaults to 0.05.
             include_benchmark (bool, optional): Whether to include the benchmark as an
                 asset. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to.
@@ -1326,6 +1331,7 @@ class OptimizationConstruction:
         | XOM       |   0.2621 |            0.2911 |       0.2702 |         0.9524 |              0.2846 |
         | Portfolio |   1      |            0.1925 |       0.1523 |         1.0429 |              1      |
         """
+        validate_alpha(alpha)
         returns, expected_returns, covariance_matrix, risk_free_rate = self._get_inputs(
             period, include_benchmark, covariance, covariance_span
         )
@@ -1348,7 +1354,7 @@ class OptimizationConstruction:
             )
 
         weights = optimization_model.get_risk_budgeting_weights(
-            returns, risk_measure, budget, confidence_level, **constraints
+            returns, risk_measure, budget, alpha, **constraints
         )
         table = self._weights_table(
             weights, expected_returns, covariance_matrix, risk_free_rate, rounding
@@ -1357,10 +1363,10 @@ class OptimizationConstruction:
         table[name] = optimization_model.get_mean_risk_measure(
             returns.assign(**{PORTFOLIO_TICKER: returns @ weights}),
             risk_measure,
-            confidence_level,
+            alpha,
         )
         contributions = optimization_model.get_mean_risk_contributions(
-            weights, returns, risk_measure, confidence_level
+            weights, returns, risk_measure, alpha
         )
         contributions[PORTFOLIO_TICKER] = contributions.sum()
         table[f"{name} Contribution"] = contributions
@@ -1377,7 +1383,7 @@ class OptimizationConstruction:
         minimum_weight: float | dict[str, float] = 0.0,
         maximum_weight: float | dict[str, float] = 1.0,
         risk_measure: str = "variance",
-        confidence_level: float = 0.95,
+        alpha: float = 0.05,
         minimum_acceptable_return: float | str = 0.0,
         include_benchmark: bool = False,
         rounding: int | None = None,
@@ -1493,8 +1499,9 @@ class OptimizationConstruction:
                 "tail_gini_range", "ulcer_index" (of the uncompounded cumulative return),
                 "cvar" (Rockafellar and Uryasev, 2002) or "cdar" (Chekhlov et al., 2005).
                 Defaults to "variance".
-            confidence_level (float, optional): The confidence level of "cvar", "cdar",
-                "cvar_range" and the Tail Gini measures. Defaults to 0.95.
+            alpha (float, optional): The tail probability of the CVaR, CDaR, CVaR
+                range and Tail Gini measures, e.g. 0.05 for the worst 5% of periods.
+                Defaults to 0.05.
             minimum_acceptable_return (float | str, optional): The threshold of
                 "semideviation" and "lower_partial_moment", as a return per period of the
                 chosen frequency, or "mean" for each asset's average return. Defaults to 0.
@@ -1550,6 +1557,10 @@ class OptimizationConstruction:
         | XOM       |   0.4201 |            0.2911 |       0.2702 |         0.9524 |              0.6006 |
         | Portfolio |   1      |            0.2073 |       0.1569 |         1.1059 |              1      |
         """
+        check_option(
+            "codependence", codependence, optimization_model.CODEPENDENCE_METHODS
+        )
+        validate_alpha(alpha)
         returns, expected_returns, covariance_matrix, risk_free_rate = self._get_inputs(
             period, include_benchmark, covariance, covariance_span
         )
@@ -1563,7 +1574,7 @@ class OptimizationConstruction:
             ),
             returns=returns,
             risk_measure=risk_measure,
-            confidence_level=confidence_level,
+            alpha=alpha,
             minimum_acceptable_return=minimum_acceptable_return,
             similarity=(
                 optimization_model.get_codependence_similarity(
@@ -1581,7 +1592,7 @@ class OptimizationConstruction:
             weights,
             returns,
             risk_measure,
-            confidence_level,
+            alpha,
             minimum_acceptable_return,
             rounding,
         )
@@ -1710,6 +1721,9 @@ class OptimizationConstruction:
         | XOM       |   0.2175 |            0.2911 |       0.2702 |         0.9526 |              0.2485 |
         | Portfolio |   1      |            0.1663 |       0.1372 |         0.9663 |              1      |
         """
+        check_option(
+            "codependence", codependence, optimization_model.CODEPENDENCE_METHODS
+        )
         returns, expected_returns, covariance_matrix, risk_free_rate = self._get_inputs(
             period, include_benchmark, covariance, covariance_span
         )
@@ -1970,7 +1984,7 @@ class OptimizationConstruction:
         sector_bounds: dict[str, tuple[float, float]] | None = None,
         country_bounds: dict[str, tuple[float, float]] | None = None,
         risk_measure: str = "variance",
-        confidence_level: float = 0.95,
+        alpha: float = 0.05,
         minimum_acceptable_return: float | str = 0.0,
         within_clusters: str = "inverse_risk",
         include_benchmark: bool = False,
@@ -2108,8 +2122,9 @@ class OptimizationConstruction:
                 "worst_realization", "gini_mean_difference", "tail_gini", "range",
                 "cvar_range", "tail_gini_range", "ulcer_index", "cvar" or "cdar" (see
                 get_hierarchical_risk_parity_weights). Defaults to "variance".
-            confidence_level (float, optional): The confidence level of "cvar", "cdar",
-                "cvar_range" and the Tail Gini measures. Defaults to 0.95.
+            alpha (float, optional): The tail probability of the CVaR, CDaR, CVaR
+                range and Tail Gini measures, e.g. 0.05 for the worst 5% of periods.
+                Defaults to 0.05.
             minimum_acceptable_return (float | str, optional): The threshold of
                 "semideviation" and "lower_partial_moment", as a return per period of the
                 chosen frequency, or "mean" for each asset's average return. Defaults to 0.
@@ -2171,6 +2186,10 @@ class OptimizationConstruction:
         | XOM       |   0.1014 |       0.2702 |         0.9524 |              0.0523 |         3 |
         | Portfolio |   1      |       0.1715 |         0.8592 |              1      |       nan |
         """
+        check_option(
+            "codependence", codependence, optimization_model.CODEPENDENCE_METHODS
+        )
+        validate_alpha(alpha)
         returns, expected_returns, covariance_matrix, risk_free_rate = self._get_inputs(
             period, include_benchmark, covariance, covariance_span
         )
@@ -2198,7 +2217,7 @@ class OptimizationConstruction:
             distance=distance,
             returns=returns,
             risk_measure=risk_measure,
-            confidence_level=confidence_level,
+            alpha=alpha,
             minimum_acceptable_return=minimum_acceptable_return,
             within_clusters=within_clusters,
             cluster_criterion=cluster_criterion,
@@ -2211,7 +2230,7 @@ class OptimizationConstruction:
             weights,
             returns,
             risk_measure,
-            confidence_level,
+            alpha,
             minimum_acceptable_return,
             rounding,
         )
@@ -2240,7 +2259,7 @@ class OptimizationConstruction:
         expected_returns: str = "mean",
         expected_returns_span: int = 180,
         risk_measure: str = "variance",
-        confidence_level: float = 0.95,
+        alpha: float = 0.05,
         minimum_acceptable_return: float | str = 0.0,
         include_benchmark: bool = False,
         rounding: int | None = None,
@@ -2357,8 +2376,9 @@ class OptimizationConstruction:
                 "cvar_range", "tail_gini_range", "ulcer_index", "cvar" or "cdar" (see
                 get_mean_risk_weights). "volatility" gives the weights of "variance", and
                 "maximum_sharpe" takes the variance only. Defaults to "variance".
-            confidence_level (float, optional): The confidence level of "cvar", "cdar",
-                "cvar_range" and the Tail Gini measures. Defaults to 0.95.
+            alpha (float, optional): The tail probability of the CVaR, CDaR, CVaR
+                range and Tail Gini measures, e.g. 0.05 for the worst 5% of periods.
+                Defaults to 0.05.
             minimum_acceptable_return (float | str, optional): The threshold of
                 "semideviation" and "lower_partial_moment", as a return per period of the
                 chosen frequency, or "mean" for each asset's average return. Defaults to 0.
@@ -2416,6 +2436,10 @@ class OptimizationConstruction:
         | XOM       |   0.1782 |       0.2702 |         0.9524 |              0.1782 |         2 |
         | Portfolio |   1      |       0.1366 |         0.9061 |              1      |       nan |
         """
+        check_option(
+            "codependence", codependence, optimization_model.CODEPENDENCE_METHODS
+        )
+        validate_alpha(alpha)
         returns, expected, covariance_matrix, risk_free_rate = self._get_inputs(
             period,
             include_benchmark,
@@ -2444,7 +2468,7 @@ class OptimizationConstruction:
             distance=distance,
             returns=returns,
             risk_measure=risk_measure,
-            confidence_level=confidence_level,
+            alpha=alpha,
             minimum_acceptable_return=minimum_acceptable_return,
             cluster_criterion=cluster_criterion,
             similarity=similarity,
@@ -2456,7 +2480,7 @@ class OptimizationConstruction:
             weights,
             returns,
             risk_measure,
-            confidence_level,
+            alpha,
             minimum_acceptable_return,
             rounding,
         )
@@ -2770,7 +2794,7 @@ class OptimizationConstruction:
         ] = "mad",
         objective: str = "minimum_risk",
         target_return: float | None = None,
-        confidence_level: float = 0.95,
+        alpha: float = 0.05,
         minimum_acceptable_return: float | str = 0.0,
         period: str = "daily",
         expected_returns: str = "mean",
@@ -2801,7 +2825,7 @@ class OptimizationConstruction:
         the maximum Sharpe ratio portfolio with the tail loss in place of the volatility.
 
         The risk measures ρ(w) of the portfolio's returns X_t = r_t'w over T periods, with
-        α the confidence level and τ the minimum acceptable return, are:
+        α the tail probability and τ the minimum acceptable return, are:
 
         - "mad": the mean absolute deviation Σ |X_t - X̄| / T (Konno and Yamazaki, 1991).
         - "semideviation": √(Σ min(X_t - τ, 0)² / T), or √(Σ min(X_t - X̄, 0)² / (T - 1))
@@ -2811,19 +2835,19 @@ class OptimizationConstruction:
         - "worst_realization": the largest loss -min X_t (Young, 1998).
         - "gini_mean_difference": the average absolute difference between the returns of
           two periods, Σ_i Σ_j |X_i - X_j| / (T(T - 1)) (Yitzhaki, 1982).
-        - "tail_gini": the Tail Gini of the losses beyond the 1 - α quantile (Furman, Wang
+        - "tail_gini": the Tail Gini of the losses beyond the α quantile (Furman, Wang
           and Zitikis, 2017; Cajas, 2021).
         - "range": the largest gain plus the largest loss, max X_t - min X_t.
         - "cvar_range": the CVaR of the losses plus that of the gains, the average of the
-          best 1 - α share of the returns minus the average of the worst (Cajas, 2021).
+          best α share of the returns minus the average of the worst (Cajas, 2021).
         - "tail_gini_range": the Tail Gini of the losses plus that of the gains.
         - "ulcer_index": √(Σ D_t² / T) with D_t the drawdowns of the uncompounded
           cumulative return (Martin and McCann, 1989).
-        - "cvar": the Conditional Value at Risk, the average loss in the worst 1 - α share of
-          the periods, VaR + Σ max(0, -X_t - VaR) / ((1 - α)T) at its minimum over the VaR
+        - "cvar": the Conditional Value at Risk, the average loss in the worst α share of the
+          periods, VaR + Σ max(0, -X_t - VaR) / (αT) at its minimum over the VaR
           (Rockafellar and Uryasev, 2000).
-        - "cdar": the Conditional Drawdown at Risk, the average of the worst 1 - α share of
-          the drawdowns D_t, ζ + Σ max(0, D_t - ζ) / ((1 - α)T) at its minimum over ζ
+        - "cdar": the Conditional Drawdown at Risk, the average of the worst α share of the
+          drawdowns D_t, ζ + Σ max(0, D_t - ζ) / (αT) at its minimum over ζ
           (Chekhlov, Uryasev and Zabarankin, 2005).
         - "maximum_drawdown": the largest drawdown max D_t.
         - "average_drawdown": the average drawdown Σ D_t / T.
@@ -2912,9 +2936,9 @@ class OptimizationConstruction:
                 minimum risk portfolio must have, e.g. 0.12 for 12%, with the cash of a
                 net exposure other than one at the risk free rate. Defaults to None,
                 no target.
-            confidence_level (float, optional): The confidence level of the CVaR, the CVaR
-                range, the CDaR and the Tail Gini measures, e.g. 0.95 for the worst 5% of
-                periods (or drawdowns). Defaults to 0.95.
+            alpha (float, optional): The tail probability of the CVaR, the CVaR
+                range, the CDaR and the Tail Gini measures, e.g. 0.05 for the worst 5% of
+                periods (or drawdowns). Defaults to 0.05.
             minimum_acceptable_return (float | str, optional): The threshold of the
                 semideviation and the lower partial moment, as a return per period of the
                 chosen frequency (e.g. 0.0002 a day), or "mean" for each asset's average
@@ -2993,8 +3017,8 @@ class OptimizationConstruction:
           of the risk module, relative to the peak value, are close for small drawdowns
           and smaller for large ones.
         - The CVaR and the CDaR are the values the linear programmes minimize: the average
-          of the worst 1 - α share of the periods (or drawdowns), with a fraction of the
-          boundary period when (1 - α)T is not a whole number (Rockafellar and Uryasev,
+          of the worst α share of the periods (or drawdowns), with a fraction of the
+          boundary period when αT is not a whole number (Rockafellar and Uryasev,
           2002), as in the expected shortfall contributions.
         - Riskfolio-Lib's MAD is half of the mean absolute deviation and its lower partial
           moments divide by T - 1, and skfolio's lower partial moment is below the mean;
@@ -3032,11 +3056,10 @@ class OptimizationConstruction:
         | XOM       |   0.4521 |            0.2911 |                 0.0187 |                       0.0545 |
         | Portfolio |   1      |            0.2226 |                 0.0113 |                       0.0662 |
         """
-        if risk_measure not in optimization_model.MEAN_RISK_MEASURES:
-            raise ValueError(
-                "The risk measure must be one of "
-                f"{', '.join(optimization_model.MEAN_RISK_MEASURES)}, not '{risk_measure}'."
-            )
+        validate_alpha(alpha)
+        check_option(
+            "risk_measure", risk_measure, optimization_model.MEAN_RISK_MEASURES
+        )
         returns, expected, covariance, risk_free_rate = self._get_inputs(
             period,
             include_benchmark,
@@ -3062,7 +3085,7 @@ class OptimizationConstruction:
                 else None
             ),
             risk_free_per_period,
-            confidence_level,
+            alpha,
             minimum_acceptable_return,
             **self._get_constraints(
                 returns.columns.tolist(),
@@ -3085,7 +3108,7 @@ class OptimizationConstruction:
         measure = optimization_model.get_mean_risk_measure(
             returns.assign(**{PORTFOLIO_TICKER: returns @ weights}),
             risk_measure,
-            confidence_level,
+            alpha,
             minimum_acceptable_return,
         )
         excess = expected_per_period - risk_free_per_period
@@ -3538,7 +3561,7 @@ class OptimizationConstruction:
     @handle_errors
     def get_distributionally_robust_cvar_weights(
         self,
-        confidence_level: float = 0.95,
+        alpha: float = 0.05,
         wasserstein_radius: float = 0.0005,
         risk_aversion: float = 1.0,
         period: str = "daily",
@@ -3563,16 +3586,16 @@ class OptimizationConstruction:
         lies within a transport distance ε of it, so the portfolio is protected against
         distributions with heavier losses than the sample happened to show.
 
-        With X = ξ'w the portfolio return, β the confidence level, ρ the risk aversion and
+        With X = ξ'w the portfolio return, α the tail probability, ρ the risk aversion and
         ε the radius, the weights minimize
 
-        - sup over Q in the ball of E_Q[-X] + ρ CVaR_β,Q(-X),
+        - sup over Q in the ball of E_Q[-X] + ρ CVaR_α,Q(-X),
 
         where the distance between two distributions is the least average 1-norm change
         in the returns of the assets that turns one into the other (the type-1
         Wasserstein distance), and returns stay at or above -100%. Mohajerin Esfahani
         and Kuhn (2018) show that this worst case is a linear programme: with the CVaR written as
-        min over τ of τ + E[max(-X - τ, 0)] / (1 - β) the loss is the maximum of two
+        min over τ of τ + E[max(-X - τ, 0)] / α the loss is the maximum of two
         linear pieces, and its worst case is min λε + Σ s_t / T over λ ≥ 0 with s_t bounding
         each piece in period t after the most harmful shift of the returns. Per asset that
         shift is either none or down to -100%, so the programme has n + 2 + T + 2n
@@ -3588,14 +3611,14 @@ class OptimizationConstruction:
           Value-at-Risk." Journal of Risk, 2(3), 21-41.
         - skfolio: DistributionallyRobustCVaR (https://skfolio.org), which has the same
           formulation (1-norm transport cost, returns of at least -100%) and the same
-          β = 0.95 and ρ = 1 by default, and which the weights are referenced against.
+          α = 0.05 (its β = 0.95) and ρ = 1 by default, and which the weights are referenced against.
 
         Also known as: Wasserstein robust CVaR, DRO CVaR, distributionally robust
         mean-CVaR.
 
         Args:
-            confidence_level (float, optional): The confidence level β of the CVaR, e.g.
-                0.95 for the average of the worst 5% of periods. Defaults to 0.95.
+            alpha (float, optional): The tail probability α of the CVaR, e.g. 0.05
+                for the average of the worst 5% of periods. Defaults to 0.05.
             wasserstein_radius (float, optional): The radius ε of the Wasserstein ball, in
                 returns per period of the chosen frequency: the average total change in
                 the returns of all assets that the distributions considered may have.
@@ -3652,7 +3675,7 @@ class OptimizationConstruction:
         Notes:
         - The radius is in returns per period, so it depends on the frequency. For a
           long-only portfolio and a small radius the worst case adds
-          ε (1 + ρ / (1 - β)) max_i w_i to the historical objective: the least
+          ε (1 + ρ / α) max_i w_i to the historical objective: the least
           favourable distribution moves the asset with the largest weight down in the
           tail periods, which favours spreading the weights. With daily returns a radius
           of about 0.002 or more already gives equal weights, so the default is 0.0005
@@ -3687,6 +3710,7 @@ class OptimizationConstruction:
         | XOM       |   0.2759 |            0.2911 | 0.0373 |            0.0473 |
         | Portfolio |   1      |            0.1835 | 0.0199 |            0.0241 |
         """
+        validate_alpha(alpha)
         returns, expected_returns, covariance, risk_free_rate = self._get_inputs(
             period, include_benchmark
         )
@@ -3697,7 +3721,7 @@ class OptimizationConstruction:
         )
         weights = optimization_model.get_distributionally_robust_cvar_weights(
             returns,
-            confidence_level,
+            alpha,
             wasserstein_radius,
             risk_aversion,
             **self._get_constraints(
@@ -3721,13 +3745,11 @@ class OptimizationConstruction:
         }
         table["CVaR"] = (
             -returns.assign(**{PORTFOLIO_TICKER: returns @ weights})
-        ).apply(
-            optimization_model.get_expected_tail_loss, confidence_level=confidence_level
-        )
+        ).apply(optimization_model.get_expected_tail_loss, alpha=alpha)
         table["Worst-Case CVaR"] = pd.Series(
             {
                 name: optimization_model.get_worst_case_cvar(
-                    returns, portfolio, confidence_level, wasserstein_radius
+                    returns, portfolio, alpha, wasserstein_radius
                 )
                 for name, portfolio in portfolios.items()
             }
@@ -4861,10 +4883,7 @@ class OptimizationConstruction:
         | XOM  |          0.0658 |           0.0697 |                   0.0847 |                 0.2736 |   0.1345 |
         """
         methods = ("standard", "augmented", "bayesian")
-        if method not in methods:
-            raise ValueError(
-                f"The method must be one of {', '.join(methods)}, not '{method}'."
-            )
+        check_option("method", method, methods)
         if method == "standard" and factor_views:
             raise ValueError(
                 "Factor views need method='augmented' or method='bayesian'."

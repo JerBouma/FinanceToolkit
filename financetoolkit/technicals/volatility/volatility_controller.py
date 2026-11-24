@@ -13,7 +13,12 @@ from financetoolkit.technicals.helpers import (
 )
 from financetoolkit.technicals.volatility import volatility_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
-from financetoolkit.utilities.error_model import handle_errors
+from financetoolkit.utilities.error_model import (
+    InvalidArgumentError,
+    check_option,
+    check_period,
+    handle_errors,
+)
 from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import (
     PERIODS_PER_YEAR,
@@ -113,19 +118,11 @@ class VolatilityTechnicals:
         | 2025-12-30 |                283.299 |                 275.23  |                267.162 |         0.308  |                0.0586 |       1.7937 |               4.1102 |      23.5003 |      268.465 |                            1 |                274.284 |                 279.357 |                 280.707 |                  273.117 |                 265.526 |                  279.177 |                   272.6   |                  266.023 |                          0.0151 |              3.863  |              -0.3267 |                     54.0398 |                   285.385 |                    275.23  |                   265.399 |                  279.001 |                 269.818 |                     278.457 |                      272.336 |                     266.215 |            276.381 |             272.212 |            268.043 | 263.457 |                      1 |           4.2652 |               0.0698 |                       1.4266 |            -7.2914 |         0 |
         | 2025-12-31 |                281.366 |                 274.516 |                267.666 |         0.2372 |                0.0499 |       1.9233 |               3.954  |      23.1557 |      268.465 |                            1 |                274.628 |                 279.013 |                 280.039 |                  272.823 |                 265.607 |                  279.177 |                   272.6   |                  266.023 |                          0.0146 |              3.7647 |              -0.3494 |                     52.7332 |                   284.415 |                    274.516 |                   265.137 |                  275.232 |                 269.631 |                     277.662 |                      272.143 |                     266.623 |            276.421 |             272.402 |            268.383 | 263.457 |                      1 |           2.6707 |               0.5282 |                       1.3485 |            -6.9011 |         1 |
         """
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(
+            period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
+        )
         if period == "intraday" and self._historical_data[period].empty:
-            raise ValueError(
+            raise InvalidArgumentError(
                 "Please define the 'intraday_period' parameter when initializing the Toolkit."
             )
 
@@ -339,7 +336,7 @@ class VolatilityTechnicals:
         window: int = 20,
         num_std_dev: float = 2,
         moving_average: str = "simple",
-        fast_window: int = 2,
+        short_window: int = 2,
         method: Literal["standard", "price_bands"] = "standard",
         rounding: int | None = None,
         growth: bool = False,
@@ -371,7 +368,7 @@ class VolatilityTechnicals:
         The formula for method="price_bands" is as follows:
 
         - Middle Band = SMA(Close, window), or another moving average with `moving_average`
-        - Deviation = Middle Band — SMA(Close, fast_window)
+        - Deviation = Middle Band — SMA(Close, short_window)
         - Width = Population Standard Deviation(Deviation, window)
         - Upper Band = Middle Band + num_std_dev * Width
         - Lower Band = Middle Band — num_std_dev * Width
@@ -414,10 +411,11 @@ class VolatilityTechnicals:
                 `get_moving_average`: "simple", "exponential", "double_exponential",
                 "triple_exponential", "zero_lag", "wilder", "triangular", "weighted", "hull", "sine",
                 "fibonacci" or "pascal". Defaults to "simple", Bollinger's own.
-            fast_window (int, optional): The number of periods of the fast moving average, with
+            short_window (int, optional): The number of periods of the fast moving average, with
                 method="price_bands" only. Defaults to 2.
-            method (str, optional): "standard" for the Bollinger Bands or "price_bands" for the
-                Price Bands, whose width comes from the fast moving average. Defaults to "standard".
+            method (str, optional): The variant of the bands. Options are: "standard" (the Bollinger
+                Bands) or "price_bands" (the Price Bands, whose width comes from the fast moving
+                average). Defaults to "standard".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the bands.
@@ -477,22 +475,13 @@ class VolatilityTechnicals:
         | 2025-12-30 | 156.329 |      154.744 |       156.124 |      157.504 |
         | 2025-12-31 | 156.852 |      154.759 |       156.171 |      157.582 |
         """
-        if method not in ("standard", "price_bands"):
-            raise ValueError("Method must be standard or price_bands.")
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_option("method", method, ("standard", "price_bands"))
+        check_period(
+            period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
+        )
         if period == "intraday":
             if self._historical_data[period].empty:
-                raise ValueError(
+                raise InvalidArgumentError(
                     "Please define the 'intraday_period' parameter when initializing the Toolkit."
                 )
             close_column = "Close"
@@ -509,7 +498,7 @@ class VolatilityTechnicals:
                 ).assign(Close=prices),
                 window,
                 num_std_dev,
-                fast_window,
+                short_window,
                 moving_average,
             )
         else:
@@ -641,20 +630,12 @@ class VolatilityTechnicals:
         | 2025-12-30 | 0.308  |      0.0586 |
         | 2025-12-31 | 0.2372 |      0.0499 |
         """
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(
+            period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
+        )
         if period == "intraday":
             if self._historical_data[period].empty:
-                raise ValueError(
+                raise InvalidArgumentError(
                     "Please define the 'intraday_period' parameter when initializing the Toolkit."
                 )
             close_column = "Close"
@@ -768,20 +749,12 @@ class VolatilityTechnicals:
         | 2025-12-30 |   0.26  |      1.9647 |
         | 2025-12-31 |   0.304 |      5.6062 |
         """
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(
+            period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
+        )
         if period == "intraday":
             if self._historical_data[period].empty:
-                raise ValueError(
+                raise InvalidArgumentError(
                     "Please define the 'intraday_period' parameter when initializing the Toolkit."
                 )
             close_column = "Close"
@@ -940,24 +913,13 @@ class VolatilityTechnicals:
         | 2025-12-31 |  1.1697 |  0.3071 |      5.9367 |
         """
         methods = ("standard", "normalized", "day_range")
-        if method not in methods:
-            raise ValueError(
-                f"Method must be one of {', '.join(methods)}, not {method}."
-            )
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_option("method", method, methods)
+        check_period(
+            period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
+        )
         if period == "intraday":
             if self._historical_data[period].empty:
-                raise ValueError(
+                raise InvalidArgumentError(
                     "Please define the 'intraday_period' parameter when initializing the Toolkit."
                 )
             close_column = "Close"
@@ -1087,20 +1049,12 @@ class VolatilityTechnicals:
         | 2025-12-30 | 22.6104 | 23.4152 |     22.5802 |
         | 2025-12-31 | 22.4079 | 23.0341 |     22.2524 |
         """
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(
+            period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
+        )
         if period == "intraday":
             if self._historical_data[period].empty:
-                raise ValueError(
+                raise InvalidArgumentError(
                     "Please define the 'intraday_period' parameter when initializing the Toolkit."
                 )
             close_column = "Close"
@@ -1276,24 +1230,13 @@ class VolatilityTechnicals:
         | 2025-12-31 |      152.113 |                 1 |
         """
         methods = ("standard", "profit_maximizer")
-        if method not in methods:
-            raise ValueError(
-                f"Method must be one of {', '.join(methods)}, not {method}."
-            )
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_option("method", method, methods)
+        check_period(
+            period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
+        )
         if period == "intraday":
             if self._historical_data[period].empty:
-                raise ValueError(
+                raise InvalidArgumentError(
                     "Please define the 'intraday_period' parameter when initializing the Toolkit."
                 )
             close_column = "Close"
@@ -1427,20 +1370,12 @@ class VolatilityTechnicals:
         | 2025-12-30 |     446.239 |      474.711 |
         | 2025-12-31 |     447.641 |      473.309 |
         """
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(
+            period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
+        )
         if period == "intraday":
             if self._historical_data[period].empty:
-                raise ValueError(
+                raise InvalidArgumentError(
                     "Please define the 'intraday_period' parameter when initializing the Toolkit."
                 )
             close_column = "Close"
@@ -1476,7 +1411,7 @@ class VolatilityTechnicals:
         close_column: str = "Adj Close",
         window: int | None = None,
         atr_window: int | None = None,
-        atr_multiplier: float = 2,
+        multiplier: float = 2,
         method: Literal["exponential", "original", "aberration"] = "exponential",
         rounding: int | None = None,
         growth: bool = False,
@@ -1494,15 +1429,15 @@ class VolatilityTechnicals:
         The formula is as follows:
 
         - Middle Line = EMA(Close, window)
-        - Upper Line = Middle Line + atr_multiplier * ATR(atr_window)
-        - Lower Line = Middle Line — atr_multiplier * ATR(atr_window), where the ATR uses Wilder's smoothing.
+        - Upper Line = Middle Line + multiplier * ATR(atr_window)
+        - Lower Line = Middle Line — multiplier * ATR(atr_window), where the ATR uses Wilder's smoothing.
 
         With method="original" the channel is Keltner's own: a simple average of the typical price
         with the average High — Low range on either side.
 
         - Middle Line = SMA((High + Low + Close) / 3, window)
-        - Upper Line = Middle Line + atr_multiplier * SMA(High — Low, window)
-        - Lower Line = Middle Line — atr_multiplier * SMA(High — Low, window)
+        - Upper Line = Middle Line + multiplier * SMA(High — Low, window)
+        - Lower Line = Middle Line — multiplier * SMA(High — Low, window)
 
         With method="aberration" the channel is the Aberration bands, which place one Average True
         Range above and below a short simple average of the typical price. They come from Keith
@@ -1539,10 +1474,9 @@ class VolatilityTechnicals:
             atr_window (int | None, optional): Number of periods for ATR calculation. Not used by
                 "original". Defaults to None, which uses 10, as on StockCharts, and 15 for
                 "aberration", as in pandas-ta-classic.
-            atr_multiplier (float, optional): Multiplier for ATR (or, for the original channel, the
+            multiplier (float, optional): Multiplier for ATR (or, for the original channel, the
                 average range) to determine channel width. Defaults to 2; Keltner's original channel
-                uses 1 (method="original", atr_multiplier=1). Not used by "aberration", whose bands
-                sit one ATR away.
+                uses 1. Not used by "aberration", whose bands sit one ATR away.
             method (str, optional): "exponential" for the EMA of the close with ATR bands (StockCharts),
                 "original" for Keltner's simple average of the typical price with average range
                 bands or "aberration" for the Aberration bands. Defaults to "exponential".
@@ -1572,8 +1506,8 @@ class VolatilityTechnicals:
           the typical price ((High + Low + Close) / 3) and starts its ATR one period later, so the
           channels differ throughout (by about 0.3% on daily data).
         - The original channel uses `window` for both averages (Keltner used 10 days with one
-          average range, atr_multiplier=1) and no ATR, so `atr_window` does not apply. With
-          atr_multiplier=1 it agrees with ta's KeltnerChannel with original_version=True.
+          average range, a multiplier of 1) and no ATR, so `atr_window` does not apply. With
+          a multiplier of 1 it agrees with ta's KeltnerChannel with original_version=True.
         - "aberration": the ATR is that of `get_average_true_range`; pandas-ta-classic seeds its ATR
           one period later and its bands equal these once the seeds have converged.
         - If `growth` is set to True, the method calculates the growth of the channels using the specified `lag`.
@@ -1604,24 +1538,13 @@ class VolatilityTechnicals:
         | 2025-12-31 |        nan   |         nan   |        nan   |
         """
         methods = ("exponential", "original", "aberration")
-        if method not in methods:
-            raise ValueError(
-                f"Method must be one of {', '.join(methods)}, not {method}."
-            )
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_option("method", method, methods)
+        check_period(
+            period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
+        )
         if period == "intraday":
             if self._historical_data[period].empty:
-                raise ValueError(
+                raise InvalidArgumentError(
                     "Please define the 'intraday_period' parameter when initializing the Toolkit."
                 )
             close_column = "Close"
@@ -1643,7 +1566,7 @@ class VolatilityTechnicals:
                     volatility_model.get_keltner_channels,
                     window,
                     atr_window,
-                    atr_multiplier,
+                    multiplier,
                     method,
                 )
             ),
@@ -1761,20 +1684,12 @@ class VolatilityTechnicals:
         | 2025-12-30 |          5.28   |           5.6018 |          5.9235 |
         | 2025-12-31 |          5.28   |           5.6018 |          5.9235 |
         """
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(
+            period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
+        )
         if period == "intraday":
             if self._historical_data[period].empty:
-                raise ValueError(
+                raise InvalidArgumentError(
                     "Please define the 'intraday_period' parameter when initializing the Toolkit."
                 )
             close_column = "Close"
@@ -1909,20 +1824,12 @@ class VolatilityTechnicals:
         |       90 | 0.2776 |            0.3564 |   0.5356 |            0.7652 | 0.9631 |    0.4132 |
         |      120 | 0.2903 |            0.3656 |   0.5216 |            0.7495 | 0.9164 |    0.3861 |
         """
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(
+            period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
+        )
         if period == "intraday":
             if self._historical_data[period].empty:
-                raise ValueError(
+                raise InvalidArgumentError(
                     "Please define the 'intraday_period' parameter when initializing the Toolkit."
                 )
             close_column = "Close"
@@ -2058,20 +1965,12 @@ class VolatilityTechnicals:
         | 2025-12-30 | -0.2501 | -0.3586 |     -0.3925 |
         | 2025-12-31 | -0.1966 | -0.3463 |     -0.3378 |
         """
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(
+            period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
+        )
         if period == "intraday":
             if self._historical_data[period].empty:
-                raise ValueError(
+                raise InvalidArgumentError(
                     "Please define the 'intraday_period' parameter when initializing the Toolkit."
                 )
             close_column = "Close"
@@ -2208,28 +2107,19 @@ class VolatilityTechnicals:
         | 2025-12-30 | 48.5788 | 62.8379 |     55.7399 |
         | 2025-12-31 | 45.1855 | 59.4845 |     51.3189 |
         """
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(
+            period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
+        )
         if period == "intraday":
             if self._historical_data[period].empty:
-                raise ValueError(
+                raise InvalidArgumentError(
                     "Please define the 'intraday_period' parameter when initializing the Toolkit."
                 )
             close_column = "Close"
 
         historical_data = self._get_historical_data(period, close_column)
 
-        if method not in ("original", "refined"):
-            raise ValueError("The method must be 'original' or 'refined'.")
+        check_option("method", method, ("original", "refined"))
 
         # The refined RVI averages the RVI of the highs and of the lows (Dorsey, 1995).
         columns = [close_column] if method == "original" else ["High", "Low"]
@@ -2267,7 +2157,7 @@ class VolatilityTechnicals:
         period: str = "daily",
         close_column: str = "Adj Close",
         window: int = 20,
-        factor: float = 4.0,
+        multiplier: float = 4.0,
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
@@ -2284,7 +2174,7 @@ class VolatilityTechnicals:
 
         The formula is as follows:
 
-        - Range Ratio = factor × (High — Low) / (High + Low)
+        - Range Ratio = multiplier × (High — Low) / (High + Low)
         - Upper Band = SMA(High × (1 + Range Ratio), window)
         - Middle Band = SMA(Close, window)
         - Lower Band = SMA(Low × (1 — Range Ratio), window)
@@ -2306,7 +2196,7 @@ class VolatilityTechnicals:
                 for dividends in the same way.
             window (int, optional): The number of periods of the simple averages. Defaults to 20,
                 as defined by Headley.
-            factor (float, optional): The multiplier of the relative range. Defaults to 4.0, as
+            multiplier (float, optional): The multiplier of the relative range. Defaults to 4.0, as
                 defined by Headley.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
@@ -2353,20 +2243,12 @@ class VolatilityTechnicals:
         | 2025-12-30 |      427.161 |       463.676 |      501.346 |
         | 2025-12-31 |      429.244 |       464.7   |      501.571 |
         """
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(
+            period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
+        )
         if period == "intraday":
             if self._historical_data[period].empty:
-                raise ValueError(
+                raise InvalidArgumentError(
                     "Please define the 'intraday_period' parameter when initializing the Toolkit."
                 )
             close_column = "Close"
@@ -2378,7 +2260,7 @@ class VolatilityTechnicals:
             ["High", "Low", close_column],
             volatility_model.get_acceleration_bands,
             window,
-            factor,
+            multiplier,
         ).loc[self._start_date : self._end_date]
 
         return finalize_dataset(
@@ -2494,20 +2376,12 @@ class VolatilityTechnicals:
         | 2025-12-30 |     692.75  |    652.209 |
         | 2025-12-31 |     692.75  |    652.209 |
         """
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(
+            period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
+        )
         if period == "intraday":
             if self._historical_data[period].empty:
-                raise ValueError(
+                raise InvalidArgumentError(
                     "Please define the 'intraday_period' parameter when initializing the Toolkit."
                 )
             close_column = "Close"
@@ -2635,20 +2509,12 @@ class VolatilityTechnicals:
         | 2025-12-30 |      609.082 |       617.566 |      626.05  |
         | 2025-12-31 |      608.453 |       617.038 |      625.623 |
         """
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(
+            period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
+        )
         if period == "intraday":
             if self._historical_data[period].empty:
-                raise ValueError(
+                raise InvalidArgumentError(
                     "Please define the 'intraday_period' parameter when initializing the Toolkit."
                 )
             close_column = "Close"
@@ -2758,20 +2624,12 @@ class VolatilityTechnicals:
         | 2025-12-30 | 0.9515 | 2.6979 |      3.8896 |
         | 2025-12-31 | 0.3924 | 1.7274 |      6.1619 |
         """
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(
+            period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
+        )
         if period == "intraday":
             if self._historical_data[period].empty:
-                raise ValueError(
+                raise InvalidArgumentError(
                     "Please define the 'intraday_period' parameter when initializing the Toolkit."
                 )
             close_column = "Close"
@@ -2887,20 +2745,12 @@ class VolatilityTechnicals:
         | 2025-12-30 |          0.04 |                4.0142 |
         | 2025-12-31 |          2.97 |                3.9234 |
         """
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(
+            period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
+        )
         if period == "intraday":
             if self._historical_data[period].empty:
-                raise ValueError(
+                raise InvalidArgumentError(
                     "Please define the 'intraday_period' parameter when initializing the Toolkit."
                 )
             close_column = "Close"
@@ -3041,20 +2891,12 @@ class VolatilityTechnicals:
         | 2025-12-30 |     0.9902 |         1 |
         | 2025-12-31 |    -0.3707 |         1 |
         """
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(
+            period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
+        )
         if period == "intraday":
             if self._historical_data[period].empty:
-                raise ValueError(
+                raise InvalidArgumentError(
                     "Please define the 'intraday_period' parameter when initializing the Toolkit."
                 )
             close_column = "Close"
@@ -3188,20 +3030,12 @@ class VolatilityTechnicals:
         | 2025-12-30 |             240.577 |        200.623 |        160.67  |        280.53  |        320.483 |
         | 2025-12-31 |             240.675 |        200.722 |        160.769 |        280.628 |        320.582 |
         """
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(
+            period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
+        )
         if period == "intraday":
             if self._historical_data[period].empty:
-                raise ValueError(
+                raise InvalidArgumentError(
                     "Please define the 'intraday_period' parameter when initializing the Toolkit."
                 )
             close_column = "Close"
@@ -3333,20 +3167,12 @@ class VolatilityTechnicals:
         | 2025-12-30 | 0.994  | 0.6213 |      0.9957 |
         | 2025-12-31 | 1.744  | 0.7096 |      0.6057 |
         """
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(
+            period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
+        )
         if period == "intraday":
             if self._historical_data[period].empty:
-                raise ValueError(
+                raise InvalidArgumentError(
                     "Please define the 'intraday_period' parameter when initializing the Toolkit."
                 )
             close_column = "Close"

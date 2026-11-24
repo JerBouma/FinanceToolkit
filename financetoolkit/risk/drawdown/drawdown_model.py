@@ -15,7 +15,9 @@ AVERAGE_DRAWDOWN_METHODS = ["episode", "observation"]
 MINIMUM_DRAWDOWN_OBSERVATIONS = 1
 
 
-def get_drawdown_samples(samples: np.ndarray, compounded: bool = True) -> np.ndarray:
+def get_drawdown_samples(
+    samples: np.ndarray, compound_returns: bool = True
+) -> np.ndarray:
     """
     Calculate the drawdowns of every row of returns without missing values, measured from the
     running peak of the wealth path, which starts before the first return (a wealth of 1, or a
@@ -31,13 +33,13 @@ def get_drawdown_samples(samples: np.ndarray, compounded: bool = True) -> np.nda
 
     Args:
         samples (np.ndarray): The returns, one sample per row.
-        compounded (bool, optional): Whether to compound the returns. Defaults to True.
+        compound_returns (bool, optional): Whether to compound the returns. Defaults to True.
 
     Returns:
         np.ndarray: The drawdowns, of the same shape, 0 at a peak (within 1e-12, the
             rounding of the compounding) and negative below it.
     """
-    if compounded:
+    if compound_returns:
         wealth = np.cumprod(1 + samples, axis=1)
         drawdowns = wealth / np.maximum(np.maximum.accumulate(wealth, axis=1), 1) - 1
     else:
@@ -52,7 +54,7 @@ def get_drawdown_samples(samples: np.ndarray, compounded: bool = True) -> np.nda
 
 def get_maximum_drawdown(
     returns: pd.Series | pd.DataFrame,
-    compounded: bool = True,
+    compound_returns: bool = True,
     window_size: int | None = None,
 ) -> pd.Series | pd.DataFrame | float:
     """
@@ -63,7 +65,7 @@ def get_maximum_drawdown(
     Args:
         returns (pd.Series | pd.DataFrame): A Series or DataFrame of returns, optionally with
             a (period, date) index.
-        compounded (bool, optional): Whether to compound the returns. Defaults to True.
+        compound_returns (bool, optional): Whether to compound the returns. Defaults to True.
         window_size (int | None, optional): The size of the rolling window. Defaults to None.
 
     Returns:
@@ -71,7 +73,7 @@ def get_maximum_drawdown(
     """
     return risk_model.apply_to_observations(
         returns,
-        lambda samples: get_drawdown_samples(samples, compounded).min(axis=1),
+        lambda samples: get_drawdown_samples(samples, compound_returns).min(axis=1),
         window_size,
         MINIMUM_DRAWDOWN_OBSERVATIONS,
     )
@@ -80,7 +82,7 @@ def get_maximum_drawdown(
 def get_drawdown_at_risk(
     returns: pd.Series | pd.DataFrame,
     alpha: float = 0.05,
-    compounded: bool = True,
+    compound_returns: bool = True,
     window_size: int | None = None,
 ) -> pd.Series | pd.DataFrame | float:
     """
@@ -96,7 +98,7 @@ def get_drawdown_at_risk(
         returns (pd.Series | pd.DataFrame): A Series or DataFrame of returns, optionally with
             a (period, date) index.
         alpha (float, optional): The tail probability. Defaults to 0.05.
-        compounded (bool, optional): Whether to compound the returns. Defaults to True.
+        compound_returns (bool, optional): Whether to compound the returns. Defaults to True.
         window_size (int | None, optional): The size of the rolling window. Defaults to None.
 
     Returns:
@@ -107,7 +109,7 @@ def get_drawdown_at_risk(
     return risk_model.apply_to_observations(
         returns,
         lambda samples: np.quantile(
-            get_drawdown_samples(samples, compounded), alpha, axis=1
+            get_drawdown_samples(samples, compound_returns), alpha, axis=1
         ),
         window_size,
         MINIMUM_DRAWDOWN_OBSERVATIONS,
@@ -139,7 +141,7 @@ def get_drawdown_troughs(drawdowns: np.ndarray) -> np.ndarray:
 def get_average_drawdown(
     returns: pd.Series | pd.DataFrame,
     method: str = "episode",
-    compounded: bool = True,
+    compound_returns: bool = True,
     window_size: int | None = None,
 ) -> pd.Series | pd.DataFrame | float:
     """
@@ -158,7 +160,7 @@ def get_average_drawdown(
         returns (pd.Series | pd.DataFrame): A Series or DataFrame of returns, optionally with
             a (period, date) index.
         method (str, optional): "episode" or "observation". Defaults to "episode".
-        compounded (bool, optional): Whether to compound the returns. Defaults to True.
+        compound_returns (bool, optional): Whether to compound the returns. Defaults to True.
         window_size (int | None, optional): The size of the rolling window. Defaults to None.
 
     Returns:
@@ -167,7 +169,7 @@ def get_average_drawdown(
     check_option("method", method, AVERAGE_DRAWDOWN_METHODS)
 
     def average_drawdown(samples: np.ndarray) -> np.ndarray:
-        drawdowns = get_drawdown_samples(samples, compounded)
+        drawdowns = get_drawdown_samples(samples, compound_returns)
 
         if method == "observation":
             return drawdowns.mean(axis=1)
@@ -184,7 +186,7 @@ def get_average_drawdown(
 def get_entropic_drawdown_at_risk(
     returns: pd.Series | pd.DataFrame,
     alpha: float = 0.05,
-    compounded: bool = True,
+    compound_returns: bool = True,
     window_size: int | None = None,
 ) -> pd.Series | pd.DataFrame | float:
     """
@@ -200,7 +202,7 @@ def get_entropic_drawdown_at_risk(
         returns (pd.Series | pd.DataFrame): A Series or DataFrame of returns, optionally with
             a (period, date) index.
         alpha (float, optional): The tail probability. Defaults to 0.05.
-        compounded (bool, optional): Whether to compound the returns. Defaults to True.
+        compound_returns (bool, optional): Whether to compound the returns. Defaults to True.
         window_size (int | None, optional): The size of the rolling window. Defaults to None.
 
     Returns:
@@ -211,7 +213,7 @@ def get_entropic_drawdown_at_risk(
     return risk_model.apply_to_observations(
         returns,
         lambda samples: evar_model.get_evar_samples(
-            get_drawdown_samples(samples, compounded), alpha
+            get_drawdown_samples(samples, compound_returns), alpha
         ),
         window_size,
         MINIMUM_DRAWDOWN_OBSERVATIONS,
@@ -222,7 +224,7 @@ def get_conditional_expected_drawdown(
     returns: pd.Series | pd.DataFrame,
     window: int = 21,
     alpha: float = 0.05,
-    compounded: bool = True,
+    compound_returns: bool = True,
     window_size: int | None = None,
 ) -> pd.Series | pd.DataFrame | float:
     """
@@ -246,7 +248,7 @@ def get_conditional_expected_drawdown(
             a (period, date) index.
         window (int, optional): The length of each path in returns. Defaults to 21.
         alpha (float, optional): The tail probability. Defaults to 0.05.
-        compounded (bool, optional): Whether to compound the returns. Defaults to True.
+        compound_returns (bool, optional): Whether to compound the returns. Defaults to True.
         window_size (int | None, optional): The size of the rolling window the CED is
             calculated over. Defaults to None.
 
@@ -261,7 +263,7 @@ def get_conditional_expected_drawdown(
     def conditional_expected_drawdown(samples: np.ndarray) -> np.ndarray:
         paths = sliding_window_view(samples, window, axis=1)
         maximum_drawdowns = (
-            get_drawdown_samples(paths.reshape(-1, window), compounded)
+            get_drawdown_samples(paths.reshape(-1, window), compound_returns)
             .min(axis=1)
             .reshape(paths.shape[:2])
         )

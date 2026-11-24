@@ -38,7 +38,7 @@ from financetoolkit.fixedincome.sources import (
 )
 from financetoolkit.utilities import logger_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
-from financetoolkit.utilities.error_model import handle_errors
+from financetoolkit.utilities.error_model import check_option, handle_errors
 from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import apply_rounding
 
@@ -993,11 +993,7 @@ class MarketsFixedIncome(CurvesFixedIncome):
         |       20   |      0.0549 |            0.3432 |                       0.0578 |
         |       30   |      0.0546 |            0.2032 |                       0.0461 |
         """
-        if method not in fitted_curve_model.METHODS:
-            raise ValueError(
-                f"The method {method!r} does not exist. Choose from "
-                f"{', '.join(fitted_curve_model.METHODS)}."
-            )
+        check_option("method", method, fitted_curve_model.METHODS)
         prices, price_date = self._treasury_prices(date, "Note,Bond", None)
         prices = prices[
             prices["Maturity"].dt.date > price_date + relativedelta(months=3)

@@ -8,7 +8,7 @@ from financetoolkit import fundamentals_model
 
 
 def test_collect_financial_statements_invalid_ticker_type():
-    with pytest.raises(ValueError, match="Type for the tickers"):
+    with pytest.raises(ValueError, match="tickers must be a str or a list of str"):
         fundamentals_model.collect_financial_statements(
             tickers=123, statement="income", api_key="test_key"  # Invalid type
         )

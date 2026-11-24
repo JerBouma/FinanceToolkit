@@ -342,6 +342,7 @@ class JobsEconomics:
                 such as New Zealand, are not in the monthly data; a warning names them when they
                 are requested.
             gmdb_source (bool | None, optional): Whether to get the data from the Global Macro Database (GMDB).
+                Defaults to None, which uses the GMDB for yearly data when gmdb_source is True on the Economics class (its default) and the OECD otherwise.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.

@@ -10,7 +10,7 @@ from financetoolkit.helpers import trailing_mean, trailing_sum
 from financetoolkit.models.profitability import dupont_model, growth_model
 from financetoolkit.ratios import profitability_model, valuation_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
-from financetoolkit.utilities.error_model import handle_errors
+from financetoolkit.utilities.error_model import check_option, handle_errors
 from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import (
     apply_rounding,
@@ -150,8 +150,7 @@ class ProfitabilityModels:
         | Equity Multiplier | 1.4317 | 1.4269 | 1.4228 | 1.4013 | 1.4122 |
         | Return on Equity  | 0.3207 | 0.2362 | 0.2736 | 0.3291 | 0.357  |
         """
-        if method not in ("standard", "extended"):
-            raise ValueError("Method must be standard or extended.")
+        check_option("method", method, ("standard", "extended"))
 
         # The balances are averaged over the period ends that open and close the (trailing) periods,
         # as in the Return on Equity, Asset Turnover and Return on Assets of the Ratios module, so
@@ -1054,8 +1053,7 @@ class ProfitabilityModels:
         | NOW  | 0.6097 | 0.5287 | 0.5396 | 0.5353 |   0.5535 |
         """
         margin = margin.lower()
-        if margin not in ("free_cash_flow", "ebitda"):
-            raise ValueError("The margin must be 'free_cash_flow' or 'ebitda'.")
+        check_option("margin", margin, ("free_cash_flow", "ebitda"))
         trailing, periods_per_year = self._annual_trailing(trailing)
 
         revenue = trailing_sum(self._rows(self._income_statement, "Revenue"), trailing)

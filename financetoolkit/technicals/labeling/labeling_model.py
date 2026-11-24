@@ -6,6 +6,8 @@ import numpy as np
 import pandas as pd
 from numpy.lib.stride_tricks import sliding_window_view
 
+from financetoolkit.utilities.error_model import InvalidArgumentError, check_option
+
 # The bull flag templates of the matrix flag labels: rows from the highest price decile of the
 # window (top) to the lowest, columns from the first tenth of the window (left) to the last.
 # Leigh, Modani, Purvis and Roberts (2002) and Cervelló-Royo, Guijarro and Michniuk (2015). The
@@ -358,7 +360,7 @@ def get_fixed_horizon_labels(
             raise ValueError("relative_to='benchmark' needs the benchmark returns.")
         returns = forward_returns.sub(benchmark_returns, axis=0)
     else:
-        raise ValueError(
+        raise InvalidArgumentError(
             f"relative_to must be None, 'mean', 'median' or 'benchmark', not {relative_to!r}."
         )
 
@@ -540,10 +542,7 @@ def get_matrix_flag_labels(
     if window < 10:  # noqa: PLR2004
         raise ValueError(f"The window needs at least 10 prices, not {window}.")
     if isinstance(template, str):
-        if template not in MATRIX_FLAG_TEMPLATES:
-            raise ValueError(
-                f"The template must be one of {', '.join(MATRIX_FLAG_TEMPLATES)}, not {template!r}."
-            )
+        check_option("template", template, MATRIX_FLAG_TEMPLATES)
         weights = MATRIX_FLAG_TEMPLATES[template]
     else:
         weights = np.asarray(template, dtype=float)

@@ -9,6 +9,7 @@ from financetoolkit.economics.sources import bis_model
 from financetoolkit.fixedincome.fixedincome_controller import FixedIncome
 from financetoolkit.fixedincome.sources import eiopa_model
 from financetoolkit.fixedincome.swaps import swap_model
+from financetoolkit.utilities.error_model import InvalidArgumentError
 
 GOVERNMENT_LABELS = [
     "1M",
@@ -145,8 +146,10 @@ def test_get_swap_rate_takes_the_last_month_that_ended(fixedincome):
 
 
 def test_get_swap_rate_unknown_curve_or_country(fixedincome):
-    assert fixedincome.get_swap_rate(curve="libor").empty
-    assert fixedincome.get_swap_rate(country="Atlantis").empty
+    with pytest.raises(InvalidArgumentError, match="curve must be one of"):
+        fixedincome.get_swap_rate(curve="libor")
+    with pytest.raises(InvalidArgumentError, match="country must be one of"):
+        fixedincome.get_swap_rate(country="Atlantis")
 
 
 def test_get_forward_rate_agreement(recorder, fixedincome):
@@ -163,7 +166,8 @@ def test_get_forward_rate_agreement(recorder, fixedincome):
 
 def test_get_forward_rate_agreement_invalid(fixedincome):
     assert fixedincome.get_forward_rate_agreement(fras="3-6").empty
-    assert fixedincome.get_forward_rate_agreement(day_count="30/360").empty
+    with pytest.raises(InvalidArgumentError, match="day_count must be one of"):
+        fixedincome.get_forward_rate_agreement(day_count="30/360")
 
 
 def test_get_asset_swap_spread(recorder, fixedincome):

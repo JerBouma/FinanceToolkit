@@ -110,7 +110,7 @@ def test_the_dispatcher_selects_the_approximation_and_refuses_others():
 
     with pytest.raises(ValueError, match="method must be one of"):
         american_model.get_american_option(*inputs, method="binomial")
-    with pytest.raises(ValueError, match='"2002" or "1993"'):
+    with pytest.raises(ValueError, match="'2002' or '1993'"):
         black_scholes_model.get_bjerksund_stensland(*inputs, method="2010")
 
 

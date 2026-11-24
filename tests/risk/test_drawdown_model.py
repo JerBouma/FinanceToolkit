@@ -49,7 +49,7 @@ def test_drawdown_measures_match_references(
         atol=1e-12,
     )
     assert np.isclose(
-        risk_model.get_ui(returns, None, compounded=compounded), ulcer, atol=1e-12
+        risk_model.get_ui(returns, None, compound_returns=compounded), ulcer, atol=1e-12
     )
 
 
@@ -66,13 +66,15 @@ def test_drawdown_measures_are_ordered():
 def test_get_drawdown_samples():
     samples = np.array([[-0.1, 0.2, -0.5]])
     compounded = drawdown_model.get_drawdown_samples(samples)
-    uncompounded = drawdown_model.get_drawdown_samples(samples, compounded=False)
+    uncompounded = drawdown_model.get_drawdown_samples(samples, compound_returns=False)
 
     # The first loss is a drawdown from the starting wealth of 1 (or sum of 0).
     np.testing.assert_allclose(compounded, [[-0.1, 0, -0.5]])
     np.testing.assert_allclose(uncompounded, [[-0.1, 0, -0.5]])
     np.testing.assert_allclose(
-        drawdown_model.get_drawdown_samples(np.array([[0.1, -0.1]]), compounded=False),
+        drawdown_model.get_drawdown_samples(
+            np.array([[0.1, -0.1]]), compound_returns=False
+        ),
         [[0, -0.1]],
     )
 

@@ -14,6 +14,7 @@ from financetoolkit.options.helpers import (
     validate_numeric_inputs,
 )
 from financetoolkit.options.pricing.black_scholes_model import get_black_scholes
+from financetoolkit.utilities.error_model import check_option
 
 # The critical stock prices are searched between these many e-folds below and above a first
 # guess (1e-26 to 1e26 times it), beyond which an option value no longer moves.
@@ -495,11 +496,11 @@ def get_compound_option(
         dividend_yield=dividend_yield,
     )
     _validate_volatility(volatility)
-    if option_type not in ("call_on_call", "call_on_put", "put_on_call", "put_on_put"):
-        raise ValueError(
-            "option_type must be 'call_on_call', 'call_on_put', 'put_on_call' or "
-            f"'put_on_put', received {option_type!r}."
-        )
+    check_option(
+        "option_type",
+        option_type,
+        ("call_on_call", "call_on_put", "put_on_call", "put_on_put"),
+    )
     if not 0 <= compound_time_to_expiration <= time_to_expiration:
         raise ValueError(
             "compound_time_to_expiration must be at least 0 and at most time_to_expiration, "
@@ -894,8 +895,7 @@ def get_extendible_option(
         extension_fee=extension_fee,
     )
     _validate_volatility(volatility)
-    if method not in ("holder", "writer"):
-        raise ValueError(f"method must be 'holder' or 'writer', received {method!r}.")
+    check_option("method", method, ("holder", "writer"))
     if extension_fee < 0:
         raise ValueError(
             f"extension_fee must be at least 0, received {extension_fee!r}."

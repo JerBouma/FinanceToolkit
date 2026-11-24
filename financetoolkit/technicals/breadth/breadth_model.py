@@ -1102,7 +1102,7 @@ def get_volume_flow_indicator(
     window: int,
     coefficient: float,
     volume_coefficient: float,
-    smoothing_window: int,
+    smooth_window: int,
 ) -> pd.Series:
     """
     Calculate Markos Katsanos' Volume Flow Indicator (VFI) for a given price series.
@@ -1124,7 +1124,7 @@ def get_volume_flow_indicator(
     - Capped Volume = min(Volume, volume_coefficient * Average Volume)
     - Signed Volume = +Capped Volume if Typical Price - Typical Price(t-1) > Cutoff, -Capped
       Volume if it is below -Cutoff, else 0
-    - VFI = EMA(Sum(Signed Volume, window) / Average Volume, smoothing_window)
+    - VFI = EMA(Sum(Signed Volume, window) / Average Volume, smooth_window)
 
     The conventional parameters are a window of 130 days (about six months), a coefficient
     of 0.2, a volume coefficient of 2.5 and a smoothing of 3 periods.
@@ -1150,8 +1150,8 @@ def get_volume_flow_indicator(
           wherever a move falls between the two cutoffs.
         - The EMA is seeded with the Simple Moving Average of its first values. The cutoff
           needs 30 changes of the typical price and the average volume `window` earlier
-          periods, the sum `window` signed volumes and the EMA `smoothing_window` sums, so
-          the first value comes after max(`window`, 30) + `window` + `smoothing_window` - 2
+          periods, the sum `window` signed volumes and the EMA `smooth_window` sums, so
+          the first value comes after max(`window`, 30) + `window` + `smooth_window` - 2
           periods (261 with the defaults).
         - The VFI is in units of the average volume, a sum of up to `window` periods, not a
           ratio between -1 and 1.
@@ -1166,7 +1166,7 @@ def get_volume_flow_indicator(
             typical price needs to count.
         volume_coefficient (float): The multiple of the average volume a single period's
             volume is capped at.
-        smoothing_window (int): Number of periods for the EMA that smooths the result.
+        smooth_window (int): Number of periods for the EMA that smooths the result.
 
     Returns:
         pd.Series: Volume Flow Indicator values.
@@ -1196,7 +1196,7 @@ def get_volume_flow_indicator(
         average_volume != 0
     )
 
-    return get_exponential_moving_average(volume_flow, smoothing_window)
+    return get_exponential_moving_average(volume_flow, smooth_window)
 
 
 def get_finite_volume_elements(
@@ -1629,7 +1629,7 @@ def get_buying_selling_pressure(
     prices_close: pd.Series,
     volumes: pd.Series,
     window: int,
-    smoothing_window: int,
+    smooth_window: int,
 ) -> pd.DataFrame:
     """
     Calculate the Buying and Selling Pressure (BASP) for a given price series.
@@ -1646,9 +1646,9 @@ def get_buying_selling_pressure(
     - Buying Pressure (raw) = Close - Low, Selling Pressure (raw) = High - Close
     - Relative Volume = Volume / EMA(Volume, window)
     - Buying Pressure = EMA(Buying Pressure (raw) / EMA(Buying Pressure (raw), window) *
-      Relative Volume, smoothing_window)
+      Relative Volume, smooth_window)
     - Selling Pressure = EMA(Selling Pressure (raw) / EMA(Selling Pressure (raw), window) *
-      Relative Volume, smoothing_window)
+      Relative Volume, smooth_window)
 
     Also known as: BASP, BASPN (normalized Buying and Selling Pressure).
 
@@ -1661,7 +1661,7 @@ def get_buying_selling_pressure(
     (https://github.com/peerchemist/finta).
 
     Notes:
-        - A `smoothing_window` of 1 gives finta's BASP and the default of 20 its BASPN.
+        - A `smooth_window` of 1 gives finta's BASP and the default of 20 its BASPN.
           Every EMA is seeded with the Simple Moving Average of its first values (see
           `overlap_model.get_exponential_moving_average`), while finta averages from the
           first value (`adjust=True`), so the two differ during the warm-up and converge
@@ -1674,7 +1674,7 @@ def get_buying_selling_pressure(
         prices_close (pd.Series): Series of closing prices.
         volumes (pd.Series): Series of trading volumes.
         window (int): Number of periods for the EMAs of the pressure and the volume.
-        smoothing_window (int): Number of periods for the EMA that smooths both lines.
+        smooth_window (int): Number of periods for the EMA that smooths both lines.
 
     Returns:
         pd.DataFrame: The Buying Pressure and Selling Pressure as columns.
@@ -1693,7 +1693,7 @@ def get_buying_selling_pressure(
         average_pressure = get_exponential_moving_average(pressure, window)
         pressures[name] = get_exponential_moving_average(
             pressure / average_pressure.where(average_pressure != 0) * relative_volume,
-            smoothing_window,
+            smooth_window,
         )
 
     return pd.DataFrame(pressures)

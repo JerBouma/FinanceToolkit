@@ -72,6 +72,27 @@ def get_heston_nandi_log_likelihood(
 
     Returns:
         tuple[float, float]: The log-likelihood and the variance of the next period.
+
+    As an example, five daily excess returns:
+
+    ```python
+    import numpy as np
+
+    from financetoolkit.options.volatility import garch_option_model
+
+    log_likelihood, next_variance = garch_option_model.get_heston_nandi_log_likelihood(
+        np.array([0.01, -0.02, 0.005, -0.01, 0.015]), omega=1e-6, alpha=3e-6, beta=0.9,
+        gamma=150.0, risk_premium=2.0, first_variance=1e-4,
+    )
+
+    round(log_likelihood, 4), round(next_variance, 8)
+    ```
+
+    Which returns:
+
+    ```
+    (14.075, 0.00011283)
+    ```
     """
     returns = np.asarray(excess_returns, dtype=float)
     # (z_t — γ√h_t)² = (y_t — (λ + γ)h_t)² / h_t, so the recursion needs no square root, and

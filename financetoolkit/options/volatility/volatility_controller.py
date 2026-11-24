@@ -1482,7 +1482,8 @@ class VolatilityOptions:
         Quotes whose vega is below 5% of the at-the-money vega of their expiration are left
         out. The fit is a bounded least squares from two fixed starting points (see
         `heston_model.get_heston_parameters`), with every expiration priced by the COS method of
-        Fang and Oosterlee (2008), so the same quotes always give the same parameters.
+        Fang and Oosterlee (2008) with as many terms as the fitted parameters need, so the same
+        quotes always give the same parameters.
 
         The formulas are as follows:
 
@@ -1501,7 +1502,8 @@ class VolatilityOptions:
         σ.
 
         The RMSE is the root mean squared difference between the implied volatility of the
-        fitted Heston prices and the market's, over the quotes fitted.
+        fitted Heston prices, from a COS series converged to 1e-10 per unit of the strike, and
+        the market's, over the quotes fitted.
 
         See: Heston, S. L. (1993), "A Closed-Form Solution for Options with Stochastic Volatility
         with Applications to Bond and Currency Options", The Review of Financial Studies, 6(2),
@@ -1519,10 +1521,17 @@ class VolatilityOptions:
             separately and κ and σ run to their bounds. The expirations under 14 days are left
             out by default: their smiles are dominated by jump risk (earnings and other events)
             and by the bid-ask spread, which a diffusion like Heston cannot produce without an
-            implausibly fast mean reversion and volatile variance. A warning is logged when a
-            parameter ends at its bound (κ up to 20, a half-life of under two weeks, and σ up
-            to 5), a sign that the quotes ask for more than the model has, such as jumps or a
-            humped term structure. Listed options on single stocks are American; the fit treats
+            implausibly fast mean reversion and volatile variance. The At Bound column names
+            the parameters that end at a bound of the search (v0 and θ from 0.0001 to 4, κ from
+            0.001 to 20, a half-life of under two weeks at 20, σ from 0.01 to 5 and ρ from
+            -0.999 to 0.999), and a warning is logged with it. A parameter at its bound is a
+            sign that the quotes ask for more than the model has, such as jumps or a humped
+            term structure, and the other parameters then compensate for it, so they are less
+            meaningful. Even within the bounds κ and σ trade off: a faster mean reversion with a
+            more volatile variance gives much the same smile, so on a real surface the fit is
+            flat along that direction and two similar smiles can give a quite different κ. The
+            long-run level θ, the Feller ratio and the at-the-money term structure are far
+            better determined than κ and σ separately. Listed options on single stocks are American; the fit treats
             their implied volatility as European, as `get_volatility_surface` does. The Heston
             prices themselves are available as `heston_model.get_heston_price`.
 
@@ -1553,7 +1562,8 @@ class VolatilityOptions:
 
         Returns:
             pd.DataFrame: Per ticker, v0, kappa, theta, sigma and rho, the Feller Ratio, the RMSE
-            in implied volatility, the number of quotes and the number of expirations fitted.
+            in implied volatility, the number of quotes and the number of expirations fitted, and
+            At Bound, the parameters that end at a bound of the search (empty when none does).
 
         Raises:
             ValueError: If no ticker lists an expiration 14 days or more away.
@@ -1570,10 +1580,10 @@ class VolatilityOptions:
 
         Which returns:
 
-        | Ticker   |     v0 |   kappa |   theta |   sigma |     rho |   Feller Ratio |   RMSE |   Quotes |   Expirations |
-        |:---------|-------:|--------:|--------:|--------:|--------:|---------------:|-------:|---------:|--------------:|
-        | AAPL     | 0.0585 |  6.2781 |  0.0975 |  1.5161 | -0.5579 |         0.5327 | 0.0169 |      361 |             7 |
-        | MSFT     | 0.1153 | 20      |  0.1376 |  3.2351 | -0.5031 |         0.526  | 0.0296 |      376 |             7 |
+        | Ticker   |     v0 |   kappa |   theta |   sigma |     rho |   Feller Ratio |   RMSE |   Quotes |   Expirations | At Bound   |
+        |:---------|-------:|--------:|--------:|--------:|--------:|---------------:|-------:|---------:|--------------:|:-----------|
+        | AAPL     | 0.0611 |  6.2395 |  0.0974 |  1.5007 | -0.5683 |         0.5398 | 0.0196 |      364 |             7 |            |
+        | MSFT     | 0.1404 | 11.815  |  0.1373 |  2.5277 | -0.5619 |         0.5077 | 0.0277 |      375 |             7 |            |
         """
         # The expirations of each ticker: those given, or its own listed expiration nearest to
         # each of the expiration_months, as tickers list different dates.
@@ -1660,6 +1670,15 @@ class VolatilityOptions:
                 quote["implied_volatility"] = pd.concat(sides).sort_index()
                 ticker_quotes.append(quote)
 
+            # The quotes are collected for every ticker's dates together, so a ticker can have
+            # chains only on dates it did not select.
+            if not ticker_quotes:
+                logger.warning(
+                    "No expiration of %s selected for the Heston fit has enough quotes.",
+                    ticker,
+                )
+                continue
+
             # One spot price, rate and yield for the whole fit: those of the nearest chain, as
             # the chains of a ticker are fetched within moments of each other.
             nearest = ticker_quotes[0]
@@ -1718,12 +1737,15 @@ class VolatilityOptions:
                 "RMSE": fit["rmse"],
                 "Quotes": fit["quotes"],
                 "Expirations": len(ticker_quotes),
+                "At Bound": ", ".join(at_bound),
             }
 
         if not parameters:
             return pd.DataFrame()
 
-        parameters_df = pd.DataFrame(parameters).T
+        # From the records per ticker, so the numbers keep a numeric type next to the text of
+        # the At Bound column.
+        parameters_df = pd.DataFrame.from_dict(parameters, orient="index")
         parameters_df.index.name = "Ticker"
 
         return apply_rounding(
@@ -1852,16 +1874,16 @@ class VolatilityOptions:
 
         |   Strike Price |   2026-01-30 |   2026-03-01 |   2026-03-31 |
         |---------------:|-------------:|-------------:|-------------:|
-        |            230 |       0.3274 |       1.3431 |       2.6225 |
-        |            240 |       0.7639 |       2.3673 |       4.1071 |
-        |            250 |       1.6757 |       3.9996 |       6.2161 |
-        |            260 |       3.4456 |       6.4772 |       9.1009 |
-        |            270 |       6.6017 |      10.0487 |      12.8995 |
-        |            280 |      11.6764 |      14.919  |      17.713  |
-        |            290 |      18.8491 |      21.1761 |      23.582  |
-        |            300 |      27.6352 |      28.729  |      30.4704 |
-        |            310 |      37.2314 |      37.3118 |      38.2654 |
-        |            320 |      47.1045 |      46.5778 |      46.7968 |
+        |            230 |       0.3272 |       1.3428 |       2.6223 |
+        |            240 |       0.7636 |       2.367  |       4.1069 |
+        |            250 |       1.6753 |       3.9993 |       6.216  |
+        |            260 |       3.4452 |       6.477  |       9.1009 |
+        |            270 |       6.6014 |      10.0485 |      12.8997 |
+        |            280 |      11.6765 |      14.9192 |      17.7135 |
+        |            290 |      18.8495 |      21.1766 |      23.5828 |
+        |            300 |      27.6358 |      28.7298 |      30.4716 |
+        |            310 |      37.2321 |      37.313  |      38.2669 |
+        |            320 |      47.1053 |      46.5792 |      46.7986 |
         """
         start_date = self._pricing_date(start_date)
         stock_price = self._prices.loc[start_date]
@@ -1916,12 +1938,15 @@ class VolatilityOptions:
             parameters_df.index.name = "Ticker"
 
             # The parameters are of very different sizes (ω about 1e-7, γ about 100), so they
-            # are rounded to significant digits rather than decimals.
+            # are rounded to significant digits rather than decimals. The log-likelihood keeps
+            # its decimals, as fits are compared by its differences, which significant digits
+            # of a number in the thousands would round away.
+            digits = rounding if rounding is not None else self._rounding
             return parameters_df.apply(
-                lambda column: column.map(
-                    lambda value: float(
-                        f"{value:.{(rounding if rounding is not None else self._rounding)}g}"
-                    )
+                lambda column: (
+                    column.round(digits)
+                    if column.name == "Log-Likelihood"
+                    else column.map(lambda value: float(f"{value:.{digits}g}"))
                 )
             )
 

@@ -9,7 +9,13 @@ from scipy.stats import poisson
 
 from financetoolkit.options.helpers import validate_numeric_inputs
 from financetoolkit.options.pricing.black_scholes_model import get_black_scholes
-from financetoolkit.options.volatility.fourier_model import get_fourier_price
+from financetoolkit.options.volatility.fourier_model import (
+    FFT_MOMENT_ORDER,
+    get_fourier_price,
+)
+from financetoolkit.utilities import logger_model
+
+logger = logger_model.get_logger()
 
 # The Poisson probability left out of the Merton series: the terms beyond the
 # (1 - 1e-16) quantile of the number of jumps add less than a double can hold.
@@ -49,6 +55,28 @@ def get_merton_characteristic_function(
 
     Returns:
         np.ndarray: E[e^(iuX)] for every u.
+
+    As an example, φ(—i) = E[S_T / F] = 1 (the forward is the expected price) and φ(1):
+
+    ```python
+    import numpy as np
+
+    from financetoolkit.options.volatility import levy_model
+
+    np.round(
+        levy_model.get_merton_characteristic_function(
+            np.array([-1j, 1.0]), time_to_expiration=0.5, volatility=0.2,
+            jump_intensity=0.5, jump_mean=-0.1, jump_volatility=0.15,
+        ),
+        6,
+    ).tolist()
+    ```
+
+    Which returns:
+
+    ```
+    [(1+0j), (0.985977-0.01326j)]
+    ```
     """
     u = np.asarray(u, dtype=complex)
     expected_jump = np.expm1(jump_mean + 0.5 * jump_volatility**2)
@@ -246,6 +274,28 @@ def get_variance_gamma_characteristic_function(
 
     Returns:
         np.ndarray: E[e^(iuX)] for every u.
+
+    As an example, φ(—i) = E[S_T / F] = 1 (the forward is the expected price) and φ(1):
+
+    ```python
+    import numpy as np
+
+    from financetoolkit.options.volatility import levy_model
+
+    np.round(
+        levy_model.get_variance_gamma_characteristic_function(
+            np.array([-1j, 1.0]), time_to_expiration=0.5, volatility=0.2, drift=-0.15,
+            variance_rate=0.2,
+        ),
+        6,
+    ).tolist()
+    ```
+
+    Which returns:
+
+    ```
+    [(1+0j), (0.988911-0.010393j)]
+    ```
     """
     u = np.asarray(u, dtype=complex)
     compensator = (
@@ -329,9 +379,13 @@ def get_variance_gamma_price(
         Computational Finance, 2(4), 61-73. The Lewis method agrees within 1e-13 with an
         independent integration of the conditional Black-Scholes price over the gamma clock,
         and QuantLib's VarianceGammaEngine (https://www.quantlib.org) within 2e-8, the
-        precision of its own integration. The Carr-Madan transform needs
-        the moment E[S_T^(α + 1)] to exist, 1 — θν(α + 1) — σ²ν(α + 1)² / 2 > 0 for the damping
-        α = 1.5, which fails for a large variance rate; the other methods then still work.
+        precision of its own integration. The Carr-Madan transform (method="fft") needs
+        the moment E[S_T^p] to exist, 1 — θνp — σ²νp² / 2 > 0, for p = α + 1 of the damping
+        α = 1.5, and is accurate only with a margin above it, so with p = 4 (see
+        fourier_model.FFT_MOMENT_ORDER). That fails for a large variance rate or volatility,
+        and the price is then taken with the COS method instead, with a warning: the
+        characteristic function decays only like |u|^(-2T / ν), so the Lewis integral takes
+        seconds where the COS series converges in milliseconds.
 
     As an example:
 
@@ -368,6 +422,22 @@ def get_variance_gamma_price(
         raise ValueError(
             "1 - drift * variance_rate - volatility^2 * variance_rate / 2 must be positive."
         )
+    if (
+        method == "fft"
+        and 1
+        - drift * variance_rate * FFT_MOMENT_ORDER
+        - 0.5 * volatility**2 * variance_rate * FFT_MOMENT_ORDER**2
+        <= 0
+    ):
+        # The COS method rather than Lewis' integral: the characteristic function decays only
+        # like a power |u|^(-2T / ν), which makes the adaptive integral take seconds.
+        logger.warning(
+            "The moment E[S_T^%s] of this Variance Gamma model is infinite, which the "
+            "Carr-Madan transform needs finite, so the option is priced with the COS "
+            "method instead.",
+            FFT_MOMENT_ORDER,
+        )
+        method = "cos"
 
     return get_fourier_price(
         lambda u: get_variance_gamma_characteristic_function(

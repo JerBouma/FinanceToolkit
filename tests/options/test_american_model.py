@@ -301,3 +301,36 @@ def test_the_projected_dividends_repeat_the_latest_dividend():
     assert options_model.get_projected_dividends(
         dividends, pd.Timestamp("2025-12-31"), horizon_days=200
     ).empty
+
+
+# A put at r ≤ 0 with q < r is exercised between two boundaries. A Crank-Nicolson grid of
+# 4,000 by 4,000 points (finite_difference_model) gives these values; the European put is
+# 11.1716, 10.6424 and 13.8994, which the single boundary methods returned.
+@pytest.mark.parametrize(
+    "stock, rate, dividend, volatility, years, reference",
+    [
+        (100, -0.01, -0.03, 0.3, 1.0, 11.25204),
+        (100, 0.0, -0.03, 0.3, 1.0, 10.82493),
+        (90, -0.02, -0.05, 0.2, 2.0, 14.43965),
+    ],
+)
+@pytest.mark.parametrize(
+    "method", ["qd_plus", "barone_adesi_whaley", "ju_zhong", "qd_fixed_point"]
+)
+def test_an_american_put_with_two_exercise_boundaries(
+    stock, rate, dividend, volatility, years, reference, method
+):
+    put = american_model.get_american_option(
+        stock, 100, rate, volatility, years, dividend, True, method
+    )
+    assert put == pytest.approx(reference, abs=2e-3)
+    # The call with the stock and strike price and the rates swapped is the same value.
+    call = american_model.get_american_option(
+        100, stock, dividend, volatility, years, rate, False, method
+    )
+    assert call == pytest.approx(put, abs=1e-12)
+
+
+def test_an_american_option_needs_positive_prices():
+    with pytest.raises(ValueError, match="must be positive"):
+        american_model.get_qd_fixed_point(100, 0, 0.04, 0.2, 1, 0.02, True)

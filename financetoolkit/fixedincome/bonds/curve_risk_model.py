@@ -86,7 +86,12 @@ def get_par_to_zero_jacobian(
     Returns:
         pd.DataFrame: The zero rate moves per unit par yield move, with the nodes of the zero
         curve (maturity in years) as rows and the par maturities as columns.
+
+    Raises:
+        ValueError: If the bump is not positive.
     """
+    if bump <= 0:
+        raise ValueError(f"bump must be positive, received {bump!r}.")
     par_curve = par_curve.dropna().sort_index()
     maturities = par_curve.index.to_numpy(dtype=float)
     par_yields = par_curve.to_numpy(dtype=float)
@@ -160,6 +165,9 @@ def get_par_rate_delta(
     Returns:
         pd.Series: The present value change per +1 basis point of each par yield, by par
         maturity.
+
+    Raises:
+        ValueError: If the bump is not positive.
     """
     par_curve = par_curve.dropna().sort_index()
     maturities = par_curve.index.to_numpy(dtype=float)
@@ -232,7 +240,12 @@ def get_forward_rate_delta(
     Returns:
         pd.Series: The present value change per +1 basis point of the forward rate of each
         bucket, by the end of the bucket in years.
+
+    Raises:
+        ValueError: If the bump is not positive.
     """
+    if bump <= 0:
+        raise ValueError(f"bump must be positive, received {bump!r}.")
     ends = np.sort(
         np.asarray(
             zero_curve.dropna().index if buckets is None else buckets, dtype=float
@@ -300,7 +313,12 @@ def get_parallel_shift_ladder(
     Returns:
         pd.DataFrame: By shift (decimal), the Present Value, P&L, Delta-Gamma P&L, Delta and
         Gamma.
+
+    Raises:
+        ValueError: If the bump is not positive.
     """
+    if bump <= 0:
+        raise ValueError(f"bump must be positive, received {bump!r}.")
     shifts = np.asarray(DEFAULT_SHIFTS if shifts is None else shifts, dtype=float)
     zero_curve = zero_curve.dropna().sort_index()
 

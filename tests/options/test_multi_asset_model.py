@@ -65,28 +65,44 @@ def test_the_values_match_haug():
 # QuantLib 1.44 reference prices (Actual/365, whole days). The closed forms agree to about
 # 1e-13; the two-asset correlation engine's bivariate normal is accurate to about 2e-5, so that
 # one is checked to 5e-5 (direct integration of the payoff agrees with this model to 1e-8).
+# The American values are QuantLib's AnalyticAmericanMargrabeEngine, the Bjerksund-Stensland
+# (1993) lower bound, and a 999-step Leisen-Reimer tree of the call it equals (an American call
+# on S1 with strike S2, a rate of q2 and a dividend yield of q1).
 @pytest.mark.parametrize(
-    "inputs, european, american",
+    "inputs, european, lower_bound, tree",
     [
         (
             (110, 100, 0.35, 0.2, -0.5, 730 / 365, 0.03, 0.05),
             32.939027535045156,
             33.105612241878404,
+            33.21240131661149,
         ),
         (
             (90, 100, 0.15, 0.4, 0.7, 1.0, 0.03, 0.0),
             6.409268140589177,
             6.489355072496679,
+            6.549382861305851,
+        ),
+        (
+            (100, 100, 0.3, 0.2, 0.4, 1.0, 0.05, 0.01),
+            None,
+            None,
+            9.64551875415208,
         ),
     ],
 )
-def test_the_exchange_option_matches_quantlib(inputs, european, american):
-    assert multi_asset_model.get_exchange_option(*inputs) == pytest.approx(
-        european, abs=1e-10
-    )
-    assert multi_asset_model.get_exchange_option(
-        *inputs, american_option=True
-    ) == pytest.approx(american, abs=1e-10)
+def test_the_exchange_option_matches_quantlib_and_the_tree(
+    inputs, european, lower_bound, tree
+):
+    if european is not None:
+        assert multi_asset_model.get_exchange_option(*inputs) == pytest.approx(
+            european, abs=1e-10
+        )
+    american = multi_asset_model.get_exchange_option(*inputs, american_option=True)
+    # QD+ lies within 0.1% of the tree, where the 1993 approximation is up to 1% below it.
+    assert american == pytest.approx(tree, rel=1.1e-3)
+    if lower_bound is not None:
+        assert american > lower_bound
 
 
 @pytest.mark.parametrize(

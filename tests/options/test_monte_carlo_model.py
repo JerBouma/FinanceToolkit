@@ -269,9 +269,59 @@ def test_an_american_call_without_dividends_is_worth_the_european():
         variance_reduction="control_variate",
     )
 
+    # The European floor of the continuation value rules out every exercise, so the control
+    # variate returns the Black-Scholes price itself.
     assert price == pytest.approx(
-        get_black_scholes(100, 100, 0.05, 0.2, 1.0), abs=4 * error
+        get_black_scholes(100, 100, 0.05, 0.2, 1.0), abs=4 * error + 1e-12
     )
+
+
+def test_least_squares_monte_carlo_never_prices_below_the_european_put():
+    # With r <= 0 early exercise is never optimal, so the American put is the European put;
+    # without the European floor the fitted rule exercised by mistake and the price fell
+    # 2.5 to 4.2 standard errors below it.
+    for risk_free_rate in (-0.01, 0.0):
+        european = float(
+            get_black_scholes(100, 100, risk_free_rate, 0.2, 1.0, put_option=True)
+        )
+        for seed in (1, 2):
+            price, error = monte_carlo_model.get_longstaff_schwartz_option(
+                100,
+                100,
+                risk_free_rate,
+                0.2,
+                1.0,
+                put_option=True,
+                simulations=100_000,
+                variance_reduction="control_variate",
+                seed=seed,
+            )
+            assert price == pytest.approx(european, abs=4 * error + 1e-3)
+
+
+def test_least_squares_monte_carlo_matches_longstaff_schwartz_table_1():
+    # Longstaff and Schwartz (2001), Table 1: the finite difference values of American puts
+    # with K = 40, r = 0.06 and 50 exercise dates a year.
+    for stock_price, volatility, time, value in (
+        (36, 0.2, 1, 4.478),
+        (36, 0.2, 2, 4.840),
+        (36, 0.4, 1, 7.101),
+        (40, 0.2, 1, 2.314),
+        (44, 0.2, 1, 1.110),
+        (44, 0.4, 2, 5.647),
+    ):
+        price, error = monte_carlo_model.get_longstaff_schwartz_option(
+            stock_price,
+            40,
+            0.06,
+            volatility,
+            time,
+            put_option=True,
+            simulations=100_000,
+            time_steps=50 * time,
+            variance_reduction="antithetic",
+        )
+        assert abs(price - value) <= 2 * error + 1e-9
 
 
 def test_american_max_call_on_two_stocks():

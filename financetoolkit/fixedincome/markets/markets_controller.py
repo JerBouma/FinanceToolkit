@@ -881,9 +881,12 @@ class MarketsFixedIncome(CurvesFixedIncome):
         (below it), the relative value view of a bond desk.
 
         The curve minimizes the weighted squared differences between the bonds' prices and
-        their prices on the curve, with weights inversely proportional to duration so that
-        the errors count about equally in yield, as Gürkaynak, Sack and Wright (2007) fit the
-        Federal Reserve's Treasury curve:
+        their prices on the curve, with weights inversely proportional to duration, as
+        Gürkaynak, Sack and Wright (2007) fit the Federal Reserve's Treasury curve. A price
+        error is about the duration times the price times the yield error, so the weights
+        reduce the weight of the long bonds' larger price errors, while still giving a basis
+        point of a long bond more weight than one of a short bond (equal weight in yield would
+        need 1 / D²).
 
         The formula is as follows:
 
@@ -1211,12 +1214,6 @@ class MarketsFixedIncome(CurvesFixedIncome):
             .last()
         )
         index_rates = index_rates[index_rates.index <= price_date]
-        # The index rate that applies to the settlement date, which projects the coupons.
-        index_rate = float(
-            frn_model.get_daily_index_rates(
-                index_rates, price_date, price_date + timedelta(days=1), [price_date]
-            ).iloc[0]
-        )
 
         rows = {}
         for cusip, maturity, price in zip(
@@ -1231,9 +1228,22 @@ class MarketsFixedIncome(CurvesFixedIncome):
                 price_date, maturity.date(), frequency=4
             )
             start = max(previous, dated_date) if dated_date else previous
+            # The lockout applies only to the issue date and the interest payment dates
+            # (31 CFR 356, Appendix B, IV: "applies only to the issue date and interest
+            # payment dates"), so a secondary-market price date takes the latest auction
+            # unless it is the note's dated date or an interest payment date. The index rate
+            # that applies to the price date projects the coupons.
+            index_rate = float(
+                frn_model.get_daily_index_rates(
+                    index_rates,
+                    price_date,
+                    price_date + timedelta(days=1),
+                    [price_date] if price_date == start else [],
+                ).iloc[0]
+            )
             accrued = frn_model.get_accrued_interest(
                 frn_model.get_daily_index_rates(
-                    index_rates, start, price_date, [start, price_date]
+                    index_rates, start, price_date, [start]
                 ),
                 spread,
             )
@@ -1300,9 +1310,9 @@ class MarketsFixedIncome(CurvesFixedIncome):
         where s is the spread, r the index rate that applies to the price date (held for
         every later day), T_i the quarterly interest payment dates and P the price plus
         accrued interest. Each day accrues at the index rate of the most recent 13-week bill
-        auction held before it, except that an auction held in the two business days before a
-        settlement or interest payment date applies from the day after that date (the
-        lockout). The coupons follow the index, so the index duration is close to zero, while
+        auction held before it, except that an auction held in the two business days before an
+        issue or interest payment date applies from the day after that date (the lockout, which
+        31 CFR 356 applies only to those dates, so not to a price date between them). The coupons follow the index, so the index duration is close to zero, while
         the spread duration, the price change for a change in the discount margin, is about
         the time to maturity.
 

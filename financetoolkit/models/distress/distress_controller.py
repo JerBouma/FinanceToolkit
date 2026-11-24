@@ -25,6 +25,7 @@ from financetoolkit.models.distress import (
     zmijewski_model,
 )
 from financetoolkit.models.valuation import damodaran_model
+from financetoolkit.options import options_model
 from financetoolkit.ratios import liquidity_model, valuation_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
 from financetoolkit.utilities.error_model import handle_errors
@@ -1471,14 +1472,15 @@ class DistressModels:
         point; it reacts to the share price immediately, long before a rating changes.
         The debt is a risk-free bond with face value D less a put on the assets, so its value
         is what the assets are worth beyond the equity, and the credit spread is the yield it
-        pays over the risk free rate, continuously compounded like the rate the model takes.
+        pays over the risk free rate, both continuously compounded.
 
         The market capitalization, the equity volatility and the risk free rate are measured
         on the last trading day of each fiscal period (the filing day with point_in_time), the
         date of the balance sheet the default point comes from.
 
         The risk free rate is the Toolkit's (the 10-year Treasury yield unless set otherwise
-        with `risk_free_rate`) on that day, where Vassalou and Xing (2004) and
+        with `risk_free_rate`) on that day, converted from its semi-annual bond-equivalent
+        quote to continuous compounding, where Vassalou and Xing (2004) and
         Bharath and Shumway (2008) use the one-year rate for a one-year horizon; the
         difference moves the distance to default only slightly.
 
@@ -1543,11 +1545,11 @@ class DistressModels:
         | Equity Value           | 8.37862e+10 | 4.66828e+10 | 4.92598e+10 | 3.98079e+10 | 5.22045e+10 |
         | Equity Volatility      | 0.4163      | 0.4912      | 0.3551      | 0.3601      | 0.3313      |
         | Default Point          | 9.3892e+10  | 9.45665e+10 | 9.945e+10   | 1.07294e+11 | 1.1133e+11  |
-        | Asset Value            | 1.76267e+11 | 1.37609e+11 | 1.44934e+11 | 1.42307e+11 | 1.58997e+11 |
-        | Asset Volatility       | 0.1979      | 0.1675      | 0.1207      | 0.1008      | 0.1088      |
-        | Debt Value             | 9.24811e+10 | 9.09266e+10 | 9.56738e+10 | 1.02499e+11 | 1.06793e+11 |
+        | Asset Value            | 1.76273e+11 | 1.37643e+11 | 1.44969e+11 | 1.42359e+11 | 1.59043e+11 |
+        | Asset Volatility       | 0.1979      | 0.1675      | 0.1207      | 0.1007      | 0.1088      |
+        | Debt Value             | 9.24864e+10 | 9.09604e+10 | 9.57091e+10 | 1.02551e+11 | 1.06838e+11 |
         | Credit Spread          | 0           | 0.0005      | 0           | 0           | 0           |
-        | Distance to Default    | 3.1593      | 2.3871      | 3.3802      | 3.2057      | 3.604       |
+        | Distance to Default    | 3.1593      | 2.387       | 3.3801      | 3.2055      | 3.6038      |
         | Probability of Default | 0.0008      | 0.0085      | 0.0004      | 0.0007      | 0.0002      |
         """
         balance = self._balance_sheet_statement
@@ -1569,11 +1571,14 @@ class DistressModels:
         equity_volatility = self._values_at_market_dates(volatility)
 
         # The risk free rate on that same day, and the period's rate where the daily rates do
-        # not reach it.
+        # not reach it. The Treasury yield is quoted semi-annually (bond-equivalent) and the
+        # model discounts with e^(-rT), so it is converted to its continuous equivalent.
         period_risk_free = self._period_risk_free_rate(balance.columns)
-        risk_free = self._values_at_market_dates(
-            self._risk_free_rate_data["daily"]["Adj Close"]
-        ).fillna(period_risk_free)
+        risk_free = options_model.get_continuously_compounded_rate(
+            self._values_at_market_dates(
+                self._risk_free_rate_data["daily"]["Adj Close"]
+            ).fillna(period_risk_free)
+        )
 
         model_metrics = [
             "Default Point",

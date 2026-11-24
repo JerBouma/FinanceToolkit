@@ -341,3 +341,21 @@ def test_cds_option_parity_and_front_end_protection():
         cds_model.get_cds_option(**terms, option_type="straddle")
     with pytest.raises(ValueError, match="before the maturity"):
         cds_model.get_cds_option(**{**terms, "option_expiry": 7})
+
+
+def test_cds_needs_a_positive_maturity():
+    zero_curve = pd.Series([0.03, 0.037], index=[1, 10])
+    with pytest.raises(ValueError, match="maturity of a CDS must be positive"):
+        cds_model.get_credit_default_swap(0, zero_curve, [0.02], [5])
+
+
+def test_bootstraps_report_a_negative_hazard_rate_on_an_inverted_curve():
+    # A 3-year spread of 1% after a 1-year spread of 5% needs a negative hazard rate from 1
+    # to 3 years; the root search failed with "f(a) and f(b) must have different signs".
+    zero_curve = pd.Series([0.03, 0.032, 0.035, 0.037], index=[1, 2, 5, 10])
+    for bootstrap in (
+        cds_model.get_cds_implied_hazard_rates,
+        credit_curve_model.get_bond_implied_hazard_rates,
+    ):
+        with pytest.raises(ValueError, match="implies a negative hazard rate"):
+            bootstrap([1, 3, 5], [0.05, 0.01, 0.005], zero_curve)

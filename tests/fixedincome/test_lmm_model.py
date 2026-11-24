@@ -22,14 +22,21 @@ def black(forward, strike, volatility, expiry, sign=1.0):
 
 
 @pytest.mark.parametrize(
-    "correlation, factors, option_type",
+    "correlation_decay, factors, option_type",
     [(None, None, "caplet"), (0.1, 3, "floorlet"), (0.1, None, "caplet")],
 )
-def test_caplets_converge_to_black(correlation, factors, option_type):
+def test_caplets_converge_to_black(correlation_decay, factors, option_type):
     # Every caplet depends on its own forward only, which is lognormal under its payment
     # measure: the Monte Carlo price must match Black's formula within its standard error.
     caplets = lmm_model.get_lmm_cap(
-        CURVE, TIMES, VOLATILITIES, 0.04, correlation, factors, option_type, paths=20000
+        CURVE,
+        TIMES,
+        VOLATILITIES,
+        0.04,
+        correlation_decay=correlation_decay,
+        factors=factors,
+        option_type=option_type,
+        paths=20000,
     )
     discounts = discount_factors(CURVE, TIMES)
     forwards = (discounts[:-1] / discounts[1:] - 1) / np.diff(TIMES)
@@ -63,19 +70,31 @@ def test_one_factor_rebonato_volatility_is_the_forward_volatility():
     ) == pytest.approx(0.2, rel=1e-14)
     # Less correlation lowers it.
     assert (
-        lmm_model.get_rebonato_swaption_volatility(CURVE, [2, 3, 4, 5, 6, 7], 0.2, 0.1)
+        lmm_model.get_rebonato_swaption_volatility(
+            CURVE, [2, 3, 4, 5, 6, 7], 0.2, correlation_decay=0.1
+        )
         < 0.2
     )
 
 
-@pytest.mark.parametrize("correlation, factors", [(None, None), (0.1, 2), (0.1, None)])
-def test_swaption_matches_black_with_the_rebonato_volatility(correlation, factors):
+@pytest.mark.parametrize(
+    "correlation_decay, factors", [(None, None), (0.1, 2), (0.1, None)]
+)
+def test_swaption_matches_black_with_the_rebonato_volatility(
+    correlation_decay, factors
+):
     times = np.array([2, 3, 4, 5, 6, 7.0])
     swaption = lmm_model.get_lmm_swaption(
-        CURVE, times, 0.2, 0.04, correlation, factors, paths=20000
+        CURVE,
+        times,
+        0.2,
+        0.04,
+        correlation_decay=correlation_decay,
+        factors=factors,
+        paths=20000,
     )
     volatility = lmm_model.get_rebonato_swaption_volatility(
-        CURVE, times, 0.2, correlation, factors
+        CURVE, times, 0.2, correlation_decay=correlation_decay, factors=factors
     )
     discounts = discount_factors(CURVE, times)
     annuity = np.sum(discounts[1:])
@@ -100,7 +119,7 @@ def test_swaption_matches_financepy_monte_carlo():
         [2, 3, 4, 5, 6, 7],
         0.2,
         0.036,
-        correlation=0.1,
+        correlation_decay=0.1,
         paths=200000,
         steps_per_year=1,
     )
@@ -111,7 +130,7 @@ def test_swaption_matches_financepy_monte_carlo():
 
 def test_payer_less_receiver_is_the_forward_swap():
     times = np.array([2, 3, 4, 5, 6, 7.0])
-    common = {"correlation": 0.1, "factors": 3, "paths": 20000}
+    common = {"correlation_decay": 0.1, "factors": 3, "paths": 20000}
     payer = lmm_model.get_lmm_swaption(CURVE, times, 0.2, 0.04, **common)
     receiver = lmm_model.get_lmm_swaption(
         CURVE, times, 0.2, 0.04, swaption_type="receiver", **common
@@ -129,14 +148,16 @@ def test_factor_loadings():
     np.testing.assert_allclose(
         lmm_model.get_lmm_factor_loadings(times), np.ones((10, 1))
     )
-    full = lmm_model.get_lmm_factor_loadings(times, 0.15)
+    full = lmm_model.get_lmm_factor_loadings(times, correlation_decay=0.15)
     resets = times[:-1]
     np.testing.assert_allclose(
         full @ full.T,
         np.exp(-0.15 * np.abs(resets[:, None] - resets[None, :])),
         atol=1e-12,
     )
-    reduced = lmm_model.get_lmm_factor_loadings(times, 0.15, factors=3)
+    reduced = lmm_model.get_lmm_factor_loadings(
+        times, correlation_decay=0.15, factors=3
+    )
     assert reduced.shape == (10, 3)
     np.testing.assert_allclose(np.linalg.norm(reduced, axis=1), 1.0, rtol=1e-14)
     # The first factor is a level shift: every forward loads on it with the same sign.
@@ -146,10 +167,10 @@ def test_factor_loadings():
 def test_simulation_is_seeded_and_stable():
     arguments = ([0.03, 0.032, 0.034], [1, 2, 3, 4], [0.2, 0.19, 0.18])
     first = lmm_model.simulate_lmm_forwards(
-        *arguments, correlation=0.2, factors=2, paths=500, seed=7
+        *arguments, correlation_decay=0.2, factors=2, paths=500, seed=7
     )
     again = lmm_model.simulate_lmm_forwards(
-        *arguments, correlation=0.2, factors=2, paths=500, seed=7
+        *arguments, correlation_decay=0.2, factors=2, paths=500, seed=7
     )
     np.testing.assert_array_equal(first, again)
     assert first.shape == (500, 3, 3)
@@ -159,7 +180,7 @@ def test_simulation_is_seeded_and_stable():
         [0.03 + 1e-12, 0.032, 0.034],
         [1, 2, 3, 4],
         [0.2, 0.19, 0.18 + 1e-12],
-        correlation=0.2 + 1e-12,
+        correlation_decay=0.2 + 1e-12,
         factors=2,
         paths=500,
         seed=7,
@@ -173,10 +194,23 @@ def test_inputs_are_checked():
     with pytest.raises(ValueError, match="one positive forward"):
         lmm_model.simulate_lmm_forwards([0.03], [1, 2, 3], 0.2)
     with pytest.raises(ValueError, match="factors"):
-        lmm_model.get_lmm_factor_loadings([1, 2, 3], 0.1, factors=3)
+        lmm_model.get_lmm_factor_loadings([1, 2, 3], correlation_decay=0.1, factors=3)
     with pytest.raises(ValueError, match="symmetric"):
         lmm_model.get_lmm_factor_loadings([1, 2, 3], np.eye(3))
     with pytest.raises(ValueError, match="after today"):
         lmm_model.get_lmm_swaption(CURVE, [0, 1, 2], 0.2, 0.03)
     with pytest.raises(ValueError, match="caplet"):
         lmm_model.get_lmm_cap(CURVE, [1, 2, 3], 0.2, 0.03, option_type="cap")
+
+
+def test_a_scalar_correlation_is_refused():
+    # A number is not a correlation of the forwards: correlation=1.0 would otherwise be read
+    # as the decay β = 1, which gives forwards a year apart a correlation of only e^(-1).
+    with pytest.raises(ValueError, match="correlation_decay"):
+        lmm_model.get_lmm_factor_loadings([1, 2, 3, 4], correlation=1.0)
+    with pytest.raises(ValueError, match="correlation_decay"):
+        lmm_model.get_lmm_swaption(CURVE, [2, 3, 4], 0.2, 0.03, correlation=0.5)
+    with pytest.raises(ValueError, match="not both"):
+        lmm_model.get_lmm_factor_loadings(
+            [1, 2, 3], correlation=np.eye(2), correlation_decay=0.1
+        )

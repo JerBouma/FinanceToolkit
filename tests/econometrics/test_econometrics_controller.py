@@ -1363,6 +1363,12 @@ def test_get_berkowitz_test(recorder, econometrics_module):
     )
 
 
+def test_get_hong_li_test(recorder, econometrics_module):
+    recorder.capture(econometrics_module.get_hong_li_test(model="gaussian"))
+    # The GARCH refits move the statistics by up to 5e-7 with the fit, so two decimals.
+    recorder.capture(econometrics_module.get_hong_li_test(refit_every=63, rounding=2))
+
+
 def test_get_directional_accuracy_test(recorder, econometrics_module):
     recorder.capture(econometrics_module.get_directional_accuracy_test())
     recorder.capture(
@@ -1431,6 +1437,20 @@ def test_get_pearson_goodness_of_fit_test(recorder, econometrics_module):
     recorder.capture(normal)
     recorder.capture(student)
     recorder.capture(econometrics_module.get_pearson_goodness_of_fit_test(bins=10))
+
+
+def test_get_nyblom_test(recorder, econometrics_module):
+    # The fit stops within its tolerance: a move of 1e-12 in the prices moves the statistics
+    # by up to 1e-6, so they are recorded at two decimals.
+    recorder.capture(econometrics_module.get_nyblom_test(rounding=2))
+
+
+def test_get_gmm_moment_test(recorder, econometrics_module):
+    # As for the Nyblom test: the Joint Statistic moves by up to 4e-6 with the fit.
+    recorder.capture(econometrics_module.get_gmm_moment_test(rounding=2))
+    recorder.capture(
+        econometrics_module.get_gmm_moment_test(distribution="t", lags=2, rounding=2)
+    )
 
 
 def test_get_change_points(recorder, econometrics_module):

@@ -22,7 +22,7 @@ from financetoolkit.utilities.statistics_model import apply_rounding
 @track_sources
 class DiagnosticsEconometrics:
     """
-    Diagnostic tests of a series: ARCH-LM, Jarque-Bera, Ljung-Box, the variance ratio and CUSUM, and of the residuals of a GARCH model: the sign bias and adjusted Pearson goodness of fit tests.
+    Diagnostic tests of a series: ARCH-LM, Jarque-Bera, Ljung-Box, the variance ratio and CUSUM, and of a GARCH model: the sign bias, adjusted Pearson goodness of fit and GMM orthogonality tests of its residuals and the Nyblom test of the stability of its parameters.
     """
 
     @handle_portfolio
@@ -914,6 +914,297 @@ class DiagnosticsEconometrics:
 
         return apply_rounding(
             result, rounding if rounding is not None else self._rounding
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_nyblom_test(
+        self,
+        period: str | None = None,
+        method: str = "garch",
+        distribution: str = "normal",
+        mean: str = "zero",
+        include_benchmark: bool = False,
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the parameter stability test of Nyblom (1989) and Hansen (1992) on a
+        GARCH-family model fitted to the returns: did its parameters stay the same over the
+        sample, or did the volatility process change (a calmer or more turbulent regime, a
+        change in how quickly shocks fade)?
+
+        At the maximum of the likelihood the scores of every parameter (the derivatives of
+        the log-likelihood of each return) sum to zero over the whole sample. When a parameter
+        changes during the sample, their running sum wanders far from zero in between. The
+        test measures that wandering for every parameter on its own and for all of them
+        together, relative to the variance of the scores.
+
+        The formula is as follows:
+
+        - sₜ the scores of return t: the derivatives of its log-likelihood with respect to the
+          parameters of the GARCH-family `method` (GARCH(1, 1) by default) with the `distribution` and
+          `mean` model fitted to the returns of `period`, see `toolkit.risk.get_garch_parameters`
+        - Sₜ = Σ(i=1..t) sᵢ and V = Σₜ sₜ·sₜ', with T the number of returns in the likelihood
+        - Individual Statistic of parameter j = Σₜ Sₜ,ⱼ² / (T·Vⱼⱼ)
+        - Joint Statistic = Σₜ Sₜ'·V⁻¹·Sₜ / T
+        - P-values from the limiting distribution, Σ(j=1..k) ∫ Bⱼ(r)² dr over k independent Brownian
+          bridges, with k = 1 for an individual statistic and the number of parameters for the joint
+          statistic, by Imhof's (1961) integral
+
+        Large statistics (small p-values) say the parameter is not stable. A parameter that the
+        fit leaves on a bound of its search (such as an Omega or Alpha of 0) has scores that do
+        not sum to zero, which inflates its statistic and the joint statistic.
+
+        For more information about the method, see the following papers:
+
+        - Nyblom, J. (1989). "Testing for the Constancy of Parameters Over Time." Journal of
+        the American Statistical Association, 84(405), 223-230.
+        - Hansen, B.E. (1992). "Testing for Parameter Instability in Linear Models." Journal
+        of Policy Modeling, 14(4), 517-533.
+        - Referenced against nyblom of R's rugarch (https://cran.r-project.org/package=rugarch),
+        which compares the statistics with Hansen's tabulated critical values (0.470 for one
+        parameter at 5%); the critical values here are those of the limiting distribution itself
+        (0.461 for one parameter, the 5% point of the Cramér-von Mises distribution).
+
+        Also known as: Nyblom test, Hansen stability test, parameter constancy test, parameter
+        instability test, GARCH stability test, structural change in GARCH.
+
+        Args:
+            period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
+                Defaults to "daily".
+            method (str, optional): The GARCH-family model fitted to the returns, see
+                `toolkit.risk.get_garch` (e.g. "garch", "gjr", "aparch"). Defaults to "garch".
+            distribution (str, optional): The innovation distribution of the model ("normal", "t",
+                "skewt", "skewt_fernandez_steel", "ged" or "johnson_su"). Defaults to "normal".
+            mean (str, optional): The mean model ("zero", "constant", "arma", "in_mean" or
+                "arfima"). Defaults to "zero".
+            include_benchmark (bool, optional): Whether to include "Benchmark" among the
+            assets tested. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: The joint statistic, its p-value and 5% critical value, the statistic and
+            p-value of every parameter, the 5% critical value of one parameter and the observations,
+            per asset.
+
+        Notes:
+        - Every asset is fitted on its own returns, as in `toolkit.risk.get_garch`; the fit takes a
+          second or more per asset of daily returns.
+        - The scores are central finite differences of the log-likelihood, as for the robust
+          standard errors of `toolkit.risk.get_garch_parameters(diagnostics=True)`.
+        - method="realized" needs a realized measure the test does not take; use the other models.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["^GSPC", "GLD"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2016-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.econometrics.get_nyblom_test()
+        ```
+
+        Which returns:
+
+        |                                |     ^GSPC |       GLD |
+        |:-------------------------------|----------:|----------:|
+        | Joint Statistic                |    1.2495 |    1.2938 |
+        | Joint P-Value                  |    0.0164 |    0.0134 |
+        | Joint Critical Value (5%)      |    1.0002 |    1.0002 |
+        | Omega Statistic                |    0.4851 |    0.4856 |
+        | Omega P-Value                  |    0.0435 |    0.0433 |
+        | Alpha Statistic                |    0.3316 |    0.4274 |
+        | Alpha P-Value                  |    0.1104 |    0.0612 |
+        | Beta Statistic                 |    0.682  |    0.3219 |
+        | Beta P-Value                   |    0.0141 |    0.1174 |
+        | Individual Critical Value (5%) |    0.4614 |    0.4614 |
+        | Observations                   | 2513      | 2513      |
+        """
+        garch_model.validate_garch_family(method, distribution, mean)
+        returns = self._filter_benchmark(
+            self._get_returns(period if period else "daily", within_period=False),
+            include_benchmark=include_benchmark,
+        )
+        names = garch_model.get_garch_family_parameter_names(method, distribution, mean)
+
+        result = {}
+        for ticker in returns.columns:
+            values = returns[ticker].dropna().to_numpy(dtype=float)
+            weights = garch_model.get_garch_family_weights(
+                values, method, distribution, mean
+            )
+            if not np.all(np.isfinite(weights)):
+                raise ValueError(f"The {method} model could not be fitted to {ticker}.")
+            result[ticker] = diagnostics_model.get_nyblom_test(
+                garch_model.get_garch_family_scores(
+                    values, weights, method, distribution, mean
+                ),
+                names,
+            )
+
+        return apply_rounding(
+            pd.DataFrame(result), rounding if rounding is not None else self._rounding
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_gmm_moment_test(
+        self,
+        period: str | None = None,
+        lags: int = 1,
+        method: str = "garch",
+        distribution: str = "normal",
+        mean: str = "zero",
+        include_benchmark: bool = False,
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the GMM orthogonality test of Hansen (1982) on the standardized residuals of a
+        GARCH-family model fitted to the returns: do they have the mean, variance, skewness and
+        kurtosis of the innovation distribution the model assumes, and are their squares,
+        cubes and fourth powers free of autocorrelation?
+
+        A correctly specified model leaves standardized residuals that are independent draws
+        from its innovation distribution, so a set of moments has a known value. Each moment is
+        tested on its own with a t-statistic; the autocorrelations of the squares (Q2: volatility
+        clustering the model misses), cubes (Q3) and fourth powers (Q4) and all conditions
+        together are tested with Wald statistics.
+
+        The formula is as follows:
+
+        - zₜ the standardized residuals of the GARCH-family `method` (GARCH(1, 1) by default) with the
+          `distribution` and `mean` model fitted to the returns of `period`, see `toolkit.risk.get_garch`,
+          and s and κ the skewness and kurtosis (not excess) of the fitted innovation distribution
+        - Mean: E[zₜ] = 0; Variance: E[zₜ² - 1] = 0; Skewness: E[zₜ³ - s] = 0; Kurtosis: E[zₜ⁴ - κ] = 0
+        - Q2: E[(zₜ² - 1)(zₜ₋ⱼ² - 1)] = 0, Q3: E[(zₜ³ - s)(zₜ₋ⱼ³ - s)] = 0 and Q4: E[(zₜ⁴ - κ)(zₜ₋ⱼ⁴ - κ)] = 0
+          for j = 1, ..., `lags`
+        - gₜ the conditions of return t over the T returns after the first `lags` and ḡ their average
+        - S their covariance under the null of independent innovations: the sample covariance (ddof=1) of the
+          Mean, Variance, Skewness and Kurtosis conditions, (E[aₜ·cₜ])² between the products of the centred
+          powers a and c at the same lag, and 0 between different lags and between the moments and the products
+        - t-Statistic = ḡᵢ / √(Sᵢᵢ / T), with two-sided p-values from the normal distribution
+        - Q2, Q3 and Q4 Statistic = T·ḡ'·S⁻¹·ḡ over their `lags` conditions, chi-squared with `lags`
+          degrees of freedom; Joint Statistic over all 4 + 3·`lags` conditions, chi-squared with 4 + 3·`lags`
+          degrees of freedom
+
+        For more information about the method, see the following paper:
+
+        - Hansen, L.P. (1982). "Large Sample Properties of Generalized Method of Moments
+        Estimators." Econometrica, 50(4), 1029-1054.
+        - Referenced against GMMTest of R's rugarch (https://cran.r-project.org/package=rugarch)
+        as its documentation defines the conditions M1 to M4, Q2 to Q4 and the joint J test, with the
+        covariance of the lagged conditions under the null (see the Notes).
+
+        Also known as: GMM orthogonality test, moment test, Hansen J test of standardized
+        residuals, GARCH residual diagnostics, conditional moment test.
+
+        Args:
+            period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
+                Defaults to "daily".
+            lags (int, optional): The number of lags of the Q2, Q3 and Q4 conditions. Defaults to 1.
+            method (str, optional): The GARCH-family model fitted to the returns, see
+                `toolkit.risk.get_garch` (e.g. "garch", "gjr", "aparch"). Defaults to "garch".
+            distribution (str, optional): The innovation distribution of the model and of its
+                skewness and kurtosis ("normal", "t", "skewt", "skewt_fernandez_steel", "ged" or
+                "johnson_su"). Defaults to "normal".
+            mean (str, optional): The mean model ("zero", "constant", "arma", "in_mean" or
+                "arfima"). Defaults to "zero".
+            include_benchmark (bool, optional): Whether to include "Benchmark" among the
+            assets tested. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: The t-statistic and p-value of the Mean, Variance, Skewness and Kurtosis
+            conditions, the Q2, Q3, Q4 and Joint statistics with their p-values, the lags and the
+            observations, per asset.
+
+        Notes:
+        - Every asset is fitted on its own returns, as in `toolkit.risk.get_garch`.
+        - The parameters are estimated, which the covariance of the conditions leaves out (as in
+          rugarch), so read the p-values as a guide.
+        - The conditions are correlated (zₜ with zₜ³, zₜ² with zₜ⁴, Q2 with Q4), so the joint test can reject
+          while none of the individual tests does: a negative skewness without the fatter tails that usually
+          come with it is such a combination.
+        - The covariance of Q2, Q3 and Q4 is the one the null implies, where rugarch takes the sample covariance
+          of all conditions. That sample covariance rests on 16th moments of the residuals: on 2,500 simulated
+          normal innovations its joint test at 5% rejects about 20% of the time, against about 8% here.
+        - The Kurtosis condition needs a finite 8th moment of the innovations (a Student-t with a Shape above
+          8); with a fitted Shape below 8 its test and the joint test reject too often.
+        - A Student-t with a Shape of 4 or less has no kurtosis (3 or less: no skewness); its Kurtosis
+          and Q4 (Skewness and Q3) conditions are then NaN and left out of the joint statistic.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["^GSPC", "GLD"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2016-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.econometrics.get_gmm_moment_test(distribution="t")
+        ```
+
+        Which returns:
+
+        |                      |     ^GSPC |       GLD |
+        |:---------------------|----------:|----------:|
+        | Mean t-Statistic     |    2.8649 |    3.2207 |
+        | Mean P-Value         |    0.0042 |    0.0013 |
+        | Variance t-Statistic |    0.0566 |   -0.2472 |
+        | Variance P-Value     |    0.9548 |    0.8048 |
+        | Skewness t-Statistic |   -3.1211 |   -0.0336 |
+        | Skewness P-Value     |    0.0018 |    0.9732 |
+        | Kurtosis t-Statistic |   -0.9238 |   -2.5345 |
+        | Kurtosis P-Value     |    0.3556 |    0.0113 |
+        | Q2 Statistic         |    0.8937 |    0.3027 |
+        | Q2 P-Value           |    0.3445 |    0.5822 |
+        | Q3 Statistic         |    0.0555 |    0.0347 |
+        | Q3 P-Value           |    0.8138 |    0.8522 |
+        | Q4 Statistic         |    0.0295 |    0.0019 |
+        | Q4 P-Value           |    0.8635 |    0.9654 |
+        | Joint Statistic      |  223.192  |   44.4135 |
+        | Joint P-Value        |    0      |    0      |
+        | Lags                 |    1      |    1      |
+        | Observations         | 2512      | 2512      |
+        """
+        returns = self._filter_benchmark(
+            self._get_returns(period if period else "daily", within_period=False),
+            include_benchmark=include_benchmark,
+        )
+        _, standardized_residuals, parameters = self._get_garch_residuals(
+            returns, method, distribution, mean
+        )
+
+        result = {}
+        for ticker in standardized_residuals.columns:
+            skewness, kurtosis = garch_model.get_standardized_moments(
+                distribution, parameters[ticker]
+            )
+            result[ticker] = diagnostics_model.get_gmm_moment_test(
+                standardized_residuals[ticker], lags, skewness, kurtosis
+            )
+
+        return apply_rounding(
+            pd.DataFrame(result), rounding if rounding is not None else self._rounding
         )
 
     @staticmethod

@@ -582,3 +582,85 @@ def test_get_model_confidence_set_keeps_the_best_models(recorder):
         forecast_evaluation_model.get_model_confidence_set(
             _mcs_losses(), statistic="sum"
         )
+
+
+def test_hong_li_constants_of_the_quartic_kernel():
+    from scipy import integrate  # noqa: PLC0415
+
+    squared, boundary, variance = forecast_evaluation_model._hong_li_constants()
+
+    assert squared == pytest.approx(5 / 7, rel=1e-12)
+    assert forecast_evaluation_model._quartic_kernel_mass(1.0) == pytest.approx(1.0)
+    # ∫_0^1 ∫_-1^b k^2 / (∫_-1^b k)^2 by a plain Riemann sum.
+    b = np.linspace(0, 1, 2001)[1:] - 0.00025
+    u = np.linspace(-1, 1, 40001)
+    k2 = (15 / 16 * (1 - u**2) ** 2) ** 2
+    inner = np.array([np.trapezoid(k2[u <= x], u[u <= x]) for x in b])
+    mass = forecast_evaluation_model._quartic_kernel_mass(b)
+    assert boundary == pytest.approx(np.mean(inner / mass**2), rel=1e-4)
+    assert variance == pytest.approx(
+        2
+        * integrate.quad(
+            lambda x: integrate.quad(
+                lambda v: forecast_evaluation_model._quartic_kernel(x + v)
+                * forecast_evaluation_model._quartic_kernel(v),
+                -1,
+                1,
+            )[0]
+            ** 2,
+            -1,
+            1,
+        )[0]
+        ** 2,
+        rel=1e-10,
+    )
+
+
+def test_hong_li_distance_matches_a_fine_grid():
+    rng = np.random.default_rng(3)
+    pit = pd.Series(rng.random(300))
+    result = forecast_evaluation_model.get_hong_li_test(pit, lags=1)
+
+    # M(1) on a 1,500 x 1,500 midpoint grid, independent of the Gauss-Legendre panels.
+    values = pit.to_numpy()
+    h = result["Bandwidth"]
+    grid = (np.arange(1500) + 0.5) / 1500
+    kernel = forecast_evaluation_model._boundary_kernel(grid, values, h)
+    density = kernel[:, 1:] @ kernel[:, :-1].T / 299
+    distance = np.mean((density - 1) ** 2)
+    squared, boundary, variance = forecast_evaluation_model._hong_li_constants()
+    centring = ((1 / h - 2) * squared + 2 * boundary) ** 2 - 1
+    expected = h * (299 * distance - centring) / np.sqrt(variance)
+
+    assert result["Q(1) Statistic"] == pytest.approx(expected, abs=2e-3)
+    assert h == pytest.approx(np.std(values, ddof=1) * 300 ** (-1 / 6), rel=1e-12)
+
+
+def test_hong_li_test_is_centred_under_the_null_and_rejects_dependence():
+    rng = np.random.default_rng(4)
+    statistics = [
+        forecast_evaluation_model.get_hong_li_test(pd.Series(rng.random(400)), 1)[
+            "Q(1) Statistic"
+        ]
+        for _ in range(30)
+    ]
+    assert abs(np.mean(statistics)) < 0.6
+
+    # PITs that follow each other closely (an AR(1) of their normal quantiles) are rejected.
+    z = np.zeros(400)
+    for t in range(1, 400):
+        z[t] = 0.6 * z[t - 1] + 0.8 * rng.standard_normal()
+    from scipy import stats as scipy_stats  # noqa: PLC0415
+
+    dependent = forecast_evaluation_model.get_hong_li_test(
+        pd.Series(scipy_stats.norm.cdf(z))
+    )
+    assert dependent["W P-Value"] < 1e-4
+    assert (
+        forecast_evaluation_model.get_hong_li_test(pd.Series(rng.random(10)))[
+            "W Statistic"
+        ]
+        != forecast_evaluation_model.get_hong_li_test(pd.Series(rng.random(10)))[
+            "W Statistic"
+        ]
+    )

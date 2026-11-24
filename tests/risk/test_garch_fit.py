@@ -851,3 +851,280 @@ def test_every_rolling_refit_reaches_the_multi_start_maximum():
             log_likelihood(window, warm) >= log_likelihood(window, multi_start) - 1e-6
         )
         previous = warm
+
+
+def simulate_figarch(phi=0.1, d=0.45, beta=0.35, omega=1e-6, n=1500, seed=3):
+    """A FIGARCH(1, d, 1) path from its ARCH(∞) form, with 1,000 burn-in returns."""
+    rng = np.random.default_rng(seed)
+    weights = garch_model._figarch_weights(phi, d, beta)
+    squared = np.full(1000, 1e-4)
+    returns = []
+    for _ in range(n + 1000):
+        variance = omega / (1 - beta) + weights @ squared[::-1]
+        returns.append(np.sqrt(variance) * rng.standard_normal())
+        squared = np.append(squared[1:], returns[-1] ** 2)
+    return np.array(returns[1000:])
+
+
+def test_figarch_weights_follow_the_expansion():
+    weights = garch_model._figarch_weights(0.2, 0.4, 0.5)
+
+    # lambda_1 = D + Phi - Beta and lambda_2 = Beta * lambda_1 + (1 - D) / 2 * D - Phi * D.
+    assert weights[0] == pytest.approx(0.4 + 0.2 - 0.5)
+    assert weights[1] == pytest.approx(0.5 * weights[0] + 0.3 * 0.4 - 0.2 * 0.4)
+    assert len(weights) == garch_model.FIGARCH_TRUNCATION
+    # D = 0 is GARCH(1, 1) with Alpha = Phi - Beta: lambda_k = Alpha * Beta^(k - 1).
+    garch = garch_model._figarch_weights(0.9, 0.0, 0.8)
+    np.testing.assert_allclose(garch[:5], 0.1 * 0.8 ** np.arange(5), rtol=1e-12)
+
+
+def test_figarch_matches_the_arch_package():
+    pytest.importorskip("arch")
+    from arch.univariate import FIGARCH, ZeroMean  # noqa: PLC0415
+
+    returns = simulate_figarch()
+    model = ZeroMean(returns * 100, rescale=False)
+    model.volatility = FIGARCH()
+
+    # The likelihood of fixed weights: arch's of the returns in percent, less n ln(100).
+    fixed = [1e-6, 0.2, 0.4, 0.5]
+    reference = model.fix([1e-2, 0.2, 0.4, 0.5]).loglikelihood + len(returns) * np.log(
+        100
+    )
+    assert garch_model.get_garch_family_log_likelihood(
+        returns, fixed, "figarch"
+    ) == pytest.approx(reference, rel=1e-10)
+
+    # The fit stays inside arch's bounds on this path, so both reach the same maximum.
+    weights = garch_model.get_garch_family_weights(returns, "figarch")
+    fit = model.fit(disp="off", options={"ftol": 1e-12, "maxiter": 1000})
+    expected = fit.params.to_numpy() * [1e-4, 1, 1, 1]
+    np.testing.assert_allclose(weights, expected, rtol=1e-3, atol=1e-6)
+
+    forecast = garch_model.get_garch_family_forecast(
+        returns, expected, "figarch", time_steps=5
+    )
+    np.testing.assert_allclose(
+        forecast,
+        model.fix(fit.params).forecast(horizon=5).variance.to_numpy()[-1] / 1e4,
+        rtol=1e-8,
+    )
+
+
+def test_figarch_simulation_starts_from_the_forecast():
+    returns = simulate_figarch(n=800)
+    weights = [1e-6, 0.1, 0.45, 0.35]
+
+    simulation = garch_model.get_garch_simulation(
+        returns, weights, "figarch", time_steps=3, paths=20000, output="volatility"
+    )
+    forecast = garch_model.get_garch_family_forecast(
+        returns, weights, "figarch", time_steps=3
+    )
+
+    # The first volatility is the forecast itself; later the mean simulated variance is the forecast.
+    assert simulation["Mean"].iloc[0] == pytest.approx(np.sqrt(forecast[0]), rel=1e-12)
+    rng = np.random.default_rng(1)
+    paths = garch_model._simulate_paths(
+        weights,
+        "figarch",
+        "zero",
+        garch_model._simulation_state(returns, weights, "figarch", "zero", 3, None),
+        lambda size: (rng.standard_normal(size), None),
+        3,
+        200000,
+    )
+    np.testing.assert_allclose(
+        (paths["volatility"] ** 2).mean(axis=1), forecast, rtol=5e-3
+    )
+    assert garch_model.get_garch_family_persistence(weights, "figarch") == 1.0
+    assert np.isnan(
+        garch_model.get_garch_family_unconditional_variance(weights, "figarch")
+    )
+
+
+def _realized_log_likelihood(returns, measure, weights):
+    """The realized GARCH likelihood, written out step by step."""
+    omega, beta, gamma, xi, phi, tau_1, tau_2, sigma_u = weights
+    weights_ewma = 0.94 ** np.arange(75)
+    log_variance = (
+        omega
+        + beta * np.log(np.sum(returns[:75] ** 2 * weights_ewma) / weights_ewma.sum())
+        + gamma * np.log(np.sum(measure[:75] * weights_ewma) / weights_ewma.sum())
+    )
+    total = 0.0
+    for value, x in zip(returns, measure, strict=True):
+        z = value / np.exp(log_variance / 2)
+        u = np.log(x) - xi - phi * log_variance - tau_1 * z - tau_2 * (z * z - 1)
+        total += -0.5 * (np.log(2 * np.pi) + log_variance + z * z)
+        total += -0.5 * (np.log(2 * np.pi) + 2 * np.log(sigma_u) + (u / sigma_u) ** 2)
+        log_variance = omega + beta * log_variance + gamma * np.log(x)
+    return total
+
+
+def simulate_realized_garch(n=1500, seed=5):
+    rng = np.random.default_rng(seed)
+    beta, gamma, xi, phi, tau_1, tau_2, sigma_u = (
+        0.55,
+        0.41,
+        -0.18,
+        1.04,
+        -0.07,
+        0.07,
+        0.38,
+    )
+    omega = np.log(1e-4) * (1 - beta - gamma * phi) - gamma * xi
+    log_variance = np.log(1e-4)
+    returns, measure = np.empty(n), np.empty(n)
+    for step in range(n):
+        z = rng.standard_normal()
+        returns[step] = np.exp(log_variance / 2) * z
+        log_measure = xi + phi * log_variance + tau_1 * z + tau_2 * (z * z - 1)
+        log_measure += sigma_u * rng.standard_normal()
+        measure[step] = np.exp(log_measure)
+        log_variance = omega + beta * log_variance + gamma * log_measure
+    return returns, measure, [omega, beta, gamma, xi, phi, tau_1, tau_2, sigma_u]
+
+
+def test_realized_garch_log_likelihood_and_fit():
+    returns, measure, true = simulate_realized_garch()
+
+    assert garch_model.get_garch_family_log_likelihood(
+        returns, true, "realized", realized_measure=measure
+    ) == pytest.approx(_realized_log_likelihood(returns, measure, true), rel=1e-12)
+
+    weights = garch_model.get_garch_family_weights(
+        returns, "realized", realized_measure=measure
+    )
+    fitted = garch_model.get_garch_family_log_likelihood(
+        returns, weights, "realized", realized_measure=measure
+    )
+    assert fitted >= garch_model.get_garch_family_log_likelihood(
+        returns, true, "realized", realized_measure=measure
+    )
+    # The persistence and the measurement equation are well identified on 1,500 days.
+    assert weights[1] + weights[2] * weights[4] == pytest.approx(
+        0.55 + 0.41 * 1.04, abs=0.03
+    )
+    np.testing.assert_allclose(weights[5:], true[5:], atol=0.03)
+
+    # The forecast of the log variance is linear with the persistence Beta + Gamma * Phi.
+    forecast = garch_model.get_garch_family_forecast(
+        returns, weights, "realized", time_steps=3, realized_measure=measure
+    )
+    omega, beta, gamma, xi, phi = weights[:5]
+    assert np.log(forecast[1]) == pytest.approx(
+        omega + gamma * xi + (beta + gamma * phi) * np.log(forecast[0]), rel=1e-12
+    )
+
+    with pytest.raises(ValueError, match="realized measure"):
+        garch_model.get_garch_family_weights(returns, "realized")
+
+
+def test_realized_garch_fills_a_missing_measure_with_its_expectation():
+    returns, measure, true = simulate_realized_garch(n=300)
+    gap = measure.copy()
+    gap[100] = np.nan
+
+    variance = garch_model.get_garch_family(
+        returns, true, "realized", realized_measure=gap
+    )
+    log_variance = np.log(variance)
+    omega, beta, gamma, xi, phi, tau_1, tau_2, _ = true
+    z = returns[100] / np.sqrt(variance[100])
+    expected = xi + phi * log_variance[100] + tau_1 * z + tau_2 * (z * z - 1)
+    assert log_variance[101] == pytest.approx(
+        omega + beta * log_variance[100] + gamma * expected, rel=1e-12
+    )
+    # The day without a measure leaves the measurement equation out of the likelihood.
+    per_day = garch_model.get_garch_family_log_likelihood(
+        returns, true, "realized", per_observation=True, realized_measure=gap
+    )
+    assert per_day[100] == pytest.approx(
+        -0.5 * (np.log(2 * np.pi) + log_variance[100] + z * z), rel=1e-12
+    )
+
+
+def test_arfima_mean_nests_the_arma_mean_and_follows_its_filter():
+    returns = simulate_garch_family_returns(n=600)
+    # The ARFIMA Mu is the mean of the returns, the ARMA Mu the intercept Mu * (1 - AR).
+    arma = [0.02, 0.08, 0.88, 0.03 * 0.9, 0.1, -0.05]
+    arfima = [0.02, 0.08, 0.88, 0.03, 0.1, 0.0, -0.05]
+
+    assert garch_model.get_garch_family_log_likelihood(
+        returns, arfima, "garch", "normal", "arfima"
+    ) == pytest.approx(
+        garch_model.get_garch_family_log_likelihood(
+            returns, arma, "garch", "normal", "arma"
+        ),
+        rel=1e-10,
+    )
+
+    # With a fractional difference the residuals follow (1 - AR L)(1 - L)^d (r - Mu) = (1 + MA L) e.
+    weights = [0.02, 0.08, 0.88, 0.03, 0.1, 0.3, -0.05]
+    residuals, _, _, held_back = garch_model._garch_family_filter(
+        returns, weights, "garch", "arfima", 1.0
+    )
+    pi = [1.0]
+    for k in range(1, len(returns)):
+        pi.append(pi[-1] * (k - 1 - 0.3) / k)
+    centred = returns - 0.03
+    differenced = [
+        sum(pi[k] * centred[t - k] for k in range(t + 1)) for t in range(len(returns))
+    ]
+    expected, previous = [], 0.0
+    for t in range(1, len(returns)):
+        previous = differenced[t] - 0.1 * differenced[t - 1] + 0.05 * previous
+        expected.append(previous)
+    assert held_back == 1
+    np.testing.assert_allclose(residuals, expected, rtol=1e-9, atol=1e-12)
+
+
+def test_garch_bootstrap_is_reproducible_and_adds_parameter_uncertainty():
+    returns = simulate_garch(2e-6, 0.08, 0.90, n=600)
+    weights = garch_model.get_garch_weights(returns)
+
+    partial = garch_model.get_garch_simulation(
+        returns, weights, output="volatility", paths=2000, bootstrap_fits=0
+    )
+    full = garch_model.get_garch_simulation(
+        returns, weights, output="volatility", paths=2000, bootstrap_fits=5
+    )
+
+    # Without refits the first volatility is the fitted one on every path; the refits spread it.
+    assert partial.iloc[0, 1] == partial.iloc[0, 5]
+    assert full.iloc[0, 5] > full.iloc[0, 1]
+    pd.testing.assert_frame_equal(
+        full,
+        garch_model.get_garch_simulation(
+            returns, weights, output="volatility", paths=2000, bootstrap_fits=5
+        ),
+    )
+    with pytest.raises(ValueError, match="bootstrap_fits"):
+        garch_model.get_garch_simulation(returns, weights, bootstrap_fits=-1)
+
+
+def test_garch_family_scores_match_the_analytical_garch_scores():
+    returns = simulate_garch(2e-6, 0.08, 0.90, n=1000)
+    weights = np.array([3e-6, 0.07, 0.9])
+    scores = garch_model.get_garch_family_scores(returns, weights)
+
+    # d l_t / d w = (r_t^2 / sigma_t^2 - 1) / (2 sigma_t^2) * d sigma_t^2 / d w, with
+    # d sigma_t^2 / d w = (1, r_(t-1)^2, sigma_(t-1)^2) + Beta * d sigma_(t-1)^2 / d w from the backcast.
+    backcast = garch_model.get_backcast(returns)
+    variance = weights[0] + (weights[1] + weights[2]) * backcast
+    derivative = np.array([1.0, backcast, backcast])
+    expected = []
+    for value in returns:
+        expected.append((value**2 / variance - 1) / (2 * variance) * derivative)
+        derivative = np.array([1.0, value**2, variance]) + weights[2] * derivative
+        variance = weights[0] + weights[1] * value**2 + weights[2] * variance
+
+    np.testing.assert_allclose(scores, np.array(expected), rtol=1e-5, atol=1e-3)
+
+
+def test_history_models_refuse_garch_in_mean():
+    with pytest.raises(ValueError, match="GARCH-in-mean"):
+        garch_model.validate_garch_family("figarch", "normal", "in_mean")
+    with pytest.raises(ValueError, match="one-step"):
+        garch_model._variance_step("figarch", [0.1, 0.2, 0.4, 0.5])

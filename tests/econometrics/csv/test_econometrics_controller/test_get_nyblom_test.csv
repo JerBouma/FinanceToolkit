@@ -1,0 +1,12 @@
+,AAPL,MSFT
+Joint Statistic,1.33,2.23
+Joint P-Value,0.01,0.0
+Joint Critical Value (5%),1.0,1.0
+Omega Statistic,0.2,0.31
+Omega P-Value,0.26,0.13
+Alpha Statistic,0.23,0.16
+Alpha P-Value,0.22,0.36
+Beta Statistic,0.14,0.31
+Beta P-Value,0.42,0.13
+Individual Critical Value (5%),0.46,0.46
+Observations,757.0,757.0

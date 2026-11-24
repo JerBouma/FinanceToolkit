@@ -53,13 +53,15 @@ def _apply_per_column(
         forecast (bool, optional): Whether `function` returns a forecast (a fixed number
             of steps ahead, indexed 0 to time_steps - 1) rather than one value per
             observation (indexed by the column's own dates). Defaults to False.
-        **kwargs: The keyword arguments passed on to `function`.
+        **kwargs: The keyword arguments passed on to `function`. A `realized_measure`
+            DataFrame is passed on per column, on that column's return dates.
 
     Returns:
         pd.DataFrame: The results, one column per column of `returns`. Columns with fewer
         than two returns are NaN, and so are the dates a column has no return for.
     """
     results = {}
+    measure = kwargs.pop("realized_measure", None)
 
     for column in returns.columns:
         column_returns = returns[column].dropna()
@@ -67,7 +69,19 @@ def _apply_per_column(
         if len(column_returns) < MINIMUM_FIT_OBSERVATIONS:
             continue
 
-        values = np.asarray(function(column_returns.to_numpy(), **kwargs))
+        # A realized measure (of the realized GARCH) is a frame like the returns, taken on the column's own return dates.  # noqa: E501
+        column_kwargs = (
+            {
+                **kwargs,
+                "realized_measure": measure[column]
+                .reindex(column_returns.index)
+                .to_numpy(dtype=float),
+            }
+            if isinstance(measure, pd.DataFrame)
+            else kwargs
+        )
+
+        values = np.asarray(function(column_returns.to_numpy(), **column_kwargs))
 
         results[column] = (
             pd.Series(values)
@@ -1239,6 +1253,8 @@ GARCH_FAMILY_VARIANCE_PARAMETERS = {
     "avgarch": ["Omega", "Alpha", "Gamma", "Shift", "Beta"],
     "nagarch": ["Omega", "Alpha", "Shift", "Beta"],
     "component": ["Omega", "Alpha", "Beta", "Rho", "Phi"],
+    "figarch": ["Omega", "Phi", "D", "Beta"],
+    "realized": ["Omega", "Beta", "Gamma", "Xi", "Phi", "Tau 1", "Tau 2", "Sigma U"],
 }
 
 # The mean model parameters, after the variance parameters in the weights.
@@ -1247,6 +1263,7 @@ GARCH_FAMILY_MEAN_PARAMETERS = {
     "constant": ["Mu"],
     "arma": ["Mu", "AR(1)", "MA(1)"],
     "in_mean": ["Mu", "Lambda"],
+    "arfima": ["Mu", "AR(1)", "Fractional D", "MA(1)"],
 }
 
 # The parameters of each standardized innovation distribution, after the mean parameters.
@@ -1283,7 +1300,32 @@ VARIANCE_BOUNDS = {
         [(1e-9, 2), (1e-9, 1), (1e-9, 1), (1e-9, 1), (1e-9, 1)],
         [0.01, 0.05, 0.85, 0.99, 0.03],
     ),
+    # Phi may be negative as long as every ARCH(∞) weight stays non-negative (see _figarch_weights).  # noqa: E501
+    "figarch": (
+        [(1e-9, 2), (-0.999, 0.999), (0, 1), (0, 0.999)],
+        [0.05, 0.2, 0.4, 0.5],
+    ),
+    # The starting values of Omega and Xi of the realized GARCH follow from the realized measure (see get_garch_family_weights).  # noqa: E501
+    "realized": (
+        [
+            (-10, 10),
+            (0, 0.999),
+            (0, 1),
+            (-10, 10),
+            (0, 3),
+            (-2, 2),
+            (-2, 2),
+            (1e-3, 5),
+        ],
+        [0.0, 0.55, 0.4, 0.0, 1.0, 0.0, 0.05, 0.5],
+    ),
 }
+
+# The FIGARCH variance is the ARCH(∞) representation truncated at 1,000 lags, as in the arch package and R's rugarch; the squared residuals before the sample are the backcast.  # noqa: E501
+FIGARCH_TRUNCATION = 1000
+
+# The variance models that need the whole history of the squared residuals (FIGARCH) or a realized measure (realized GARCH), so their recursion is not a one-step update and GARCH-in-mean, which runs one, does not take them.  # noqa: E501
+HISTORY_METHODS = ("figarch", "realized")
 
 # The Shape of the Student-t distributions is kept below 100, where they no longer differ from the normal distribution in any sample of returns.  # noqa: E501
 DISTRIBUTION_BOUNDS = {
@@ -1333,6 +1375,12 @@ def validate_garch_family(method: str, distribution: str, mean: str) -> None:
             raise ValueError(
                 f"The {name} must be one of {', '.join(options)}, not {value!r}."
             )
+
+    if method in HISTORY_METHODS and mean == "in_mean":
+        raise ValueError(
+            f"GARCH-in-mean runs the variance one step at a time, which method={method!r} "
+            "does not have. Please use mean='zero', 'constant', 'arma' or 'arfima'."
+        )
 
 
 def get_garch_family_parameter_names(
@@ -1608,6 +1656,59 @@ def get_standardized_expectation(
         return float(np.sum(values * density * EXPECTATION_WEIGHTS))
 
 
+def get_standardized_moments(
+    distribution: str = "normal", parameters: tuple[float, ...] = ()
+) -> tuple[float, float]:
+    """
+    Calculates the skewness E[z^3] and the kurtosis E[z^4] (not excess) of a standardized
+    innovation distribution (mean 0 and Variance 1).
+
+    The normal (0 and 3), the Student-t (0 and 3 + 6 / (v - 4)) and the GED (0 and
+    Γ(5 / v) Γ(1 / v) / Γ(3 / v)^2) are exact; the skewed distributions and the Johnson SU are
+    expectations over EXPECTATION_GRID (see `get_standardized_expectation`).
+
+    Args:
+        distribution (str, optional): The distribution. Defaults to "normal".
+        parameters (Sequence[float], optional): Its Shape (and Skew). Defaults to ().
+
+    Returns:
+        tuple[float, float]: The skewness and the kurtosis, NaN for a moment the distribution
+        does not have (a Student-t with a Shape of at most 3 or 4).
+    """
+    if distribution == "normal":
+        return 0.0, 3.0
+    if distribution == "ged":
+        shape = parameters[0]
+        return 0.0, math.exp(
+            special.gammaln(5 / shape)
+            + special.gammaln(1 / shape)
+            - 2 * special.gammaln(3 / shape)
+        )
+
+    student_t = distribution in ("t", "skewt", "skewt_fernandez_steel")
+    has_skewness = not student_t or parameters[0] > 3  # noqa: PLR2004
+    has_kurtosis = not student_t or parameters[0] > 4  # noqa: PLR2004
+
+    if distribution == "t":
+        return (
+            0.0 if has_skewness else math.nan,
+            3 + 6 / (parameters[0] - 4) if has_kurtosis else math.nan,
+        )
+
+    return (
+        (
+            get_standardized_expectation(EXPECTATION_GRID**3, distribution, parameters)
+            if has_skewness
+            else math.nan
+        ),
+        (
+            get_standardized_expectation(EXPECTATION_GRID**4, distribution, parameters)
+            if has_kurtosis
+            else math.nan
+        ),
+    )
+
+
 def _power_weights(method: str, variance_weights) -> tuple[float, ...]:
     """Omega, Alpha, Gamma, Beta and Delta of APARCH and its TGARCH and NGARCH sub-models."""
     if method == "aparch":
@@ -1652,6 +1753,10 @@ def get_garch_family_persistence(
     - avgarch and nagarch: Alpha * E[(|z - Shift| - Gamma * (z - Shift))^d] + Beta, with d = 1 and 2
     - component: Rho, the persistence of the long-run component (the short-run component fades with
       Alpha + Beta, which is smaller)
+    - figarch: the sum of the ARCH(∞) weights of the untruncated model, 1 for D > 0 (a shock fades
+      hyperbolically, never as a fixed factor per period) and Phi for D = 0, where FIGARCH is GARCH(1, 1)
+      with Alpha = Phi - Beta
+    - realized: Beta + Gamma * Phi, the persistence of the log variance (Hansen, Huang and Shek, 2012)
 
     For more information, see the following papers:
 
@@ -1680,6 +1785,10 @@ def get_garch_family_persistence(
         return float(w[3])
     if method == "component":
         return float(w[3])
+    if method == "figarch":
+        return 1.0 if w[2] > 0 else float(w[1])
+    if method == "realized":
+        return float(w[1] + w[2] * w[4])
     if method == "gjr":
         # E[z^2 1(z < 0)], the share of the unit variance that comes from negative shocks: 1 / 2 for a symmetric distribution.  # noqa: E501
         negative_share = (
@@ -1728,6 +1837,9 @@ def _is_admissible(
         return alpha + beta < rho < 1 and phi < beta
     if method in ("igarch", "egarch"):
         return True
+    if method == "figarch":
+        # Conrad and Haag (2006): the variance is non-negative for every history of squared residuals exactly when every ARCH(∞) weight is.  # noqa: E501
+        return bool(np.all(_figarch_weights(w[1], w[2], w[3]) >= 0))
 
     return (
         get_garch_family_persistence(w, method, distribution, distribution_weights) < 1
@@ -1755,6 +1867,11 @@ def _first_variance(method: str, variance_weights, backcast: float) -> float:
         return math.exp(min(max(w[0] + w[3] * math.log(backcast + 1e-12), -20.0), 20.0))
     if method == "component":
         return w[0] + w[3] * backcast
+    if method == "figarch":
+        return (
+            w[0] / (1 - w[3])
+            + float(np.sum(_figarch_weights(w[1], w[2], w[3]))) * backcast
+        )
 
     if method in ("aparch", "tgarch", "ngarch"):
         omega, alpha, _, beta, power = _power_weights(method, w)
@@ -1772,6 +1889,12 @@ def _variance_step(method: str, variance_weights):
     floats or np.ndarrays, so it serves the recursions that cannot be vectorised over time
     (the family GARCH models and GARCH-in-mean) and the simulation over many paths.
     """
+    if method in HISTORY_METHODS:
+        raise ValueError(
+            f"method={method!r} has no one-step variance update: FIGARCH needs the history "
+            "of the squared residuals and the realized GARCH a realized measure."
+        )
+
     w = [float(weight) for weight in variance_weights]
 
     if method in ("garch", "igarch"):
@@ -1842,6 +1965,102 @@ def _variance_step(method: str, variance_weights):
     return step
 
 
+def _fractional_weights(d: float, size: int) -> np.ndarray:
+    """
+    The weights pi_0, ..., pi_(size-1) of the fractional difference (1 - L)^d = Σ pi_k L^k of
+    Granger and Joyeux (1980) and Hosking (1981): pi_0 = 1 and pi_k = pi_(k-1) * (k - 1 - d) / k.
+    """
+    k = np.arange(1, size)
+    return np.cumprod(np.concatenate(([1.0], (k - 1 - d) / k)))
+
+
+def _figarch_weights(phi: float, d: float, beta: float) -> np.ndarray:
+    """
+    The ARCH(∞) weights lambda_1, ..., lambda_1000 of FIGARCH(1, d, 1) (Baillie, Bollerslev and
+    Mikkelsen, 1996), sigma_t^2 = Omega / (1 - Beta) + Σ lambda_k e_(t-k)^2, from
+    lambda(L) = 1 - (1 - Phi L)(1 - L)^d / (1 - Beta L):
+
+    - c_k = pi_k - Phi * pi_(k-1), the coefficients of (1 - Phi L)(1 - L)^d (see _fractional_weights)
+    - g_0 = 1 and g_k = c_k + Beta * g_(k-1), the coefficients of that polynomial over (1 - Beta L)
+    - lambda_k = -g_k, so lambda_1 = D + Phi - Beta
+    """
+    from scipy import signal  # noqa: PLC0415
+
+    pi = _fractional_weights(d, FIGARCH_TRUNCATION + 1)
+    coefficients = pi[1:] - phi * pi[:-1]
+    g, _ = signal.lfilter([1.0], [1.0, -beta], coefficients, zi=[beta])
+
+    return -g
+
+
+def _figarch_variance(
+    variance_weights, residuals: np.ndarray, backcast: float
+) -> np.ndarray:
+    """
+    The FIGARCH(1, d, 1) variance of every residual and one step past the last: the ARCH(∞)
+    representation truncated at 1,000 lags (see _figarch_weights), with the backcast for every
+    squared residual before the sample. The sum over the lags is a convolution, computed with
+    the FFT (the 1,000 weights times every residual otherwise dominate the fit).
+    """
+    from scipy import signal  # noqa: PLC0415
+
+    omega, phi, d, beta = (float(weight) for weight in variance_weights)
+    weights = _figarch_weights(phi, d, beta)
+    squared = np.concatenate(
+        [np.full(FIGARCH_TRUNCATION, backcast), residuals * residuals]
+    )
+    # sigma2[t] = Omega / (1 - Beta) + Σ_(i=1..1000) lambda_i squared[1000 + t - i], the convolution at 999 + t.  # noqa: E501
+    convolution = signal.fftconvolve(squared, weights)
+
+    return (
+        omega / (1 - beta)
+        + convolution[FIGARCH_TRUNCATION - 1 : FIGARCH_TRUNCATION + len(residuals)]
+    )
+
+
+def _realized_log_variance(
+    variance_weights,
+    residuals: np.ndarray,
+    log_measure: np.ndarray,
+    log_backcast: tuple[float, float],
+) -> np.ndarray:
+    """
+    The log variance of the realized GARCH(1, 1) of Hansen, Huang and Shek (2012) for every
+    residual and one step past the last:
+
+    - ln sigma_t^2 = Omega + Beta * ln sigma_(t-1)^2 + Gamma * ln x_(t-1)
+    - ln sigma_1^2 = Omega + Beta * ln(Backcast) + Gamma * ln(Measure Backcast)
+
+    A day without a realized measure (a missing or zero range) takes its expectation given the
+    return of that day, ln x_t = Xi + Phi * ln sigma_t^2 + Tau 1 * z_t + Tau 2 * (z_t^2 - 1), which
+    makes the recursion run step by step; with a measure on every day it is linear in ln x.
+    """
+    omega, beta, gamma, xi, phi, tau_1, tau_2, _ = (
+        float(weight) for weight in variance_weights
+    )
+    first = omega + beta * log_backcast[0] + gamma * log_backcast[1]
+
+    if np.all(np.isfinite(log_measure)):
+        return _linear_variance_recursion(
+            omega + gamma * log_measure, beta, first, len(residuals) + 1
+        )
+
+    values = [first]
+    log_variance = first
+    for residual, observed in zip(
+        residuals.tolist(), log_measure.tolist(), strict=True
+    ):
+        measure = observed
+        if not math.isfinite(observed):
+            # Kept within the range of a float, where a search far outside the optimum takes it.
+            z = residual / math.exp(min(max(log_variance, -1400.0), 1400.0) / 2)
+            measure = xi + phi * log_variance + tau_1 * z + tau_2 * (z * z - 1)
+        log_variance = omega + beta * log_variance + gamma * measure
+        values.append(log_variance)
+
+    return np.array(values)
+
+
 def _component_variance(
     variance_weights, residuals: np.ndarray, backcast: float
 ) -> tuple[np.ndarray, np.ndarray]:
@@ -1906,7 +2125,7 @@ def _starting_residuals(returns: np.ndarray, mean: str) -> np.ndarray:
     The residuals of the mean model at its starting values, whose backcast starts the
     variance recursion throughout the fit (as in the arch package): the returns themselves
     for a zero mean, the returns less their average for a constant mean and GARCH-in-mean,
-    and the residuals of the least-squares AR(1) for the ARMA(1, 1) mean.
+    and the residuals of the least-squares AR(1) for the ARMA(1, 1) and ARFIMA(1, d, 1) means.
     """
     if mean == "zero":
         return returns
@@ -1919,20 +2138,53 @@ def _starting_residuals(returns: np.ndarray, mean: str) -> np.ndarray:
     return returns[1:] - regressors @ coefficients
 
 
+def get_measure_backcast(measure: np.ndarray) -> float:
+    """
+    The backcast of the realized measure that starts the realized GARCH recursion: the
+    exponentially weighted average of the first 75 measures (decay 0.94) on the days with a
+    positive measure, as `get_backcast` averages the first squared returns.
+    """
+    measure = np.asarray(measure, dtype=float)
+    measure = measure[np.isfinite(measure) & (measure > 0)]
+    window = min(BACKCAST_OBSERVATIONS, len(measure))
+    decay_weights = BACKCAST_DECAY ** np.arange(window)
+
+    return float(np.sum(measure[:window] * decay_weights / decay_weights.sum()))
+
+
+def _log_measure(measure: np.ndarray | None) -> np.ndarray:
+    """The log of the realized measure, NaN on a day without a positive one."""
+    if measure is None:
+        raise ValueError(
+            "method='realized' needs a realized measure, such as the daily Parkinson "
+            "variance of the High and Low prices."
+        )
+
+    measure = np.asarray(measure, dtype=float)
+    positive = np.isfinite(measure) & (measure > 0)
+
+    return np.where(positive, np.log(np.where(positive, measure, 1.0)), np.nan)
+
+
 def _garch_family_filter(
     returns: np.ndarray,
     weights,
     method: str,
     mean: str,
     backcast: float,
+    realized_measure: np.ndarray | None = None,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray | None, int]:
     """
     Runs the mean model and the variance recursion of a GARCH-family model over the returns.
 
+    The realized GARCH takes the realized measure of every return (in the units of the
+    squared returns); the other models ignore it.
+
     Returns:
         tuple: The residuals, the conditional variance of every residual and one step past
         the last, the long-run component of the component model (None for the others) and
-        the number of returns the mean model holds back (1 for the ARMA(1, 1) mean).
+        the number of returns the mean model holds back (1 for the ARMA(1, 1) and ARFIMA(1, d,
+        1) means).
     """
     variance_weights, mean_weights, _ = _split_weights(weights, method, mean)
 
@@ -1945,6 +2197,21 @@ def _garch_family_filter(
         residuals, held_back = returns, 0
     elif mean == "constant":
         residuals, held_back = returns - mean_weights[0], 0
+    elif mean == "arfima":
+        from scipy import signal  # noqa: PLC0415
+
+        mu, autoregressive, d, moving_average = mean_weights
+        # w = (1 - L)^d (r - Mu) over the returns from the first, with no values before it (the conditional sum of squares of Hosking, 1981), and then e_t + MA * e_(t-1) = w_t - AR * w_(t-1) from t = 1 as for the ARMA mean.  # noqa: E501
+        centred = returns - mu
+        differenced = signal.fftconvolve(centred, _fractional_weights(d, len(centred)))[
+            : len(centred)
+        ]
+        residuals = signal.lfilter(
+            [1.0],
+            [1.0, moving_average],
+            differenced[1:] - autoregressive * differenced[:-1],
+        )
+        held_back = 1
     else:
         from scipy import signal  # noqa: PLC0415
 
@@ -1973,6 +2240,22 @@ def _garch_family_filter(
         sigma2 = get_egarch(residuals, variance_weights, steps, backcast=backcast)
     elif method == "component":
         sigma2, long_run = _component_variance(variance_weights, residuals, backcast)
+    elif method == "figarch":
+        sigma2 = _figarch_variance(variance_weights, residuals, backcast)
+    elif method == "realized":
+        log_measure = _log_measure(realized_measure)
+        with np.errstate(over="ignore"):
+            sigma2 = np.exp(
+                _realized_log_variance(
+                    variance_weights,
+                    residuals,
+                    log_measure[held_back:],
+                    (
+                        math.log(max(backcast, 1e-300)),
+                        math.log(max(get_measure_backcast(realized_measure), 1e-300)),
+                    ),
+                )
+            )
     elif method in ("aparch", "tgarch", "ngarch"):
         omega, alpha, gamma, beta, power = _power_weights(method, variance_weights)
         # The power of the volatility follows a first-order linear recursion in the shocks, like the GARCH variance.  # noqa: E501
@@ -2038,6 +2321,7 @@ def get_garch_family_log_likelihood(
     mean: str = "zero",
     backcast: float | None = None,
     per_observation: bool = False,
+    realized_measure: np.ndarray | None = None,
 ) -> float | np.ndarray:
     """
     Calculates the log-likelihood of a GARCH-family model:
@@ -2049,6 +2333,13 @@ def get_garch_family_log_likelihood(
     `get_standardized_log_density`). The normal log-likelihood includes its constant, so it
     equals the log-likelihood the arch package reports.
 
+    The realized GARCH of Hansen, Huang and Shek (2012) adds the normal density of the
+    measurement equation on every day with a realized measure x_t (the joint likelihood of
+    the returns and the measure):
+
+    - u_t = ln x_t - Xi - Phi * ln sigma_t^2 - Tau 1 * z_t - Tau 2 * (z_t^2 - 1)
+    - Log-Likelihood += Σ (-(ln(2π) + 2 ln(Sigma U) + u_t^2 / Sigma U^2) / 2)
+
     Args:
         returns (np.ndarray): The returns.
         weights (Sequence[float]): The weights, see `get_garch_family_parameter_names`.
@@ -2059,6 +2350,8 @@ def get_garch_family_log_likelihood(
             to None, which uses the backcast of the starting residuals of the mean model.
         per_observation (bool, optional): Whether to return the log-likelihood of every
             observation instead of their sum. Defaults to False.
+        realized_measure (np.ndarray | None, optional): The realized measure of every return,
+            in the units of the squared returns, for method="realized". Defaults to None.
 
     Returns:
         float | np.ndarray: The log-likelihood, -inf for weights outside the model's region.
@@ -2069,14 +2362,28 @@ def get_garch_family_log_likelihood(
     if backcast is None:
         backcast = get_backcast(_starting_residuals(returns, mean))
 
-    residuals, sigma2, _, _ = _garch_family_filter(
-        returns, weights, method, mean, backcast
+    residuals, sigma2, _, held_back = _garch_family_filter(
+        returns, weights, method, mean, backcast, realized_measure
     )
     sigma2 = sigma2[: len(residuals)]
+    z = residuals / np.sqrt(sigma2)
 
     log_likelihood = get_standardized_log_density(
-        residuals / np.sqrt(sigma2), distribution, distribution_weights
+        z, distribution, distribution_weights
     ) - 0.5 * np.log(sigma2)
+
+    if method == "realized":
+        _, _, _, xi, phi, tau_1, tau_2, sigma_u = variance_weights
+        log_measure = _log_measure(realized_measure)[held_back:]
+        measurement_error = (
+            log_measure - xi - phi * np.log(sigma2) - tau_1 * z - tau_2 * (z * z - 1)
+        )
+        log_likelihood = log_likelihood + np.where(
+            np.isfinite(log_measure),
+            -0.5
+            * (LOG_2_PI + 2 * math.log(sigma_u) + (measurement_error / sigma_u) ** 2),
+            0.0,
+        )
 
     if per_observation:
         return log_likelihood
@@ -2096,7 +2403,7 @@ def _scale_exponents(method: str, mean: str, weights) -> np.ndarray:
     variance_names = GARCH_FAMILY_VARIANCE_PARAMETERS[method]
     exponents = np.zeros(len(weights))
 
-    if method != "egarch":
+    if method not in ("egarch", "realized"):
         exponents[0] = (
             weights[variance_names.index("Delta")]
             if "Delta" in variance_names
@@ -2119,6 +2426,10 @@ def _rescale_weights(weights, method: str, mean: str, scale: float) -> np.ndarra
     if method == "egarch":
         # ln sigma_t^2 of the returns is that of the scaled returns plus 2 ln(scale), so Omega gains 2 (1 - Beta) ln(scale).  # noqa: E501
         rescaled[0] = weights[0] + 2 * (1 - weights[3]) * math.log(scale)
+    elif method == "realized":
+        # ln sigma_t^2 and ln x_t both gain 2 ln(scale), so Omega gains 2 (1 - Beta - Gamma) ln(scale) and Xi 2 (1 - Phi) ln(scale).  # noqa: E501
+        rescaled[0] = weights[0] + 2 * (1 - weights[1] - weights[2]) * math.log(scale)
+        rescaled[3] = weights[3] + 2 * (1 - weights[4]) * math.log(scale)
 
     return rescaled
 
@@ -2130,6 +2441,7 @@ def get_garch_family_weights(
     mean: str = "zero",
     t: int | None = None,
     starting_weights: np.ndarray | None = None,
+    realized_measure: np.ndarray | None = None,
 ) -> np.ndarray:
     """
     Estimates the weights of a GARCH-family model by maximum likelihood, with the same
@@ -2155,8 +2467,12 @@ def get_garch_family_weights(
     The constraints are those that keep the variance positive and stationary: a persistence
     below 1 (see `get_garch_family_persistence`; Alpha + Beta = 1 for IGARCH by construction),
     |Beta| < 1 for EGARCH, Alpha + Gamma >= 0 for GJR-GARCH, |Gamma| < 1 for the rotation of
-    APARCH and family GARCH, and 0 < Alpha + Beta < Rho < 1 and Phi < Beta for the component
-    model.
+    APARCH and family GARCH, 0 < Alpha + Beta < Rho < 1 and Phi < Beta for the component
+    model, non-negative ARCH(∞) weights for FIGARCH (Conrad and Haag, 2006) and Beta + Gamma *
+    Phi < 1 for the realized GARCH. The realized measure is divided by the square of the
+    scale, and the Omega and Xi of the realized GARCH shift with its logarithm (see
+    `_rescale_weights`); its search starts from Xi at the average log measure and Omega at
+    -Gamma * Xi, where the log variance of the scaled returns is about 0.
 
     Args:
         returns (np.ndarray): The returns.
@@ -2169,12 +2485,21 @@ def get_garch_family_weights(
         starting_weights (np.ndarray | None, optional): The weights to start a local
             search from, on the scale of the returns. Defaults to None, which runs the
             multi-start search.
+        realized_measure (np.ndarray | None, optional): The realized measure of every return,
+            in the units of the squared returns, which method="realized" needs. Defaults to
+            None.
 
     Returns:
         np.ndarray: The weights, see `get_garch_family_parameter_names`; NaN when the fit
         does not converge from any starting point.
     """
     validate_garch_family(method, distribution, mean)
+
+    if method == "realized":
+        _log_measure(realized_measure)
+        realized_measure = np.asarray(realized_measure, dtype=float)
+        if t is not None:
+            realized_measure = realized_measure[:t]
 
     if isinstance(returns, pd.DataFrame):
         returns = returns.iloc[:, 0].to_numpy()
@@ -2200,6 +2525,11 @@ def get_garch_family_weights(
         distribution,
         mean,
         tuple(np.round(starting_weights, 12)) if warm_start else None,
+        (
+            hashlib.sha256(np.ascontiguousarray(realized_measure).tobytes()).hexdigest()
+            if method == "realized"
+            else None
+        ),
     )
     with GARCH_FAMILY_WEIGHTS_CACHE_LOCK:
         cached = GARCH_FAMILY_WEIGHTS_CACHE.get(key)
@@ -2210,9 +2540,24 @@ def get_garch_family_weights(
     scale = float(np.std(returns))
     scale = scale if scale > 0 else 1.0
     scaled = returns / scale
+    scaled_measure = (
+        realized_measure / scale**2
+        if method == "realized" and realized_measure is not None
+        else None
+    )
     backcast = get_backcast(_starting_residuals(scaled, mean))
 
     variance_bounds, variance_guess = VARIANCE_BOUNDS[method]
+
+    if method == "realized":
+        xi = float(np.clip(np.nanmean(_log_measure(scaled_measure)), -9, 9))
+        variance_guess = [
+            -variance_guess[2] * xi,
+            *variance_guess[1:3],
+            xi,
+            *variance_guess[4:],
+        ]
+
     distribution_bounds, distribution_guess = DISTRIBUTION_BOUNDS[distribution]
     mean_bounds, mean_guess = {
         "zero": ([], []),
@@ -2222,6 +2567,11 @@ def get_garch_family_weights(
             [float(scaled.mean()), 0, 0],
         ),
         "in_mean": ([(-1, 1), (-1, 1)], [float(scaled.mean()), 0.0]),
+        # The fractional difference of a stationary, invertible ARFIMA stays within (-0.5, 0.5).
+        "arfima": (
+            [(-1, 1), (-0.999, 0.999), (-0.499, 0.499), (-0.999, 0.999)],
+            [float(scaled.mean()), 0, 0, 0],
+        ),
     }[mean]
 
     bounds = variance_bounds + mean_bounds + distribution_bounds
@@ -2246,7 +2596,13 @@ def get_garch_family_weights(
         ):
             return np.inf
         log_likelihood = get_garch_family_log_likelihood(
-            scaled, weights, method, distribution, mean, backcast
+            scaled,
+            weights,
+            method,
+            distribution,
+            mean,
+            backcast,
+            realized_measure=scaled_measure,
         )
         return -log_likelihood if np.isfinite(log_likelihood) else np.inf
 
@@ -2297,6 +2653,7 @@ def _garch_family_path(
     mean: str,
     output: str,
     time_steps: int | None,
+    realized_measure: np.ndarray | None = None,
 ) -> np.ndarray:
     """
     The conditional variance (or the standardized residuals or the long-run component) of
@@ -2304,7 +2661,7 @@ def _garch_family_path(
     """
     backcast = get_backcast(_starting_residuals(returns, mean))
     residuals, sigma2, long_run, held_back = _garch_family_filter(
-        returns, weights, method, mean, backcast
+        returns, weights, method, mean, backcast, realized_measure
     )
 
     if output == "variance":
@@ -2332,6 +2689,7 @@ def get_garch_family(
     output: str = "variance",
     time_steps: int | None = None,
     optimization_t: int | None = None,
+    realized_measure: np.ndarray | pd.Series | pd.DataFrame | None = None,
 ) -> np.ndarray | pd.DataFrame:
     """
     Calculates the conditional variance of a GARCH-family model, or its standardized
@@ -2356,10 +2714,13 @@ def get_garch_family(
             Defaults to None, which returns every return.
         optimization_t (int | None, optional): The number of returns, from the first, to fit on.
             Defaults to None, which uses every return.
+        realized_measure (np.ndarray | pd.Series | pd.DataFrame | None, optional): The realized
+            measure of every return (a frame with the columns of the returns), in the units of
+            the squared returns, which method="realized" needs. Defaults to None.
 
     Returns:
         np.ndarray | pd.DataFrame: The values, NaN for a return the mean model holds back
-        (the first, for the ARMA(1, 1) mean).
+        (the first, for the ARMA(1, 1) and ARFIMA(1, d, 1) means).
     """
     validate_garch_family(method, distribution, mean)
 
@@ -2378,6 +2739,7 @@ def get_garch_family(
         "output": output,
         "time_steps": time_steps,
         "optimization_t": optimization_t,
+        "realized_measure": realized_measure,
     }
 
     if isinstance(returns, pd.DataFrame):
@@ -2395,17 +2757,33 @@ def get_garch_family(
         return _apply_per_column(returns, get_garch_family, **arguments)
 
     if isinstance(returns, pd.Series):
+        if isinstance(realized_measure, pd.Series):
+            arguments["realized_measure"] = realized_measure.reindex(
+                returns.index
+            ).to_numpy(dtype=float)
         return get_garch_family(returns.to_numpy(), **arguments)
 
     returns = np.asarray(returns, dtype=float)
 
     if weights is None:
         weights = get_garch_family_weights(
-            returns, method, distribution, mean, optimization_t
+            returns,
+            method,
+            distribution,
+            mean,
+            optimization_t,
+            realized_measure=realized_measure,
         )
 
     return _garch_family_path(
-        returns, weights, method, distribution, mean, output, time_steps
+        returns,
+        weights,
+        method,
+        distribution,
+        mean,
+        output,
+        time_steps,
+        realized_measure,
     )
 
 
@@ -2416,6 +2794,7 @@ def get_garch_family_forecast(
     distribution: str = "normal",
     mean: str = "zero",
     time_steps: int = 10,
+    realized_measure: np.ndarray | pd.Series | pd.DataFrame | None = None,
 ) -> np.ndarray | pd.DataFrame:
     """
     Forecasts the conditional variance of a GARCH-family model for h = 1, ..., time_steps
@@ -2432,10 +2811,16 @@ def get_garch_family_forecast(
       sigma_(n+h)^2 - q_(n+h) = (Alpha + Beta) * (sigma_(n+h-1)^2 - q_(n+h-1))
     - egarch: ln sigma_(n+h)^2 = Omega + Alpha * (E|z| - √(2 / π)) + Beta * ln sigma_(n+h-1)^2, and
       sigma_(n+h)^2 = exp(ln sigma_(n+h)^2)
+    - figarch: sigma_(n+h)^2 = Omega / (1 - Beta) + Σ_(i=1..1000) lambda_i E[e_(n+h-i)^2], with the squared
+      residuals for the returns, their backcast before the first and the forecast variance
+      sigma_(n+j)^2 for the periods after the last return
+    - realized: ln sigma_(n+h)^2 = Omega + Gamma * Xi + (Beta + Gamma * Phi) * ln sigma_(n+h-1)^2, the
+      expected log measure Xi + Phi * ln sigma_t^2 in place of ln x_t (E[Tau(z)] = 0), and
+      sigma_(n+h)^2 = exp(ln sigma_(n+h)^2)
 
-    The forecast of a power other than 2, and of EGARCH, is that of the power (or the log)
-    of the variance, transformed back, which understates the expected variance somewhat
-    (Jensen's inequality), as the forecasts of `get_egarch_forecast` do. For IGARCH (P = 1)
+    The forecast of a power other than 2, and of EGARCH and the realized GARCH, is that of
+    the power (or the log) of the variance, transformed back, which understates the expected
+    variance somewhat (Jensen's inequality), as the forecasts of `get_egarch_forecast` do. For IGARCH (P = 1)
     the variance grows by Omega every step. GARCH, GJR-GARCH and EGARCH with normal
     innovations and a zero mean are forecast by `get_garch_forecast`,
     `get_gjr_garch_forecast` and `get_egarch_forecast`.
@@ -2448,6 +2833,8 @@ def get_garch_family_forecast(
         distribution (str, optional): The innovation distribution. Defaults to "normal".
         mean (str, optional): The mean model. Defaults to "zero".
         time_steps (int, optional): The number of periods to forecast. Defaults to 10.
+        realized_measure (np.ndarray | pd.Series | pd.DataFrame | None, optional): The realized
+            measure of every return, which method="realized" needs. Defaults to None.
 
     Returns:
         np.ndarray | pd.DataFrame: The forecasted variance, one row per step.
@@ -2460,6 +2847,7 @@ def get_garch_family_forecast(
         "distribution": distribution,
         "mean": mean,
         "time_steps": time_steps,
+        "realized_measure": realized_measure,
     }
 
     if isinstance(returns, pd.DataFrame):
@@ -2483,12 +2871,18 @@ def get_garch_family_forecast(
         )
 
     if isinstance(returns, pd.Series):
+        if isinstance(realized_measure, pd.Series):
+            arguments["realized_measure"] = realized_measure.reindex(
+                returns.index
+            ).to_numpy(dtype=float)
         return get_garch_family_forecast(returns.to_numpy(), **arguments)
 
     returns = np.asarray(returns, dtype=float)
 
     if weights is None:
-        weights = get_garch_family_weights(returns, method, distribution, mean)
+        weights = get_garch_family_weights(
+            returns, method, distribution, mean, realized_measure=realized_measure
+        )
 
     if (
         distribution == "normal"
@@ -2504,11 +2898,33 @@ def get_garch_family_forecast(
 
     variance_weights, _, distribution_weights = _split_weights(weights, method, mean)
     backcast = get_backcast(_starting_residuals(returns, mean))
-    _, sigma2, long_run, _ = _garch_family_filter(
-        returns, weights, method, mean, backcast
+    residuals, sigma2, long_run, _ = _garch_family_filter(
+        returns, weights, method, mean, backcast, realized_measure
     )
 
     forecast = np.empty(time_steps)
+
+    if method == "figarch":
+        omega, phi, d, beta = variance_weights
+        arch_weights = _figarch_weights(phi, d, beta)
+        # The squared residuals, latest first, with the backcast before the sample; every forecast variance joins them as the expected squared residual of its period.  # noqa: E501
+        history = np.concatenate(
+            [np.full(FIGARCH_TRUNCATION, backcast), residuals * residuals]
+        )[::-1][:FIGARCH_TRUNCATION]
+        variance = sigma2[-1]
+        for step in range(time_steps):
+            forecast[step] = variance
+            history = np.concatenate([[variance], history[:-1]])
+            variance = omega / (1 - beta) + float(arch_weights @ history)
+        return forecast
+
+    if method == "realized":
+        omega, beta, gamma, xi, phi = variance_weights[:5]
+        log_variance = math.log(sigma2[-1])
+        for step in range(time_steps):
+            forecast[step] = math.exp(log_variance)
+            log_variance = omega + gamma * xi + (beta + gamma * phi) * log_variance
+        return forecast
 
     if method == "component" and long_run is not None:
         _, alpha, beta, rho, _ = variance_weights
@@ -2564,6 +2980,9 @@ def get_garch_family_unconditional_variance(
     - component: Omega / (1 - Rho)
     - egarch: exp(Omega / (1 - Beta)), the exponential of the long-run log variance, which
       understates the expected variance somewhat (Jensen's inequality)
+    - realized: exp((Omega + Gamma * Xi) / (1 - Beta - Gamma * Phi)), likewise
+    - figarch: Omega / (1 - Phi) for D = 0 (GARCH(1, 1)); none for D > 0, where the model is not
+      covariance stationary (Baillie, Bollerslev and Mikkelsen, 1996)
 
     Args:
         variance_weights (Sequence[float]): The variance parameters.
@@ -2572,12 +2991,22 @@ def get_garch_family_unconditional_variance(
         distribution_weights (Sequence[float], optional): Its Shape (and Skew). Defaults to ().
 
     Returns:
-        float: The unconditional variance, NaN for IGARCH (P = 1), which has none.
+        float: The unconditional variance, NaN for IGARCH (P = 1) and FIGARCH with D > 0,
+        which have none.
     """
     w = variance_weights
 
     if method == "egarch":
         return math.exp(w[0] / (1 - w[3]))
+    if method == "realized":
+        persistence = w[1] + w[2] * w[4]
+        return (
+            math.exp((w[0] + w[2] * w[3]) / (1 - persistence))
+            if persistence < 1
+            else math.nan
+        )
+    if method == "figarch":
+        return w[0] / (1 - w[1]) if w[2] == 0 and w[1] < 1 else math.nan
 
     persistence = get_garch_family_persistence(
         w, method, distribution, distribution_weights
@@ -2618,6 +3047,117 @@ def _numerical_hessian(function, point: np.ndarray, steps: np.ndarray) -> np.nda
     return hessian
 
 
+def _score_terms(
+    returns: np.ndarray,
+    weights,
+    method: str,
+    distribution: str,
+    mean: str,
+    realized_measure: np.ndarray | None,
+):
+    """
+    The per-observation log-likelihood of the returns scaled to a unit Variance (where every
+    weight is of the order of 1) as a function of the scaled weights, the scaled weights, the
+    finite-difference steps, the scores of every observation by central differences and the
+    Jacobian of the weights of the returns with respect to the scaled weights (see
+    `_rescale_weights`).
+    """
+    returns = np.asarray(returns, dtype=float)
+    scale = float(np.std(returns))
+    scale = scale if scale > 0 else 1.0
+    scaled = returns / scale
+    scaled_measure = (
+        np.asarray(realized_measure, dtype=float) / scale**2
+        if realized_measure is not None
+        else None
+    )
+    scaled_weights = _rescale_weights(weights, method, mean, 1 / scale)
+    backcast = get_backcast(_starting_residuals(scaled, mean))
+    steps = 1e-4 * np.maximum(np.abs(scaled_weights), 0.1)
+    estimated = len(scaled_weights)
+
+    def per_observation(point):
+        return get_garch_family_log_likelihood(
+            scaled,
+            point,
+            method,
+            distribution,
+            mean,
+            backcast,
+            per_observation=True,
+            realized_measure=scaled_measure,
+        )
+
+    unit = np.eye(estimated)
+    scores = np.column_stack(
+        [
+            (
+                per_observation(scaled_weights + unit[i] * steps[i])
+                - per_observation(scaled_weights - unit[i] * steps[i])
+            )
+            / (2 * steps[i])
+            for i in range(estimated)
+        ]
+    )
+    jacobian = np.column_stack(
+        [
+            (
+                _rescale_weights(
+                    scaled_weights + unit[i] * steps[i], method, mean, scale
+                )
+                - _rescale_weights(
+                    scaled_weights - unit[i] * steps[i], method, mean, scale
+                )
+            )
+            / (2 * steps[i])
+            for i in range(estimated)
+        ]
+    )
+
+    return per_observation, scaled_weights, steps, scores, jacobian
+
+
+@np.errstate(over="ignore", invalid="ignore", divide="ignore")
+def get_garch_family_scores(
+    returns: np.ndarray,
+    weights,
+    method: str = "garch",
+    distribution: str = "normal",
+    mean: str = "zero",
+    realized_measure: np.ndarray | None = None,
+) -> np.ndarray:
+    """
+    Calculates the score of every observation of a GARCH-family model: the derivatives of
+    its log-likelihood (see `get_garch_family_log_likelihood`) with respect to every weight.
+
+    - s_t,j = d ln l_t / d w_j
+
+    The derivatives are central finite differences on returns scaled to a unit Variance,
+    converted to the weights of the returns with the inverse of the Jacobian of
+    `_rescale_weights` (the chain rule), as the robust standard errors of
+    `get_garch_family_diagnostics` take them. At the maximum-likelihood weights the scores of
+    a weight inside its bounds sum to about 0.
+
+    Args:
+        returns (np.ndarray): The returns.
+        weights (Sequence[float]): The weights, see `get_garch_family_parameter_names`.
+        method (str, optional): The variance model. Defaults to "garch".
+        distribution (str, optional): The innovation distribution. Defaults to "normal".
+        mean (str, optional): The mean model. Defaults to "zero".
+        realized_measure (np.ndarray | None, optional): The realized measure of every return,
+            which method="realized" needs. Defaults to None.
+
+    Returns:
+        np.ndarray: The scores, one row per observation in the likelihood and one column per
+        weight.
+    """
+    _, _, _, scores, jacobian = _score_terms(
+        returns, weights, method, distribution, mean, realized_measure
+    )
+
+    return scores @ np.linalg.inv(jacobian)
+
+
 @np.errstate(over="ignore", invalid="ignore", divide="ignore")
 def get_garch_family_diagnostics(
     returns: np.ndarray,
@@ -2625,6 +3165,7 @@ def get_garch_family_diagnostics(
     method: str = "garch",
     distribution: str = "normal",
     mean: str = "zero",
+    realized_measure: np.ndarray | None = None,
 ) -> dict[str, float]:
     """
     Calculates the fit diagnostics of a GARCH-family model: its persistence, half-life and
@@ -2669,6 +3210,8 @@ def get_garch_family_diagnostics(
         method (str, optional): The variance model. Defaults to "garch".
         distribution (str, optional): The innovation distribution. Defaults to "normal".
         mean (str, optional): The mean model. Defaults to "zero".
+        realized_measure (np.ndarray | None, optional): The realized measure of every return,
+            which method="realized" needs. Defaults to None.
 
     Returns:
         dict[str, float]: The diagnostics, with a "<weight> Standard Error" and a
@@ -2680,7 +3223,13 @@ def get_garch_family_diagnostics(
     variance_weights, _, distribution_weights = _split_weights(weights, method, mean)
 
     log_likelihoods = get_garch_family_log_likelihood(
-        returns, weights, method, distribution, mean, per_observation=True
+        returns,
+        weights,
+        method,
+        distribution,
+        mean,
+        per_observation=True,
+        realized_measure=realized_measure,
     )
     log_likelihood = float(np.sum(log_likelihoods))
     observations = len(log_likelihoods)
@@ -2709,50 +3258,11 @@ def get_garch_family_diagnostics(
         / observations,
     }
 
-    scale = float(np.std(returns))
-    scale = scale if scale > 0 else 1.0
-    scaled = returns / scale
-    scaled_weights = _rescale_weights(weights, method, mean, 1 / scale)
-    backcast = get_backcast(_starting_residuals(scaled, mean))
-    steps = 1e-4 * np.maximum(np.abs(scaled_weights), 0.1)
-
-    def per_observation(point):
-        return get_garch_family_log_likelihood(
-            scaled, point, method, distribution, mean, backcast, per_observation=True
-        )
-
+    per_observation, scaled_weights, steps, scores, jacobian = _score_terms(
+        returns, weights, method, distribution, mean, realized_measure
+    )
     hessian = _numerical_hessian(
         lambda point: float(np.sum(per_observation(point))), scaled_weights, steps
-    )
-    scores = np.column_stack(
-        [
-            (
-                per_observation(scaled_weights + np.eye(estimated)[i] * steps[i])
-                - per_observation(scaled_weights - np.eye(estimated)[i] * steps[i])
-            )
-            / (2 * steps[i])
-            for i in range(estimated)
-        ]
-    )
-    jacobian = np.column_stack(
-        [
-            (
-                _rescale_weights(
-                    scaled_weights + np.eye(estimated)[i] * steps[i],
-                    method,
-                    mean,
-                    scale,
-                )
-                - _rescale_weights(
-                    scaled_weights - np.eye(estimated)[i] * steps[i],
-                    method,
-                    mean,
-                    scale,
-                )
-            )
-            / (2 * steps[i])
-            for i in range(estimated)
-        ]
     )
 
     try:
@@ -2782,37 +3292,42 @@ def get_news_impact_curve(
     shocks: np.ndarray | None = None,
 ) -> pd.Series:
     """
-    Calculates the news impact curve of Engle and Ng (1993): the conditional variance of
-    the next period as a function of this period's shock, with the variance of this period
-    at the unconditional variance sigma^2 of the model.
+       Calculates the news impact curve of Engle and Ng (1993): the conditional variance of
+       the next period as a function of this period's shock, with the variance of this period
+       at the unconditional variance sigma^2 of the model.
 
-    The formula is as follows:
+       The formula is as follows:
 
-    - News Impact(z) = sigma_(t+1)^2 given e_t = z * sigma and sigma_t^2 = sigma^2
+       - News Impact(z) = sigma_(t+1)^2 given e_t = z * sigma and sigma_t^2 = sigma^2
 
-    Where z is the shock in unconditional standard deviations, sigma^2 the unconditional
-    variance (see `get_garch_family_unconditional_variance`) and, for the component model,
-    the long-run component also at sigma^2. IGARCH has no unconditional variance, so its
-    curve is NaN. A curve that rises faster to the left than to the right shows the
-    leverage effect: bad news raises volatility by more than good news of the same size.
+       Where z is the shock in unconditional standard deviations, sigma^2 the unconditional
+       variance (see `get_garch_family_unconditional_variance`) and, for the component model,
+       the long-run component also at sigma^2. IGARCH and FIGARCH (with D > 0) have no
+       unconditional variance, so their curve is NaN. For the realized GARCH the shock moves the
+       next log variance through the measurement equation (Hansen, Huang and Shek, 2012), with
+       the measurement error at its mean of 0:
 
-    For more information, see the following paper:
+       - News Impact(z) = exp(ln sigma^2 + Gamma * (Tau 1 * z + Tau 2 * (z^2 - 1)))
+    A curve that rises faster to the left than to the right shows the
+       leverage effect: bad news raises volatility by more than good news of the same size.
 
-    - Engle, R.F. and Ng, V.K. (1993). "Measuring and Testing the Impact of News on
-    Volatility." The Journal of Finance, 48(5), 1749-1778.
+       For more information, see the following paper:
 
-    Referenced against `newsimpact` of R's rugarch.
+       - Engle, R.F. and Ng, V.K. (1993). "Measuring and Testing the Impact of News on
+       Volatility." The Journal of Finance, 48(5), 1749-1778.
 
-    Args:
-        weights (Sequence[float]): The fitted weights.
-        method (str, optional): The variance model. Defaults to "garch".
-        distribution (str, optional): The innovation distribution. Defaults to "normal".
-        mean (str, optional): The mean model. Defaults to "zero".
-        shocks (np.ndarray | None, optional): The shocks z, in unconditional standard
-            deviations. Defaults to None, which uses -5, -4.5, ..., 5.
+       Referenced against `newsimpact` of R's rugarch.
 
-    Returns:
-        pd.Series: The variance of the next period, indexed by the shock z.
+       Args:
+           weights (Sequence[float]): The fitted weights.
+           method (str, optional): The variance model. Defaults to "garch".
+           distribution (str, optional): The innovation distribution. Defaults to "normal".
+           mean (str, optional): The mean model. Defaults to "zero".
+           shocks (np.ndarray | None, optional): The shocks z, in unconditional standard
+               deviations. Defaults to None, which uses -5, -4.5, ..., 5.
+
+       Returns:
+           pd.Series: The variance of the next period, indexed by the shock z.
     """
     shocks = np.linspace(-5, 5, 21) if shocks is None else np.asarray(shocks, float)
     variance_weights, _, distribution_weights = _split_weights(weights, method, mean)
@@ -2821,15 +3336,199 @@ def get_news_impact_curve(
     )
 
     with np.errstate(over="ignore", invalid="ignore", divide="ignore"):
-        news_impact, _ = _variance_step(method, variance_weights)(
-            np.full(len(shocks), variance), shocks * math.sqrt(variance), variance
-        )
+        if method == "realized":
+            _, _, gamma, _, _, tau_1, tau_2, _ = variance_weights
+            news_impact = variance * np.exp(
+                gamma * (tau_1 * shocks + tau_2 * (shocks**2 - 1))
+            )
+        elif method == "figarch":
+            # Without an unconditional variance (D > 0) the curve has no level; with D = 0 FIGARCH is GARCH(1, 1).  # noqa: E501
+            omega, phi, _, beta = variance_weights
+            news_impact = (
+                omega + (phi - beta) * shocks**2 * variance + beta * variance
+            ) * np.ones(len(shocks))
+        else:
+            news_impact, _ = _variance_step(method, variance_weights)(
+                np.full(len(shocks), variance), shocks * math.sqrt(variance), variance
+            )
 
     return pd.Series(news_impact, index=pd.Index(shocks, name="Shock"))
 
 
 # The quantiles that summarize the simulated paths per step.
 SIMULATION_QUANTILES = (0.05, 0.25, 0.5, 0.75, 0.95)
+
+
+def _simulation_state(
+    returns: np.ndarray,
+    weights,
+    method: str,
+    mean: str,
+    time_steps: int,
+    realized_measure: np.ndarray | None,
+) -> dict:
+    """
+    The state after the last return that a simulation continues from: the one-step-ahead
+    variance (and long-run component), the last return and residual and, for the models with
+    a longer memory, the part of every future step that the returns already fix: the
+    FIGARCH sum over the squared residuals of the sample (with their backcast) and the
+    ARFIMA sum Σ pi_k x_(n+h-k) over the centred returns of the sample.
+    """
+    backcast = get_backcast(_starting_residuals(returns, mean))
+    residuals, sigma2, long_run, _ = _garch_family_filter(
+        returns, weights, method, mean, backcast, realized_measure
+    )
+    variance_weights, mean_weights, _ = _split_weights(weights, method, mean)
+    state = {
+        "variance": float(sigma2[-1]),
+        "long_run": float(long_run[-1]) if long_run is not None else None,
+        "return": float(returns[-1]),
+        "residual": float(residuals[-1]),
+    }
+
+    if method == "figarch":
+        from scipy import signal  # noqa: PLC0415
+
+        omega, phi, d, beta = variance_weights
+        arch_weights = _figarch_weights(phi, d, beta)
+        squared = np.concatenate(
+            [np.full(FIGARCH_TRUNCATION, backcast), residuals * residuals]
+        )
+        # Step h (from 0) sums lambda_i over the squared residuals of the sample for i > h: the last len(squared) + h - 1 entries of the convolution with the weights shifted by h.  # noqa: E501
+        padded = np.concatenate([squared, np.zeros(time_steps)])
+        state["arch_weights"] = arch_weights
+        state["fixed_variance"] = (
+            omega / (1 - beta)
+            + signal.fftconvolve(padded, arch_weights)[
+                len(squared) - 1 : len(squared) - 1 + time_steps
+            ]
+        )
+
+    if mean == "arfima":
+        from scipy import signal  # noqa: PLC0415
+
+        mu, autoregressive, d, moving_average = mean_weights
+        centred = returns - mu
+        fractional = _fractional_weights(d, len(centred) + time_steps + 1)
+        differenced = signal.fftconvolve(centred, fractional[: len(centred)])
+        state["fractional_weights"] = fractional
+        state["fixed_mean"] = signal.fftconvolve(
+            np.concatenate([centred, np.zeros(time_steps)]), fractional
+        )[len(centred) : len(centred) + time_steps]
+        state["differenced"] = float(differenced[len(centred) - 1])
+
+    return state
+
+
+def _simulate_paths(
+    weights,
+    method: str,
+    mean: str,
+    state: dict,
+    draw,
+    time_steps: int,
+    paths: int,
+) -> dict[str, np.ndarray]:
+    """
+    Simulates `paths` paths of `time_steps` returns of a GARCH-family model from `state`
+    (see `_simulation_state`), with `draw(paths)` giving the standardized innovations z_t
+    and, for the realized GARCH, the measurement errors u_t of every step.
+
+    Returns:
+        dict[str, np.ndarray]: The returns, the conditional volatility and, for the
+        realized GARCH, the realized measure, each of shape (time_steps, paths).
+    """
+    variance_weights, mean_weights, _ = _split_weights(weights, method, mean)
+    variance = np.full(paths, state["variance"])
+    long_run = (
+        np.full(paths, state["long_run"]) if state["long_run"] is not None else None
+    )
+    previous_return = np.full(paths, state["return"])
+    previous_residual = np.full(paths, state["residual"])
+    # FIGARCH and the realized GARCH have their own steps below.
+    step = (
+        (lambda variance, _, long_run: (variance, long_run))
+        if method in HISTORY_METHODS
+        else _variance_step(method, variance_weights)
+    )
+
+    returns = np.empty((time_steps, paths))
+    volatilities = np.empty((time_steps, paths))
+    # Only the model that needs them keeps a row per step.
+    measures = np.empty((time_steps if method == "realized" else 0, paths))
+    squared = np.empty((time_steps if method == "figarch" else 0, paths))
+    centred = np.empty((time_steps if mean == "arfima" else 0, paths))
+    differenced = np.full(paths, state.get("differenced", 0.0))
+
+    with np.errstate(over="ignore", invalid="ignore"):
+        for h in range(time_steps):
+            volatility = np.sqrt(variance)
+            z, u = draw(paths)
+            residual = volatility * z
+
+            if mean == "zero":
+                value = residual
+            elif mean == "constant":
+                value = mean_weights[0] + residual
+            elif mean == "arma":
+                value = (
+                    mean_weights[0]
+                    + mean_weights[1] * previous_return
+                    + mean_weights[2] * previous_residual
+                    + residual
+                )
+            elif mean == "arfima":
+                mu, autoregressive, _, moving_average = mean_weights
+                # w_t = AR * w_(t-1) + e_t + MA * e_(t-1) and x_t = w_t - Σ_(k>=1) pi_k x_(t-k), the sample's part of the sum fixed in the state.  # noqa: E501
+                differenced = (
+                    autoregressive * differenced
+                    + residual
+                    + moving_average * previous_residual
+                )
+                weights_back = state["fractional_weights"][1 : h + 1][::-1]
+                centred[h] = (
+                    differenced
+                    - state["fixed_mean"][h]
+                    - (weights_back @ centred[:h] if h else 0.0)
+                )
+                value = mu + centred[h]
+            else:
+                value = mean_weights[0] + mean_weights[1] * volatility + residual
+
+            returns[h] = value
+            volatilities[h] = volatility
+
+            if method == "figarch":
+                squared[h] = residual * residual
+                if h + 1 < time_steps:
+                    # The squared residuals simulated so far, at most the 1,000 latest.
+                    lags = min(h + 1, FIGARCH_TRUNCATION)
+                    variance = state["fixed_variance"][h + 1] + (
+                        state["arch_weights"][:lags][::-1]
+                        @ squared[h + 1 - lags : h + 1]
+                    )
+            elif method == "realized":
+                omega, beta, gamma, xi, phi, tau_1, tau_2, sigma_u = variance_weights
+                log_variance = np.log(variance)
+                log_measure = (
+                    xi
+                    + phi * log_variance
+                    + tau_1 * z
+                    + tau_2 * (z * z - 1)
+                    + sigma_u * u
+                )
+                measures[h] = np.exp(log_measure)
+                variance = np.exp(omega + beta * log_variance + gamma * log_measure)
+            else:
+                variance, long_run = step(variance, residual, long_run)
+
+            previous_return, previous_residual = value, residual
+
+    return {
+        "returns": returns,
+        "volatility": volatilities,
+        "realized": measures if method == "realized" else None,
+    }
 
 
 def get_garch_simulation(
@@ -2842,6 +3541,8 @@ def get_garch_simulation(
     paths: int = 10000,
     seed: int | None = 0,
     output: str = "returns",
+    bootstrap_fits: int | None = None,
+    realized_measure: np.ndarray | None = None,
 ) -> pd.DataFrame:
     """
     Simulates paths of the returns and conditional volatility of a GARCH-family model from
@@ -2849,15 +3550,38 @@ def get_garch_simulation(
     75th and 95th percentiles.
 
     Every path starts from the fitted state after the last return (its one-step-ahead
-    variance and, for the ARMA(1, 1) mean, the last return and residual) and draws the
-    standardized innovations z_t from the fitted distribution (see
+    variance and, for the ARMA(1, 1) and ARFIMA(1, d, 1) means, the last return and
+    residual, and for FIGARCH and the ARFIMA mean the sample's part of their long sums) and
+    draws the standardized innovations z_t from the fitted distribution (see
     `get_standardized_draws`):
 
     - e_t = sigma_t * z_t
-    - r_t = Mean_t + e_t, with Mean_t = 0, Mu, Mu + AR * r_(t-1) + MA * e_(t-1) or Mu + Lambda * sigma_t
-    - sigma_(t+1)^2 from the variance recursion of the model
+    - r_t = Mean_t + e_t, with Mean_t = 0, Mu, Mu + AR * r_(t-1) + MA * e_(t-1), Mu + Lambda * sigma_t or,
+      for the ARFIMA mean, Mu + x_t with (1 - AR L)(1 - L)^d x_t = (1 + MA L) e_t
+    - sigma_(t+1)^2 from the variance recursion of the model; the realized GARCH draws its
+      measure from the measurement equation with u_t ~ N(0, Sigma U^2)
 
-    Referenced against `ugarchsim` and `ugarchpath` of R's rugarch.
+    With `bootstrap_fits`, the forecast density of Pascual, Romo and Ruiz (2006) replaces
+    the fitted distribution with the standardized residuals z_t of the fit (and, for the
+    realized GARCH, the measurement errors of the same days), drawn with replacement, and
+    adds the uncertainty of the weights:
+
+    - Every bootstrap series r*_1..r*_n is simulated from the fitted weights, starting after the
+      last return as rugarch's ugarchboot does, and the model is fitted to it again (a local
+      search from the fitted weights, see `get_garch_family_weights`)
+    - Each of these weights filters the original returns to the state after the last
+      return and simulates paths / bootstrap_fits of the paths from it
+    - bootstrap_fits=0 keeps the fitted weights and only resamples the residuals (the
+      partial bootstrap)
+
+    For more information, see the following paper:
+
+    - Pascual, L., Romo, J. and Ruiz, E. (2006). "Bootstrap Prediction for Returns and
+    Volatilities in GARCH Models." Computational Statistics & Data Analysis, 50(9),
+    2293-2312.
+
+    Referenced against `ugarchsim`, `ugarchpath` and the "Partial" and "Full" methods of
+    `ugarchboot` in R's rugarch, as its documentation describes them.
 
     Args:
         returns (np.ndarray): The returns.
@@ -2872,6 +3596,11 @@ def get_garch_simulation(
         output (str, optional): "returns" for the return of each step, "cumulative_returns"
             for the compounded return from the end of the sample, (1 + r_1) ... (1 + r_h) - 1,
             or "volatility" for sigma_t. Defaults to "returns".
+        bootstrap_fits (int | None, optional): The number of bootstrap series the model is
+            fitted to again, 0 for the partial bootstrap. Defaults to None, which draws from
+            the fitted distribution instead.
+        realized_measure (np.ndarray | None, optional): The realized measure of every return,
+            which method="realized" needs. Defaults to None.
 
     Returns:
         pd.DataFrame: The Mean and the percentiles per step (1 to time_steps).
@@ -2882,66 +3611,107 @@ def get_garch_simulation(
         raise ValueError(
             "The output must be returns, cumulative_returns or volatility."
         )
+    if bootstrap_fits is not None and bootstrap_fits < 0:
+        raise ValueError("bootstrap_fits must be 0 or more.")
 
     returns = np.asarray(returns, dtype=float)
 
     if weights is None:
-        weights = get_garch_family_weights(returns, method, distribution, mean)
+        weights = get_garch_family_weights(
+            returns, method, distribution, mean, realized_measure=realized_measure
+        )
 
-    variance_weights, mean_weights, distribution_weights = _split_weights(
-        weights, method, mean
-    )
-    backcast = get_backcast(_starting_residuals(returns, mean))
-    residuals, sigma2, long_run, _ = _garch_family_filter(
-        returns, weights, method, mean, backcast
-    )
-
+    weights = np.asarray(weights, dtype=float)
+    variance_weights, _, distribution_weights = _split_weights(weights, method, mean)
     rng = np.random.default_rng(seed)
-    step = _variance_step(method, variance_weights)
-    variance = np.full(paths, sigma2[-1])
-    long_run_state = np.full(paths, long_run[-1]) if long_run is not None else None
-    previous_return = np.full(paths, returns[-1])
-    previous_residual = np.full(paths, residuals[-1])
 
-    simulated = np.empty((time_steps, paths))
-    wealth = np.ones(paths)
+    if bootstrap_fits is None:
 
-    with np.errstate(over="ignore", invalid="ignore"):
-        for h in range(time_steps):
-            volatility = np.sqrt(variance)
-            residual = volatility * get_standardized_draws(
-                distribution, distribution_weights, paths, rng
+        def draw(size):
+            return (
+                get_standardized_draws(distribution, distribution_weights, size, rng),
+                rng.standard_normal(size) if method == "realized" else None,
             )
 
-            if mean == "zero":
-                value = residual
-            elif mean == "constant":
-                value = mean_weights[0] + residual
-            elif mean == "arma":
-                value = (
-                    mean_weights[0]
-                    + mean_weights[1] * previous_return
-                    + mean_weights[2] * previous_residual
-                    + residual
-                )
-            else:
-                value = mean_weights[0] + mean_weights[1] * volatility + residual
+    else:
+        backcast = get_backcast(_starting_residuals(returns, mean))
+        residuals, sigma2, _, held_back = _garch_family_filter(
+            returns, weights, method, mean, backcast, realized_measure
+        )
+        standardized = residuals / np.sqrt(sigma2[: len(residuals)])
+        errors = np.zeros(len(standardized))
+        if method == "realized":
+            _, _, _, xi, phi, tau_1, tau_2, sigma_u = variance_weights
+            # The standardized measurement errors of the days with a measure; a day without one draws a normal error.  # noqa: E501
+            errors = (
+                _log_measure(realized_measure)[held_back:]
+                - xi
+                - phi * np.log(sigma2[: len(residuals)])
+                - tau_1 * standardized
+                - tau_2 * (standardized**2 - 1)
+            ) / sigma_u
+            errors = np.where(
+                np.isfinite(errors), errors, rng.standard_normal(len(errors))
+            )
 
-            wealth = wealth * (1 + value)
-            simulated[h] = {
-                "returns": value,
-                "cumulative_returns": wealth - 1,
-                "volatility": volatility,
-            }[output]
+        def draw(size):
+            index = rng.integers(0, len(standardized), size)
+            return standardized[index], errors[index]
 
-            variance, long_run_state = step(variance, residual, long_run_state)
-            previous_return, previous_residual = value, residual
+    fits = [weights]
+
+    if bootstrap_fits:
+        state = _simulation_state(
+            returns, weights, method, mean, len(returns), realized_measure
+        )
+        fits = []
+        for _ in range(bootstrap_fits):
+            series = _simulate_paths(
+                weights, method, mean, state, draw, len(returns), 1
+            )
+            series_measure = series["realized"][:, 0] if method == "realized" else None
+            fitted = get_garch_family_weights(
+                series["returns"][:, 0],
+                method,
+                distribution,
+                mean,
+                starting_weights=weights,
+                realized_measure=series_measure,
+            )
+            if np.all(np.isfinite(fitted)):
+                fits.append(fitted)
+        if not fits:
+            raise ValueError("The model could not be fitted to any bootstrap series.")
+
+    paths_per_fit = -(-paths // len(fits))
+    simulated = []
+    for fit_weights in fits:
+        state = _simulation_state(
+            returns, fit_weights, method, mean, time_steps, realized_measure
+        )
+        simulated.append(
+            _simulate_paths(
+                fit_weights, method, mean, state, draw, time_steps, paths_per_fit
+            )
+        )
+
+    values = np.concatenate(
+        [
+            (
+                np.cumprod(1 + path["returns"], axis=0) - 1
+                if output == "cumulative_returns"
+                else path[output]
+            )
+            for path in simulated
+        ],
+        axis=1,
+    )[:, :paths]
 
     return pd.DataFrame(
         {
-            "Mean": simulated.mean(axis=1),
+            "Mean": values.mean(axis=1),
             **{
-                f"{quantile:.0%}": np.quantile(simulated, quantile, axis=1)
+                f"{quantile:.0%}": np.quantile(values, quantile, axis=1)
                 for quantile in SIMULATION_QUANTILES
             },
         },
@@ -3256,6 +4026,11 @@ def get_garch_family_rolling_forecast(
         )
     if refit_every < 1:
         raise ValueError("refit_every must be at least 1.")
+    if method == "realized":
+        raise ValueError(
+            "The rolling forecast takes the models of the returns alone; method='realized' "
+            "also needs a realized measure."
+        )
 
     returns = returns.dropna()
     values = returns.to_numpy(dtype=float)

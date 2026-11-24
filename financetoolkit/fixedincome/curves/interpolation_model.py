@@ -259,24 +259,25 @@ def get_discount_factors(
     interpolation: str = "monotone_convex",
 ) -> np.ndarray:
     """
-    The discount factors of a zero-coupon curve at any times, with a choice of how the
-    curve is read between its maturities (Hagan and West, 2006):
+    Calculate the discount factors of a zero-coupon curve at any times: what a payment at
+    each time is worth today, with a choice of how the curve is read between its maturities
+    (Hagan and West, 2006):
 
-    - "linear_zero": the zero rate r(t) is linear between the maturities.
-    - "log_linear": ln P(t) = -r(t) t is linear between the maturities and from P(0) = 1,
+    - Linear zero: the zero rate r(t) is linear between the maturities.
+    - Log-linear: ln P(t) = -r(t) t is linear between the maturities and from P(0) = 1,
       so the instantaneous forward is flat between two maturities. Hagan and West call
       this raw interpolation; it is also known as piecewise flat forward.
-    - "natural_cubic": a natural cubic spline (zero second derivative at both ends) on
+    - Natural cubic: a natural cubic spline (zero second derivative at both ends) on
       the zero rates.
-    - "monotone_cubic": a cubic on the zero rates with the slopes of the natural spline,
+    - Monotone cubic: a cubic on the zero rates with the slopes of the natural spline,
       held by Hyman's (1983) filter so the curve does not overshoot where the zero rates
       rise or fall monotonically.
-    - "monotone_convex": the monotone convex method of Hagan and West (2006): the
+    - Monotone convex: the monotone convex method of Hagan and West (2006): the
       instantaneous forward on each interval is the interval's discrete forward plus a
       quadratic (or, where that would overshoot, a partly flat form) that integrates to
       zero, so the forward curve is continuous, keeps the discrete forwards exactly and
       does not oscillate.
-    - "linear_par": linear on the annually compounded zero rates, the way
+    - Linear par: linear on the annually compounded zero rates, the way
       `get_forward_rate` and `get_par_yield` read the curve of `get_zero_coupon_curve`.
 
     The zero rates are continuously compounded, as Hagan and West define them, so a
@@ -294,18 +295,31 @@ def get_discount_factors(
     - Hyman, J.M. (1983). "Accurate Monotonicity Preserving Cubic Interpolation." SIAM
       Journal on Scientific and Statistical Computing, 4(4), 645-654.
 
-    Referenced against QuantLib's ZeroCurve, NaturalCubicZeroCurve, MonotonicCubicZeroCurve
-    and DiscountCurve (https://www.quantlib.org) and its PiecewiseConvexMonotoneForward
-    without forced positivity.
+    QuantLib's convex monotone forward curve is taken without forced positivity.
+
+    Referenced against:
+    - QuantLib, ZeroCurve (linear_zero): https://www.quantlib.org/reference/class_quant_lib_1_1_interpolated_zero_curve.html
+        Test: tests/fixedincome/test_curve_construction.py::test_interpolation_against_quantlib
+    - QuantLib, DiscountCurve (log_linear): https://www.quantlib.org/reference/class_quant_lib_1_1_interpolated_discount_curve.html
+        Test: tests/fixedincome/test_curve_construction.py::test_interpolation_against_quantlib
+    - QuantLib, NaturalCubicZeroCurve (natural_cubic): https://www.quantlib.org/reference/class_quant_lib_1_1_interpolated_zero_curve.html
+        Test: tests/fixedincome/test_curve_construction.py::test_interpolation_against_quantlib
+    - QuantLib, MonotonicCubicZeroCurve (monotone_cubic): https://www.quantlib.org/reference/class_quant_lib_1_1_interpolated_zero_curve.html
+        Test: tests/fixedincome/test_curve_construction.py::test_interpolation_against_quantlib
+    - QuantLib, PiecewiseYieldCurve with ConvexMonotone (monotone_convex): https://www.quantlib.org/reference/class_quant_lib_1_1_convex_monotone.html
+        Test: tests/fixedincome/test_curve_construction.py::test_interpolation_against_quantlib
 
     Args:
         maturities (np.ndarray | list): The maturities of the curve in years, above 0.
         zero_rates (np.ndarray | list): The continuously compounded zero rates (decimals)
             at the maturities.
         years (np.ndarray | list | float): The times to discount from, in years.
-        interpolation (str, optional): One of "linear_zero", "log_linear",
-            "natural_cubic", "monotone_cubic", "monotone_convex" or "linear_par".
-            Defaults to "monotone_convex".
+        interpolation (str, optional): How the curve is read between its maturities. Options
+            are: "linear_zero" (linear zero rates), "log_linear" (linear log discount
+            factors), "natural_cubic" (a natural cubic spline), "monotone_cubic" (a monotone
+            cubic spline), "monotone_convex" (Hagan and West's monotone convex method),
+            "linear_par" (linear annually compounded zero rates). Defaults to
+            "monotone_convex".
 
     Returns:
         np.ndarray: The discount factor at each time.
@@ -325,12 +339,13 @@ def get_instantaneous_forward_rates(
     interpolation: str = "monotone_convex",
 ) -> np.ndarray:
     """
-    The instantaneous forward rates of a zero-coupon curve: the continuously compounded
-    rate, implied by the curve, for borrowing over an infinitesimal period starting at
-    t, f(t) = -d ln P(t) / dt = r(t) + t r'(t). It is the rate the discrete forward
-    rates of the curve converge to as their period shrinks, and shows the shape of the
-    curve more sharply than the zero rates, which average it: r(t) = (1 / t) ∫ f(s) ds
-    over 0 to t.
+    Calculate the instantaneous forward rates of a zero-coupon curve: the continuously
+    compounded rate, implied by the curve, for borrowing over an infinitesimal period
+    starting at t, f(t) = -d ln P(t) / dt = r(t) + t r'(t).
+
+    It is the rate the discrete forward rates of the curve converge to as their period
+    shrinks, and shows the shape of the curve more sharply than the zero rates, which
+    average it: r(t) = (1 / t) ∫ f(s) ds over 0 to t.
 
     The curve is read between its maturities as `get_discount_factors` describes. The
     forward of the interpolations on the zero rates follows from the slope of the zero
@@ -342,13 +357,29 @@ def get_instantaneous_forward_rates(
     For more information, see: Hagan, P.S. and West, G. (2006). "Interpolation Methods for
     Curve Construction." Applied Mathematical Finance, 13(2), 89-129.
 
+    Referenced against:
+    - QuantLib, ZeroCurve (linear_zero): https://www.quantlib.org/reference/class_quant_lib_1_1_interpolated_zero_curve.html
+        Test: tests/fixedincome/test_curve_construction.py::test_interpolation_against_quantlib
+    - QuantLib, DiscountCurve (log_linear): https://www.quantlib.org/reference/class_quant_lib_1_1_interpolated_discount_curve.html
+        Test: tests/fixedincome/test_curve_construction.py::test_interpolation_against_quantlib
+    - QuantLib, NaturalCubicZeroCurve (natural_cubic): https://www.quantlib.org/reference/class_quant_lib_1_1_interpolated_zero_curve.html
+        Test: tests/fixedincome/test_curve_construction.py::test_interpolation_against_quantlib
+    - QuantLib, MonotonicCubicZeroCurve (monotone_cubic): https://www.quantlib.org/reference/class_quant_lib_1_1_interpolated_zero_curve.html
+        Test: tests/fixedincome/test_curve_construction.py::test_interpolation_against_quantlib
+    - QuantLib, PiecewiseYieldCurve with ConvexMonotone (monotone_convex): https://www.quantlib.org/reference/class_quant_lib_1_1_convex_monotone.html
+        Test: tests/fixedincome/test_curve_construction.py::test_interpolation_against_quantlib
+
     Args:
         maturities (np.ndarray | list): The maturities of the curve in years, above 0.
         zero_rates (np.ndarray | list): The continuously compounded zero rates (decimals)
             at the maturities.
         years (np.ndarray | list | float): The times of the forward rates, in years.
-        interpolation (str, optional): See `get_discount_factors`. Defaults to
-            "monotone_convex".
+        interpolation (str, optional): How the curve is read between its maturities, see
+            `get_discount_factors`. Options are: "linear_zero" (linear zero rates),
+            "log_linear" (linear log discount factors), "natural_cubic" (a natural cubic
+            spline), "monotone_cubic" (a monotone cubic spline), "monotone_convex" (Hagan
+            and West's monotone convex method), "linear_par" (linear annually compounded
+            zero rates). Defaults to "monotone_convex".
 
     Returns:
         np.ndarray: The instantaneous forward rate (continuously compounded) at each time.
@@ -369,8 +400,9 @@ def bootstrap_zero_curve(
     interpolation: str = "linear_par",
 ) -> tuple[np.ndarray, np.ndarray]:
     """
-    Bootstraps a zero-coupon curve from par yields with a choice of interpolation, so that
-    every quoted par bond prices at par on the interpolated curve (Hagan and West, 2006).
+    Bootstrap a zero-coupon curve from par yields with a choice of interpolation: the zero
+    rates at which every quoted par bond prices at par on the interpolated curve (Hagan and
+    West, 2006).
 
     Maturities up to a year are bills, whose zero rate follows from their yield alone (see
     `curve_model.bill_yields_to_annual`). A longer maturity T is a bond paying its par
@@ -387,9 +419,17 @@ def bootstrap_zero_curve(
     out (the cubic splines and monotone convex) this is the global bootstrap of Hagan and
     West.
 
-    With interpolation="linear_par" the par yields themselves are interpolated linearly
+    With linear par interpolation the par yields themselves are interpolated linearly
     to every coupon date first, as `curve_model.bootstrap_zero_rates` does, and the curve
     holds the zero rate of every coupon date.
+
+    Referenced against:
+    - QuantLib, PiecewiseYieldCurve: https://www.quantlib.org/reference/class_quant_lib_1_1_piecewise_yield_curve.html
+        Test: tests/fixedincome/test_curve_construction.py::test_bootstrap_against_quantlib
+    - QuantLib, FixedRateBondHelper: https://www.quantlib.org/reference/class_quant_lib_1_1_fixed_rate_bond_helper.html
+        Test: tests/fixedincome/test_curve_construction.py::test_bootstrap_against_quantlib
+    - QuantLib, DepositRateHelper: https://www.quantlib.org/reference/class_quant_lib_1_1_deposit_rate_helper.html
+        Test: tests/fixedincome/test_curve_construction.py::test_bootstrap_against_quantlib
 
     Args:
         maturities (np.ndarray | list): The maturities in years; at least one of a year or
@@ -398,9 +438,15 @@ def bootstrap_zero_curve(
             `frequency` coupons a year beyond a year and in the bill convention up to it.
         frequency (int, optional): The coupons per year. Defaults to 2.
         bill_convention (str | None, optional): How the bill yields are quoted, see
-            `curve_model.bill_yields_to_annual`. Defaults to None.
-        interpolation (str, optional): See `get_discount_factors`. Defaults to
-            "linear_par".
+            `curve_model.bill_yields_to_annual`. Options are: "bond-equivalent" (the US
+            Treasury), "act/365" (Canada), "act/360" (Sweden), None (yields compounded
+            `frequency` times a year). Defaults to None.
+        interpolation (str, optional): How the curve is read between its maturities, see
+            `get_discount_factors`. Options are: "linear_zero" (linear zero rates),
+            "log_linear" (linear log discount factors), "natural_cubic" (a natural cubic
+            spline), "monotone_cubic" (a monotone cubic spline), "monotone_convex" (Hagan
+            and West's monotone convex method), "linear_par" (linear annually compounded
+            zero rates). Defaults to "linear_par".
 
     Returns:
         tuple[np.ndarray, np.ndarray]: The maturities of the curve (ascending) and their

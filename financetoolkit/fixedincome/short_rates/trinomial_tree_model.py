@@ -125,13 +125,17 @@ def build_short_rate_tree(
     curve_shift: float = 0.0,
 ) -> dict:
     """
-    A recombining trinomial tree of the short rate fitted exactly to today's zero curve with
-    the two-stage procedure of Hull and White (1994). The first stage builds a tree for a
-    process x with dx = -a x dt + σ dW and x(0) = 0; the second shifts the nodes of every
-    step by the α_i that makes the tree price the zero-coupon bond maturing at the end of
-    that step exactly, found by forward induction on the Arrow-Debreu prices Q (the value
-    today of 1 paid at a node). The steps may differ in length, as in Hull and White (1996),
-    so every payment and exercise date is a date of the tree.
+    Build a recombining trinomial tree of the short rate fitted exactly to today's zero
+    curve with the two-stage procedure of Hull and White (1994): the rates the short rate
+    can take at every date, with their probabilities, on which bonds and options with early
+    exercise are priced.
+
+    The first stage builds a tree for a process x with dx = -a x dt + σ dW and x(0) = 0; the
+    second shifts the nodes of every step by the α_i that makes the tree price the
+    zero-coupon bond maturing at the end of that step exactly, found by forward induction on
+    the Arrow-Debreu prices Q (the value today of 1 paid at a node). The steps may differ in
+    length, as in Hull and White (1996), so every payment and exercise date is a date of the
+    tree.
 
     The formula is as follows:
 
@@ -174,8 +178,12 @@ def build_short_rate_tree(
     - Brigo, D. and Mercurio, F. (2006). "Interest Rate Models - Theory and Practice."
       Springer, 2nd edition, sections 3.3.3 and 3.4.
 
-    Referenced against QuantLib's `HullWhite` and `BlackKarasinski` trees and FinancePy's
-    `HWTree`, `BKTree` and `BDTTree`.
+    Shares similar logic:
+    - QuantLib, HullWhite: https://www.quantlib.org/reference/class_quant_lib_1_1_hull_white.html
+    - QuantLib, BlackKarasinski: https://www.quantlib.org/reference/class_quant_lib_1_1_black_karasinski.html
+    - FinancePy, HWTree: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/models/hw_tree.py#L903
+    - FinancePy, BKTree: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/models/bk_tree.py#L957
+    - FinancePy, BDTTree: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/models/bdt_tree.py#L675
 
     Args:
         zero_curve (pd.Series): The annually compounded zero-coupon rates (decimals) by
@@ -187,8 +195,9 @@ def build_short_rate_tree(
         volatility (float): The volatility σ: of the rate for Hull-White and Ho-Lee (0.01 is
             1% a year), of its logarithm for Black-Karasinski and Black-Derman-Toy (0.2 is
             20% of the rate).
-        model (str, optional): "hull_white", "black_karasinski", "black_derman_toy" or
-            "ho_lee". Defaults to "hull_white".
+        model (str, optional): The short-rate model. Options are: "hull_white" (Hull-White),
+            "black_karasinski" (Black-Karasinski), "black_derman_toy" (Black-Derman-Toy),
+            "ho_lee" (Ho-Lee). Defaults to "hull_white".
         steps_per_year (int, optional): The steps per year between the events. Defaults to
             50.
         curve_shift (float, optional): A parallel shift of the continuously compounded zero
@@ -283,10 +292,11 @@ def get_short_rate_tree(
     steps_per_year: int = 4,
 ) -> pd.DataFrame:
     """
-    The short rates of a trinomial tree fitted exactly to today's zero curve, by date of the
-    tree (rows) and node (columns, the node j of x_j = j Δx, with 0 the centre), see
-    `build_short_rate_tree` for the construction. The rate of a node applies from its date to
-    the next date of the tree.
+    Calculate the short rates of a trinomial tree fitted exactly to today's zero curve: the
+    rates the short rate can take by date of the tree (rows) and node (columns, the node j
+    of x_j = j Δx, with 0 the centre), see `build_short_rate_tree` for the construction.
+
+    The rate of a node applies from its date to the next date of the tree.
 
     The formula is as follows:
 
@@ -305,7 +315,9 @@ def get_short_rate_tree(
     - Hull, J.C. (2022). "Options, Futures, and Other Derivatives." Pearson, 11th edition,
       chapter 32.
 
-    Referenced against QuantLib's `HullWhite` and `BlackKarasinski` trees.
+    Shares similar logic:
+    - QuantLib, HullWhite: https://www.quantlib.org/reference/class_quant_lib_1_1_hull_white.html
+    - QuantLib, BlackKarasinski: https://www.quantlib.org/reference/class_quant_lib_1_1_black_karasinski.html
 
     Args:
         zero_curve (pd.Series): The annually compounded zero-coupon rates (decimals) by
@@ -315,8 +327,9 @@ def get_short_rate_tree(
             Black-Derman-Toy.
         volatility (float): The volatility σ: of the rate for Hull-White and Ho-Lee, of its
             logarithm for Black-Karasinski and Black-Derman-Toy.
-        model (str, optional): "hull_white", "black_karasinski", "black_derman_toy" or
-            "ho_lee". Defaults to "hull_white".
+        model (str, optional): The short-rate model. Options are: "hull_white" (Hull-White),
+            "black_karasinski" (Black-Karasinski), "black_derman_toy" (Black-Derman-Toy),
+            "ho_lee" (Ho-Lee). Defaults to "hull_white".
         steps_per_year (int, optional): The steps per year. Defaults to 4.
 
     Returns:
@@ -461,12 +474,14 @@ def get_callable_bond_price(
     steps_per_year: int = 50,
 ) -> dict[str, float]:
     """
-    The price of a callable or puttable fixed-coupon bond on a short-rate tree fitted to
-    today's zero curve (`build_short_rate_tree`): the issuer calls the bond whenever its
-    value exceeds the call price, the investor puts it whenever its value falls below the
-    put price, on the coupon dates from their first date on (Bermudan exercise at a clean
-    price). The value of the embedded options is the straight bond less the callable or
-    puttable bond on the same tree, so a put makes it negative.
+    Calculate the price of a callable or puttable fixed-coupon bond on a short-rate tree
+    fitted to today's zero curve (`build_short_rate_tree`): what the bond is worth when the
+    issuer calls it whenever its value exceeds the call price and the investor puts it
+    whenever its value falls below the put price, on the coupon dates from their first date
+    on (Bermudan exercise at a clean price).
+
+    The value of the embedded options is the straight bond less the callable or puttable
+    bond on the same tree, so a put makes it negative.
 
     The formula is as follows:
 
@@ -491,9 +506,19 @@ def get_callable_bond_price(
     - Fabozzi, F.J. (2016). "Bond Markets, Analysis, and Strategies." Pearson, 9th edition,
       chapter 18.
 
-    Referenced against QuantLib's `CallableFixedRateBond` with the
-    `TreeCallableFixedRateBondEngine` on `HullWhite` and `BlackKarasinski` and FinancePy's
-    `callable_puttable_bond_tree` of `HWTree`, `BKTree` and `BDTTree`.
+    Referenced against:
+    - QuantLib, CallableFixedRateBond: https://www.quantlib.org/reference/class_quant_lib_1_1_callable_fixed_rate_bond.html
+        Test: tests/fixedincome/test_trinomial_tree_model.py::test_callable_and_puttable_bonds_match_quantlib
+        Test: tests/fixedincome/test_short_rate_model.py::test_puttable_bond_matches_quantlib
+    - QuantLib, TreeCallableFixedRateBondEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_tree_callable_fixed_rate_bond_engine.html
+        Test: tests/fixedincome/test_trinomial_tree_model.py::test_callable_and_puttable_bonds_match_quantlib
+        Test: tests/fixedincome/test_short_rate_model.py::test_puttable_bond_matches_quantlib
+    - FinancePy, BDTTree.callable_puttable_bond_tree: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/models/bdt_tree.py#L831
+        Test: tests/fixedincome/test_trinomial_tree_model.py::test_black_derman_toy_puttable_bond_matches_financepy
+
+    Shares similar logic:
+    - FinancePy, HWTree.callable_puttable_bond_tree: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/models/hw_tree.py#L1366
+    - FinancePy, BKTree.callable_puttable_bond_tree: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/models/bk_tree.py#L1167
 
     Args:
         coupon_rate (float): The annual coupon rate.
@@ -504,8 +529,9 @@ def get_callable_bond_price(
             Black-Derman-Toy.
         volatility (float): The volatility σ: of the rate for Hull-White and Ho-Lee (0.01 is
             1% a year), of its logarithm for Black-Karasinski and Black-Derman-Toy.
-        model (str, optional): "hull_white", "black_karasinski", "black_derman_toy" or
-            "ho_lee". Defaults to "hull_white".
+        model (str, optional): The short-rate model. Options are: "hull_white" (Hull-White),
+            "black_karasinski" (Black-Karasinski), "black_derman_toy" (Black-Derman-Toy),
+            "ho_lee" (Ho-Lee). Defaults to "hull_white".
         call_price (float | None, optional): The call price; None for a bond without a call.
             Defaults to 100.
         years_to_first_call (float, optional): The years until the bond can first be called.
@@ -590,13 +616,15 @@ def get_bermudan_swaption(
     steps_per_year: int = 50,
 ) -> float:
     """
-    The price of a Bermudan swaption on a short-rate tree fitted to today's zero curve
-    (`build_short_rate_tree`): the right to enter, on the first exercise date or on any
-    fixed payment date after it, the remainder of a swap that ends on a fixed date (a
-    co-terminal swaption, "10 non-call 1" for a 1-year expiry and a 10-year tenor ends 11
-    years from now). At every exercise date the holder compares the swap's value with the
-    value of waiting. With exercise="european" only the first date counts, which matches
-    the closed form of `short_rate_model.get_swaption` on Hull-White.
+    Calculate the price of a Bermudan swaption on a short-rate tree fitted to today's zero
+    curve (`build_short_rate_tree`): what the right to enter, on the first exercise date or
+    on any fixed payment date after it, the remainder of a swap that ends on a fixed date is
+    worth (a co-terminal swaption, "10 non-call 1" for a 1-year expiry and a 10-year tenor
+    ends 11 years from now).
+
+    At every exercise date the holder compares the swap's value with the value of waiting.
+    With European exercise only the first date counts, which matches the closed form of
+    `short_rate_model.get_swaption` on Hull-White.
 
     The formula is as follows:
 
@@ -621,9 +649,14 @@ def get_bermudan_swaption(
     - Hull, J.C. (2022). "Options, Futures, and Other Derivatives." Pearson, 11th edition,
       chapter 32.
 
-    Referenced against QuantLib's `TreeSwaptionEngine` with `HullWhite` and
-    `BlackKarasinski` and FinancePy's `bermudan_swaption` of `HWTree`, `BKTree` and
-    `BDTTree`.
+    Referenced against:
+    - QuantLib, TreeSwaptionEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_tree_swaption_engine.html
+        Test: tests/fixedincome/test_trinomial_tree_model.py::test_bermudan_swaption_matches_quantlib
+
+    Shares similar logic:
+    - FinancePy, HWTree.bermudan_swaption: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/models/hw_tree.py#L1225
+    - FinancePy, BKTree.bermudan_swaption: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/models/bk_tree.py#L1102
+    - FinancePy, BDTTree.bermudan_swaption: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/models/bdt_tree.py#L787
 
     Args:
         option_expiry (float): The first exercise date T_0, the start of the swap, in years.
@@ -635,14 +668,16 @@ def get_bermudan_swaption(
             Black-Derman-Toy.
         volatility (float): The volatility σ: of the rate for Hull-White and Ho-Lee, of its
             logarithm for Black-Karasinski and Black-Derman-Toy.
-        model (str, optional): "hull_white", "black_karasinski", "black_derman_toy" or
-            "ho_lee". Defaults to "hull_white".
-        swaption_type (str, optional): "payer" (the right to pay the fixed rate) or
-            "receiver". Defaults to "payer".
+        model (str, optional): The short-rate model. Options are: "hull_white" (Hull-White),
+            "black_karasinski" (Black-Karasinski), "black_derman_toy" (Black-Derman-Toy),
+            "ho_lee" (Ho-Lee). Defaults to "hull_white".
+        swaption_type (str, optional): The swaption. Options are: "payer" (the right to pay
+            the fixed rate), "receiver" (the right to receive it). Defaults to "payer".
         fixed_frequency (int, optional): The fixed payments per year. Defaults to 1.
         notional (float, optional): The notional. Defaults to 1.
-        exercise (str, optional): "bermudan" (every fixed payment date from the expiry on)
-            or "european" (the expiry only). Defaults to "bermudan".
+        exercise (str, optional): The exercise dates. Options are: "bermudan" (every fixed
+            payment date from the expiry on), "european" (the expiry only). Defaults to
+            "bermudan".
         steps_per_year (int, optional): The most steps per year. Defaults to 50.
 
     Returns:
@@ -687,7 +722,7 @@ def swap_payment_times(
     option_expiry: float, tenor: float, fixed_frequency: int
 ) -> np.ndarray:
     """
-    The fixed payment dates in years of a swap that starts at the expiry.
+    Calculate the fixed payment dates in years of a swap that starts at the expiry.
 
     Args:
         option_expiry (float): The expiry of the swaption in years, the start of the swap.
@@ -714,18 +749,23 @@ def price_bermudan_swaption(
     exercise: str = "bermudan",
 ) -> float:
     """
-    The value per 1 of notional of a co-terminal Bermudan (or European) swaption on a
-    short-rate tree of `build_short_rate_tree` that has the expiry and every fixed payment
-    date among its dates, see `get_bermudan_swaption`. One tree can value several swaptions.
+    Calculate the value per 1 of notional of a co-terminal Bermudan (or European) swaption
+    on a short-rate tree of `build_short_rate_tree` that has the expiry and every fixed
+    payment date among its dates, see `get_bermudan_swaption`.
+
+    One tree can value several swaptions.
 
     Args:
         tree (dict): The tree of `build_short_rate_tree`.
         option_expiry (float): The first exercise date, the start of the swap, in years.
         tenor (float): The length of the swap from the expiry in years.
         fixed_rate (float): The fixed rate of the swap (decimal).
-        swaption_type (str, optional): "payer" or "receiver". Defaults to "payer".
+        swaption_type (str, optional): The swaption. Options are: "payer" (the right to pay
+            the fixed rate), "receiver" (the right to receive it). Defaults to "payer".
         fixed_frequency (int, optional): The fixed payments per year. Defaults to 1.
-        exercise (str, optional): "bermudan" or "european". Defaults to "bermudan".
+        exercise (str, optional): The exercise dates. Options are: "bermudan" (every fixed
+            payment date from the expiry on), "european" (the expiry only). Defaults to
+            "bermudan".
 
     Returns:
         float: The value per 1 of notional.
@@ -779,9 +819,12 @@ def get_bond_option(
     steps_per_year: int = 50,
 ) -> float:
     """
-    The price of an American or European option on a fixed-coupon bond, struck at a clean
-    price, on a short-rate tree fitted to today's zero curve (`build_short_rate_tree`). An
-    American option can be exercised at any date of the tree up to its expiry (today
+    Calculate the price of an American or European option on a fixed-coupon bond, struck at
+    a clean price, on a short-rate tree fitted to today's zero curve
+    (`build_short_rate_tree`): what the right to buy or sell the bond at the strike is
+    worth.
+
+    An American option can be exercised at any date of the tree up to its expiry (today
     included), a European one at its expiry only. The holder of the option does not receive
     the coupons paid before exercise.
 
@@ -806,8 +849,15 @@ def get_bond_option(
     - Hull, J.C. (2022). "Options, Futures, and Other Derivatives." Pearson, 11th edition,
       chapter 32.
 
-    Referenced against FinancePy's `bond_option` of `HWTree`, `BKTree` and `BDTTree`, and
-    for European options against Jamshidian's (1989) closed form on Hull-White.
+    European options agree with Jamshidian's (1989) closed form on Hull-White.
+
+    Referenced against:
+    - FinancePy, HWTree.bond_option: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/models/hw_tree.py#L1273
+        Test: tests/fixedincome/test_trinomial_tree_model.py::test_bond_option_matches_financepy
+
+    Shares similar logic:
+    - FinancePy, BKTree.bond_option: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/models/bk_tree.py#L1042
+    - FinancePy, BDTTree.bond_option: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/models/bdt_tree.py#L743
 
     Args:
         option_expiry (float): The expiry of the option in years.
@@ -821,10 +871,13 @@ def get_bond_option(
             Black-Derman-Toy.
         volatility (float): The volatility σ: of the rate for Hull-White and Ho-Lee, of its
             logarithm for Black-Karasinski and Black-Derman-Toy.
-        model (str, optional): "hull_white", "black_karasinski", "black_derman_toy" or
-            "ho_lee". Defaults to "hull_white".
-        option_type (str, optional): "call" or "put". Defaults to "call".
-        exercise (str, optional): "american" or "european". Defaults to "american".
+        model (str, optional): The short-rate model. Options are: "hull_white" (Hull-White),
+            "black_karasinski" (Black-Karasinski), "black_derman_toy" (Black-Derman-Toy),
+            "ho_lee" (Ho-Lee). Defaults to "hull_white".
+        option_type (str, optional): The option. Options are: "call" (the right to buy the
+            bond), "put" (the right to sell it). Defaults to "call".
+        exercise (str, optional): The exercise. Options are: "american" (any date up to the
+            expiry), "european" (the expiry only). Defaults to "american".
         frequency (int, optional): The coupons per year. Defaults to 2.
         face_value (float, optional): The face value. Defaults to 100.
         steps_per_year (int, optional): The most steps per year. Defaults to 50.

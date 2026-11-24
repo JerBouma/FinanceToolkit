@@ -22,14 +22,15 @@ def get_evar_gaussian(
     returns: pd.Series | pd.DataFrame, alpha: float, window_size: int | None = None
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the Entropic Value at Risk (EVaR) of returns based on the gaussian distribution.
+    Calculate the gaussian Entropic Value at Risk (EVaR) of returns: the tightest bound on the
+    tail loss that the moment generating function of a normal distribution guarantees.
 
     The EVaR is the tightest upper bound on the loss that follows from the Chernoff
     inequality; for gaussian returns it has the closed form:
 
     - EVaR = mean - std * SQRT(-2 * ln(alpha))
 
-    Where `std` is the sample standard deviation (ddof=1). It bounds the gaussian VaR and
+    Where `std` is the sample standard deviation (with n - 1 in the denominator). It bounds the gaussian VaR and
     CVaR at the same `alpha`.
 
     For more information see:
@@ -81,7 +82,8 @@ def get_evar_gaussian(
 def get_evar_samples(samples: np.ndarray, alpha: float) -> np.ndarray:
     """
     Calculate the historical Entropic Value at Risk (EVaR) of every row of an array of
-    returns without missing values, the bound that `get_evar_historic` reports.
+    returns without missing values: the tightest entropic bound on their tail loss, as
+    `get_evar_historic` reports it.
 
     The EVaR of the losses L = -Return is the smallest entropic bound over the risk
     aversion z > 0 (Ahmadi-Javid 2012):
@@ -91,8 +93,14 @@ def get_evar_samples(samples: np.ndarray, alpha: float) -> np.ndarray:
     The losses of each row are scaled to [-1, 0] (EVaR is translation equivariant and
     positively homogeneous), so the exponentials cannot overflow, and with t = 1 / z the
     minimum is where the derivative of (ln(Σ exp(t * y)) - ln(n * alpha)) / t changes sign,
-    which brentq finds on log t, as skfolio does. When the largest loss holds a share of the
-    sample of at least alpha the infimum is that largest loss (z goes to 0).
+    which brentq finds on log t. When the largest loss holds a share of the sample of at
+    least alpha the infimum is that largest loss (z goes to 0).
+
+    Referenced against:
+    - skfolio, evar: https://skfolio.org/generated/skfolio.measures.evar.html
+        Test: tests/risk/test_evar_model.py::test_get_evar_historic_reference_values
+    - Riskfolio-Lib, EVaR_Hist: https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/risk.html#RiskFunctions.EVaR_Hist
+        Test: tests/risk/test_evar_model.py::test_get_evar_historic_reference_values
 
     Args:
         samples (np.ndarray): The returns, one sample per row.
@@ -142,9 +150,11 @@ def get_evar_historic(
     returns: pd.Series | pd.DataFrame, alpha: float, window_size: int | None = None
 ) -> pd.Series | pd.DataFrame | float:
     """
-    Calculate the historical Entropic Value at Risk (EVaR) of returns, the tightest bound on
-    the losses that follows from the Chernoff inequality, using the empirical moment
-    generating function of the returns rather than a distribution:
+    Calculate the historical Entropic Value at Risk (EVaR) of returns: the tightest bound on
+    the tail loss that the observed returns guarantee, more severe than the CVaR.
+
+    The bound follows from the Chernoff inequality, using the empirical moment generating
+    function of the returns rather than a distribution:
 
     - EVaR = -inf over z > 0 of z * ln(mean(exp(-Return / z)) / alpha)
 
@@ -154,8 +164,12 @@ def get_evar_historic(
 
     - Ahmadi-Javid, A. (2012). "Entropic Value-at-Risk: A New Coherent Risk Measure."
     Journal of Optimization Theory and Applications, 155(3), 1105-1123.
-    - Riskfolio-Lib: RiskFunctions.EVaR_Hist (https://github.com/dcajasn/Riskfolio-Lib).
-    - skfolio: measures.evar (https://skfolio.org/api.html#module-skfolio.measures).
+
+    Referenced against:
+    - skfolio, evar: https://skfolio.org/generated/skfolio.measures.evar.html
+        Test: tests/risk/test_evar_model.py::test_get_evar_historic_reference_values
+    - Riskfolio-Lib, EVaR_Hist: https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/risk.html#RiskFunctions.EVaR_Hist
+        Test: tests/risk/test_evar_model.py::test_get_evar_historic_reference_values
 
     Args:
         returns (pd.Series | pd.DataFrame): A Series or DataFrame of returns, optionally with
@@ -180,8 +194,11 @@ def get_entropic_risk_measure(
     window_size: int | None = None,
 ) -> pd.Series | pd.DataFrame | float:
     """
-    Calculate the Entropic Risk Measure (ERM) of returns at a given risk aversion z, the
-    entropic bound on the losses that the Entropic Value at Risk minimizes over z:
+    Calculate the Entropic Risk Measure (ERM) of returns at a given risk aversion z: the
+    entropic bound on the tail loss for that risk aversion, which the Entropic Value at Risk
+    minimizes over z.
+
+    The formula is as follows:
 
     - ERM = -z * ln(mean(exp(-Return / z)) / alpha)
 
@@ -192,8 +209,12 @@ def get_entropic_risk_measure(
 
     - Ahmadi-Javid, A. (2012). "Entropic Value-at-Risk: A New Coherent Risk Measure."
     Journal of Optimization Theory and Applications, 155(3), 1105-1123.
-    - Riskfolio-Lib: RiskFunctions.Entropic_RM (https://github.com/dcajasn/Riskfolio-Lib).
-    - skfolio: measures.entropic_risk_measure (https://skfolio.org/api.html#module-skfolio.measures).
+
+    Referenced against:
+    - skfolio, entropic_risk_measure: https://skfolio.org/generated/skfolio.measures.entropic_risk_measure.html
+        Test: tests/risk/test_evar_model.py::test_get_entropic_risk_measure_reference_values
+    - Riskfolio-Lib, Entropic_RM: https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/risk.html#RiskFunctions.Entropic_RM
+        Test: tests/risk/test_evar_model.py::test_get_entropic_risk_measure_reference_values
 
     Args:
         returns (pd.Series | pd.DataFrame): A Series or DataFrame of returns, optionally with

@@ -35,9 +35,10 @@ def get_sabr_volatility(
     method: Literal["hagan", "obloj"] = "hagan",
 ) -> float | np.ndarray:
     """
-    Calculate the Black (lognormal) implied volatility of the SABR model with the asymptotic
-    expansion of Hagan, Kumar, Lesniewski and Woodward (2002), or with the leading term
-    corrected by Obłój (2008).
+    Calculate the Black (lognormal) implied volatility of the SABR model: the volatility
+    smile across strikes when the forward and its volatility follow correlated processes,
+    with the asymptotic expansion of Hagan, Kumar, Lesniewski and Woodward (2002) or with
+    the leading term corrected by Obłój (2008).
 
     The SABR model lets the forward price F follow dF = a * F^beta * dW with a stochastic
     volatility da = nu * a * dZ, where the two Brownian motions have correlation rho and a
@@ -46,7 +47,7 @@ def get_sabr_volatility(
     sets the backbone (how the at-the-money volatility moves with the forward), rho the skew
     and nu the curvature of the wings.
 
-    The formula is as follows (method="hagan"):
+    The formula for the expansion of Hagan et al. is as follows:
 
     - σ(K) = α / ((F * K)^((1 - β) / 2) * D) * (z / x(z)) * (1 + I * T)
     - D = 1 + (1 - β)² / 24 * ln²(F / K) + (1 - β)⁴ / 1920 * ln⁴(F / K)
@@ -54,7 +55,7 @@ def get_sabr_volatility(
     - x(z) = ln((sqrt(1 - 2 * ρ * z + z²) + z - ρ) / (1 - ρ))
     - I = (1 - β)² / 24 * α² / (F * K)^(1 - β) + ρ * β * ν * α / (4 * (F * K)^((1 - β) / 2)) + (2 - 3 * ρ²) / 24 * ν²
 
-    With Obłój's correction (method="obloj") the leading term is replaced by:
+    With Obłój's correction the leading term is replaced by:
 
     - σ(K) = ν * ln(F / K) / x(z) * (1 + I * T)
     - z = ν / α * (F^(1 - β) - K^(1 - β)) / (1 - β), or ν / α * ln(F / K) when β = 1
@@ -75,9 +76,15 @@ def get_sabr_volatility(
     smile risk", Wilmott Magazine, 84-108, and Obłój, J. (2008), "Fine-tune your smile:
     Correction to Hagan et al.", Wilmott Magazine.
 
-    Referenced against QuantLib's sabrVolatility and shiftedSabrVolatility
-    (https://www.quantlib.org), FinancePy's SABR (https://github.com/domokane/FinancePy) and
-    rateslib's sabr (https://rateslib.com).
+    Referenced against:
+    - QuantLib, sabrVolatility: https://github.com/lballabio/QuantLib/blob/v1.44/ql/termstructures/volatility/sabr.cpp#L163
+        Test: tests/options/test_smile_models.py::test_sabr_volatility_matches_quantlib
+    - QuantLib, shiftedSabrVolatility: https://github.com/lballabio/QuantLib/blob/v1.44/ql/termstructures/volatility/sabr.cpp#L182
+        Test: tests/options/test_smile_models.py::test_sabr_volatility_matches_quantlib
+
+    Shares similar logic:
+    - FinancePy, SABR: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/models/sabr.py#L157
+    - rateslib, IRSabrSmile: https://rateslib.com/py/en/2.7.x/api/rateslib.volatility.IRSabrSmile.html
 
     Args:
         strike_price (float | np.ndarray): The strike price(s) K.
@@ -89,8 +96,8 @@ def get_sabr_volatility(
         nu (float): The volatility of the volatility ν. Must be >= 0.
         shift (float, optional): The shift s added to the forward and the strikes. Defaults
             to 0.0, the unshifted model.
-        method (str, optional): "hagan" for the expansion of Hagan et al. (2002) or "obloj"
-            for Obłój's (2008) leading term. Defaults to "hagan".
+        method (str, optional): The approximation. Options are: "hagan" (the expansion of Hagan et al., 2002),
+            "obloj" (Obłój's, 2008, leading term). Defaults to "hagan".
 
     Returns:
         float | np.ndarray: The Black implied volatility at each strike (of the shifted
@@ -158,7 +165,8 @@ def get_sabr_alpha(
     shift: float = 0.0,
 ) -> float:
     """
-    Calculate the SABR α that reproduces a given at-the-money Black volatility, as the
+    Calculate the SABR α that reproduces a given at-the-money Black volatility: the initial
+    volatility at which the SABR smile passes through the market's at-the-money point, the
     smallest positive root of the cubic in α that the at-the-money SABR volatility gives
     (West 2005).
 
@@ -176,8 +184,8 @@ def get_sabr_alpha(
     See: West, G. (2005), "Calibration of the SABR model in illiquid markets", Applied
     Mathematical Finance, 12(4), 371-385.
 
-    Referenced against FinancePy's SABR.set_alpha_from_atm_black_vol
-    (https://github.com/domokane/FinancePy).
+    Shares similar logic:
+    - FinancePy, SABR.set_alpha_from_atm_black_vol: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/models/sabr.py#L283
 
     Args:
         at_the_money_volatility (float): The Black volatility at the forward.
@@ -232,9 +240,10 @@ def get_sabr_parameters(
     method: Literal["hagan", "obloj"] = "hagan",
 ) -> dict[str, float]:
     """
-    Calibrate the SABR parameters (alpha, rho, nu) of a single expiry ("slice") to the market
-    implied volatilities with beta fixed, by minimizing the sum of squared differences between
-    the SABR volatility (see `get_sabr_volatility`) and the market volatility at each strike.
+    Calibrate the SABR parameters (alpha, rho, nu) of a single expiry ("slice") to the
+    market implied volatilities with beta fixed: the SABR smile closest to the market's, by
+    minimizing the sum of squared differences between the SABR volatility (see
+    `get_sabr_volatility`) and the market volatility at each strike.
 
     The at-the-money volatility is the market volatility at the forward, interpolated linearly
     in the strike between the two quotes around it, and α follows from it, ρ and ν through the
@@ -249,7 +258,8 @@ def get_sabr_parameters(
     smile risk", Wilmott Magazine, and West, G. (2005), "Calibration of the SABR model in
     illiquid markets", Applied Mathematical Finance, 12(4).
 
-    Referenced against QuantLib's SABRInterpolation (https://www.quantlib.org).
+    Shares similar logic:
+    - QuantLib, SABRInterpolation: https://www.quantlib.org/reference/class_quant_lib_1_1_s_a_b_r_interpolation.html
 
     Args:
         strike_prices (np.ndarray): The strike price of each quote.
@@ -259,8 +269,9 @@ def get_sabr_parameters(
         beta (float, optional): The elasticity β, between 0 and 1. Defaults to 1.0.
         shift (float, optional): The shift s added to the forward and the strikes. Defaults
             to 0.0.
-        method (str, optional): "hagan" or "obloj", see `get_sabr_volatility`. Defaults to
-            "hagan".
+        method (str, optional): The approximation, see `get_sabr_volatility`. Options are:
+            "hagan" (the expansion of Hagan et al., 2002), "obloj" (Obłój's, 2008, leading
+            term). Defaults to "hagan".
 
     Raises:
         ValueError: If fewer than 4 quotes are given, the forward lies outside the quoted

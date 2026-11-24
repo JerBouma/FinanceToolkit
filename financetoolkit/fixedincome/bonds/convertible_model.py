@@ -36,14 +36,17 @@ def get_convertible_bond_value(
     steps: int = 500,
 ) -> pd.Series:
     """
-    The value of a convertible bond with credit risk on a trinomial tree of the log stock price
-    (Kamrad and Ritchken, 1991), with the Tsiveriotis-Fernandes split into an equity and a debt
-    component.
-    The holder can convert into `conversion_ratio` shares at any time, the issuer can call the
-    bond from `call_start` (the holder then converts or takes the call price) and the holder
-    can put it back on the put dates. Cash the issuer owes carries its credit risk, shares
-    don't, so the two components are discounted at different rates and the value lies between
-    the straight bond (the bond floor) and the conversion value plus the option to wait.
+    Calculate the value of a convertible bond with credit risk: what the bond with its
+    option to convert into shares is worth, on a trinomial tree of the log stock price
+    (Kamrad and Ritchken, 1991), with the Tsiveriotis-Fernandes split into an equity and a
+    debt component.
+
+    The holder can convert into `conversion_ratio` shares at any time, the issuer can call
+    the bond from `call_start` (the holder then converts or takes the call price) and the
+    holder can put it back on the put dates. Cash the issuer owes carries its credit risk,
+    shares don't, so the two components are discounted at different rates and the value lies
+    between the straight bond (the bond floor) and the conversion value plus the option to
+    wait.
 
     The formula is as follows:
 
@@ -85,16 +88,24 @@ def get_convertible_bond_value(
     "Multinomial approximating models for options with k state variables", Management Science
     37(12), 1640-1652, Ritchken (1995), "On pricing barrier options", The Journal of
     Derivatives 3(2), 19-28, and Hull (2022), Options, Futures, and Other Derivatives, 11th
-    edition, chapter 26. Referenced against QuantLib's ConvertibleFixedCouponBond and
-    ConvertibleZeroCouponBond with the BinomialCRRConvertibleEngine
-    (https://www.quantlib.org) without a credit spread and without a call, where both trees
-    value the same split, within 0.01 per 100. QuantLib calls on its call dates only (daily
-    in the cases checked), this tree on every step; a binomial tree called on every step
-    approaches this tree's value as its steps grow (104.71 at 24,000 steps against 104.71 at
-    500). With a spread QuantLib's engine applies it in another way and its values differ by
-    about 1% in the cases checked. With a spread the split is checked against
-    its closed form for a zero-coupon convertible held to maturity,
-    κ * S * N(d1) + Par Value * exp(-(r + cs) * T) * N(-d2) with the strike Par Value / κ.
+    edition, chapter 26.
+
+    QuantLib's engine and this tree agree without a credit spread and without a call, where
+    both trees value the same split, within 0.01 per 100. QuantLib calls on its call dates
+    only (daily in the cases checked), this tree on every step; a binomial tree called on
+    every step approaches this tree's value as its steps grow (104.71 at 24,000 steps
+    against 104.71 at 500). With a spread QuantLib's engine applies it in another way and
+    its values differ by about 1% in the cases checked. With a spread the split is checked
+    against its closed form for a zero-coupon convertible held to maturity, κ * S * N(d1) +
+    Par Value * exp(-(r + cs) * T) * N(-d2) with the strike Par Value / κ.
+
+    Referenced against:
+    - QuantLib, ConvertibleFixedCouponBond: https://www.quantlib.org/reference/class_quant_lib_1_1_convertible_fixed_coupon_bond.html
+        Test: tests/fixedincome/test_convertible_model.py::test_convertible_matches_quantlib_without_a_credit_spread
+    - QuantLib, ConvertibleZeroCouponBond: https://www.quantlib.org/reference/class_quant_lib_1_1_convertible_zero_coupon_bond.html
+        Test: tests/fixedincome/test_convertible_model.py::test_convertible_matches_quantlib_without_a_credit_spread
+    - QuantLib, BinomialConvertibleEngine (CRR): https://www.quantlib.org/reference/class_quant_lib_1_1_binomial_convertible_engine.html
+        Test: tests/fixedincome/test_convertible_model.py::test_convertible_matches_quantlib_without_a_credit_spread
 
     Args:
         stock_price (float): The price of the stock today.

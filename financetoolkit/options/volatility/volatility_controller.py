@@ -109,8 +109,8 @@ class VolatilityOptions:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the Implied Volatility (IV) based on the Black Scholes Model and the actual option prices for
-        any of the available expiration dates.
+        Calculate the Implied Volatility (IV): the volatility at which the Black Scholes Model (or the American
+        price) reproduces the actual option prices, for any of the available expiration dates.
 
         Implied Volatility (IV) is a measure of how much the market expects the price of the underlying asset to
         fluctuate in the future. It is a key component of options pricing and can also be used to calculate the
@@ -149,8 +149,8 @@ class VolatilityOptions:
         found with Brent's method on [0.001, 5]. The European volatility attributes the value of exercising early to
         a higher volatility, so in-the-money puts and calls on stocks with a high dividend yield show a lower American
         implied volatility; for out-of-the-money options the two hardly differ. Index options such as those on the
-        S&P 500 (^SPX) are European. Referenced against QuantLib's QdPlusAmericanEngine (https://www.quantlib.org),
-        whose prices it inverts to the volatility they were priced at.
+        S&P 500 (^SPX) are European. The prices of QuantLib's QdPlusAmericanEngine invert to the volatility they
+        were priced at.
 
         Mid prices and the underlying price quoted with the chain describe the same moment, unlike last traded
         prices, which can be hours or days old for illiquid strikes. Deep in-the-money and far out-of-the-money
@@ -165,6 +165,10 @@ class VolatilityOptions:
         end_date in the past), a warning is logged.
 
         Also known as: IV, option-implied volatility.
+
+        Referenced against:
+        - QuantLib, QdPlusAmericanEngine (American): https://www.quantlib.org/reference/class_quant_lib_1_1_qd_plus_american_engine.html
+            Test: tests/options/test_american_model.py::test_the_american_implied_volatility_reprices_the_option
 
         Args:
             expiration_date (str | None, optional): The expiration date to use for the calculation. Defaults to None,
@@ -701,8 +705,8 @@ class VolatilityOptions:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calibrate an implied volatility surface across multiple expiries by fitting a smile
-        model to the market-implied smile (see `get_implied_volatility`) at each expiry: a
+        Calibrate an implied volatility surface across multiple expiries: the smooth smile
+        of each expiry that fits the market-implied smile (see `get_implied_volatility`), a
         raw SVI curve (Gatheral 2004) per expiry, an SSVI surface (Gatheral and Jacquier
         2014) across all expiries at once, or a SABR smile (Hagan et al. 2002) per expiry.
 
@@ -725,16 +729,16 @@ class VolatilityOptions:
         terms of Hagan et al. (see `sabr_model.get_sabr_volatility`). The implied volatility
         is sqrt(w(k) / t) for SVI and SSVI.
 
-        - SVI (method="svi") fits five parameters per expiry and follows each smile closely,
+        - SVI fits five parameters per expiry and follows each smile closely,
           but a slice can carry butterfly arbitrage and two slices can cross. The fit keeps
           the total variance non-negative through Gatheral's condition
           a + b * sigma * sqrt(1 - rho^2) >= 0.
-        - SSVI (method="ssvi") takes θ_t from each expiry's at-the-money total variance and
+        - SSVI takes θ_t from each expiry's at-the-money total variance and
           fits three parameters, ρ, η and γ, to all expiries together with
           η * (1 + |ρ|) <= 2 and 0 < γ <= 1/2, which keeps every slice free of butterfly
           arbitrage and the surface free of calendar-spread arbitrage when θ_t rises with
           the expiry. It follows each smile less closely than SVI.
-        - SABR (method="sabr") fits ρ and ν per expiry with β fixed (sabr_beta) and α set by
+        - SABR fits ρ and ν per expiry with β fixed and α set by
           the at-the-money volatility (West 2005), the smile model of the rates market and
           a common alternative for equities.
 
@@ -758,10 +762,6 @@ class VolatilityOptions:
         Woodward, D. E. (2002), "Managing smile risk", Wilmott Magazine; West, G. (2005),
         "Calibration of the SABR model in illiquid markets", Applied Mathematical Finance.
 
-        SABR is referenced against QuantLib's sabrVolatility (https://www.quantlib.org),
-        FinancePy's SABR (https://github.com/domokane/FinancePy) and rateslib's sabr
-        (https://rateslib.com); SSVI against FinancePy's volatility_fns.
-
         Also known as: SVI surface, SSVI surface, SABR smile, implied volatility surface.
 
         Notes:
@@ -771,6 +771,18 @@ class VolatilityOptions:
             slice (see `svi_model.check_butterfly_arbitrage`). These reflect inconsistent
             market quotes or a slice SVI cannot fit without arbitrage, and are only checked,
             not corrected; SSVI avoids the butterfly arbitrage by construction.
+
+        Referenced against:
+        - QuantLib, sabrVolatility (SABR): https://github.com/lballabio/QuantLib/blob/v1.44/ql/termstructures/volatility/sabr.cpp#L163
+            Test: tests/options/test_smile_models.py::test_sabr_volatility_matches_quantlib
+        - FinancePy, volatility_fns.g (butterfly arbitrage): https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/models/volatility_fns.py#L247
+            Test: tests/options/test_smile_models.py::test_butterfly_function_matches_financepy
+
+        Shares similar logic:
+        - QuantLib, SABRInterpolation (SABR): https://www.quantlib.org/reference/class_quant_lib_1_1_s_a_b_r_interpolation.html
+        - FinancePy, SABR (SABR): https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/models/sabr.py#L157
+        - rateslib, IRSabrSmile (SABR): https://rateslib.com/py/en/2.7.x/api/rateslib.volatility.IRSabrSmile.html
+        - FinancePy, volatility_fns.ssvi (SSVI): https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/models/volatility_fns.py#L148
 
         Args:
             expiration_dates (list[str] | None, optional): The expiration dates to
@@ -795,10 +807,10 @@ class VolatilityOptions:
                 deviations from the median implied volatility beyond which a quote
                 is treated as an outlier and dropped before fitting. Defaults to
                 5.0.
-            method (str, optional): The smile model: "svi" (raw SVI per expiry), "ssvi"
-                (SSVI across the expiries) or "sabr" (SABR per expiry). Defaults to "svi".
+            method (str, optional): The smile model. Options are: "svi" (raw SVI per expiry), "ssvi"
+                (SSVI across the expiries), "sabr" (SABR per expiry). Defaults to "svi".
             sabr_beta (float, optional): The SABR elasticity β between 0 and 1, only used
-                with method="sabr": 1 is a lognormal backbone, the usual choice for equities.
+                for the SABR method: 1 is a lognormal backbone, the usual choice for equities.
                 Defaults to 1.0.
             show_parameters (bool, optional): Whether to return the fitted parameters per
                 ticker and expiration date instead of the surface. Defaults to False.
@@ -975,8 +987,9 @@ class VolatilityOptions:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the Dupire (1994) local volatility surface from the SVI or SSVI implied
-        volatility surface fitted to the option chains (see `get_volatility_surface`).
+        Calculate the Dupire (1994) local volatility surface: the volatility of the stock at
+        each price and time that reproduces the SVI or SSVI implied volatility surface
+        fitted to the option chains (see `get_volatility_surface`).
 
         The local volatility σ_loc(K, T) is the volatility, as a function of the price of
         the underlying and the time, of the only diffusion dS / S = (r - q) dt + σ_loc(S, t) dW
@@ -999,7 +1012,7 @@ class VolatilityOptions:
         spacing at the inner expiries, one-sided at the first and the last), so the surface
         needs at least two expiries. The local volatility exists where g(k) > 0 (no butterfly
         arbitrage) and ∂w/∂T >= 0 (no calendar-spread arbitrage) and is NaN elsewhere, which
-        SSVI (method="ssvi") avoids by construction where the at-the-money variance rises with
+        SSVI avoids by construction where the at-the-money variance rises with
         the expiry.
 
         The strikes are an evenly spaced grid around the price of the underlying quoted with
@@ -1012,8 +1025,11 @@ class VolatilityOptions:
         Jacquier, A. (2014), "Arbitrage-free SVI volatility surfaces", Quantitative Finance,
         14(1), 59-71.
 
-        Referenced against QuantLib's LocalVolSurface (https://www.quantlib.org) and
-        FinancePy's volatility_fns.ssvi_local_varg (https://github.com/domokane/FinancePy).
+        Referenced against:
+        - QuantLib, LocalVolSurface: https://www.quantlib.org/reference/class_quant_lib_1_1_local_vol_surface.html
+            Test: tests/options/test_smile_models.py::test_local_volatility_matches_quantlib_and_financepy
+        - FinancePy, volatility_fns.ssvi_local_varg: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/models/volatility_fns.py#L318
+            Test: tests/options/test_smile_models.py::test_local_volatility_matches_quantlib_and_financepy
 
         Also known as: Dupire local volatility, local vol surface.
 
@@ -1037,8 +1053,8 @@ class VolatilityOptions:
             outlier_threshold (float, optional): The number of median absolute deviations
                 from the median implied volatility beyond which a quote is treated as an
                 outlier and dropped before fitting. Defaults to 5.0.
-            method (str, optional): The implied volatility surface to start from: "svi" (raw
-                SVI per expiry) or "ssvi" (SSVI across the expiries). Defaults to "svi".
+            method (str, optional): The implied volatility surface to start from. Options are: "svi"
+                (raw SVI per expiry), "ssvi" (SSVI across the expiries). Defaults to "svi".
             strike_price_range (float, optional): The range of strikes, as a fraction of the
                 price of the underlying in each direction. Defaults to 0.25, from 75% to 125%.
             number_of_strikes (int, optional): The number of strikes in the grid. Defaults to
@@ -1167,11 +1183,11 @@ class VolatilityOptions:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Extract the market-implied risk-neutral probability density of the
-        underlying's price at expiration, via the Breeden-Litzenberger (1978)
-        theorem, applied to a volatility smile calibrated to real market option
-        prices (see `get_implied_volatility`) rather than a single flat assumed
-        volatility.
+        Calculate the market-implied risk-neutral probability density of the underlying's
+        price at expiration: how likely the market prices each price at expiration, via the
+        Breeden-Litzenberger (1978) theorem, applied to a volatility smile calibrated to
+        real market option prices (see `get_implied_volatility`) rather than a single flat
+        assumed volatility.
 
         `get_partial_derivative` computes the same second-derivative relationship
         but with one flat volatility value applied at every strike -- with a flat
@@ -1453,9 +1469,10 @@ class VolatilityOptions:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calibrate the Heston (1993) stochastic volatility model to each ticker's option chain:
-        one set of parameters per ticker that reproduces the market's implied volatility across
-        the term structure, from about a month to a year and a half, at once.
+        Calibrate the Heston (1993) stochastic volatility model to each ticker's option
+        chain: the one set of parameters per ticker that reproduces the market's implied
+        volatility across the term structure, from about a month to a year and a half, at
+        once.
 
         In the Heston model the variance of the stock follows a mean-reverting square-root
         process correlated with the stock, dS = (r - q)S dt + √v S dW_1 and
@@ -1508,8 +1525,7 @@ class VolatilityOptions:
         327-343; Albrecher, H., Mayer, P., Schoutens, W. and Tistaert, J. (2007), "The Little
         Heston Trap", Wilmott Magazine; Fang, F. and Oosterlee, C. W. (2008), "A Novel Pricing
         Method for European Options Based on Fourier-Cosine Series Expansions", SIAM Journal on
-        Scientific Computing, 31(2), 826-848. Referenced against QuantLib's AnalyticHestonEngine,
-        COSHestonEngine and HestonModelHelper calibration (https://www.quantlib.org).
+        Scientific Computing, 31(2), 826-848.
 
         Also known as: Heston calibration, stochastic volatility calibration, Heston model fit.
 
@@ -1532,6 +1548,16 @@ class VolatilityOptions:
             better determined than κ and σ separately. Listed options on single stocks are American; the fit treats
             their implied volatility as European, as `get_volatility_surface` does. The Heston
             prices themselves are available as `heston_model.get_heston_price`.
+
+        Referenced against:
+        - QuantLib, HestonModelHelper: https://www.quantlib.org/reference/class_quant_lib_1_1_heston_model_helper.html
+            Test:
+                tests/options/test_stochastic_volatility_models.py::test_the_heston_calibration_recovers_the_parameters_of_a_heston_surface
+        - QuantLib, AnalyticHestonEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_analytic_heston_engine.html
+            Test: tests/options/test_stochastic_volatility_models.py::test_heston_matches_quantlib
+
+        Shares similar logic:
+        - QuantLib, COSHestonEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_c_o_s_heston_engine.html
 
         Args:
             expiration_dates (list[str] | None, optional): The expiration dates to fit over, used
@@ -1767,8 +1793,10 @@ class VolatilityOptions:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate European option prices in the GARCH model of Heston and Nandi (2000), with the
-        GARCH parameters fitted on each ticker's own daily returns.
+        Calculate European option prices in the GARCH model of Heston and Nandi (2000): what
+        calls and puts on each ticker are worth when its variance follows a GARCH process
+        with a leverage effect, with the GARCH parameters fitted on each ticker's own daily
+        returns.
 
         Where the Black-Scholes model takes one volatility for the whole life of the option, the
         Heston-Nandi model lets the daily variance follow a GARCH(1, 1) process with a leverage
@@ -1805,7 +1833,7 @@ class VolatilityOptions:
         1e-10 here and prices all strikes of an expiration at once.
 
         See: Heston, S. L. and Nandi, S. (2000), "A Closed-Form GARCH Option Valuation Model",
-        The Review of Financial Studies, 13(3), 585-625. Referenced against a Monte Carlo
+        The Review of Financial Studies, 13(3), 585-625. Checked against a Monte Carlo
         simulation of the risk-neutral process and the Black-Scholes price at α = β = 0.
 
         Also known as: Heston-Nandi model, GARCH option pricing, HN-GARCH.

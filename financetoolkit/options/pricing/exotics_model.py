@@ -120,8 +120,9 @@ def get_barrier_option(
     rebate: float | np.ndarray = 0.0,
 ) -> float | np.ndarray:
     """
-    Calculate the closed-form price of a single-barrier (knock-in or knock-out, up or
-    down) European option using the Reiner & Rubinstein (1991) formulas.
+    Calculate the closed-form price of a single-barrier European option: what an option is worth
+    that knocks in or out when the stock price touches a barrier below (down) or above (up) it,
+    with the formulas of Reiner & Rubinstein (1991).
 
     Also known as: knock-in option, knock-out option, down-and-out, down-and-in,
     up-and-out, up-and-in option.
@@ -145,12 +146,15 @@ def get_barrier_option(
     - down-and-in + down-and-out = vanilla option
     - up-and-in + up-and-out = vanilla option
 
-    This holds only when ``rebate`` is zero. A rebate is an extra cash payment attached
+    This holds only when the rebate is zero. A rebate is an extra cash payment attached
     to whichever leg does not survive, so it is added to both legs rather than split
     between them and the sum then exceeds the vanilla price.
 
     The numeric inputs may be arrays, which price a grid of strikes and expirations in one
     call with the same values as one call per combination.
+
+    Shares similar logic:
+    - QuantLib, AnalyticBarrierEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_analytic_barrier_engine.html
 
     Args:
         stock_price (float | np.ndarray): The current stock price.
@@ -163,8 +167,10 @@ def get_barrier_option(
         time_to_expiration (float | np.ndarray): The time to expiration of the option.
         dividend_yield (float | np.ndarray): The dividend yield of the stock. Defaults to 0.
         put_option (bool): Whether the option is a put option or not.
-        barrier_direction (str): Either "down" or "up". Defaults to "down".
-        knock_type (str): Either "in" or "out". Defaults to "out".
+        barrier_direction (str): The side of the barrier. Options are: "down" (below the
+            stock price), "up" (above the stock price). Defaults to "down".
+        knock_type (str): The knock. Options are: "in" (knock-in), "out" (knock-out).
+            Defaults to "out".
         rebate (float | np.ndarray): The fixed cash amount paid out (a) immediately for a knock-out
             option if/when the barrier is breached, or (b) at expiration for a knock-in
             option that never breaches the barrier. Defaults to 0.
@@ -314,8 +320,9 @@ def get_asian_option(
     put_option: bool = False,
 ) -> float | np.ndarray:
     """
-    Calculate the closed-form price of a geometric-average Asian option using the
-    Kemna & Vorst (1990) formula.
+    Calculate the closed-form price of a geometric-average Asian option: what an option on the
+    continuously sampled geometric average of the stock price is worth, with the Kemna & Vorst
+    (1990) formula.
 
     Also known as: geometric Asian option, average rate option, average price option.
 
@@ -325,7 +332,7 @@ def get_asian_option(
     variance). The package prices the continuously sampled geometric-average Asian
     option only. The arithmetic-average Asian option has no closed-form solution and
     needs a path simulation that averages the price along each path, which
-    `options_model.get_monte_carlo_option_price` does not do: it prices European
+    options_model.get_monte_carlo_option_price does not do: it prices European
     options from the terminal price. The geometric-average version has an elegant
     closed form instead and, since the geometric mean never exceeds the arithmetic mean,
     is a lower bound for the arithmetic-average call and an upper bound for the
@@ -345,6 +352,9 @@ def get_asian_option(
     the dividend yield, σ is the volatility, t is the time to expiration, N(d1) is the
     cumulative normal distribution of d1 and N(d2) is the cumulative normal
     distribution of d2.
+
+    Shares similar logic:
+    - QuantLib, AnalyticContinuousGeometricAveragePriceAsianEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_analytic_continuous_geometric_average_price_asian_engine.html
 
     Args:
         stock_price (float): The current stock price.

@@ -23,10 +23,13 @@ def get_delta_hedging_profit_and_loss(
     dividends: np.ndarray | None = None,
 ) -> pd.DataFrame:
     """
-    The profit and loss of selling a European option at its Black-Scholes value and delta
-    hedging it until expiration, on one or more price paths (Hull, 2022, chapter 19). The
-    seller receives the option value, buys the delta in shares, keeps the rest in cash at the
-    risk free rate and rebalances to the new delta every `rebalancing_interval` observations:
+    Calculate the profit and loss of selling a European option at its Black-Scholes value
+    and delta hedging it until expiration: how much the hedged seller gains or loses on one
+    or more price paths (Hull, 2022, chapter 19).
+
+    The seller receives the option value, buys the delta in shares, keeps the rest in cash
+    at the risk free rate and rebalances to the new delta every `rebalancing_interval`
+    observations:
 
         - V_0 = Black-Scholes value at the volatility σ
         - Δ_i = Black-Scholes delta at t_i, with the hedging volatility (σ unless given)
@@ -179,10 +182,12 @@ def get_delta_hedging_simulation(
     seed: int | None = 0,
 ) -> pd.DataFrame:
     """
-    The distribution of the hedging error of a delta-hedged option, by simulating the stock
-    as a Geometric Brownian Motion and hedging each path with
-    get_delta_hedging_profit_and_loss. The option is sold at the implied volatility and
-    hedged with its delta, while the stock moves with the volatility given:
+    Calculate the distribution of the hedging error of a delta-hedged option: how much
+    selling and delta hedging the option gains or loses across simulated Geometric Brownian
+    Motion paths of the stock, each hedged with get_delta_hedging_profit_and_loss.
+
+    The option is sold at the implied volatility and hedged with its delta, while the stock
+    moves with the volatility given:
 
         - S(t + Δt) = S(t) e^((μ - q - σ² / 2) Δt + σ sqrt(Δt) Z), Z ~ N(0, 1)
 
@@ -191,6 +196,10 @@ def get_delta_hedging_simulation(
     volatility and no costs, the mean of the profit and loss is near zero and its standard
     deviation follows get_hedging_error_approximation; halving the time between rebalances
     shrinks it by about sqrt(2).
+
+    Referenced against:
+    - FinancePy, simulate_hedge_paths: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/models/black_scholes_hedging_sim.py#L592
+        Test: tests/options/test_hedging_model.py::test_the_simulation_matches_financepy
 
     Args:
         stock_price (float): The stock price at the sale.
@@ -261,8 +270,9 @@ def get_hedging_error_approximation(
     dividend_yield: float = 0.0,
 ) -> float:
     """
-    The approximate standard deviation of the hedging error of an option delta hedged at
-    discrete times, from Boyle and Emanuel (1980) and Derman and Kamal (1999):
+    Calculate the approximate standard deviation of the hedging error of an option delta
+    hedged at discrete times: how far the profit and loss of the hedge typically strays from
+    zero, from Boyle and Emanuel (1980) and Derman and Kamal (1999):
 
         - σ_P&L ≈ sqrt(π / 4) × Vega × σ / sqrt(N)
 

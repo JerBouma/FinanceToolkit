@@ -21,9 +21,9 @@ def get_svi_total_variance(
     sigma: float,
 ) -> pd.Series | np.ndarray:
     """
-    Evaluate the raw SVI (Stochastic Volatility Inspired, Gatheral 2004) parametric
-    curve for total implied variance as a function of log-moneyness, for a single
-    expiry ("slice").
+    Calculate the raw SVI (Stochastic Volatility Inspired, Gatheral 2004) total implied
+    variance: the implied variance times the time to expiration as a function of
+    log-moneyness, for a single expiry ("slice").
 
     The formula is as follows:
 
@@ -65,8 +65,9 @@ def get_svi_implied_volatility(
     sigma: float,
 ) -> pd.Series | np.ndarray:
     """
-    Convert the raw SVI total variance curve (see `get_svi_total_variance`) back to
-    Black-Scholes implied volatility.
+    Calculate the Black-Scholes implied volatility of a raw SVI slice: the volatility smile
+    that the SVI total variance curve (see `get_svi_total_variance`) gives across
+    log-moneyness.
 
     The formula is as follows:
 
@@ -99,10 +100,10 @@ def get_svi_parameters(
     total_variance: pd.Series | np.ndarray,
 ) -> dict[str, float]:
     """
-    Calibrate the raw SVI parameters (a, b, rho, m, sigma) for a single expiry
-    ("slice") to a set of market total-variance observations, by minimizing the sum
-    of squared differences between the SVI curve (see `get_svi_total_variance`) and
-    the market total variance at each observed log-moneyness.
+    Calibrate the raw SVI parameters (a, b, rho, m, sigma) for a single expiry ("slice"):
+    the SVI curve closest to a set of market total-variance observations, by minimizing the
+    sum of squared differences between the SVI curve (see `get_svi_total_variance`) and the
+    market total variance at each observed log-moneyness.
 
     Also known as: SVI calibration, SVI slice fit.
 
@@ -219,11 +220,13 @@ def check_calendar_arbitrage(
     log_moneyness_grid: pd.Series | np.ndarray | None = None,
 ) -> pd.DataFrame:
     """
-    Check a multi-expiry SVI surface for calendar-spread arbitrage -- for a surface
-    to be arbitrage-free, total implied variance must be non-decreasing in time to
-    expiration at every log-moneyness (a shorter-dated option can never carry more
-    total variance than a longer-dated option on the same underlying, at the same
-    log-moneyness, or a riskless calendar-spread arbitrage exists).
+    Check a multi-expiry SVI surface for calendar-spread arbitrage: whether total implied
+    variance is non-decreasing in time to expiration at every log-moneyness, as an
+    arbitrage-free surface needs.
+
+    A shorter-dated option can never carry more total variance than a longer-dated option on
+    the same underlying, at the same log-moneyness, or a riskless calendar-spread arbitrage
+    exists.
 
     See: Gatheral, J., & Jacquier, A. (2014), "Arbitrage-free SVI volatility
     surfaces", Quantitative Finance, 14(1), 59-71.
@@ -285,9 +288,9 @@ def get_svi_butterfly_function(
     sigma: float,
 ) -> pd.Series | np.ndarray:
     """
-    Evaluate the function g(k) of Gatheral and Jacquier (2014) for a raw SVI slice, whose sign
-    decides whether the slice is free of butterfly arbitrage: the density of the underlying at
-    expiration implied by the slice is non-negative exactly where g(k) >= 0.
+    Calculate the function g(k) of Gatheral and Jacquier (2014) for a raw SVI slice: whether
+    the slice is free of butterfly arbitrage, as the density of the underlying at expiration
+    implied by the slice is non-negative exactly where g(k) >= 0.
 
     The formula is as follows:
 
@@ -307,7 +310,9 @@ def get_svi_butterfly_function(
     See: Gatheral, J., & Jacquier, A. (2014), "Arbitrage-free SVI volatility surfaces",
     Quantitative Finance, 14(1), 59-71, Section 2.
 
-    Referenced against FinancePy's volatility_fns.g (https://github.com/domokane/FinancePy).
+    Referenced against:
+    - FinancePy, volatility_fns.g: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/models/volatility_fns.py#L247
+        Test: tests/options/test_smile_models.py::test_butterfly_function_matches_financepy
 
     Args:
         log_moneyness (pd.Series | np.ndarray): ln(K / F) for each strike K, given forward
@@ -341,10 +346,10 @@ def check_butterfly_arbitrage(
     log_moneyness_grid: pd.Series | np.ndarray | None = None,
 ) -> pd.DataFrame:
     """
-    Check every slice of an SVI surface for butterfly arbitrage: a slice is free of it when
-    g(k) of Gatheral and Jacquier (2014) (see `get_svi_butterfly_function`) is non-negative at
-    every log-moneyness, which keeps the implied density of the underlying non-negative and
-    the call price convex in the strike.
+    Check every slice of an SVI surface for butterfly arbitrage: whether g(k) of Gatheral
+    and Jacquier (2014) (see `get_svi_butterfly_function`) is non-negative at every
+    log-moneyness, which keeps the implied density of the underlying non-negative and the
+    call price convex in the strike.
 
     SSVI slices are checked the same way after converting them to raw SVI (see
     `convert_ssvi_to_svi`).
@@ -393,8 +398,9 @@ def get_ssvi_total_variance(
     gamma: float,
 ) -> pd.Series | np.ndarray:
     """
-    Evaluate the SSVI (Surface SVI) total implied variance of Gatheral and Jacquier (2014) with
-    the power-law curvature function, for the expiry whose at-the-money total variance is theta.
+    Calculate the SSVI (Surface SVI) total implied variance of Gatheral and Jacquier (2014):
+    the implied variance times the time to expiration across log-moneyness, with the
+    power-law curvature function, for the expiry whose at-the-money total variance is theta.
 
     The formula is as follows:
 
@@ -413,7 +419,8 @@ def get_ssvi_total_variance(
     See: Gatheral, J., & Jacquier, A. (2014), "Arbitrage-free SVI volatility surfaces",
     Quantitative Finance, 14(1), 59-71.
 
-    Referenced against FinancePy's volatility_fns.ssvi (https://github.com/domokane/FinancePy).
+    Shares similar logic:
+    - FinancePy, volatility_fns.ssvi: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/models/volatility_fns.py#L148
 
     Args:
         log_moneyness (pd.Series | np.ndarray): ln(K / F) for each strike K, given forward
@@ -446,9 +453,9 @@ def convert_ssvi_to_svi(
     gamma: float,
 ) -> dict[str, float]:
     """
-    Convert one SSVI slice (see `get_ssvi_total_variance`) to the raw SVI parameters that give
-    the same total variance curve, so that the SVI functions (implied volatility, the arbitrage
-    checks and the local volatility) apply to SSVI as well.
+    Convert one SSVI slice (see `get_ssvi_total_variance`) to the raw SVI parameters: the
+    SVI slice with the same total variance curve, so that the SVI functions (implied
+    volatility, the arbitrage checks and the local volatility) apply to SSVI as well.
 
     The formula is as follows:
 
@@ -486,9 +493,10 @@ def get_ssvi_parameters(
     total_variance: dict[float, np.ndarray],
 ) -> dict[float, dict[str, float]]:
     """
-    Calibrate an SSVI surface (see `get_ssvi_total_variance`) to the market total variance of
-    several expiries at once: θ of each expiry is its market at-the-money total variance and ρ,
-    η and γ are shared by every expiry, fitted by least squares on the implied volatility.
+    Calibrate an SSVI surface (see `get_ssvi_total_variance`) to the market total variance
+    of several expiries at once: the surface free of butterfly arbitrage closest to the
+    market's, with θ of each expiry its market at-the-money total variance and ρ, η and γ
+    shared by every expiry, fitted by least squares on the implied volatility.
 
     θ is the market total variance at k = 0, interpolated linearly in the log-moneyness between
     the two quotes around the forward. The fit then keeps 0 < γ <= 1/2 and

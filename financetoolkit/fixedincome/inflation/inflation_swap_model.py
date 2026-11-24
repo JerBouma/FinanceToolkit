@@ -54,7 +54,8 @@ def get_zero_coupon_inflation_swap_rate(
 ) -> pd.Series:
     """
     Calculate the fair rate of zero-coupon inflation swaps from a nominal and a real
-    zero-coupon curve.
+    zero-coupon curve: the fixed rate, compounded to maturity, that the market swaps against
+    the realized inflation, its expected inflation.
 
     A zero-coupon inflation swap pays, at its maturity T, the growth of the price index
     I(T) / I(0) - 1 against the fixed amount (1 + K)^T - 1, both on the notional. Its fair
@@ -84,8 +85,12 @@ def get_zero_coupon_inflation_swap_rate(
     - Brigo, D. and Mercurio, F. (2006). "Interest Rate Models - Theory and Practice."
       Springer, 2nd edition, ch. 15.
 
-    Referenced against QuantLib's ZeroCouponInflationSwap (fairRate) on a ZeroInflation
-    term structure of the forward index ratios P_real(T) / P_nominal(T).
+    QuantLib's fair rate is taken on a zero inflation term structure of the forward index
+    ratios P_real(T) / P_nominal(T).
+
+    Referenced against:
+    - QuantLib, ZeroCouponInflationSwap.fairRate: https://www.quantlib.org/reference/class_quant_lib_1_1_zero_coupon_inflation_swap.html
+        Test: tests/fixedincome/test_inflation_swap_model.py::test_zero_coupon_inflation_swap_rate_matches_quantlib
 
     Args:
         zero_curve (pd.Series): The annually compounded nominal zero-coupon rates (decimals),
@@ -142,7 +147,8 @@ def get_forward_year_on_year_inflation_rates(
 ) -> pd.Series:
     """
     Calculate the forward year-on-year inflation rates of the coming years from the
-    zero-coupon inflation curve, without a convexity adjustment.
+    zero-coupon inflation curve, without a convexity adjustment: the inflation the market
+    expects in each coming year.
 
     The year-on-year rate of year i is the growth of the index over that year,
     I(i) / I(i - 1) - 1. It is fixed only at the end of the year and paid then, so its
@@ -217,7 +223,8 @@ def get_year_on_year_inflation_swap_rate(
 ) -> pd.Series:
     """
     Calculate the fair rate of year-on-year inflation swaps: the fixed rate paid every year
-    against that year's inflation, I(i) / I(i - 1) - 1.
+    against that year's inflation, I(i) / I(i - 1) - 1, at which the swap is worth nothing
+    today.
 
     The fair rate is the average of the forward year-on-year rates, weighted by the nominal
     discount factor of each payment (Kerkhof, 2005; Brigo and Mercurio, 2006, ch. 15). The
@@ -244,8 +251,12 @@ def get_year_on_year_inflation_swap_rate(
     - Mercurio, F. (2005). "Pricing Inflation-Indexed Derivatives." Quantitative Finance,
       5(3), 289-302.
 
-    Referenced against QuantLib's YearOnYearInflationSwap (fairRate) on a YoYInflation
-    term structure of the same forward rates.
+    QuantLib's fair rate is taken on a year-on-year inflation term structure of the same
+    forward rates.
+
+    Referenced against:
+    - QuantLib, YearOnYearInflationSwap.fairRate: https://www.quantlib.org/reference/class_quant_lib_1_1_year_on_year_inflation_swap.html
+        Test: tests/fixedincome/test_inflation_swap_model.py::test_year_on_year_inflation_swap_rate_matches_quantlib
 
     Args:
         zero_curve (pd.Series): The annually compounded nominal zero-coupon rates
@@ -308,8 +319,9 @@ def get_year_on_year_inflation_swap_rate(
 
 def get_inflation_seasonality(consumer_price_index: pd.Series) -> pd.Series:
     """
-    Estimate the multiplicative seasonal factors of a monthly price index, normalised so that
-    the twelve factors multiply to 1.
+    Estimate the multiplicative seasonal factors of a monthly price index, normalised so
+    that the twelve factors multiply to 1: how much faster or slower prices rise in each
+    month than over the year.
 
     Prices rise faster in some months than in others (in the US CPI-U, the first half of
     the year more than the last months), while a zero-coupon inflation swap only fixes the
@@ -335,8 +347,8 @@ def get_inflation_seasonality(consumer_price_index: pd.Series) -> pd.Series:
     - Kerkhof, J. (2005). "Inflation Derivatives Explained." Lehman Brothers Fixed Income
       Quantitative Research, section on seasonality.
 
-    Referenced against QuantLib's MultiplicativePriceSeasonality, which applies factors of
-    this form to a zero inflation curve.
+    Shares similar logic:
+    - QuantLib, MultiplicativePriceSeasonality: https://www.quantlib.org/reference/class_quant_lib_1_1_multiplicative_price_seasonality.html
 
     Args:
         consumer_price_index (pd.Series): The price index, not seasonally adjusted, indexed
@@ -417,7 +429,8 @@ def get_forward_inflation_index(
 ) -> pd.Series:
     """
     Calculate the forward price index of each coming month from the zero-coupon inflation
-    curve, with or without monthly seasonality.
+    curve, with or without monthly seasonality: the price level the inflation market expects
+    in each month.
 
     The forward index of a month is the index the zero-coupon inflation swaps imply for it:
     the base index grown at the zero-coupon inflation rate of that horizon. With seasonal
@@ -433,8 +446,11 @@ def get_forward_inflation_index(
     compounded zero-coupon inflation rate of t years, interpolated linearly between the
     maturities of the curve, and S the seasonal factors (all 1 without seasonality).
 
-    Referenced against QuantLib's ZeroInflationIndex fixings forecast on a ZeroInflation
-    term structure with MultiplicativePriceSeasonality.
+    Referenced against:
+    - QuantLib, ZeroInflationIndex: https://www.quantlib.org/reference/class_quant_lib_1_1_zero_inflation_index.html
+        Test: tests/fixedincome/test_inflation_swap_model.py::test_forward_inflation_index_matches_quantlib_seasonality
+    - QuantLib, MultiplicativePriceSeasonality: https://www.quantlib.org/reference/class_quant_lib_1_1_multiplicative_price_seasonality.html
+        Test: tests/fixedincome/test_inflation_swap_model.py::test_forward_inflation_index_matches_quantlib_seasonality
 
     Args:
         base_index (float): The index of the base month, such as the latest published CPI or
@@ -522,8 +538,9 @@ def get_inflation_swap_value(
     is_receiver: bool = False,
 ) -> dict[str, float]:
     """
-    Calculate the value of a zero-coupon or year-on-year inflation swap, a new one or one that
-    is already running.
+    Calculate the value of a zero-coupon or year-on-year inflation swap, a new one or one
+    that is already running: what the swap is worth to the inflation receiver given the
+    inflation the market now expects.
 
     The inflation leg pays the growth of the price index and the fixed leg the fixed rate.
     The swap is valued from the side of the inflation receiver (the fixed rate payer), as
@@ -548,8 +565,13 @@ def get_inflation_swap_value(
     inflation. The year-on-year rates carry no convexity adjustment (see
     `get_forward_year_on_year_inflation_rates`).
 
-    Referenced against QuantLib's ZeroCouponInflationSwap and YearOnYearInflationSwap
-    (NPV, legs) with the DiscountingSwapEngine.
+    Referenced against:
+    - QuantLib, ZeroCouponInflationSwap (zero-coupon): https://www.quantlib.org/reference/class_quant_lib_1_1_zero_coupon_inflation_swap.html
+        Test: tests/fixedincome/test_inflation_swap_model.py::test_inflation_swap_value_matches_quantlib
+    - QuantLib, YearOnYearInflationSwap (year-on-year): https://www.quantlib.org/reference/class_quant_lib_1_1_year_on_year_inflation_swap.html
+        Test: tests/fixedincome/test_inflation_swap_model.py::test_inflation_swap_value_matches_quantlib
+    - QuantLib, DiscountingSwapEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_discounting_swap_engine.html
+        Test: tests/fixedincome/test_inflation_swap_model.py::test_inflation_swap_value_matches_quantlib
 
     Args:
         zero_curve (pd.Series): The annually compounded nominal zero-coupon rates
@@ -560,8 +582,9 @@ def get_inflation_swap_value(
             zero-coupon swap).
         years_to_maturity (float): The years until the swap's last payment.
         notional (float, optional): The notional of the swap. Defaults to 10,000,000.
-        method (str, optional): The kind of swap, "zero-coupon" or "year-on-year". Defaults
-            to "zero-coupon".
+        method (str, optional): The kind of swap. Options are: "zero-coupon" (one payment of
+            the index growth at maturity), "year-on-year" (a payment of each year's inflation).
+            Defaults to "zero-coupon".
         index_ratio (float, optional): The index today over the base index of the swap
             (zero-coupon) or of the current year (year-on-year). Defaults to 1, a new swap.
         years_elapsed (float, optional): The years since the start of a zero-coupon swap,

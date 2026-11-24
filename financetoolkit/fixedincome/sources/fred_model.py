@@ -591,8 +591,9 @@ def get_hqm_corporate_bond_yield_curve(
     publishes monthly from 1984, through FRED.
 
     Args:
-        rate (str): "spot" for the spot (zero-coupon) rates of 17 maturities from 6 months
-            to 100 years, or "par" for the par yields of 2, 5, 10 and 30 years.
+        rate (str): The rates. Options are: "spot" (the spot, zero-coupon, rates of 17
+            maturities from 6 months to 100 years), "par" (the par yields of 2, 5, 10
+            and 30 years).
         start_date (str): Start date in YYYY-MM-DD format.
         end_date (str): End date in YYYY-MM-DD format.
         api_key (str): FRED API key.
@@ -642,7 +643,8 @@ def get_moodys_corporate_bond_yields(
     Retrieves Moody's seasoned Aaa and Baa corporate bond yields from FRED.
 
     Args:
-        frequency (str): "daily" (from 1986) or "monthly" (monthly averages, from 1919).
+        frequency (str): The frequency. Options are: "daily" (from 1986), "monthly"
+            (monthly averages, from 1919).
         start_date (str): Start date in YYYY-MM-DD format.
         end_date (str): End date in YYYY-MM-DD format.
         api_key (str): FRED API key.
@@ -666,7 +668,8 @@ def get_moodys_corporate_bond_spreads(
     Treasury yield, plus the Baa minus Aaa spread, the classic default spread.
 
     Args:
-        frequency (str): "daily" (from 1986) or "monthly" (monthly averages, from 1953).
+        frequency (str): The frequency. Options are: "daily" (from 1986), "monthly"
+            (monthly averages, from 1953).
         start_date (str): Start date in YYYY-MM-DD format.
         end_date (str): End date in YYYY-MM-DD format.
         api_key (str): FRED API key.

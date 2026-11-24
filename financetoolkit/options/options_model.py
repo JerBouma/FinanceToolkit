@@ -23,7 +23,8 @@ logger = get_logger()
 
 def get_option_expiry_dates(ticker: str) -> list[str]:
     """
-    Retrieve available option expiry dates for a given ticker symbol.
+    Retrieve the available option expiry dates of a ticker: the dates on which its listed
+    options expire.
 
     Args:
         ticker (str): The ticker symbol for which to fetch option expiry dates.
@@ -64,7 +65,8 @@ def get_option_chains(
     tickers: list[str], expiration_date: str, put_option: bool = False
 ) -> pd.DataFrame:
     """
-    Retrieve option chains (calls or puts) for a list of tickers and a specific expiration date.
+    Retrieve the option chains (calls or puts) of a list of tickers for one expiration date: the
+    strike prices, quotes, volume, open interest and implied volatility of every listed option.
 
     Option quotes move continuously while the market is open, so a cached chain is
     only served for a few minutes (see the yfinance.option_chain policy). That is
@@ -184,11 +186,14 @@ def get_continuously_compounded_rate(
     compounding_per_year: int = TREASURY_COMPOUNDING_PER_YEAR,
 ) -> pd.Series | pd.DataFrame | float:
     """
-    Converts a yield quoted with periodic compounding, such as the bond-equivalent yield of a
-    US Treasury, into the continuously compounded rate that the option pricing formulas
-    (Black-Scholes, binomial trees, Bjerksund-Stensland, barrier, Asian and binary options and
-    the Greeks) discount with through e^(-r * t). Both rates grow an investment by the same
-    amount over a year:
+    Calculate the continuously compounded rate of a yield quoted with periodic compounding:
+    the rate that grows an investment by the same amount over a year, as the option pricing
+    formulas need.
+
+    A yield such as the bond-equivalent yield of a US Treasury is converted into the
+    continuously compounded rate that the option pricing formulas (Black-Scholes, binomial
+    trees, Bjerksund-Stensland, barrier, Asian and binary options and the Greeks) discount
+    with through e^(-r * t). Both rates grow an investment by the same amount over a year:
 
         - (1 + y / m)^m = e^r, so r = m * ln(1 + y / m)
 
@@ -229,10 +234,12 @@ def get_trailing_dividend_yield(
     dividends: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """
-    Calculates the trailing dividend yield on every date: the dividends per share that went
+    Calculate the trailing dividend yield on every date: the dividends per share that went
     ex-dividend in the 365 days up to and including that date, divided by the close of that
-    date. This is the dividend yield q of the Black-Scholes model on a pricing date, built
-    only from what was known on that date.
+    date.
+
+    This is the dividend yield q of the Black-Scholes model on a pricing date, built only
+    from what was known on that date.
 
     The dividends are recovered from the dividend adjustment of the prices rather than taken
     from a list of dividends per share. The adjusted close is the close multiplied by a factor
@@ -347,8 +354,9 @@ def get_monte_carlo_option_price(
     sequence: str = "pseudo_random",
 ) -> tuple[float, float]:
     """
-    Calculate the price of a European option through Monte Carlo simulation of
-    Geometric Brownian Motion (GBM) stock price paths.
+    Calculate the price of a European option through Monte Carlo simulation: what the option
+    is worth as the discounted average payoff over simulated Geometric Brownian Motion (GBM)
+    stock price paths.
 
     Also known as: Monte Carlo option pricing, simulation-based option pricing.
 
@@ -381,16 +389,19 @@ def get_monte_carlo_option_price(
     Two variance reductions and quasi-random numbers narrow that error at the same number of
     paths (Glasserman, 2003, chapters 4 and 5):
 
-    - Antithetic (variance_reduction="antithetic"): every path Z is paired with its mirror
+    - Antithetic variates: every path Z is paired with its mirror
       image -Z, and the standard error comes from the averages of the pairs.
-    - Control variate (variance_reduction="control_variate"): the discounted stock price at
+    - Control variate: the discounted stock price at
       expiration X = e^(—r * T) * S(T), whose expected value S * e^(—q * T) is known, takes
       out the simulation error it shares with the payoff Y: Price = MEAN(Y — β * (X —
       S * e^(—q * T))), β = Cov(Y, X) / Var(X).
-    - Sobol (sequence="sobol"): scrambled Sobol points with a Brownian bridge, whose first
+    - Sobol sequence: scrambled Sobol points with a Brownian bridge, whose first
       coordinate sets the stock price at expiration, in 16 independently scrambled
       replications; the standard error is that of the 16 replication means. The error
       shrinks close to 1 / simulations rather than 1 / √simulations.
+
+    Shares similar logic:
+    - QuantLib, MCEuropeanEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_m_c_european_engine.html
 
     Args:
         stock_price (float): The current stock price.
@@ -408,9 +419,11 @@ def get_monte_carlo_option_price(
         seed (int | None): The seed used to initialize the random number generator via
             `np.random.default_rng`, ensuring reproducible results; None draws new paths
             on every call. Defaults to 0.
-        variance_reduction (str | None): None, "antithetic" (needs an even number of
-            simulations) or "control_variate". Defaults to None.
-        sequence (str): "pseudo_random" or "sobol" (at least 32 simulations). Defaults to
+        variance_reduction (str | None): The variance reduction. Options are: None (none),
+            "antithetic" (antithetic variates, needs an even number of simulations),
+            "control_variate" (control variate). Defaults to None.
+        sequence (str): The random numbers. Options are: "pseudo_random" (pseudo-random
+            numbers), "sobol" (scrambled Sobol points, at least 32 simulations). Defaults to
             "pseudo_random".
 
     Returns:
@@ -431,9 +444,9 @@ def get_monte_carlo_option_price(
         Points in a Cube and the Approximate Evaluation of Integrals." USSR Computational
         Mathematics and Mathematical Physics, 7(4), 86-112. Owen, A. B. (1997). "Scrambled
         Net Variance for Integrals of Smooth Functions." Annals of Statistics, 25(4),
-        1541-1562. Referenced against QuantLib's MCEuropeanEngine with the pseudo-random and
-        low-discrepancy traits (https://www.quantlib.org); its own random numbers give other
-        draws.
+        1541-1562.
+        - QuantLib's MCEuropeanEngine has pseudo-random and low-discrepancy traits; its own
+          random numbers give other paths.
     """
     validate_numeric_inputs(
         stock_price=stock_price,
@@ -593,14 +606,19 @@ def get_monte_carlo_option_prices(
     sequence: str = "pseudo_random",
 ) -> tuple[np.ndarray, np.ndarray]:
     """
-    Calculates the Monte Carlo price of European options with several strike prices and
-    expirations from one set of simulated paths, see get_monte_carlo_option_price. Pricing
-    every strike on the same paths (common random numbers) gives the same prices as
+    Calculate the Monte Carlo price of European options with several strike prices and
+    expirations from one set of simulated paths: what each option is worth as its discounted
+    average payoff (see get_monte_carlo_option_price).
+
+    Pricing every strike on the same paths (common random numbers) gives the same prices as
     simulating per strike with the same seed, keeps the prices consistent across strikes and
     simulates once rather than once per strike. The expirations scale the same standardised
     shocks (see _simulate_terminal_shocks), which with a seed gives the prices of simulating
-    each expiration with that seed. Every estimate still comes from independent paths, so its
-    standard error is that of one expiration simulated on its own.
+    each expiration with that seed. Every estimate still comes from independent paths, so
+    its standard error is that of one expiration simulated on its own.
+
+    Shares similar logic:
+    - QuantLib, MCEuropeanEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_m_c_european_engine.html
 
     Args:
         stock_price (float): The current stock price.
@@ -616,9 +634,12 @@ def get_monte_carlo_option_prices(
         time_steps (int, optional): The number of steps per path. Defaults to 100.
         seed (int | None, optional): The seed of the random number generator, None for new
             paths on every call. Defaults to 0.
-        variance_reduction (str | None, optional): None, "antithetic" or
-            "control_variate". Defaults to None.
-        sequence (str, optional): "pseudo_random" or "sobol". Defaults to "pseudo_random".
+        variance_reduction (str | None, optional): The variance reduction. Options are: None
+            (none), "antithetic" (antithetic variates), "control_variate" (control variate).
+            Defaults to None.
+        sequence (str, optional): The random numbers. Options are: "pseudo_random"
+            (pseudo-random numbers), "sobol" (scrambled Sobol points). Defaults to
+            "pseudo_random".
 
     Returns:
         tuple[np.ndarray, np.ndarray]: The price and its standard error per strike price,
@@ -696,9 +717,11 @@ def get_projected_dividends(
     history: int = 4,
 ) -> pd.Series:
     """
-    Projects the cash dividends of a stock after a pricing date from the dividends it paid
-    up to that date: the latest dividend is repeated at the usual interval between its
-    ex-dividend dates, so a past pricing date only uses what was known on that date.
+    Calculate the projected cash dividends of a stock after a pricing date: the dividends it
+    may pay up to expiration, from the dividends it paid up to that date.
+
+    The latest dividend is repeated at the usual interval between its ex-dividend dates, so
+    a past pricing date only uses what was known on that date.
 
     - Interval = the median number of days between the last `history` + 1 ex-dividend dates
       (365 days with a single dividend)

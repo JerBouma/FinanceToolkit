@@ -615,8 +615,8 @@ def get_barone_adesi_whaley(
     put_option: bool = False,
 ) -> float:
     """
-    Calculate the price of an American option with the quadratic approximation of
-    Barone-Adesi and Whaley (1987).
+    Calculate the price of an American option, which may be exercised at any time up to
+    expiration, with the quadratic approximation of Barone-Adesi and Whaley (1987).
 
     The early exercise premium satisfies the Black-Scholes partial differential equation, as
     the European price does. Barone-Adesi and Whaley write the premium as h(T) * f(S, h) with
@@ -642,6 +642,13 @@ def get_barone_adesi_whaley(
     approximation does not describe: it is priced on a binomial tree instead, averaged over
     1,000 and 1,001 steps (within about 1e-3 of the exact value).
 
+    Referenced against:
+    - QuantLib, BaroneAdesiWhaleyApproximationEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_barone_adesi_whaley_approximation_engine.html
+        Test: tests/options/test_american_model.py::test_the_american_approximations_match_quantlib
+
+    Shares similar logic:
+    - FinancePy, baw_value: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/models/black_scholes_analytic.py#L682
+
     Args:
         stock_price (float): The current stock price.
         strike_price (float): The option's strike price.
@@ -662,10 +669,8 @@ def get_barone_adesi_whaley(
     Notes:
         Reference: Barone-Adesi, G., & Whaley, R. E. (1987). "Efficient Analytic
         Approximation of American Option Values." The Journal of Finance, 42(2), 301-320.
-        Referenced against QuantLib's BaroneAdesiWhaleyApproximationEngine
-        (https://www.quantlib.org) and FinancePy's black_scholes_analytic.baw_value
-        (https://github.com/domokane/FinancePy). For S = K = 100, r = 5%, q = 3%, σ = 25%
-        and T = 1 the put is 8.9030, where the exact American value is 8.8827.
+        For S = K = 100, r = 5%, q = 3%, σ = 25% and T = 1 the put is 8.9030, where the
+        exact American value is 8.8827.
     """
     _validate(
         stock_price,
@@ -699,8 +704,10 @@ def get_ju_zhong(
     put_option: bool = False,
 ) -> float:
     """
-    Calculate the price of an American option with the approximation of Ju and Zhong
-    (1999), which corrects the Barone-Adesi-Whaley approximation for the term it drops.
+    Calculate the price of an American option, which may be exercised at any time up to
+    expiration, with the approximation of Ju and Zhong (1999).
+
+    The approximation corrects the Barone-Adesi-Whaley approximation for the term it drops.
 
     Barone-Adesi and Whaley (1987) leave the derivative of the early exercise premium to
     h = 1 — e^(—rT) out of the partial differential equation. Ju and Zhong keep it to first
@@ -728,6 +735,10 @@ def get_ju_zhong(
     approximation does not describe: it is priced on a binomial tree instead, averaged over
     1,000 and 1,001 steps (within about 1e-3 of the exact value).
 
+    Referenced against:
+    - QuantLib, JuQuadraticApproximationEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_ju_quadratic_approximation_engine.html
+        Test: tests/options/test_american_model.py::test_the_american_approximations_match_quantlib
+
     Args:
         stock_price (float): The current stock price.
         strike_price (float): The option's strike price.
@@ -747,10 +758,9 @@ def get_ju_zhong(
 
     Notes:
         Reference: Ju, N., & Zhong, R. (1999). "An Approximate Formula for Pricing
-        American Options." The Journal of Derivatives, 7(2), 31-40. Referenced against
-        QuantLib's JuQuadraticApproximationEngine (https://www.quantlib.org). For S = K =
-        100, r = 5%, q = 3%, σ = 25% and T = 1 the put is 8.8573, where the exact American
-        value is 8.8827.
+        American Options." The Journal of Derivatives, 7(2), 31-40. For S = K = 100,
+        r = 5%, q = 3%, σ = 25% and T = 1 the put is 8.8573, where the exact American value
+        is 8.8827.
     """
     _validate(
         stock_price,
@@ -1031,9 +1041,11 @@ def get_qd_plus(
     put_option: bool = False,
 ) -> float | np.ndarray:
     """
-    Calculate the price of an American option with the QD+ exercise boundary of Li (2010)
-    and the integral representation of the early exercise premium, as Andersen, Lake and
-    Offengenden (2016) combine them.
+    Calculate the price of an American option, which may be exercised at any time up to
+    expiration, with the QD+ exercise boundary of Li (2010).
+
+    The boundary is combined with the integral representation of the early exercise
+    premium, as Andersen, Lake and Offengenden (2016) do.
 
     The American put is its European value plus the value of exercising early, an integral
     over the early exercise boundary B (Kim, 1990; Jacka, 1991; Carr, Jarrow and Myneni,
@@ -1064,6 +1076,10 @@ def get_qd_plus(
     and expirations), which solve the boundary of every expiration at once and give the same
     values as one call per option.
 
+    Referenced against:
+    - QuantLib, QdPlusAmericanEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_qd_plus_american_engine.html
+        Test: tests/options/test_american_model.py::test_the_american_approximations_match_quantlib
+
     Args:
         stock_price (float | np.ndarray): The current stock price.
         strike_price (float | np.ndarray): The option's strike price.
@@ -1089,12 +1105,13 @@ def get_qd_plus(
         13(1), 75-99; Andersen, L., Lake, M., & Offengenden, D. (2016). "High-Performance
         American Option Pricing." Journal of Computational Finance, 20(1), 39-87; Kim, I. J.
         (1990). "The Analytic Valuation of American Options." The Review of Financial
-        Studies, 3(4), 547-572. Referenced against QuantLib's QdPlusAmericanEngine
-        (https://www.quantlib.org), which interpolates the boundary between eight
-        Chebyshev nodes and values a stock at or beyond the boundary with the integral as
-        well, where this function returns the exercise value. For S = K = 100, r = 5%,
-        q = 3%, σ = 25% and T = 1 the put is 8.8886, where the exact American value is
-        8.8827; across typical inputs QD+ lies within 0.3% of the exact value.
+        Studies, 3(4), 547-572.
+        - Unlike QuantLib's QdPlusAmericanEngine, which interpolates the boundary between
+          eight Chebyshev nodes and values a stock at or beyond the boundary with the
+          integral as well, this function returns the exercise value there.
+        - For S = K = 100, r = 5%, q = 3%, σ = 25% and T = 1 the put is 8.8886, where the
+          exact American value is 8.8827; across typical inputs QD+ lies within 0.3% of the
+          exact value.
     """
     _validate(
         stock_price,
@@ -1405,10 +1422,12 @@ def get_qd_fixed_point(
     put_option: bool = False,
 ) -> float:
     """
-    Calculate the price of an American option by solving the early exercise boundary as the
-    fixed point of its integral equation, the method of Andersen, Lake and Offengenden
-    (2016). Unlike the approximations (QD+, Barone-Adesi-Whaley, Ju-Zhong), this converges
-    to the exact American value, within about 1e-6 of it and 1e-8 for most inputs.
+    Calculate the price of an American option, which may be exercised at any time up to
+    expiration, by solving its early exercise boundary as the fixed point of an integral
+    equation (Andersen, Lake and Offengenden, 2016).
+
+    Unlike the approximations (QD+, Barone-Adesi-Whaley, Ju-Zhong), this converges to the
+    exact American value, within about 1e-6 of it and 1e-8 for most inputs.
 
     The American put is its European value plus the value of exercising early, an integral
     over the early exercise boundary B (Kim, 1990; Jacka, 1991; Carr, Jarrow and Myneni,
@@ -1440,6 +1459,12 @@ def get_qd_fixed_point(
     boundary of this method does not describe: it is priced on a binomial tree instead,
     averaged over 1,000 and 1,001 steps (within about 1e-3 of the exact value).
 
+    Referenced against:
+    - QuantLib, QdFpAmericanEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_qd_fp_american_engine.html
+        Test: tests/options/test_american_model.py::test_the_american_approximations_match_quantlib
+    - QuantLib, FdBlackScholesVanillaEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_fd_black_scholes_vanilla_engine.html
+        Test: tests/options/test_american_model.py::test_the_qd_fixed_point_matches_a_finite_difference_grid
+
     Args:
         stock_price (float): The current stock price.
         strike_price (float): The option's strike price.
@@ -1461,11 +1486,11 @@ def get_qd_fixed_point(
         References: Andersen, L., Lake, M., & Offengenden, D. (2016). "High-Performance
         American Option Pricing." Journal of Computational Finance, 20(1), 39-87; Kim, I. J.
         (1990). "The Analytic Valuation of American Options." The Review of Financial
-        Studies, 3(4), 547-572; Li, M. (2010) for the QD+ starting boundary. Referenced
-        against QuantLib's QdFpAmericanEngine with its high precision scheme
-        (https://www.quantlib.org) and a Crank-Nicolson finite difference grid extrapolated
-        to zero step size. For S = K = 100, r = 5%, q = 3%, σ = 25% and T = 1 the put is
-        8.8827, where QD+ gives 8.8886.
+        Studies, 3(4), 547-572; Li, M. (2010) for the QD+ starting boundary.
+        - QuantLib's QdFpAmericanEngine is used with its high precision scheme, and its
+          Crank-Nicolson finite difference grid is extrapolated to zero step size. For
+          S = K = 100, r = 5%, q = 3%, σ = 25% and T = 1 the put is 8.8827, where QD+ gives
+          8.8886.
     """
     _validate(
         stock_price,
@@ -1540,10 +1565,25 @@ def get_american_option(
     method: str = "qd_plus",
 ) -> float:
     """
-    Calculate the price of an American option with one of the approximations: QD+
-    ("qd_plus", see get_qd_plus), Barone-Adesi-Whaley ("barone_adesi_whaley", see
-    get_barone_adesi_whaley) or Ju-Zhong ("ju_zhong", see get_ju_zhong), or with the
-    exercise boundary solved as a fixed point ("qd_fixed_point", see get_qd_fixed_point).
+    Calculate the price of an American option, which may be exercised at any time up to
+    expiration, with the method of choice.
+
+    The methods are the approximations QD+ (see get_qd_plus), Barone-Adesi-Whaley (see
+    get_barone_adesi_whaley) and Ju-Zhong (see get_ju_zhong), and the exercise boundary
+    solved as a fixed point (see get_qd_fixed_point).
+
+    Referenced against:
+    - QuantLib, QdPlusAmericanEngine (QD+): https://www.quantlib.org/reference/class_quant_lib_1_1_qd_plus_american_engine.html
+        Test: tests/options/test_american_model.py::test_the_american_approximations_match_quantlib
+    - QuantLib, BaroneAdesiWhaleyApproximationEngine (Barone-Adesi-Whaley): https://www.quantlib.org/reference/class_quant_lib_1_1_barone_adesi_whaley_approximation_engine.html
+        Test: tests/options/test_american_model.py::test_the_american_approximations_match_quantlib
+    - QuantLib, JuQuadraticApproximationEngine (Ju-Zhong): https://www.quantlib.org/reference/class_quant_lib_1_1_ju_quadratic_approximation_engine.html
+        Test: tests/options/test_american_model.py::test_the_american_approximations_match_quantlib
+    - QuantLib, QdFpAmericanEngine (fixed point): https://www.quantlib.org/reference/class_quant_lib_1_1_qd_fp_american_engine.html
+        Test: tests/options/test_american_model.py::test_the_american_approximations_match_quantlib
+
+    Shares similar logic:
+    - FinancePy, baw_value (Barone-Adesi-Whaley): https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/models/black_scholes_analytic.py#L682
 
     Args:
         stock_price (float): The current stock price.
@@ -1553,8 +1593,9 @@ def get_american_option(
         time_to_expiration (float): The time to expiration of the option, in years.
         dividend_yield (float): The continuous dividend yield of the stock. Defaults to 0.
         put_option (bool): Whether the option is a put option or not. Defaults to False.
-        method (str): The method, "qd_plus", "barone_adesi_whaley", "ju_zhong" or
-            "qd_fixed_point". Defaults to "qd_plus".
+        method (str): The method. Options are: "qd_plus" (QD+), "barone_adesi_whaley"
+            (Barone-Adesi-Whaley), "ju_zhong" (Ju-Zhong), "qd_fixed_point" (the exercise
+            boundary solved as a fixed point). Defaults to "qd_plus".
 
     Returns:
         float: The value of the American option.
@@ -1592,14 +1633,23 @@ def get_american_implied_volatility(
     method: str = "qd_plus",
 ) -> float:
     """
-    Numerically solve for the volatility at which the American option price of
-    get_american_option equals an observed market price: the root of American price(σ) —
-    market price, found with Brent's method on the volatility interval [0.001, 5].
+    Calculate the American implied volatility: the volatility at which the American option
+    price of get_american_option equals an observed market price.
+
+    It is the root of American price(σ) — market price, found with Brent's method on the
+    volatility interval [0.001, 5].
 
     Listed options on single stocks are American. Their price includes the right to
     exercise early, which a European (Black-Scholes) implied volatility attributes to a
     higher volatility instead: the in-the-money puts and the calls before a large dividend
     then show a European implied volatility above the American one.
+
+    Referenced against:
+    - QuantLib, QdPlusAmericanEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_qd_plus_american_engine.html
+        Test: tests/options/test_american_model.py::test_the_american_implied_volatility_reprices_the_option
+
+    Shares similar logic:
+    - QuantLib, BaroneAdesiWhaleyApproximationEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_barone_adesi_whaley_approximation_engine.html
 
     Args:
         market_price (float): The observed market price of the option.
@@ -1609,8 +1659,10 @@ def get_american_implied_volatility(
         time_to_expiration (float): The time to expiration of the option, in years.
         dividend_yield (float): The continuous dividend yield of the stock. Defaults to 0.
         put_option (bool): Whether the option is a put option or not. Defaults to False.
-        method (str): The American method, "qd_plus", "barone_adesi_whaley", "ju_zhong"
-            or "qd_fixed_point". Defaults to "qd_plus".
+        method (str): The American method. Options are: "qd_plus" (QD+),
+            "barone_adesi_whaley" (Barone-Adesi-Whaley), "ju_zhong" (Ju-Zhong),
+            "qd_fixed_point" (the exercise boundary solved as a fixed point). Defaults to
+            "qd_plus".
 
     Returns:
         float: The implied volatility, or NaN when the observed price admits no solution.
@@ -1619,9 +1671,8 @@ def get_american_implied_volatility(
         - The American price rises with the volatility, so the root is bracketed. A price
           at or below the exercise value, or one that the lowest volatility already
           exceeds or the highest does not reach, has no solution and returns NaN.
-        - Referenced against QuantLib's QdPlusAmericanEngine and
-          BaroneAdesiWhaleyApproximationEngine (https://www.quantlib.org): their prices invert
-          to the volatility they were priced at.
+        - The prices of QuantLib's QdPlusAmericanEngine invert to the volatility they were
+          priced at.
     """
     # A strike without a usable quote has no price (NaN) and so no volatility.
     if time_to_expiration <= 0 or not market_price > 0:

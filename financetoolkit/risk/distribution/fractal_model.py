@@ -22,8 +22,8 @@ def get_generalized_hurst_exponent(
     data: pd.Series | np.ndarray, max_lag: int = 20, q: float = 2.0
 ) -> float:
     """
-    Calculate the generalized Hurst exponent H(q) of a series, a measure of long-term memory
-    that indicates whether a series is mean-reverting, trending, or a random walk.
+    Calculate the generalized Hurst exponent H(q) of a series: its long-term memory, which
+    shows whether the series is mean-reverting, trending, or a random walk.
 
     The Hurst Exponent (H) is interpreted as follows:
 
@@ -43,7 +43,7 @@ def get_generalized_hurst_exponent(
     - K_q(tau) = Mean(abs(d(tau) - Mean(d(tau)))^q)
     - ln K_q(tau) = c + q * H(q) * ln tau, fitted by least squares over tau = 2, ..., max_lag
 
-    With q = 2, K_2 is the population variance (ddof=0) of the differences, so H(2) is the
+    With q = 2, K_2 is the population variance (with n in the denominator) of the differences, so H(2) is the
     slope of the log standard deviation on the log lag.
 
     Di Matteo et al. (2005) apply it to the logarithm of the price, X_t = ln(P_t), so the
@@ -60,7 +60,9 @@ def get_generalized_hurst_exponent(
     - Di Matteo, T. (2007). "Multi-scaling in finance." Quantitative Finance, 7(1), 21-36.
     - Barabási, A.-L. & Vicsek, T. (1991). "Multifractality of self-affine fractals."
       Physical Review A, 44(4), 2730-2733.
-    - Referenced against nolds' mfhurst_dm (https://github.com/CSchoel/nolds).
+
+    Shares similar logic:
+    - nolds, mfhurst_dm: https://github.com/CSchoel/nolds/blob/0.6.3/nolds/measures.py#L1695
 
     Notes:
         - The differences are taken from their mean, which removes the drift of a trending
@@ -107,9 +109,14 @@ def get_window_sizes(
     length: int, minimum: int = 10, share: float = 0.1, factor: float = 1.2
 ) -> np.ndarray:
     """
-    The window sizes of the rescaled range and the detrended fluctuation analysis: whole
-    numbers that grow by `factor` from `minimum` up to `share` of the observations, evenly
-    spread on a log scale, so every size is covered by at least 1 / share windows.
+    Calculate the window sizes of the rescaled range and the detrended fluctuation analysis:
+    the scales, evenly spread on a log scale, at which the memory of a series is measured.
+
+    They are whole numbers that grow by `factor` from `minimum` up to `share` of the
+    observations, so every size is covered by at least 1 / share windows.
+
+    Shares similar logic:
+    - nolds, logarithmic_n: https://github.com/CSchoel/nolds/blob/0.6.3/nolds/measures.py#L874
 
     Args:
         length (int): The number of observations.
@@ -134,8 +141,9 @@ def get_window_sizes(
 
 def get_expected_rescaled_range(window_sizes: np.ndarray) -> np.ndarray:
     """
-    The expected rescaled range of independent, normally distributed observations per window
-    size n (Anis and Lloyd, 1976, with the small-sample correction of Peters, 1994).
+    Calculate the expected rescaled range of independent, normally distributed observations
+    per window size n: the rescaled range a series without memory is expected to have (Anis
+    and Lloyd, 1976, with the small-sample correction of Peters, 1994).
 
     The formula is as follows:
 
@@ -143,6 +151,9 @@ def get_expected_rescaled_range(window_sizes: np.ndarray) -> np.ndarray:
 
     with the sum over i = 1, ..., n - 1 and, for n above 340, where the gamma functions are
     large, 1 / Sqrt(n * pi / 2) in place of the ratio of gamma functions.
+
+    Shares similar logic:
+    - nolds, expected_rs: https://github.com/CSchoel/nolds/blob/0.6.3/nolds/measures.py#L969
 
     Args:
         window_sizes (np.ndarray): The window sizes n.
@@ -171,7 +182,10 @@ def get_rescaled_range_hurst_exponent(
 ) -> float:
     """
     Calculate the Hurst Exponent of a series of changes (e.g. returns) by rescaled range
-    (R/S) analysis, with the Anis-Lloyd-Peters correction for small windows.
+    (R/S) analysis: its long-term memory, which shows whether it is persistent, anti-persistent
+    or without memory.
+
+    The exponent can be corrected with the Anis-Lloyd-Peters correction for small windows.
 
     The series is cut into windows of n observations. In every window the cumulative
     deviations from the window mean span a range R, which is divided by the standard
@@ -183,7 +197,7 @@ def get_rescaled_range_hurst_exponent(
     The formula is as follows:
 
     - Y_k = Sum(x_i - Mean(x), i = 1, ..., k), k = 1, ..., n, within each window
-    - R/S = (Max(Y) - Min(Y)) / Std(x), the population standard deviation (ddof=0)
+    - R/S = (Max(Y) - Min(Y)) / Std(x), the population standard deviation (with n in the denominator)
     - (R/S)(n) = the average R/S over the floor(N / n) windows of n observations
     - H = slope of ln (R/S)(n) on ln n
     - Corrected H = 0.5 + slope of (ln (R/S)(n) - ln E[R/S](n)) on ln n
@@ -202,12 +216,15 @@ def get_rescaled_range_hurst_exponent(
     - Anis, A.A. & Lloyd, E.H. (1976). "The expected value of the adjusted rescaled Hurst
       range of independent normal summands." Biometrika, 63(1), 111-116.
     - Peters, E.E. (1994). "Fractal Market Analysis." Wiley.
-    - Referenced against nolds' hurst_rs (https://github.com/CSchoel/nolds).
+
+    Referenced against:
+    - nolds, hurst_rs: https://github.com/CSchoel/nolds/blob/0.6.3/nolds/measures.py#L1203
+        Test: tests/risk/test_fractal_model.py::test_measures_of_returns_equal_nolds
 
     Notes:
-        - S is the population standard deviation (ddof=0), as in Hurst's and Peters'
-          definition, which is nolds' hurst_rs with unbiased=False. nolds fits by RANSAC
-          unless fit="poly"; this is a least squares fit.
+        - S is the population standard deviation (with n in the denominator), as in Hurst's and Peters'
+          definition, which is nolds' hurst_rs without its unbiased standard deviation. nolds
+          fits by RANSAC unless asked for a polynomial fit; this is a least squares fit.
         - Windows without variation are left out of the average.
 
     Args:
@@ -270,7 +287,7 @@ def get_detrended_fluctuation(
 ) -> float:
     """
     Calculate the scaling exponent alpha of the Detrended Fluctuation Analysis (DFA) of a
-    series of changes (e.g. returns).
+    series of changes (e.g. returns): its long-term memory, robust to slow shifts in the mean.
 
     The changes are summed into a profile, which is cut into windows of n observations. In
     every window a polynomial trend is fitted and removed, and the fluctuation F(n) is the
@@ -292,13 +309,18 @@ def get_detrended_fluctuation(
 
     - Peng, C.-K., Buldyrev, S.V., Havlin, S., Simons, M., Stanley, H.E. & Goldberger, A.L.
       (1994). "Mosaic organization of DNA nucleotides." Physical Review E, 49(2), 1685-1689.
-    - Referenced against nolds' dfa (https://github.com/CSchoel/nolds) and antropy's
-      detrended_fluctuation (https://github.com/raphaelvallat/antropy).
+
+    Referenced against:
+    - nolds, dfa: https://github.com/CSchoel/nolds/blob/0.6.3/nolds/measures.py#L1997
+        Test: tests/risk/test_fractal_model.py::test_measures_of_returns_equal_nolds
+
+    Shares similar logic:
+    - antropy, detrended_fluctuation: https://github.com/raphaelvallat/antropy/blob/v0.2.3/src/antropy/fractal.py#L369
 
     Notes:
         - The windows do not overlap, as in Peng et al.; nolds' dfa lets them overlap by half
-          unless overlap=False and fits by RANSAC unless fit_exp="poly". antropy fixes its own
-          window sizes and the first order.
+          unless asked not to and fits by RANSAC unless asked for a polynomial fit. antropy
+          fixes its own window sizes and the first order.
 
     Args:
         data (pd.Series | np.ndarray): The changes (e.g. returns).
@@ -364,7 +386,10 @@ def get_higuchi_fractal_dimension(
 
     - Higuchi, T. (1988). "Approach to an irregular time series on the basis of the fractal
       theory." Physica D, 31(2), 277-283.
-    - Referenced against antropy's higuchi_fd (https://github.com/raphaelvallat/antropy).
+
+    Referenced against:
+    - antropy, higuchi_fd: https://github.com/raphaelvallat/antropy/blob/v0.2.3/src/antropy/fractal.py#L232
+        Test: tests/risk/test_fractal_model.py::test_fractal_dimensions_equal_antropy
 
     Args:
         data (pd.Series | np.ndarray): The curve, e.g. log prices.
@@ -402,8 +427,8 @@ def get_higuchi_fractal_dimension(
 
 def get_katz_fractal_dimension(data: pd.Series | np.ndarray) -> float:
     """
-    Calculate the Katz Fractal Dimension of a curve: the log of the number of steps relative
-    to how far the curve gets from its start for the distance it travels.
+    Calculate the Katz Fractal Dimension of a curve: how much the curve doubles back on
+    itself, from the number of steps and how far it gets from its start for the distance it travels.
 
     A straight line has a dimension of 1; the more the curve doubles back on itself, the
     higher the dimension.
@@ -419,7 +444,10 @@ def get_katz_fractal_dimension(data: pd.Series | np.ndarray) -> float:
 
     - Katz, M.J. (1988). "Fractals and the analysis of waveforms." Computers in Biology and
       Medicine, 18(3), 145-156.
-    - Referenced against antropy's katz_fd (https://github.com/raphaelvallat/antropy).
+
+    Referenced against:
+    - antropy, katz_fd: https://github.com/raphaelvallat/antropy/blob/v0.2.3/src/antropy/fractal.py#L104
+        Test: tests/risk/test_fractal_model.py::test_fractal_dimensions_equal_antropy
 
     Args:
         data (pd.Series | np.ndarray): The curve, e.g. log prices.
@@ -444,8 +472,8 @@ def get_katz_fractal_dimension(data: pd.Series | np.ndarray) -> float:
 
 def get_petrosian_fractal_dimension(data: pd.Series | np.ndarray) -> float:
     """
-    Calculate the Petrosian Fractal Dimension of a curve from the number of times its
-    direction changes.
+    Calculate the Petrosian Fractal Dimension of a curve: how irregular the curve is, from the
+    number of times its direction changes.
 
     A curve that keeps its direction has a dimension of 1; the more often it turns, the
     higher the dimension.
@@ -462,7 +490,10 @@ def get_petrosian_fractal_dimension(data: pd.Series | np.ndarray) -> float:
     - Petrosian, A. (1995). "Kolmogorov complexity of finite sequences and recognition of
       different preictal EEG patterns." Proceedings of the Eighth IEEE Symposium on
       Computer-Based Medical Systems, 212-217.
-    - Referenced against antropy's petrosian_fd (https://github.com/raphaelvallat/antropy).
+
+    Referenced against:
+    - antropy, petrosian_fd: https://github.com/raphaelvallat/antropy/blob/v0.2.3/src/antropy/fractal.py#L14
+        Test: tests/risk/test_fractal_model.py::test_fractal_dimensions_equal_antropy
 
     Args:
         data (pd.Series | np.ndarray): The curve, e.g. log prices.
@@ -493,7 +524,7 @@ def get_correlation_dimension(
 ) -> float:
     """
     Calculate the Correlation Dimension of a series by the Grassberger-Procaccia algorithm:
-    the dimension of the set its delay embedding fills.
+    the dimension of the set its delay embedding fills, low for a deterministic process.
 
     The series is embedded into vectors of `embedding` consecutive values and the
     correlation sum C(r), the share of pairs of vectors closer than r, is counted for a
@@ -508,7 +539,7 @@ def get_correlation_dimension(
     - D2 = slope of ln C(r) on ln r
 
     with ||.|| the Euclidean norm. The radii are multiples of the sample standard deviation
-    (ddof=1) of the series when given; by default they are the radii, 3% apart, at which
+    (with n - 1 in the denominator) of the series when given; by default they are the radii, 3% apart, at which
     between 0.01% and 1% of the pairs are closer than r, which places the fit at the small
     distances a long enough series still has pairs for, whatever the embedding dimension.
 
@@ -518,13 +549,15 @@ def get_correlation_dimension(
 
     - Grassberger, P. & Procaccia, I. (1983). "Characterization of strange attractors."
       Physical Review Letters, 50(5), 346-349.
-    - Referenced against nolds' corr_dim (https://github.com/CSchoel/nolds).
+
+    Shares similar logic:
+    - nolds, corr_dim: https://github.com/CSchoel/nolds/blob/0.6.3/nolds/measures.py#L1848
 
     Notes:
         - The pairs are those of different vectors. nolds' corr_dim also counts every vector
           as a pair with itself (a distance of 0), which keeps C(r) above 1 / (M - 1) and pulls
-          the slope towards 0 where few pairs are close; it fits by RANSAC unless fit="poly"
-          and takes the radii 0.1 to 0.5 times the standard deviation, at which an embedding
+          the slope towards 0 where few pairs are close; it fits by RANSAC unless asked for a
+          polynomial fit and takes the radii 0.1 to 0.5 times the standard deviation, at which an embedding
           of 10 daily returns has hardly any pairs.
         - The distances are counted in blocks, so the memory stays bounded for long series.
 
@@ -589,9 +622,11 @@ def get_correlation_dimension(
 
 def get_mean_period(data: pd.Series | np.ndarray) -> int:
     """
-    The mean period of a series: one over the power-weighted mean frequency of its
-    periodogram, rounded up, in observations. Rosenstein et al. (1993) keep the nearest
-    neighbours of the largest Lyapunov exponent at least this far apart in time.
+    Calculate the mean period of a series: the typical length of its cycles, in observations.
+
+    It is one over the power-weighted mean frequency of its periodogram, rounded up.
+    Rosenstein et al. (1993) keep the nearest neighbours of the largest Lyapunov exponent at
+    least this far apart in time.
 
     Args:
         data (pd.Series | np.ndarray): The series.
@@ -624,7 +659,7 @@ def get_largest_lyapunov_exponent(
     """
     Calculate the largest Lyapunov exponent of a series by the algorithm of Rosenstein,
     Collins and De Luca: the average rate, per period, at which nearby trajectories of its
-    delay embedding move apart.
+    delay embedding move apart, positive for a chaotic process.
 
     Every embedded vector is paired with its nearest neighbour that is at least
     `min_separation` periods away in time, and both are followed for `trajectory_length`
@@ -647,11 +682,15 @@ def get_largest_lyapunov_exponent(
     - Rosenstein, M.T., Collins, J.J. & De Luca, C.J. (1993). "A practical method for
       calculating largest Lyapunov exponents from small data sets." Physica D, 65(1-2),
       117-134.
-    - Referenced against nolds' lyap_r (https://github.com/CSchoel/nolds).
+
+    Referenced against:
+    - nolds, lyap_r: https://github.com/CSchoel/nolds/blob/0.6.3/nolds/measures.py#L117
+        Test: tests/risk/test_fractal_model.py::test_measures_of_returns_equal_nolds
 
     Notes:
         - nolds chooses the delay from the autocorrelation function and fits by RANSAC unless
-          lag= and fit="poly" are given; this uses the `delay` as given and a least squares fit.
+          given a delay and asked for a polynomial fit; this uses the `delay` as given and a
+          least squares fit.
 
     Args:
         data (pd.Series | np.ndarray): The series, e.g. returns.
@@ -742,8 +781,8 @@ def get_lyapunov_spectrum(
 ) -> pd.Series:
     """
     Calculate the Lyapunov spectrum of a series by the algorithm of Eckmann, Kamphorst,
-    Ruelle and Ciliberto: the `matrix_dimension` largest rates at which the reconstructed
-    dynamics stretch or shrink small perturbations, per period.
+    Ruelle and Ciliberto: the largest rates, per period, at which the reconstructed dynamics
+    stretch or shrink small perturbations.
 
     The local dynamics are reconstructed from the delay embedding: around every vector a
     linear map (the Jacobian) is fitted by least squares on the neighbours, sending each
@@ -766,9 +805,14 @@ def get_lyapunov_spectrum(
 
     - Eckmann, J.-P., Kamphorst, S.O., Ruelle, D. & Ciliberto, S. (1986). "Liapunov exponents
       from time series." Physical Review A, 34(6), 4971-4979.
-    - Referenced against nolds' lyap_e (https://github.com/CSchoel/nolds).
+
+    Referenced against:
+    - nolds, lyap_e: https://github.com/CSchoel/nolds/blob/0.6.3/nolds/measures.py#L400
+        Test: tests/risk/test_fractal_model.py::test_lyapunov_spectrum_equals_nolds_with_a_step_of_one
 
     Notes:
+        - nolds is matched with as many exponents as the embedding dimension (a step of one),
+          where both multiply the same maps.
         - The map T_i moves a perturbation from i to i + m, so the decompositions are chained
           over i, i + m, i + 2m, ... (m interleaved chains that together use every vector).
           nolds' lyap_e chains the maps of consecutive vectors, which mixes perturbations at

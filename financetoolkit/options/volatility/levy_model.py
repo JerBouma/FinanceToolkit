@@ -32,8 +32,9 @@ def get_merton_characteristic_function(
 ) -> np.ndarray:
     """
     Calculate the characteristic function of the log return X = ln(S_T / F) in the jump
-    diffusion of Merton (1976): a geometric Brownian motion with lognormal jumps arriving as
-    a Poisson process, compensated so that the forward F is the expected price.
+    diffusion of Merton (1976): the Fourier transform of its distribution, a geometric
+    Brownian motion with lognormal jumps arriving as a Poisson process, compensated so that
+    the forward F is the expected price.
 
     The formulas are as follows:
 
@@ -108,11 +109,12 @@ def get_merton_jump_diffusion_price(
 ) -> float | np.ndarray:
     """
     Calculate the price of a European option in the jump diffusion model of Merton (1976):
-    the stock follows a geometric Brownian motion with lognormal jumps arriving as a Poisson
-    process, which gives the fat tails and short-dated smile that Black-Scholes has none of.
+    what a call or put is worth when the stock follows a geometric Brownian motion with
+    lognormal jumps arriving as a Poisson process, which gives the fat tails and short-dated
+    smile that Black-Scholes has none of.
 
     Conditional on n jumps the log return is normal, so the price is a Poisson-weighted sum
-    of Black-Scholes prices (method="series", the closed form). The other methods price from
+    of Black-Scholes prices (the series, the closed form). The other methods price from
     the characteristic function (see get_merton_characteristic_function) with the Fourier
     pricer of the Toolkit (see fourier_model.get_fourier_price).
 
@@ -130,6 +132,11 @@ def get_merton_jump_diffusion_price(
     price. The series runs until the Poisson probability left out is below 1e-16. With λ = 0
     it is the Black-Scholes price.
 
+    Referenced against:
+    - QuantLib, BatesEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_bates_engine.html
+        Test:
+            tests/options/test_stochastic_volatility_models.py::test_merton_series_matches_the_fourier_methods_and_quantlib
+
     Args:
         stock_price (float): The current stock price.
         strike_price (float | np.ndarray): The strike price, or an array of strike prices.
@@ -143,8 +150,9 @@ def get_merton_jump_diffusion_price(
         jump_volatility (float): The standard deviation δ of the log jump size, 0 or above.
         dividend_yield (float, optional): The continuous dividend yield. Defaults to 0.
         put_option (bool, optional): Whether to price a put instead of a call. Defaults to False.
-        method (str, optional): "series" for the closed form, or "lewis", "cos" or "fft" for the
-            Fourier methods. Defaults to "series".
+        method (str, optional): The pricer. Options are: "series" (the closed form), "lewis"
+            (Lewis' integral), "cos" (the COS method), "fft" (the Carr-Madan fast Fourier
+            transform). Defaults to "series".
 
     Returns:
         float | np.ndarray: The option price, a float for a single strike price and an array
@@ -159,7 +167,7 @@ def get_merton_jump_diffusion_price(
         References: Merton, R. C. (1976). "Option Pricing When Underlying Stock Returns Are
         Discontinuous." Journal of Financial Economics, 3(1-2), 125-144. The series agrees
         with the Lewis method within 1e-13, an independent route through the characteristic
-        function, and with QuantLib's BatesEngine (https://www.quantlib.org) at the Merton
+        function, and with QuantLib's BatesEngine at the Merton
         limit of a nearly constant variance within 2e-6, the effect of the variance's small
         volatility there.
 
@@ -253,8 +261,9 @@ def get_variance_gamma_characteristic_function(
 ) -> np.ndarray:
     """
     Calculate the characteristic function of the log return X = ln(S_T / F) in the Variance
-    Gamma model of Madan, Carr and Chang (1998): a Brownian motion with drift θ and
-    volatility σ run on a gamma-distributed clock whose variance per year is ν.
+    Gamma model of Madan, Carr and Chang (1998): the Fourier transform of its distribution,
+    a Brownian motion with drift θ and volatility σ run on a gamma-distributed clock whose
+    variance per year is ν.
 
     The formulas are as follows:
 
@@ -329,14 +338,16 @@ def get_variance_gamma_price(
 ) -> float | np.ndarray:
     """
     Calculate the price of a European option in the Variance Gamma model of Madan, Carr and
-    Chang (1998), a pure-jump Lévy process: a Brownian motion with drift θ and volatility σ
-    evaluated at a gamma-distributed time. The drift sets the skew and the variance rate ν the
-    kurtosis of the returns, so the model fits a smile that Black-Scholes cannot, with
-    three parameters.
+    Chang (1998): what a call or put is worth when the stock follows a pure-jump Lévy
+    process, a Brownian motion with drift θ and volatility σ evaluated at a
+    gamma-distributed time.
+
+    The drift sets the skew and the variance rate ν the kurtosis of the returns, so the
+    model fits a smile that Black-Scholes cannot, with three parameters.
 
     The price follows from the characteristic function (see
     get_variance_gamma_characteristic_function) with the Fourier pricer of the Toolkit (see
-    fourier_model.get_fourier_price); method="fft" is the fast Fourier transform of Carr and
+    fourier_model.get_fourier_price); the fast Fourier transform is that of Carr and
     Madan (1999), the method they introduced with this model.
 
     The formulas are as follows:
@@ -350,6 +361,11 @@ def get_variance_gamma_price(
     rate. As ν goes to zero the price goes to the Black-Scholes price with volatility σ when
     θ = 0.
 
+    Referenced against:
+    - QuantLib, VarianceGammaEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_variance_gamma_engine.html
+        Test:
+            tests/options/test_stochastic_volatility_models.py::test_variance_gamma_matches_the_gamma_clock_integral_and_quantlib
+
     Args:
         stock_price (float): The current stock price.
         strike_price (float | np.ndarray): The strike price, or an array of strike prices.
@@ -361,7 +377,9 @@ def get_variance_gamma_price(
         variance_rate (float): The variance rate ν, above 0.
         dividend_yield (float, optional): The continuous dividend yield. Defaults to 0.
         put_option (bool, optional): Whether to price a put instead of a call. Defaults to False.
-        method (str, optional): "lewis", "cos" or "fft". Defaults to "lewis".
+        method (str, optional): The Fourier pricer. Options are: "lewis" (Lewis' integral),
+            "cos" (the COS method), "fft" (the Carr-Madan fast Fourier transform). Defaults to
+            "lewis".
 
     Returns:
         float | np.ndarray: The option price, a float for a single strike price and an array
@@ -378,8 +396,8 @@ def get_variance_gamma_price(
         Madan, D. B. (1999). "Option Valuation Using the Fast Fourier Transform." Journal of
         Computational Finance, 2(4), 61-73. The Lewis method agrees within 1e-13 with an
         independent integration of the conditional Black-Scholes price over the gamma clock,
-        and QuantLib's VarianceGammaEngine (https://www.quantlib.org) within 2e-8, the
-        precision of its own integration. The Carr-Madan transform (method="fft") needs
+        and QuantLib's VarianceGammaEngine within 2e-8, the
+        precision of its own integration. The Carr-Madan transform needs
         the moment E[S_T^p] to exist, 1 — θνp — σ²νp² / 2 > 0, for p = α + 1 of the damping
         α = 1.5, and is accurate only with a margin above it, so with p = 4 (see
         fourier_model.FFT_MOMENT_ORDER). That fails for a large variance rate or volatility,

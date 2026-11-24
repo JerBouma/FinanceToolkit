@@ -47,8 +47,9 @@ def get_heston_nandi_log_likelihood(
     first_variance: float,
 ) -> tuple[float, float]:
     """
-    Calculate the Gaussian log-likelihood of the Heston and Nandi (2000) GARCH(1, 1) model
-    and the variance it forecasts for the period after the last return.
+    Calculate the Gaussian log-likelihood of the Heston and Nandi (2000) GARCH(1, 1) model:
+    how well its parameters explain a series of excess returns, and the variance it
+    forecasts for the period after the last return.
 
     The formulas are as follows:
 
@@ -120,7 +121,8 @@ def get_heston_nandi_parameters(
 ) -> dict[str, float]:
     """
     Fit the GARCH(1, 1) model of Heston and Nandi (2000) to a series of log returns by
-    maximum likelihood: the model whose European option prices have a closed form (see
+    maximum likelihood: the variance dynamics, with a leverage effect, that best explain the
+    returns and whose European option prices have a closed form (see
     get_heston_nandi_price).
 
     The variance responds to the shock z_t shifted by γ√h_t, so with a positive γ a fall
@@ -160,7 +162,7 @@ def get_heston_nandi_parameters(
 
     Notes:
         References: Heston, S. L. and Nandi, S. (2000). "A Closed-Form GARCH Option Valuation
-        Model." The Review of Financial Studies, 13(3), 585-625. Referenced against a fit by
+        Model." The Review of Financial Studies, 13(3), 585-625. Checked against a fit by
         direct likelihood maximization with Nelder-Mead from the recovered optimum on
         simulated Heston-Nandi returns, which recovers the simulated parameters within their
         standard errors.
@@ -287,10 +289,12 @@ def get_heston_nandi_price(
 ) -> float | np.ndarray:
     """
     Calculate the price of a European option in the GARCH(1, 1) model of Heston and Nandi
-    (2000), the GARCH option pricing model with a closed form: the variance of the stock
-    follows a GARCH process with a leverage effect, its parameters can be fitted on the
-    stock's own returns (see get_heston_nandi_parameters), and the price follows from the
-    moment generating function of the log price by Fourier inversion.
+    (2000): what a call or put is worth when the variance of the stock follows a GARCH
+    process with a leverage effect, the GARCH option pricing model with a closed form.
+
+    Its parameters can be fitted on the stock's own returns (see
+    get_heston_nandi_parameters), and the price follows from the moment generating function
+    of the log price by Fourier inversion.
 
     Under the risk-neutral measure the price of risk λ becomes —½ and the asymmetry γ becomes
     γ* = γ + λ + ½. The moment generating function f(φ) = E[S_T^φ] = S^φ * exp(A + B * h)
@@ -327,7 +331,9 @@ def get_heston_nandi_price(
         dividend_yield (float, optional): The continuous dividend yield. Defaults to 0.
         put_option (bool, optional): Whether to price a put instead of a call. Defaults to False.
         periods_per_year (int, optional): The number of periods in a year. Defaults to 252.
-        method (str, optional): "lewis", "cos" or "fft". Defaults to "lewis".
+        method (str, optional): The Fourier pricer. Options are: "lewis" (Lewis' integral),
+            "cos" (the COS method), "fft" (the Carr-Madan fast Fourier transform). Defaults to
+            "lewis".
 
     Returns:
         float | np.ndarray: The option price, a float for a single strike price and an array
@@ -339,7 +345,7 @@ def get_heston_nandi_price(
 
     Notes:
         References: Heston, S. L. and Nandi, S. (2000). "A Closed-Form GARCH Option
-        Valuation Model." The Review of Financial Studies, 13(3), 585-625. Referenced
+        Valuation Model." The Review of Financial Studies, 13(3), 585-625. Checked
         against a Monte Carlo simulation of the risk-neutral process (1,000,000 seeded paths,
         within three standard errors) and the Black-Scholes price at α = β = 0 (within
         1e-12). The dividend yield enters as a lower drift, which the paper leaves out.

@@ -753,7 +753,8 @@ class Ratios:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculates and collects all ratios based on the provided data.
+        Collect all the efficiency, liquidity, profitability, solvency and valuation ratios of every ticker in one
+        table.
 
         Args:
             include_dividends (bool, optional): Whether to deduct preferred dividends from net income in the
@@ -788,8 +789,8 @@ class Ratios:
 
         Notes:
         - The method calculates various ratios for each asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the ratio values
-          using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the ratio values
+          over the given lag.
 
         As an example:
 
@@ -919,7 +920,7 @@ class Ratios:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculates all Custom Ratios based on the data provided.
+        Calculate custom ratios: ratios of your own, defined as formulas on the financial statement items.
 
         Note that any of the following characters are considered as operators:
             +, -, *, /, **, %, //, <, >, ==, !=, >=, <=, (, )
@@ -948,8 +949,8 @@ class Ratios:
 
         Notes:
         - The method calculates various custom ratios for each asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the ratio values
-          using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the ratio values
+          over the given lag.
 
         As an example:
 
@@ -1187,7 +1188,8 @@ class Ratios:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculates and collects all Efficiency Ratios based on the provided data.
+        Collect all the efficiency ratios of every ticker in one table: how well each company turns its assets,
+        inventory and receivables into revenue and cash.
 
         Args:
             days (int | float, optional): The number of days in the window the flows cover. Defaults to
@@ -1218,8 +1220,8 @@ class Ratios:
 
         Notes:
         - The method calculates various efficiency ratios for each asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the ratio values
-          using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the ratio values
+          over the given lag.
 
         As an example:
 
@@ -1474,8 +1476,8 @@ class Ratios:
         Notes:
         - The method retrieves historical data and calculates the asset turnover ratio
           for each asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the ratio values
-          using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the ratio values
+          over the given lag.
 
         As an example:
 
@@ -1561,8 +1563,8 @@ class Ratios:
         most. Analysts watch the trend and the gap with peers, since a falling ratio
         often comes before markdowns or write-downs. Because the ratio divides cost of
         goods sold by inventory, the inventory valuation method (LIFO or FIFO) and
-        year-end stock building for a peak season both move it; quarterly data with
-        trailing=4 smooths the seasonal effect.
+        year-end stock building for a peak season both move it; quarterly data with a
+        trailing window of four quarters smooths the seasonal effect.
 
         Also known as: stock turnover ratio.
 
@@ -1595,8 +1597,8 @@ class Ratios:
         Notes:
         - The method retrieves historical data and calculates the inventory turnover ratio
           for each asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the ratio values
-          using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the ratio values
+          over the given lag.
 
         As an example:
 
@@ -1713,8 +1715,8 @@ class Ratios:
         Notes:
         - The method retrieves historical data and calculates the DSI ratio for each
           asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the ratio values
-          using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the ratio values
+          over the given lag.
 
         As an example:
 
@@ -1793,9 +1795,8 @@ class Ratios:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculate the days of sales outstanding ratio, an efficiency ratio that measures
-        the average number of days it takes a company to collect payment on its
-        credit sales.
+        Calculate the days of sales outstanding ratio, an efficiency ratio that measures the average number of days it
+        takes a company to collect payment on its credit sales.
 
         The days of sales outstanding (DSO) ratio is calculated by dividing the average
         accounts receivable by revenue and then multiplying by the number of days in the
@@ -1849,8 +1850,8 @@ class Ratios:
         Notes:
         - The method retrieves historical data and calculates the DSO ratio for each
           asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the ratio values
-          using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the ratio values
+          over the given lag.
 
         As an example:
 
@@ -1969,8 +1970,8 @@ class Ratios:
         Notes:
         - The method retrieves historical data and calculates the operating cycle ratio for each
           asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the ratio values
-          using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the ratio values
+          over the given lag.
 
         As an example:
 
@@ -2108,8 +2109,8 @@ class Ratios:
         Notes:
         - The method retrieves historical data and calculates the accounts payable turnover ratio for each
           asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the ratio values
-          using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the ratio values
+          over the given lag.
 
         As an example:
 
@@ -2231,8 +2232,8 @@ class Ratios:
         Notes:
         - The method retrieves historical data and calculates the DPO ratio for each
           asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the ratio values
-          using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the ratio values
+          over the given lag.
 
         As an example:
 
@@ -2311,9 +2312,10 @@ class Ratios:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculate the Cash Conversion Cycle, which measures the amount of time it takes for a company to convert
-        its investments in inventory and accounts receivable into cash, while considering the time it takes to pay
-        its accounts payable. This ratio is also known as Cash-to-Cash Cycle (C2C) or Net Operating Cycle.
+        Calculate the cash conversion cycle: the number of days a company's cash is tied up in inventory and
+        receivables, less the days it takes to pay its suppliers.
+
+        This ratio is also known as Cash-to-Cash Cycle (C2C) or Net Operating Cycle.
 
         The Cash Conversion Cycle (CCC) is an important measure of a company's liquidity management and efficiency
         in managing its working capital. It takes into account the time it takes to sell inventory, collect payments
@@ -2364,7 +2366,7 @@ class Ratios:
 
         Notes:
         - The method retrieves historical data and calculates the CCC for each asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the CCC values using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the CCC values over the given lag.
 
         As an example:
 
@@ -2480,9 +2482,10 @@ class Ratios:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculate the cash conversion efficiency, an efficiency ratio that measures how
-        efficiently a company converts its sales into cash. It is also known as the cash
-        conversion ratio.
+        Calculate the cash conversion efficiency, an efficiency ratio that measures how efficiently a company converts
+        its sales into cash.
+
+        It is also known as the cash conversion ratio.
 
         The cash conversion efficiency ratio is calculated by dividing the operating cash
         flow by the revenue. It indicates how much of a company's sales are converted into
@@ -2523,8 +2526,8 @@ class Ratios:
         - The method retrieves historical data and calculates the cash conversion
         efficiency for each asset in the Toolkit instance. It is the same calculation as
         `get_operating_cash_flow_sales_ratio`.
-        - If `growth` is set to True, the method calculates the growth of the ratio values
-        using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the ratio values
+        over the given lag.
 
         As an example:
 
@@ -2594,9 +2597,8 @@ class Ratios:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculate the receivables turnover, a ratio that measures how efficiently a
-        company uses its assets by comparing the amount of credit extended to customers to
-        the amount of sales generated.
+        Calculate the receivables turnover, a ratio that measures how efficiently a company uses its assets by
+        comparing the amount of credit extended to customers to the amount of sales generated.
 
         The receivables turnover ratio is an important measure of how well a company manages its
         accounts receivable. It indicates how quickly a company collects payments from its customers.
@@ -2639,7 +2641,7 @@ class Ratios:
         Notes:
         - The method retrieves historical data and calculates the receivables turnover ratio for each
           asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the ratio values over the given lag.
 
         As an example:
 
@@ -2748,8 +2750,8 @@ class Ratios:
         Notes:
         - The method retrieves historical data and calculates the SG&A to revenue ratio for
         each asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the ratio values
-        using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the ratio values
+        over the given lag.
 
         As an example:
 
@@ -2864,8 +2866,8 @@ class Ratios:
         Notes:
         - The method retrieves historical data and calculates the Fixed Asset Turnover ratio
         for each asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the ratio values
-        using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the ratio values
+        over the given lag.
 
         As an example:
 
@@ -2935,9 +2937,8 @@ class Ratios:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculate the working capital turnover ratio, an efficiency ratio that
-        measures how effectively a company uses its working capital to generate
-        revenue.
+        Calculate the working capital turnover ratio, an efficiency ratio that measures how effectively a company uses
+        its working capital to generate revenue.
 
         A high working capital turnover ratio indicates that a company is generating a
         large amount of revenue relative to the working capital it employs, which can
@@ -2986,8 +2987,8 @@ class Ratios:
         Notes:
         - The method retrieves historical data and calculates the working capital
         turnover ratio for each asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the ratio
-        values using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the ratio
+        values over the given lag.
 
         As an example:
 
@@ -3108,8 +3109,8 @@ class Ratios:
         Notes:
         - The method retrieves historical data and calculates the operating ratio for each
         asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the ratio values
-        using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the ratio values
+        over the given lag.
 
         As an example:
 
@@ -3176,9 +3177,8 @@ class Ratios:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculate the research and development (R&D) intensity ratio, an efficiency
-        ratio that measures how much a company reinvests in research and development
-        relative to its revenue.
+        Calculate the research and development (R&D) intensity ratio, an efficiency ratio that measures how much a
+        company reinvests in research and development relative to its revenue.
 
         This ratio is particularly relevant for comparing companies in technology,
         pharmaceutical and other innovation-driven industries, where R&D spending is
@@ -3224,8 +3224,8 @@ class Ratios:
         Notes:
         - The method retrieves historical data and calculates the R&D intensity ratio for
         each asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the ratio values
-        using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the ratio values
+        over the given lag.
 
         As an example:
 
@@ -3291,9 +3291,8 @@ class Ratios:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculate the selling and marketing (S&M) expenses to revenue ratio, an
-        efficiency ratio that measures the proportion of revenue spent on selling and
-        marketing activities.
+        Calculate the selling and marketing (S&M) expenses to revenue ratio, an efficiency ratio that measures the
+        proportion of revenue spent on selling and marketing activities.
 
         This ratio isolates the selling and marketing component of the combined SG&A
         expense line (see `get_sga_to_revenue_ratio`), which is useful for comparing
@@ -3332,8 +3331,8 @@ class Ratios:
         Notes:
         - The method retrieves historical data and calculates the S&M to revenue ratio for
         each asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the ratio values
-        using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the ratio values
+        over the given lag.
         - Not every company reports Selling and Marketing Expenses separately from
         General and Administrative Expenses. For those companies the ratio shows 0,
         which means the split is not reported, not that nothing was spent; use
@@ -3401,9 +3400,8 @@ class Ratios:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculate the general and administrative (G&A) expenses to revenue ratio, an
-        efficiency ratio that measures the proportion of revenue spent on general and
-        administrative overhead.
+        Calculate the general and administrative (G&A) expenses to revenue ratio, an efficiency ratio that measures
+        the proportion of revenue spent on general and administrative overhead.
 
         This ratio isolates the administrative component of the combined SG&A expense
         line (see `get_sga_to_revenue_ratio`), which is useful for assessing overhead
@@ -3442,8 +3440,8 @@ class Ratios:
         Notes:
         - The method retrieves historical data and calculates the G&A to revenue ratio for
         each asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the ratio values
-        using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the ratio values
+        over the given lag.
         - Not every company reports General and Administrative Expenses separately
         from Selling and Marketing Expenses. For those companies the ratio shows 0,
         or, when the whole SG&A line is reported as general and administrative, the
@@ -3514,9 +3512,8 @@ class Ratios:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculate the stock-based compensation (SBC) to revenue ratio, an efficiency
-        ratio that measures how much of a company's revenue is being used to
-        compensate employees through non-cash equity awards.
+        Calculate the stock-based compensation (SBC) to revenue ratio, an efficiency ratio that measures how much of a
+        company's revenue is being used to compensate employees through non-cash equity awards.
 
         A high or rising SBC-to-revenue ratio is a common quality-of-earnings flag,
         particularly for technology companies, since SBC is added back in cash flow
@@ -3555,8 +3552,8 @@ class Ratios:
         Notes:
         - The method retrieves historical data and calculates the SBC to revenue ratio for
         each asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the ratio values
-        using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the ratio values
+        over the given lag.
 
         As an example:
 
@@ -3620,9 +3617,8 @@ class Ratios:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculate the deferred revenue ratio, an efficiency ratio that measures the
-        size of a company's deferred revenue (payments collected for goods or
-        services not yet delivered) relative to its revenue.
+        Calculate the deferred revenue ratio, an efficiency ratio that measures the size of a company's deferred
+        revenue (payments collected for goods or services not yet delivered) relative to its revenue.
 
         This ratio is a common leading indicator for subscription and SaaS
         businesses, where a growing deferred revenue balance relative to revenue can
@@ -3634,7 +3630,7 @@ class Ratios:
 
         Without trailing, the deferred revenue balance at the end of the period is used, so
         the ratio shows the backlog of prepaid revenue at that date. With trailing, the
-        balance is averaged over the `trailing` period ends to match the summed revenue.
+        balance is averaged over the period ends of the trailing window to match the summed revenue.
 
         Also known as: deferred revenue intensity, unearned revenue ratio.
 
@@ -3665,8 +3661,8 @@ class Ratios:
         Notes:
         - The method retrieves historical data and calculates the deferred revenue ratio for
         each asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the ratio values
-        using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the ratio values
+        over the given lag.
         - Not every company reports Deferred Revenue on its Balance Sheet, in which case this
         ratio will be unavailable.
 
@@ -3778,8 +3774,8 @@ class Ratios:
         Notes:
         - Damodaran, A., "Investment Valuation," 3rd edition, Wiley, 2012 (reinvestment and
         net capital expenditure).
-        - If `growth` is set to True, the method calculates the growth of the ratio values
-        using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the ratio values
+        over the given lag.
 
         As an example:
 
@@ -3887,8 +3883,8 @@ class Ratios:
         - Depreciation and amortization include the amortization of acquired intangibles,
         which is no wear of the assets that capital expenditure replaces, so the ratio is low
         for companies with large acquired intangibles.
-        - If `growth` is set to True, the method calculates the growth of the ratio values
-        using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the ratio values
+        over the given lag.
 
         As an example:
 
@@ -3995,8 +3991,8 @@ class Ratios:
         (https://site.financialmodelingprep.com/developer/docs).
         - The capital expenditure enters as its magnitude, so the ratio is positive whichever
         sign a source reports the capital expenditure with.
-        - If `growth` is set to True, the method calculates the growth of the ratio values
-        using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the ratio values
+        over the given lag.
 
         As an example:
 
@@ -4104,8 +4100,8 @@ class Ratios:
         - FinancialModelingPrep key metrics, `intangiblesToTotalAssets`, the reference definition, also
         exposed through OpenBB's fmp provider
         (https://site.financialmodelingprep.com/developer/docs).
-        - If `growth` is set to True, the method calculates the growth of the ratio values
-        using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the ratio values
+        over the given lag.
 
         As an example:
 
@@ -4217,8 +4213,8 @@ class Ratios:
         part of. Periods without a count are NaN.
         - FinancialModelingPrep historical employee count and OpenBB's equity profile
         (employees), the inputs of the reference definition.
-        - If `growth` is set to True, the method calculates the growth of the ratio values
-        using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the ratio values
+        over the given lag.
 
         As an example:
 
@@ -4327,8 +4323,8 @@ class Ratios:
         part of. Periods without a count are NaN.
         - FinancialModelingPrep historical employee count and OpenBB's equity profile
         (employees), the inputs of the reference definition.
-        - If `growth` is set to True, the method calculates the growth of the ratio values
-        using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the ratio values
+        over the given lag.
 
         As an example:
 
@@ -4437,8 +4433,8 @@ class Ratios:
         - Depreciation and amortization include the amortization of acquired intangibles,
         which is no wear of the assets that capital expenditure replaces, so the net capital
         expenditure is low for companies with large acquired intangibles.
-        - If `growth` is set to True, the method calculates the growth of the values using the
-        specified `lag`.
+        - When growth is requested, the method calculates the growth of the values over the
+        given lag.
 
         As an example:
 
@@ -4552,9 +4548,9 @@ class Ratios:
         French, "A Five-Factor Asset Pricing Model," Journal of Financial Economics 116(1),
         2015, pp. 1-22.
         - The first period has no total assets a year earlier and is NaN, so set an earlier
-        start_date to obtain it.
-        - If `growth` is set to True, the method calculates the growth of the ratio values
-        using the specified `lag`.
+        start date to obtain it.
+        - When growth is requested, the method calculates the growth of the ratio values
+        over the given lag.
 
         As an example:
 
@@ -4613,9 +4609,8 @@ class Ratios:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculate the net operating assets of Hirshleifer, Hou, Teoh and Zhang (2004): the
-        operating assets minus the operating liabilities, scaled by the total assets at the
-        start of the period.
+        Calculate the net operating assets of Hirshleifer, Hou, Teoh and Zhang (2004): the operating assets minus the
+        operating liabilities, scaled by the total assets at the start of the period.
 
         Net operating assets are the cumulative difference between the operating income
         and the free cash flow a company has reported over the years, so a high value means
@@ -4667,9 +4662,9 @@ class Ratios:
         Hou, K., C. Xue and L. Zhang, "Replicating Anomalies," Review of Financial Studies
         33(5), 2020, pp. 2019-2133.
         - The first period has no total assets of the period before and is NaN, so set an
-        earlier start_date to obtain it.
-        - If `growth` is set to True, the method calculates the growth of the ratio values
-        using the specified `lag`.
+        earlier start date to obtain it.
+        - When growth is requested, the method calculates the growth of the ratio values
+        over the given lag.
 
         As an example:
 
@@ -4732,7 +4727,8 @@ class Ratios:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculates and collects all Liquidity Ratios based on the provided data.
+        Collect all the liquidity ratios of every ticker in one table: whether each company can meet its short-term
+        obligations.
 
         Args:
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
@@ -4760,8 +4756,8 @@ class Ratios:
 
         Notes:
         - The method calculates various liquidity ratios for each asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the ratio values
-          using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the ratio values
+          over the given lag.
 
         As an example:
 
@@ -4945,8 +4941,8 @@ class Ratios:
         Notes:
         - The method retrieves historical data and calculates the current ratio for each
         asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the ratio values
-        using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the ratio values
+        over the given lag.
 
         As an example:
 
@@ -5060,8 +5056,8 @@ class Ratios:
         Notes:
         - The method retrieves historical data and calculates the quick ratio for each
         asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the ratio values
-        using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the ratio values
+        over the given lag.
 
         As an example:
 
@@ -5183,8 +5179,8 @@ class Ratios:
         Notes:
         - The method retrieves historical data and calculates the cash ratio for each
         asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the ratio values
-        using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the ratio values
+        over the given lag.
 
         As an example:
 
@@ -5300,8 +5296,8 @@ class Ratios:
         Notes:
         - The method retrieves historical data and calculates the working capital for each
         asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the working capital
-        values using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the working capital
+        values over the given lag.
 
         As an example:
 
@@ -5413,8 +5409,8 @@ class Ratios:
         Notes:
         - The method retrieves historical data and calculates the operating cash flow ratio for each
         asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the ratio values
-        using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the ratio values
+        over the given lag.
 
         As an example:
 
@@ -5517,8 +5513,8 @@ class Ratios:
         Notes:
         - The method retrieves historical data and calculates the operating cash flow to sales ratio for each
         asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the ratio values
-        using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the ratio values
+        over the given lag.
 
         As an example:
 
@@ -5690,10 +5686,8 @@ class Ratios:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the defensive interval ratio (DIR), a liquidity ratio that measures
-        how many days a company could continue to cover its operating expenses using
-        only its existing defensive (most liquid) assets, without relying on
-        additional revenue.
+        Calculate the defensive interval ratio (DIR): how many days a company could cover its operating expenses with
+        its most liquid assets alone, without new revenue.
 
         Unlike the current, quick, and cash ratios, which express liquidity relative
         to current liabilities, the defensive interval ratio expresses liquidity
@@ -5712,7 +5706,7 @@ class Ratios:
         amortization from the cash flow statement also covers the part charged to it, and
         because paying suppliers and production staff is the largest cash cost for most
         companies. Days is the length of the window the expenses cover: 365 for annual
-        data, 365 / 4 for quarterly data, times `trailing` when the expenses are summed
+        data, 365 / 4 for quarterly data, times the trailing periods when the expenses are summed
         over several periods, so the ratio is in calendar days for any frequency.
 
         Also known as: defensive interval period, basic defense interval.
@@ -5747,8 +5741,8 @@ class Ratios:
         Notes:
         - The method retrieves historical data and calculates the defensive interval
         ratio for each asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the ratio
-        values using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the ratio
+        values over the given lag.
 
         As an example:
 
@@ -5850,7 +5844,8 @@ class Ratios:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculates and collects all Profitability Ratios based on the provided data.
+        Collect all the profitability ratios of every ticker in one table: how much profit each company earns on its
+        revenue, assets and capital.
 
         Args:
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
@@ -5878,8 +5873,8 @@ class Ratios:
 
         Notes:
         - The method calculates various profitability ratios for each asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the ratio values
-          using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the ratio values
+          over the given lag.
 
         As an example:
 
@@ -6151,8 +6146,8 @@ class Ratios:
         Notes:
         - The method retrieves historical data and calculates the gross margin ratio for each
         asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the ratio values
-        using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the ratio values
+        over the given lag.
 
         As an example:
 
@@ -6276,8 +6271,8 @@ class Ratios:
         Notes:
         - The method retrieves historical data and calculates the operating margin ratio for each
         asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the ratio values
-        using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the ratio values
+        over the given lag.
 
         As an example:
 
@@ -6380,8 +6375,8 @@ class Ratios:
         Notes:
         - The method retrieves historical data and calculates the net profit margin ratio for each
         asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the ratio values
-        using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the ratio values
+        over the given lag.
 
         As an example:
 
@@ -6485,8 +6480,8 @@ class Ratios:
         - FinancialModelingPrep ratios, `continuousOperationsProfitMargin`, the reference definition, also
         exposed through OpenBB's fmp provider
         (https://site.financialmodelingprep.com/developer/docs).
-        - If `growth` is set to True, the method calculates the growth of the ratio values
-        using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the ratio values
+        over the given lag.
 
         As an example:
 
@@ -6548,9 +6543,8 @@ class Ratios:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculate the EBITDA margin, a profitability ratio that measures the
-        percentage of revenue that remains as earnings before interest, taxes,
-        depreciation and amortization (EBITDA).
+        Calculate the EBITDA margin, a profitability ratio that measures the percentage of revenue that remains as
+        earnings before interest, taxes, depreciation and amortization (EBITDA).
 
         EBITDA margin approximates a company's core operating profitability before the
         effects of financing decisions (interest), tax jurisdictions, and non-cash
@@ -6592,8 +6586,8 @@ class Ratios:
         Notes:
         - The method retrieves historical data and calculates the EBITDA margin for
         each asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the ratio
-        values using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the ratio
+        values over the given lag.
 
         As an example:
 
@@ -6662,9 +6656,8 @@ class Ratios:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Compute the Interest Burden Ratio, the component of the extended (five-step)
-        DuPont decomposition that isolates the drag interest expense places on a
-        company's operating profit.
+        Calculate the interest burden ratio: the share of operating profit that is left after interest, the component
+        of the five-step DuPont decomposition that isolates the drag of interest expense.
 
         The Interest Burden Ratio is calculated by dividing earnings before tax (EBT)
         by earnings before interest and taxes (EBIT, proxied here by Operating Income).
@@ -6713,8 +6706,8 @@ class Ratios:
         Notes:
         - The method retrieves historical data and calculates the Interest Burden Ratio for each
         asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the ratio values
-        using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the ratio values
+        over the given lag.
 
         As an example:
 
@@ -6779,8 +6772,7 @@ class Ratios:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculate the Pretax Profit Margin, which is the ratio of a company's pre-tax profit to
-        its revenue, indicating how much profit a company makes before paying taxes on its earnings.
+        Calculate the pretax profit margin: the share of revenue a company keeps as profit before paying taxes.
 
         The Pretax Profit Margin is calculated by dividing the pre-tax profit by the revenue.
         It provides insight into how efficiently a company is able to generate profits from its revenue.
@@ -6818,8 +6810,8 @@ class Ratios:
         Notes:
         - The method retrieves historical data and calculates the Pretax Profit Margin for each
         asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the ratio values
-        using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the ratio values
+        over the given lag.
 
         As an example:
 
@@ -6934,8 +6926,8 @@ class Ratios:
         Notes:
         - The method retrieves historical data and calculates the effective tax rate for each
         asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the ratio values
-        using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the ratio values
+        over the given lag.
 
         As an example:
 
@@ -7047,8 +7039,8 @@ class Ratios:
         Notes:
         - The method retrieves historical data and calculates the ROA for each asset in the
         Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the ratio values
-        using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the ratio values
+        over the given lag.
 
         As an example:
 
@@ -7167,8 +7159,8 @@ class Ratios:
         (https://site.financialmodelingprep.com/developer/docs).
         - FinancialModelingPrep divides by the total assets of the period, this method by the
         average of the opening and closing total assets, as the return on assets does.
-        - If `growth` is set to True, the method calculates the growth of the ratio values
-        using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the ratio values
+        over the given lag.
 
         As an example:
 
@@ -7230,9 +7222,8 @@ class Ratios:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculate the cash return on assets (Cash ROA), a profitability ratio that
-        measures how efficiently a company uses its assets to generate operating cash
-        flow.
+        Calculate the cash return on assets (Cash ROA), a profitability ratio that measures how efficiently a company
+        uses its assets to generate operating cash flow.
 
         Unlike the return on assets, which uses accrual-based net income, the cash
         return on assets uses operating cash flow, making it less sensitive to
@@ -7276,8 +7267,8 @@ class Ratios:
         Notes:
         - The method retrieves historical data and calculates the cash ROA for each
         asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the ratio
-        values using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the ratio
+        values over the given lag.
 
         As an example:
 
@@ -7405,7 +7396,7 @@ class Ratios:
 
         Notes:
         - The method retrieves historical data and calculates the ROE for each asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the ratio values over the given lag.
 
         As an example:
 
@@ -7525,7 +7516,7 @@ class Ratios:
 
         Notes:
         - The method retrieves historical data and calculates the ROIC for each asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the ratio values over the given lag.
 
         As an example:
 
@@ -7700,10 +7691,10 @@ class Ratios:
         cover its operating assets has small net operating assets and an RNOA well above 1
         (Apple); net operating assets of zero or below make the ratio meaningless (it flips
         sign). Such periods are returned as calculated.
-        - The first period has no opening balance and is NaN, so set an earlier start_date to
+        - The first period has no opening balance and is NaN, so set an earlier start date to
         obtain it.
-        - If `growth` is set to True, the method calculates the growth of the ratio values
-        using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the ratio values
+        over the given lag.
 
         As an example:
 
@@ -7839,10 +7830,10 @@ class Ratios:
         ratio is NaN for that period and for every trailing window that holds it.
         - The interest on the lease obligations is part of the operating expenses for
         operating leases, so the cost of the leases in the Total Debt is understated.
-        - The first period has no opening balance and is NaN, so set an earlier start_date to
+        - The first period has no opening balance and is NaN, so set an earlier start date to
         obtain it.
-        - If `growth` is set to True, the method calculates the growth of the ratio values
-        using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the ratio values
+        over the given lag.
 
         As an example:
 
@@ -7971,10 +7962,10 @@ class Ratios:
         counts as zero; a missing Total Debt or Total Shareholder Equity gives NaN. The ratio
         needs no interest data, so it is available for periods whose return on net operating
         assets and net borrowing cost are NaN for lack of interest rows.
-        - The first period has no opening balance and is NaN, so set an earlier start_date to
+        - The first period has no opening balance and is NaN, so set an earlier start date to
         obtain it.
-        - If `growth` is set to True, the method calculates the growth of the ratio values
-        using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the ratio values
+        over the given lag.
 
         As an example:
 
@@ -8027,8 +8018,8 @@ class Ratios:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the income quality ratio, a financial metric that measures the cash flow from
-        operating activities relative to the net income of the company.
+        Calculate the income quality ratio: the cash flow from operations against the net income, how much of the
+        reported profit comes in as cash.
 
         The income quality ratio provides insights into the quality of a company's reported earnings.
         By comparing the cash flow from operating activities to the net income, this ratio helps assess
@@ -8074,7 +8065,7 @@ class Ratios:
         Notes:
         - The method retrieves historical data and calculates the income quality ratio for each asset
         in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the ratio values over the given lag.
 
         As an example:
 
@@ -8183,7 +8174,7 @@ class Ratios:
 
         Notes:
         - The method retrieves historical data and calculates the ROTA for each asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the ratio values over the given lag.
 
         As an example:
 
@@ -8315,7 +8306,7 @@ class Ratios:
 
         Notes:
         - The method retrieves historical data and calculates the ROCE for each asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the ratio values over the given lag.
 
         As an example:
 
@@ -8435,7 +8426,7 @@ class Ratios:
 
         Notes:
         - The method retrieves historical data and calculates the ratio for each asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the ratio values over the given lag.
 
         As an example:
 
@@ -8549,8 +8540,8 @@ class Ratios:
         Notes:
         - The method retrieves historical data and calculates the free cash flow
         margin for each asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the ratio
-        values using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the ratio
+        values over the given lag.
 
         As an example:
 
@@ -8613,9 +8604,8 @@ class Ratios:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the tax burden ratio, which is the ratio of a company's
-        net income to its income before tax, indicating how much of a
-        company's income is retained after taxes.
+        Calculate the tax burden ratio, which is the ratio of a company's net income to its income before tax,
+        indicating how much of a company's income is retained after taxes.
 
         The tax burden ratio measures the portion of a company's pretax earnings
         that it keeps after taxes; one minus the ratio is roughly the effective
@@ -8656,7 +8646,7 @@ class Ratios:
 
         Notes:
         - The method retrieves historical data and calculates the ratio for each asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the ratio values over the given lag.
 
         As an example:
 
@@ -8719,9 +8709,8 @@ class Ratios:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculate the cash tax rate, which measures the percentage of pretax income
-        that is actually paid out in cash taxes, as opposed to the accrual-based
-        effective tax rate.
+        Calculate the cash tax rate, which measures the percentage of pretax income that is actually paid out in cash
+        taxes, as opposed to the accrual-based effective tax rate.
 
         The formula is as follows:
 
@@ -8765,8 +8754,8 @@ class Ratios:
         Notes:
         - The method retrieves historical data and calculates the cash tax rate for each
         asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the ratio values
-        using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the ratio values
+        over the given lag.
 
         As an example:
 
@@ -8878,8 +8867,8 @@ class Ratios:
         Notes:
         - The method retrieves historical data and calculates the tax rate divergence for
         each asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the ratio values
-        using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the ratio values
+        over the given lag.
 
         As an example:
 
@@ -8984,8 +8973,8 @@ class Ratios:
         of Financial Economics 108(1), 2013, pp. 1-28.
         - The Quality Score (`Toolkit.models.get_quality_score`) uses the same measure as one
         of its profitability components.
-        - If `growth` is set to True, the method calculates the growth of the ratio values
-        using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the ratio values
+        over the given lag.
 
         As an example:
 
@@ -9046,9 +9035,8 @@ class Ratios:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculate the operating profitability of Fama and French (2015), the measure behind
-        the profitability factor RMW (robust minus weak) of their five-factor model: the
-        operating profit after interest that a company earns on its book equity.
+        Calculate the operating profitability of Fama and French (2015): the operating profit after interest a company
+        earns on its book equity, the measure behind their RMW (robust minus weak) factor.
 
         Fama and French find that companies with a robust operating profitability earn
         higher returns than those with a weak one, also after controlling for value, size
@@ -9102,8 +9090,8 @@ class Ratios:
         - Large buybacks shrink the book equity, which can make the ratio very large; the
         gross profitability and cash-based operating profitability scale by total assets
         instead.
-        - If `growth` is set to True, the method calculates the growth of the ratio values
-        using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the ratio values
+        over the given lag.
 
         As an example:
 
@@ -9170,10 +9158,8 @@ class Ratios:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculate the cash-based operating profitability of Ball, Gerakos, Linnainmaa and
-        Nikolaev (2016): operating profit with the working capital accruals taken out, so
-        that it measures the operating profit received in cash, scaled by the total assets
-        at the start of the year.
+        Calculate the cash-based operating profitability of Ball, Gerakos, Linnainmaa and Nikolaev (2016): the
+        operating profit received in cash, against the total assets.
 
         Ball et al. show that cash-based operating profitability predicts stock returns
         better than the profitability measures that include accruals, and that it subsumes
@@ -9236,9 +9222,9 @@ class Ratios:
         Critical Finance Review 11(2), 2022, pp. 207-264 (the CBOperProf signal and its
         lagged-assets variant). Wang (2020), SSRN working paper 3507251, Table A1.
         - The first period has no earlier balances to take the changes and the total assets
-        from and is NaN, so set an earlier start_date to obtain it.
-        - If `growth` is set to True, the method calculates the growth of the ratio values
-        using the specified `lag`.
+        from and is NaN, so set an earlier start date to obtain it.
+        - When growth is requested, the method calculates the growth of the ratio values
+        over the given lag.
 
         As an example:
 
@@ -9370,8 +9356,8 @@ class Ratios:
         - CROIC is a practitioner measure (used by, among others, Morningstar); definitions
         of the invested capital differ, and this one matches the return on invested capital
         of the Finance Toolkit.
-        - If `growth` is set to True, the method calculates the growth of the ratio values
-        using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the ratio values
+        over the given lag.
 
         As an example:
 
@@ -9487,8 +9473,8 @@ class Ratios:
         Notes:
         - The ratio is used in the cash flow analysis of the CFA curriculum (Financial
         Reporting and Analysis) and by the rating agencies (S&P, Moody's).
-        - If `growth` is set to True, the method calculates the growth of the ratio values
-        using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the ratio values
+        over the given lag.
 
         As an example:
 
@@ -9590,8 +9576,8 @@ class Ratios:
         Notes:
         - The ratio is part of the cash flow analysis of the rating agencies (S&P Global
         Ratings' corporate methodology, Moody's) and of the CFA curriculum.
-        - If `growth` is set to True, the method calculates the growth of the ratio values
-        using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the ratio values
+        over the given lag.
 
         As an example:
 
@@ -9658,9 +9644,8 @@ class Ratios:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculate the percent accruals of Hafzalla, Lundholm and Van Winkle (2011): the
-        accruals, the part of the net income that is not received in cash, as a share of the
-        net income itself.
+        Calculate the percent accruals of Hafzalla, Lundholm and Van Winkle (2011): the accruals, the part of the net
+        income that is not received in cash, as a share of the net income itself.
 
         Sloan (1996) scaled the accruals by total assets, which mostly sorts companies by the
         size of their earnings changes. Hafzalla, Lundholm and Van Winkle scale them by the
@@ -9710,8 +9695,8 @@ class Ratios:
         Information in Accruals and Cash Flows about Future Earnings?," The Accounting Review
         71(3), 1996, pp. 289-315 (the accruals scaled by total assets, see
         `toolkit.models.get_accruals_ratio`).
-        - If `growth` is set to True, the method calculates the growth of the ratio values
-        using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the ratio values
+        over the given lag.
 
         As an example:
 
@@ -9771,7 +9756,8 @@ class Ratios:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculates and collects all Solvency Ratios based on the provided data.
+        Collect all the solvency ratios of every ticker in one table: whether each company can carry its debt and meet
+        its long-term obligations.
 
         Args:
             diluted (bool, optional): Whether to use diluted shares for the calculation. Defaults to True.
@@ -9800,8 +9786,8 @@ class Ratios:
 
         Notes:
         - The method calculates various solvency ratios for each asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the ratio values
-          using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the ratio values
+          over the given lag.
 
         As an example:
 
@@ -10047,7 +10033,7 @@ class Ratios:
 
         Notes:
         - The method retrieves historical data and calculates the ratio for each asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the ratio values over the given lag.
 
         As an example:
 
@@ -10112,9 +10098,8 @@ class Ratios:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the asset coverage ratio, a solvency ratio that measures how well a
-        company's tangible assets, after settling non-debt current liabilities, can
-        cover its total debt.
+        Calculate the asset coverage ratio, a solvency ratio that measures how well a company's tangible assets, after
+        settling non-debt current liabilities, can cover its total debt.
 
         This ratio is commonly used by lenders and bondholders to assess the extent to
         which a company's hard (tangible) assets would be available to repay debt
@@ -10155,7 +10140,7 @@ class Ratios:
 
         Notes:
         - The method retrieves historical data and calculates the ratio for each asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the ratio values over the given lag.
 
         As an example:
 
@@ -10237,9 +10222,10 @@ class Ratios:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the debt to equity ratio, a solvency ratio that measures the
-        proportion of a company's equity that is financed by debt. This ratio is also known
-        as the Gearing Ratio.
+        Calculate the debt to equity ratio, a solvency ratio that measures the proportion of a company's equity that
+        is financed by debt.
+
+        This ratio is also known as the Gearing Ratio.
 
         The debt to equity ratio, for short the D/E ratio, indicates the relative
         contribution of debt and equity to a company's capital structure. It helps assess
@@ -10287,7 +10273,7 @@ class Ratios:
 
         Notes:
         - The method retrieves historical data and calculates the ratio for each asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the ratio values over the given lag.
 
         As an example:
 
@@ -10400,7 +10386,7 @@ class Ratios:
 
         Notes:
         - The method retrieves historical data and calculates the ratio for each asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the ratio values over the given lag.
 
         As an example:
 
@@ -10514,7 +10500,7 @@ class Ratios:
 
         Notes:
         - The method retrieves historical data and calculates the ratio for each asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the ratio values over the given lag.
 
         As an example:
 
@@ -10587,9 +10573,8 @@ class Ratios:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the debt service coverage ratio, a solvency ratio that measures how well a
-        company's operating earnings cover its debt service: the interest of the period and the
-        principal due within a year.
+        Calculate the debt service coverage ratio, a solvency ratio that measures how well a company's operating
+        earnings cover its debt service: the interest of the period and the principal due within a year.
 
         The debt service coverage ratio compares EBITDA (operating income plus depreciation and
         amortization) with the total debt service, the interest expense plus the short-term debt
@@ -10605,8 +10590,8 @@ class Ratios:
 
         The short-term debt is the principal due over the next year, so it is scaled to the
         length of the window the earnings and interest cover: a quarter (0.25) with quarterly
-        data, a year with yearly data and the trailing multiple of either with trailing (e.g.
-        trailing=4 on quarterly data compares a year of earnings with a year of principal).
+        data, a year with yearly data and the trailing multiple of either with a trailing window
+        (e.g. four quarters compare a year of earnings with a year of principal).
 
         Also known as: DSCR, debt service ratio.
 
@@ -10636,7 +10621,7 @@ class Ratios:
 
         Notes:
         - The method retrieves historical data and calculates the ratio for each asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the ratio values over the given lag.
 
         As an example:
 
@@ -10727,8 +10712,8 @@ class Ratios:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculates the free cash flow yield ratio, which measures the free cash flow
-        relative to the market capitalization of the company.
+        Calculate the free cash flow yield: the free cash flow a company generates against its market capitalization,
+        the cash return on its share price.
 
         The free cash flow yield ratio is a measure of how efficiently a company generates
         free cash flow relative to its market value. It provides insights into whether the
@@ -10778,7 +10763,7 @@ class Ratios:
 
         Notes:
         - The method retrieves historical data and calculates the ratio for each asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the ratio values over the given lag.
 
         As an example:
 
@@ -10874,8 +10859,8 @@ class Ratios:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculates the net debt to EBITDA ratio, which measures the net debt of the company
-        relative to its EBITDA (Earnings Before Interest, Taxes, Depreciation, and Amortization).
+        Calculate the net debt to EBITDA ratio: how many years of EBITDA (earnings before interest, taxes,
+        depreciation and amortization) it would take to repay the debt net of cash.
 
         The net debt to EBITDA ratio is a measure of a company's ability to manage its debt
         obligations in relation to its earnings and cash flow. A lower ratio indicates better
@@ -10922,7 +10907,7 @@ class Ratios:
 
         Notes:
         - The method retrieves historical data and calculates the ratio for each asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the ratio values over the given lag.
 
         As an example:
 
@@ -10987,8 +10972,8 @@ class Ratios:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculates the net debt to equity ratio, also known as net gearing, which measures the
-        debt of the company net of its cash relative to its equity.
+        Calculate the net debt to equity ratio (net gearing): the debt net of cash against the equity, how much a
+        company relies on borrowed money.
 
         Net gearing is the debt to equity ratio after deducting the cash the company could
         repay its debt with, the way European and UK companies and their lenders usually report
@@ -11032,7 +11017,7 @@ class Ratios:
 
         Notes:
         - The method retrieves historical data and calculates the ratio for each asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the ratio values over the given lag.
 
         As an example:
 
@@ -11091,9 +11076,8 @@ class Ratios:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculates the gross debt to EBITDA ratio, which measures the total (gross)
-        debt of the company relative to its EBITDA (Earnings Before Interest, Taxes,
-        Depreciation, and Amortization).
+        Calculate the gross debt to EBITDA ratio: how many years of EBITDA (earnings before interest, taxes,
+        depreciation and amortization) it would take to repay the total debt.
 
         This differs from the Net-Debt to EBITDA Ratio in that it uses total (gross)
         debt rather than net debt (total debt minus cash and cash equivalents). Gross
@@ -11137,7 +11121,7 @@ class Ratios:
 
         Notes:
         - The method retrieves historical data and calculates the ratio for each asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the ratio values over the given lag.
 
         As an example:
 
@@ -11242,7 +11226,7 @@ class Ratios:
 
         Notes:
         - The method retrieves historical data and calculates the ratio for each asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the ratio values over the given lag.
 
         As an example:
 
@@ -11304,9 +11288,8 @@ class Ratios:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the capital expenditure coverage ratio, a solvency ratio that
-        measures a company's ability to cover its capital expenditures with its
-        cash flow from operations.
+        Calculate the capital expenditure coverage ratio, a solvency ratio that measures a company's ability to cover
+        its capital expenditures with its cash flow from operations.
 
         The capex coverage ratio evaluates a company's ability to fund its capital
         expenditures, which are essential for maintaining and growing its business,
@@ -11345,7 +11328,7 @@ class Ratios:
 
         Notes:
         - The method retrieves historical data and calculates the ratio for each asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the ratio values over the given lag.
 
         As an example:
 
@@ -11411,9 +11394,8 @@ class Ratios:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the dividend paid and capital expenditure coverage ratio, a solvency ratio
-        that measures a company's ability to cover both its capital expenditures and dividend
-        payments with its cash flow from operations.
+        Calculate the dividend paid and capital expenditure coverage ratio, a solvency ratio that measures a company's
+        ability to cover both its capital expenditures and dividend payments with its cash flow from operations.
 
         The capex dividend coverage ratio assesses whether a company's cash flow from
         operations is sufficient to cover both its capital expenditures (which are essential
@@ -11454,7 +11436,7 @@ class Ratios:
 
         Notes:
         - The method retrieves historical data and calculates the ratio for each asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the ratio values over the given lag.
 
         As an example:
 
@@ -11531,9 +11513,8 @@ class Ratios:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the debt to capital ratio, a solvency ratio that measures the
-        proportion of a company's total capital (debt plus equity) that is financed
-        by debt.
+        Calculate the debt to capital ratio, a solvency ratio that measures the proportion of a company's total
+        capital (debt plus equity) that is financed by debt.
 
         Unlike the debt to equity ratio, which can theoretically exceed one or become
         negative with low or negative equity, the debt to capital ratio is bounded
@@ -11572,7 +11553,7 @@ class Ratios:
 
         Notes:
         - The method retrieves historical data and calculates the ratio for each asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the ratio values over the given lag.
 
         As an example:
 
@@ -11681,8 +11662,8 @@ class Ratios:
         - FinancialModelingPrep ratios, `longTermDebtToCapitalRatio`, the reference definition, also
         exposed through OpenBB's fmp provider
         (https://site.financialmodelingprep.com/developer/docs).
-        - If `growth` is set to True, the method calculates the growth of the ratio values
-        using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the ratio values
+        over the given lag.
 
         As an example:
 
@@ -11757,7 +11738,7 @@ class Ratios:
         - Debt to Market Cap = Total Debt / Market Capitalization
 
         The market capitalization is the one of get_market_cap: the close at the end of each
-        fiscal period (or of each day with show_daily) times the weighted average (diluted)
+        fiscal period (or of each day with daily values) times the weighted average (diluted)
         shares.
 
         Also known as: debt to market value of equity, market debt to equity, D/E at market value.
@@ -11789,10 +11770,10 @@ class Ratios:
         - FinancialModelingPrep ratios, `debtToMarketCap`, the reference definition, also
         exposed through OpenBB's fmp provider
         (https://site.financialmodelingprep.com/developer/docs).
-        - FinancialModelingPrep divides by the basic weighted average shares; diluted=False
-        gives its definition.
-        - If `growth` is set to True, the method calculates the growth of the ratio values
-        using the specified `lag`.
+        - FinancialModelingPrep divides by the basic weighted average shares; the basic shares
+        (not diluted) give its definition.
+        - When growth is requested, the method calculates the growth of the ratio values
+        over the given lag.
 
         As an example:
 
@@ -11906,8 +11887,8 @@ class Ratios:
         - FinancialModelingPrep ratios, `solvencyRatio`, the reference definition, also
         exposed through OpenBB's fmp provider
         (https://site.financialmodelingprep.com/developer/docs).
-        - If `growth` is set to True, the method calculates the growth of the ratio values
-        using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the ratio values
+        over the given lag.
 
         As an example:
 
@@ -11970,9 +11951,8 @@ class Ratios:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the preferred dividend coverage ratio, a solvency ratio that
-        measures a company's ability to pay dividends owed to preferred shareholders
-        out of its net income.
+        Calculate the preferred dividend coverage ratio, a solvency ratio that measures a company's ability to pay
+        dividends owed to preferred shareholders out of its net income.
 
         The formula is as follows:
 
@@ -12006,7 +11986,7 @@ class Ratios:
 
         Notes:
         - The method retrieves historical data and calculates the ratio for each asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the ratio values over the given lag.
         - This ratio is only meaningful for companies that have preferred stock
         outstanding. It is NaN when no preferred dividends are reported separately in
         the cash flow statement, which also happens for some companies that do pay them.
@@ -12079,9 +12059,8 @@ class Ratios:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the interest paid to interest expense ratio, which measures how
-        much of the accrual-based interest expense reported on the income statement
-        was actually paid out in cash during the period.
+        Calculate the interest paid to interest expense ratio, which measures how much of the accrual-based interest
+        expense reported on the income statement was actually paid out in cash during the period.
 
         A ratio consistently below one can indicate that interest is being accrued
         (e.g. on payment-in-kind debt) rather than paid, while a ratio well above one
@@ -12127,7 +12106,7 @@ class Ratios:
 
         Notes:
         - The method retrieves historical data and calculates the ratio for each asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the ratio values over the given lag.
 
         As an example:
 
@@ -12242,8 +12221,8 @@ class Ratios:
         Notes:
         - S&P Global Ratings, "Corporate Methodology: Ratios And Adjustments," April 1, 2019
         (key ratios: EBITDA to interest).
-        - If `growth` is set to True, the method calculates the growth of the ratio values
-        using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the ratio values
+        over the given lag.
 
         As an example:
 
@@ -12350,8 +12329,8 @@ class Ratios:
         Notes:
         - Moody's Investors Service, "Automobile Manufacturer Industry," rating methodology,
         June 2017 ((EBITDA - CapEx) / Interest Expense).
-        - If `growth` is set to True, the method calculates the growth of the ratio values
-        using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the ratio values
+        over the given lag.
 
         As an example:
 
@@ -12467,8 +12446,8 @@ class Ratios:
         Notes:
         - CFA Institute, "Financial Reporting and Analysis," CFA Program Curriculum
         (cash flow statement analysis: interest coverage).
-        - If `growth` is set to True, the method calculates the growth of the ratio values
-        using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the ratio values
+        over the given lag.
 
         As an example:
 
@@ -12585,8 +12564,8 @@ class Ratios:
         - S&P Global Ratings, "Corporate Methodology: Ratios And Adjustments," April 1, 2019
         (core ratios: FFO to debt; FFO is EBITDA minus cash interest paid minus cash tax paid).
         - S&P Global Ratings, "Corporate Methodology," 2013 (financial risk profile table).
-        - If `growth` is set to True, the method calculates the growth of the ratio values
-        using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the ratio values
+        over the given lag.
 
         As an example:
 
@@ -12666,9 +12645,8 @@ class Ratios:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculate the discretionary cash flow (DCF) to debt ratio, a supplementary ratio of
-        S&P Global Ratings: the cash flow left after capital expenditure, dividends and share
-        buybacks as a share of the debt.
+        Calculate the discretionary cash flow (DCF) to debt ratio, a supplementary ratio of S&P Global Ratings: the
+        cash flow left after capital expenditure, dividends and share buybacks as a share of the debt.
 
         Where FFO to debt (`get_funds_from_operations_to_debt_ratio`) measures the cash flow
         before the company's spending choices, DCF to debt measures what is left after them,
@@ -12716,8 +12694,8 @@ class Ratios:
         - S&P Global Ratings, "Corporate Methodology: Ratios And Adjustments," April 1, 2019
         (supplementary ratios: DCF to debt; DCF is free operating cash flow minus dividends
         minus share buybacks).
-        - If `growth` is set to True, the method calculates the growth of the ratio values
-        using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the ratio values
+        over the given lag.
 
         As an example:
 
@@ -12839,8 +12817,8 @@ class Ratios:
         Notes:
         - CFA Institute, "Corporate Issuers," CFA Program Curriculum (measures of leverage:
         degree of operating, financial and total leverage).
-        - If `growth` is set to True, the method calculates the growth of the ratio values
-        using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the ratio values
+        over the given lag.
 
         As an example:
 
@@ -12946,8 +12924,8 @@ class Ratios:
         Notes:
         - CFA Institute, "Corporate Issuers," CFA Program Curriculum (measures of leverage:
         degree of operating, financial and total leverage).
-        - If `growth` is set to True, the method calculates the growth of the ratio values
-        using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the ratio values
+        over the given lag.
 
         As an example:
 
@@ -13050,8 +13028,8 @@ class Ratios:
         Notes:
         - CFA Institute, "Corporate Issuers," CFA Program Curriculum (measures of leverage:
         degree of operating, financial and total leverage).
-        - If `growth` is set to True, the method calculates the growth of the ratio values
-        using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the ratio values
+        over the given lag.
 
         As an example:
 
@@ -13108,7 +13086,8 @@ class Ratios:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculates and collects all Valuation Ratios based on the provided data.
+        Collect all the valuation ratios of every ticker in one table: how the market values each company against its
+        earnings, book value, cash flow and revenue.
 
         Args:
             include_dividends (bool, optional): Whether to deduct preferred dividends from net income in the
@@ -13139,8 +13118,8 @@ class Ratios:
 
         Notes:
         - The method calculates various valuation ratios for each asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the ratio values
-          using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the ratio values
+          over the given lag.
 
         As an example:
 
@@ -13494,7 +13473,7 @@ class Ratios:
 
         - Earnings per Share (EPS) = (Net Income — |Preferred Dividends Paid|) / Weighted Average (Diluted) Shares
 
-        The preferred dividends are only deducted when include_dividends is True; with the
+        The preferred dividends are only deducted when that is requested; by
         default, EPS is net income divided by the weighted average (diluted) shares.
 
         Also known as: EPS, net income per share.
@@ -13528,7 +13507,7 @@ class Ratios:
 
         Notes:
         - The method retrieves historical data and calculates the EPS for each asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the EPS values using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the EPS values over the given lag.
 
         As an example:
 
@@ -13624,8 +13603,8 @@ class Ratios:
         Notes:
         - The method retrieves historical data and calculates the revenue per share for each asset in
         the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the revenue per share values
-        using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the revenue per share values
+        over the given lag.
 
         As an example:
 
@@ -13748,7 +13727,7 @@ class Ratios:
 
         Notes:
         - The method retrieves historical data and calculates the P/E ratio for each asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the P/E ratio values using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the P/E ratio values over the given lag.
 
         As an example:
 
@@ -13844,32 +13823,32 @@ class Ratios:
         - CAPE (t) = Share Price (t) / Average of Real EPS (s) over the years s = t - years + 1 to t
 
         The earnings per share are those of the price earnings ratio
-        (`get_price_to_earnings_ratio`): net income (less preferred dividends with
-        include_dividends) over the weighted average (diluted) shares of each fiscal year. With
+        (`get_price_to_earnings_ratio`): net income (less preferred dividends when they are
+        deducted) over the weighted average (diluted) shares of each fiscal year. With
         quarterly data, each quarter averages the trailing twelve month earnings per share of
         that quarter and of the same quarter in each earlier year, so every quarter of earnings
         enters once. The share price is the traded close at the end of each fiscal period (or
-        the filing day with point_in_time), the same as for the price earnings ratio, so with
-        years=1 and inflation_adjusted=False the ratio equals the price earnings ratio wherever
+        the filing day with point-in-time data), the same as for the price earnings ratio, so over
+        one year and without the inflation adjustment the ratio equals the price earnings ratio wherever
         the earnings are positive.
 
-        The consumer price index is the monthly all items index of `country`
-        (toolkit.economics.get_consumer_price_index with period="monthly": the Bank for
+        The consumer price index is the monthly all items index of the chosen country
+        (toolkit.economics.get_consumer_price_index at a monthly period: the Bank for
         International Settlements, with the latest months of the Bureau of Labor Statistics for
         the United States, and Eurostat, the ONS or the Statistics Bureau of Japan for their
         countries), taken in the month each fiscal period ends (the latest published month for
         a period that ends after it). The monthly index of Japan (Statistics Bureau of Japan)
-        starts in January 2015, so with years=10 its values start in about 2024. The United
+        starts in January 2015, so over ten years its values start in about 2024. The United
         States index is used for every company unless another country is given, so choose the
-        country of the currency the earnings are in: with convert_currency the statements are
-        in the listing currency, so the currency the shares trade in (e.g. country="Netherlands"
+        country of the currency the earnings are in: with currency conversion the statements are
+        in the listing currency, so the currency the shares trade in (e.g. the Netherlands
         for ASML.AS), and otherwise the currency of the statements.
 
         Every year of the window must be available, as in Campbell and Shiller (1998), so the
-        first `years` - 1 years after the first statement (4 x `years` - 1 quarters with
-        quarterly data) are NaN: choose a start_date that many years before the first ratio of
+        first years of the window minus one after the first statement (four times as many quarters
+        minus one with quarterly data) are NaN: choose a start date that many years before the first ratio of
         interest. The FinancialModelingPrep plan can limit
-        the history to five years of statements; years=5 is the shortest window Graham and Dodd
+        the history to five years of statements; five years is the shortest window Graham and Dodd
         recommend. An average real EPS of zero or below gives NaN, as the ratio has no meaning
         for a company that lost money over the cycle.
 
@@ -13890,7 +13869,9 @@ class Ratios:
                 in the prices of the period of the ratio with the consumer price index.
                 Defaults to True.
             country (str, optional): The country whose consumer price index adjusts the
-                earnings for inflation. Defaults to "United States".
+                earnings for inflation. Options are the countries for which
+                toolkit.economics.get_consumer_price_index returns a monthly index. Defaults to
+                "United States".
             include_dividends (bool, optional): Whether to deduct preferred dividends from net income.
                 Defaults to False.
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
@@ -14054,7 +14035,7 @@ class Ratios:
         - Price Earnings to Growth Ratio (PEG) = Price Earnings Ratio (P/E) / (EPS Growth Rate * 100)
 
         The growth rate is the growth of the (diluted) earnings per share on the previous
-        year, or of EBITDA when use_ebitda_growth_rate is True, multiplied by 100 so that it
+        year, or of EBITDA when the EBITDA growth rate is chosen, multiplied by 100 so that it
         enters in percent. With quarterly data both the P/E and the growth use trailing twelve
         month figures, and the growth compares them with those of four quarters earlier.
 
@@ -14092,7 +14073,7 @@ class Ratios:
 
         Notes:
         - The method retrieves historical data and calculates the PEG ratio for each asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the PEG ratio values using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the PEG ratio values over the given lag.
 
         As an example:
 
@@ -14176,11 +14157,11 @@ class Ratios:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the dividend-adjusted price earnings to growth (PEGY) ratio, the PEG ratio
-        with the dividend yield added to the earnings growth, as Peter Lynch proposed in One Up
-        On Wall Street (1989, chapter 13). A company that pays out much of its earnings grows
-        them more slowly, and the PEG ratio counts that against it; the PEGY ratio credits
-        the dividend as part of the return, which suits mature dividend payers.
+        Calculate the dividend-adjusted price earnings to growth (PEGY) ratio, the PEG ratio with the dividend yield
+        added to the earnings growth, as Peter Lynch proposed in One Up On Wall Street (1989, chapter 13).
+
+        A company that pays out much of its earnings grows them more slowly, and the PEG ratio counts that against it;
+        the PEGY ratio credits the dividend as part of the return, which suits mature dividend payers.
 
         The formula is as follows:
 
@@ -14225,8 +14206,8 @@ class Ratios:
 
         Notes:
         - A company without dividends has a dividend yield of 0, so its PEGY ratio equals its PEG ratio.
-        - If `growth` is set to True, the method calculates the growth of the PEGY ratio values using the
-        specified `lag`.
+        - When growth is requested, the method calculates the growth of the PEGY ratio values over the
+        given lag.
 
         As an example:
 
@@ -14422,9 +14403,8 @@ class Ratios:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the forward price earnings ratio (forward P/E), a valuation ratio that compares
-        the current stock price to the analyst consensus (average) EPS estimate for a future period,
-        instead of the trailing EPS used by the regular P/E ratio.
+        Calculate the forward price earnings ratio (forward P/E): the share price against the analyst consensus EPS
+        estimate for a future period instead of the trailing EPS.
 
         The formula is as follows:
 
@@ -14442,7 +14422,7 @@ class Ratios:
         companies with large amortization or restructuring charges the forward P/E looks much
         lower than the trailing one without any change in earnings power.
 
-        Note that this requires an `api_key` to be set on the Toolkit and a Premium FMP
+        Note that this requires an API key set on the Toolkit and a Premium FMP
         subscription. Analyst estimates are fetched once per Toolkit instance and cached
         across calls to this (or the other forward-looking ratio) method — never on
         initialization or on any other ratio.
@@ -14551,9 +14531,8 @@ class Ratios:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the forward price earnings to growth (forward PEG) ratio, a valuation metric
-        that measures the forward P/E ratio relative to the growth implied by the analyst
-        consensus (average) EPS estimate versus the company's most recently reported actual EPS.
+        Calculate the forward price earnings to growth (forward PEG) ratio: the forward P/E against the EPS growth the
+        analyst consensus expects from the last reported EPS.
 
         The formula is as follows:
 
@@ -14573,7 +14552,7 @@ class Ratios:
         last four reported quarters, and Years runs from the end of the latest reported
         quarter to the end of the estimated window.
 
-        Note that this requires an `api_key` to be set on the Toolkit and a Premium FMP
+        Note that this requires an API key set on the Toolkit and a Premium FMP
         subscription. Analyst estimates are fetched once per Toolkit instance and cached
         across calls to this (or the other forward-looking ratio) method — never on
         initialization or on any other ratio.
@@ -14826,8 +14805,8 @@ class Ratios:
         Notes:
         - The method retrieves historical data and calculates the book value per share for each asset
         in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the book value per share values
-        using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the book value per share values
+        over the given lag.
 
         As an example:
 
@@ -14930,8 +14909,8 @@ class Ratios:
         Notes:
         - The method retrieves historical data and calculates the price to book ratio for each asset
         in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the price to book ratio values
-        using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the price to book ratio values
+        over the given lag.
 
         As an example:
 
@@ -15048,8 +15027,8 @@ class Ratios:
         Notes:
         - The method retrieves historical data and calculates the interest debt per share ratio for each asset
         in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the interest debt per share values
-        using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the interest debt per share values
+        over the given lag.
 
         As an example:
 
@@ -15171,8 +15150,8 @@ class Ratios:
         Notes:
         - The method retrieves historical data and calculates the capex per share ratio for each asset
         in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the capex per share values
-        using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the capex per share values
+        over the given lag.
 
         As an example:
 
@@ -15286,10 +15265,10 @@ class Ratios:
         - FinancialModelingPrep ratios, `operatingCashFlowPerShare`, the reference definition, also
         exposed through OpenBB's fmp provider
         (https://site.financialmodelingprep.com/developer/docs).
-        - FinancialModelingPrep divides by the basic weighted average shares; diluted=False
-        gives its definition.
-        - If `growth` is set to True, the method calculates the growth of the ratio values
-        using the specified `lag`.
+        - FinancialModelingPrep divides by the basic weighted average shares; the basic shares
+        (not diluted) give its definition.
+        - When growth is requested, the method calculates the growth of the ratio values
+        over the given lag.
 
         As an example:
 
@@ -15399,10 +15378,10 @@ class Ratios:
         - FinancialModelingPrep ratios, `freeCashFlowPerShare`, the reference definition, also
         exposed through OpenBB's fmp provider
         (https://site.financialmodelingprep.com/developer/docs).
-        - FinancialModelingPrep divides by the basic weighted average shares; diluted=False
-        gives its definition.
-        - If `growth` is set to True, the method calculates the growth of the ratio values
-        using the specified `lag`.
+        - FinancialModelingPrep divides by the basic weighted average shares; the basic shares
+        (not diluted) give its definition.
+        - When growth is requested, the method calculates the growth of the ratio values
+        over the given lag.
 
         As an example:
 
@@ -15513,10 +15492,10 @@ class Ratios:
         - FinancialModelingPrep ratios, `cashPerShare`, the reference definition, also
         exposed through OpenBB's fmp provider
         (https://site.financialmodelingprep.com/developer/docs).
-        - FinancialModelingPrep divides by the basic weighted average shares; diluted=False
-        gives its definition.
-        - If `growth` is set to True, the method calculates the growth of the ratio values
-        using the specified `lag`.
+        - FinancialModelingPrep divides by the basic weighted average shares; the basic shares
+        (not diluted) give its definition.
+        - When growth is requested, the method calculates the growth of the ratio values
+        over the given lag.
 
         As an example:
 
@@ -15627,12 +15606,12 @@ class Ratios:
         - FinancialModelingPrep ratios, `tangibleBookValuePerShare`, the reference definition, also
         exposed through OpenBB's fmp provider
         (https://site.financialmodelingprep.com/developer/docs).
-        - FinancialModelingPrep divides by the basic weighted average shares; diluted=False
-        gives its definition.
+        - FinancialModelingPrep divides by the basic weighted average shares; the basic shares
+        (not diluted) give its definition.
         - CFA Institute, "Equity Valuation: Applications and Processes," CFA Program
         Curriculum (price to book value: adjusting book value for intangible assets).
-        - If `growth` is set to True, the method calculates the growth of the ratio values
-        using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the ratio values
+        over the given lag.
 
         As an example:
 
@@ -15717,15 +15696,14 @@ class Ratios:
 
         - Dividend Yield = Dividends per Share / Share Price
 
-        The dividends per share are those paid over a year: each fiscal year with annual data,
-        the trailing four fiscal quarters with quarterly data and, with show_daily, the 365
-        calendar days up to each day. The share price is the close on the last trading day of
-        the fiscal period (or the day), the same close as the price-to-earnings ratio of that
-        period, and the year of dividends ends on that same day (the filing day with
-        point_in_time, so no dividend after the price date is counted). So for a fiscal year ending in June the column 2024 holds the dividends paid
-        from July 2023 through June 2024 against the close of June 2024. A period outside the
-        financial statements uses the calendar period of its label, and a period that has not
-        ended yet the year of dividends up to the last close, against that close. The dividends are FinancialModelingPrep's
+        The dividends per share are those paid over a year: each fiscal year with annual data, the trailing four
+        fiscal quarters with quarterly data and, with daily values, the 365 calendar days up to each day. The share
+        price is the close on the last trading day of the fiscal period (or the day), the same close as the
+        price-to-earnings ratio of that period, and the year of dividends ends on that same day (the filing day with
+        point-in-time data, so no dividend after the price date is counted). So for a fiscal year ending in June the
+        column 2024 holds the dividends paid from July 2023 through June 2024 against the close of June 2024. A period
+        outside the financial statements uses the calendar period of its label, and a period that has not ended yet
+        the year of dividends up to the last close, against that close. The dividends are FinancialModelingPrep's
         split-adjusted dividends on their ex-dividend dates.
 
         Also known as: annual dividend yield, income yield.
@@ -15762,8 +15740,8 @@ class Ratios:
         Notes:
         - The method retrieves historical data and calculates the dividend yield ratio for each asset
         in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the dividend yield values
-        using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the dividend yield values
+        over the given lag.
 
         As an example:
 
@@ -15991,8 +15969,8 @@ class Ratios:
         Notes:
         - The method retrieves historical data and calculates the weighted dividend yield ratio for each asset
         in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the weighted dividend yield values
-        using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the weighted dividend yield values
+        over the given lag.
 
         As an example:
 
@@ -16133,8 +16111,8 @@ class Ratios:
         Notes:
         - The method retrieves historical data and calculates the price to cash flow ratio for each asset
         in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the price to cash flow ratio values
-        using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the price to cash flow ratio values
+        over the given lag.
 
         As an example:
 
@@ -16255,8 +16233,8 @@ class Ratios:
         Notes:
         - The method retrieves historical data and calculates the price to free cash flow ratio for each asset
         in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the price to free cash flow ratio values
-        using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the price to free cash flow ratio values
+        over the given lag.
 
         As an example:
 
@@ -16384,8 +16362,8 @@ class Ratios:
         Notes:
         - The method retrieves historical data and calculates the price to sales ratio for each asset
         in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the price to sales ratio values
-        using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the price to sales ratio values
+        over the given lag.
 
         As an example:
 
@@ -16461,7 +16439,8 @@ class Ratios:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculates the market capitalization of the company.
+        Calculate the market capitalization: the market value of a company's shares, the share price times the number
+        of shares outstanding.
 
         Market capitalization, often referred to as "market cap," is the total value of a company's
         outstanding shares of stock in the stock market. It is calculated by multiplying the share
@@ -16475,17 +16454,17 @@ class Ratios:
         - Market Capitalization = Share Price * Weighted Average (Diluted) Shares
 
         Market cap is a point-in-time value, so the price is the close on the last trading
-        day on or before the end of each fiscal period (or of each day with show_daily) and
+        day on or before the end of each fiscal period (or of each day with daily values) and
         never an average: for a company whose fiscal year ends in, for example, September,
         the price of the year is the September close, matching the shares of that fiscal
-        year. With show_daily, each day uses the shares of the latest period that has ended.
+        year. With daily values, each day uses the shares of the latest period that has ended.
 
-        When the Toolkit analyses the tickers as a basket (Toolkit(basket=True)), a "Total" row
-        (a column with show_daily) adds up their market caps, for example to compare a group of
+        When the Toolkit analyses the tickers as a basket, a "Total" row
+        (a column with daily values) adds up their market caps, for example to compare a group of
         companies with a country (see get_market_cap_to_gdp); the total of a period adds the
         market caps at each ticker's own fiscal period end. The total of a period is left
         empty when a ticker has no market cap in it, as the sum of the others would understate
-        the basket. With share, each ticker is its share of that total (a decimal, the Total is
+        the basket. With the share option, each ticker is its share of that total (a decimal, the Total is
         1). Market caps are summed in the currency the tickers are listed in, so a basket of
         tickers listed in different currencies is refused.
 
@@ -16598,8 +16577,8 @@ class Ratios:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculates the market capitalization to Gross Domestic Product (GDP) ratio of the tickers
-        as one basket: their total market cap divided by a country's nominal GDP in US dollars.
+        Calculate the market capitalization to Gross Domestic Product (GDP) ratio of the tickers as one basket:
+        their total market cap against a country's nominal GDP in US dollars.
 
         This is the Buffett indicator, which Warren Buffett called "probably the best single
         measure of where valuations stand at any given moment" (Fortune, 2001): the value of a
@@ -16615,7 +16594,7 @@ class Ratios:
 
         - Market Cap to GDP = Basket Market Capitalization / Nominal GDP (last complete year)
 
-        The basket market cap is the sum of the market caps of the tickers, as get_market_cap
+        The basket market cap is the sum of the market caps of the tickers, as `get_market_cap`
         returns it for a basket Toolkit (the traded close times the weighted average diluted shares),
         so the tickers must be listed in US dollars. The GDP is the nominal GDP in current US
         dollars of the Global Macro Database. GDP is annual and comes without publication dates,
@@ -16629,8 +16608,9 @@ class Ratios:
         basket market cap to GDP.
 
         Args:
-            country (str, optional): The country whose GDP the basket is divided by, as named in
-                toolkit.economics.get_gross_domestic_product. Defaults to "United States".
+            country (str, optional): The country whose GDP the basket is divided by. Options are the
+                countries of toolkit.economics.get_gross_domestic_product (the Global Macro Database), by
+                the names used there. Defaults to "United States".
             show_daily (bool, optional): Whether to show daily values: the close of each trading
                 day against the shares of the latest period that has ended and the GDP of the
                 last complete year. Defaults to False.
@@ -16651,7 +16631,7 @@ class Ratios:
 
         Returns:
             pd.DataFrame: The market cap to GDP ratio with the country as row (as column with
-            show_daily).
+            daily values).
 
         As an example:
 
@@ -16746,11 +16726,12 @@ class Ratios:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculates the Enterprise Value (EV) of a company. The Enterprise Value (EV)
-        is a measure of a company's total value, often used as a more comprehensive
-        alternative to market capitalization. It is calculated as the sum of a company's
-        market capitalization, outstanding debt, minority interest, and
-        preferred equity, minus the cash and cash equivalents.
+        Calculate the enterprise value (EV): what it would cost to buy the whole company, its equity and its debt, net
+        of the cash it holds.
+
+        The Enterprise Value (EV) is a measure of a company's total value, often used as a more comprehensive
+        alternative to market capitalization. It is calculated as the sum of a company's market capitalization,
+        outstanding debt, minority interest, and preferred equity, minus the cash and cash equivalents.
 
         The formula is as follows:
 
@@ -16763,7 +16744,7 @@ class Ratios:
         structures. Cash and marketable securities (short-term investments) are both
         deducted (Damodaran), since both are available to pay off the debt. Enterprise value is a
         point-in-time value: the market cap and the balance sheet items are taken at the end
-        of each period, or on each day with show_daily, where each day uses the balance
+        of each period, or on each day with daily values, where each day uses the balance
         sheet of the latest period that has ended.
 
         Also known as: EV, total enterprise value.
@@ -17367,8 +17348,8 @@ class Ratios:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the Dividend payout ratio, a financial metric that measures the proportion
-        of earnings paid out as dividends to shareholders.
+        Calculate the dividend payout ratio: the share of net income a company pays out to its shareholders as
+        dividends.
 
         The payout ratio is a financial metric that helps investors assess the
         portion of a company's earnings that is being distributed to shareholders
@@ -17578,10 +17559,8 @@ class Ratios:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the tangible asset value, a financial metric that represents the book value
-        of a company's equity after deducting goodwill and other intangible assets such as
-        patents, brands and customer relationships: what remains of its tangible assets once
-        all liabilities are paid.
+        Calculate the tangible asset value: the book value of a company's equity without goodwill and other intangible
+        assets, what remains of its tangible assets once all liabilities are paid.
 
         The formula is as follows:
 
@@ -17676,18 +17655,19 @@ class Ratios:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the net current asset value, a conservative liquidation-value metric introduced
-        by Benjamin Graham that represents the total value of a company's current assets minus
-        *all* of its liabilities (not just its current liabilities). It approximates what would
-        be left for shareholders if the company were liquidated, paying off every liability using
-        only the current (most liquid) assets and ignoring any value from fixed/non-current assets.
+        Calculate Benjamin Graham's net current asset value (NCAV): a company's current assets minus all of its
+        liabilities, not just the current ones.
+
+        It approximates what would be left for shareholders if the company were liquidated, paying off every liability
+        using only the current (most liquid) assets and ignoring any value from fixed/non-current assets.
 
         The formula is as follows:
 
         - Net Current Asset Value = Total Current Assets — Total Liabilities
 
         Also known as: NCAV. Note that NCAV is related to, but distinct from, the Graham Number
-        (`sqrt(22.5 * Earnings per Share * Book Value per Share)`, see `Toolkit.models.get_graham_number`) —
+        (the square root of 22.5 times Earnings per Share times Book Value per Share, see
+        `Toolkit.models.get_graham_number`) —
         both are Benjamin Graham value-investing metrics, but NCAV is a liquidation-value estimate while
         the Graham Number is a fair-value price estimate based on earnings and book value.
 
@@ -17842,10 +17822,10 @@ class Ratios:
         - FinancialModelingPrep key metrics, `grahamNetNet`, the reference definition, also
         exposed through OpenBB's fmp provider
         (https://site.financialmodelingprep.com/developer/docs).
-        - FinancialModelingPrep divides by the basic weighted average shares; diluted=False
-        gives its definition.
-        - If `growth` is set to True, the method calculates the growth of the ratio values
-        using the specified `lag`.
+        - FinancialModelingPrep divides by the basic weighted average shares; the basic shares
+        (not diluted) give its definition.
+        - When growth is requested, the method calculates the growth of the ratio values
+        over the given lag.
 
         As an example:
 
@@ -17924,9 +17904,8 @@ class Ratios:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the enterprise value over earnings before interest and taxes (EBIT) ratio,
-        which is a valuation metric that compares a company's total value (including debt and equity)
-        relative to its earnings before interest and taxes.
+        Calculate the enterprise value to EBIT ratio: the value of a company's operations, debt and equity, against
+        its earnings before interest and taxes.
 
         The formula is as follows:
 
@@ -17935,7 +17914,7 @@ class Ratios:
         EBIT is the reported operating income, the same operating profit that EV to EBITDA
         (`get_ev_to_ebitda_ratio`) adds depreciation and amortization to (Damodaran), so the
         two multiples differ only by the depreciation and amortization. The enterprise value
-        is taken at the end of each period (or on each day with show_daily), while EBIT is
+        is taken at the end of each period (or on each day with daily values), while EBIT is
         summed over the trailing periods.
 
         This is also Tobias Carlisle's Acquirer's Multiple: the enterprise value over operating
@@ -18173,9 +18152,8 @@ class Ratios:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the buyback yield, a valuation ratio that measures the net amount
-        of common stock repurchased (net of new shares issued) relative to the
-        company's market capitalization.
+        Calculate the buyback yield, a valuation ratio that measures the net amount of common stock repurchased (net
+        of new shares issued) relative to the company's market capitalization.
 
         A positive buyback yield means the company is a net repurchaser of its own
         stock (shareholder-friendly), while a negative buyback yield means the
@@ -18222,8 +18200,8 @@ class Ratios:
         Notes:
         - The method retrieves historical data and calculates the buyback yield for each
         asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the ratio values
-        using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the ratio values
+        over the given lag.
 
         As an example:
 
@@ -18290,9 +18268,8 @@ class Ratios:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the total shareholder yield, a valuation ratio that combines the
-        dividend yield and the buyback yield to measure the total cash returned to
-        shareholders relative to the company's market capitalization.
+        Calculate the total shareholder yield, a valuation ratio that combines the dividend yield and the buyback
+        yield to measure the total cash returned to shareholders relative to the company's market capitalization.
 
         The formula is as follows:
 
@@ -18336,8 +18313,8 @@ class Ratios:
         Finance 62(2), 2007, pp. 877-915.
         - The method retrieves historical data and calculates the shareholder yield for each
         asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the ratio values
-        using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the ratio values
+        over the given lag.
 
         As an example:
 
@@ -18406,9 +18383,8 @@ class Ratios:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the stock-based compensation (SBC) adjusted free cash flow, which
-        deducts non-cash SBC expenses from free cash flow to give a more conservative
-        view of the cash actually available to shareholders.
+        Calculate the stock-based compensation (SBC) adjusted free cash flow, which deducts non-cash SBC expenses from
+        free cash flow to give a more conservative view of the cash actually available to shareholders.
 
         Free cash flow already excludes SBC as a cash expense (it is added back in
         the cash flow from operations), which can overstate the cash available to
@@ -18449,8 +18425,8 @@ class Ratios:
         Notes:
         - The method retrieves historical data and calculates the SBC-adjusted free cash flow
         for each asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the values
-        using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the values
+        over the given lag.
 
         As an example:
 
@@ -18564,8 +18540,8 @@ class Ratios:
         Notes:
         - Damodaran, A., "Investment Valuation," 3rd edition, Wiley, 2012 (dividends and
         free cash flow to equity).
-        - If `growth` is set to True, the method calculates the growth of the ratio values
-        using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the ratio values
+        over the given lag.
 
         As an example:
 
@@ -18675,8 +18651,8 @@ class Ratios:
         - Koller, T., Goedhart, M. and Wessels, D., "Valuation: Measuring and Managing the
         Value of Companies," 7th edition, Wiley, 2020 (invested capital and the
         EV-to-invested-capital multiple).
-        - If `growth` is set to True, the method calculates the growth of the ratio values
-        using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the ratio values
+        over the given lag.
 
         As an example:
 
@@ -18802,8 +18778,8 @@ class Ratios:
         Notes:
         - CFA Institute, "Equity Valuation: Applications and Processes," CFA Program
         Curriculum (price to book value: adjusting book value for intangible assets).
-        - If `growth` is set to True, the method calculates the growth of the ratio values
-        using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the ratio values
+        over the given lag.
 
         As an example:
 
@@ -18938,9 +18914,9 @@ class Ratios:
         - Pontiff, J. and A. Woodgate, "Share Issuance and Cross-Sectional Returns," Journal
         of Finance 63(2), 2008, pp. 921-945.
         - The first period has no shares a year earlier and is NaN, so set an earlier
-        start_date to obtain it.
-        - If `growth` is set to True, the method calculates the growth of the ratio values
-        using the specified `lag`.
+        start date to obtain it.
+        - When growth is requested, the method calculates the growth of the ratio values
+        over the given lag.
 
         As an example:
 
@@ -19059,9 +19035,9 @@ class Ratios:
         - Daniel, K. and S. Titman, "Market Reactions to Tangible and Intangible
         Information," Journal of Finance 61(4), 2006, pp. 1605-1643.
         - The prices and statements reach about a year before the start date, so with the
-        five-year window the first years are NaN; set an earlier start_date to obtain them.
-        - If `growth` is set to True, the method calculates the growth of the ratio values
-        using the specified `lag`.
+        five-year window the first years are NaN; set an earlier start date to obtain them.
+        - When growth is requested, the method calculates the growth of the ratio values
+        over the given lag.
 
         As an example:
 
@@ -19141,9 +19117,8 @@ class Ratios:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculate the net external financing of Bradshaw, Richardson and Sloan (2006): the
-        cash a company raises from shareholders and lenders, net of what it returns to them,
-        scaled by its average total assets.
+        Calculate the net external financing of Bradshaw, Richardson and Sloan (2006): the cash a company raises from
+        shareholders and lenders, net of what it returns to them, scaled by its average total assets.
 
         Bradshaw, Richardson and Sloan show that the net external financing predicts returns
         negatively: companies that raise the most cash from equity and debt investors earn
@@ -19197,9 +19172,9 @@ class Ratios:
         Financing Activities, Analysts' Forecasts and Stock Returns," Journal of Accounting
         and Economics 42(1-2), 2006, pp. 53-85.
         - The first period has no total assets at the start of the window and is NaN, so set
-        an earlier start_date to obtain it.
-        - If `growth` is set to True, the method calculates the growth of the ratio values
-        using the specified `lag`.
+        an earlier start date to obtain it.
+        - When growth is requested, the method calculates the growth of the ratio values
+        over the given lag.
 
         As an example:
 
@@ -19274,14 +19249,14 @@ class Ratios:
         **kwargs,
     ) -> pd.DataFrame:
         """
-        Factor analysis (predictive power) of the ratios: whether the tickers that score high
-        on a ratio go on to return more than those that score low. Per period, the information
-        coefficient (IC) is the Spearman rank correlation between the ratio of the tickers at
-        the end of the period and their return over the following horizon: 1 means the ratio
-        ranks the later returns perfectly, -1 in reverse and 0 that it says nothing about them.
-        The IC measures skill in Grinold and Kahn's fundamental law of active management,
-        IR ≈ IC × √breadth: a small but consistent IC across many tickers and periods gives a
-        high information ratio.
+        Factor analysis (predictive power) of the ratios: whether the tickers that score high on a ratio go on to
+        return more than those that score low.
+
+        Per period, the information coefficient (IC) is the Spearman rank correlation between the ratio of the tickers
+        at the end of the period and their return over the following horizon: 1 means the ratio ranks the later
+        returns perfectly, -1 in reverse and 0 that it says nothing about them. The IC measures skill in Grinold and
+        Kahn's fundamental law of active management, IR ≈ IC × √breadth: a small but consistent IC across many tickers
+        and periods gives a high information ratio.
 
         The summary has a row per ratio and horizon with the mean IC, its standard deviation, the IC
         information ratio (mean divided by standard deviation), the t-statistic of the mean with its
@@ -19305,9 +19280,9 @@ class Ratios:
         - Per period: (1 + mean return) ^ (1 / h) − 1 and standard error / √h
         - Standard error of a quantile = standard deviation over the periods / √periods
 
-        The ratios are calculated daily from the closing price where they can be (show_daily)
+        The ratios are calculated daily from the closing price where they can be (daily values)
         and otherwise per statement period. Statement figures apply from the end of each fiscal
-        period, or with point_in_time from the day they were filed, never earlier, so no day
+        period, or with point-in-time data from the day they were filed, never earlier, so no day
         uses figures that were not known yet. The returns use the dividend and split adjusted
         close and start at the close of the period the ratio belongs to. Each ticker keeps its
         own history: a ticker without a ratio or a return in a period is left out of that
@@ -19315,13 +19290,15 @@ class Ratios:
 
         Args:
             metrics (str | list[str], optional): A ratio method name, e.g.
-                "get_price_to_earnings_ratio", a list of them, or a collection: "valuation",
-                "profitability", "solvency", "liquidity", "efficiency" or "all". Defaults to
-                "valuation", the price and enterprise value multiples, yields and the market
-                cap. Per-share figures and currency amounts are not in the collections, as
+                "get_price_to_earnings_ratio", a list of them, or a collection. Options for the collections
+                are: "valuation" (the price and enterprise value multiples, yields and the market cap),
+                "profitability" (the profitability ratios), "solvency" (the solvency ratios), "liquidity" (the
+                liquidity ratios), "efficiency" (the efficiency ratios), "all" (every collection). Defaults to
+                "valuation". Per-share figures and currency amounts are not in the collections, as
                 their level depends on the share count or company size.
-            period (str, optional): The frequency at which the ratios are evaluated: daily,
-                weekly, monthly, quarterly or yearly. Defaults to "monthly".
+            period (str, optional): The frequency at which the ratios are evaluated. Options are: "daily"
+                (daily values), "weekly" (weekly values), "monthly" (monthly values), "quarterly" (quarterly
+                values), "yearly" (yearly values). Defaults to "monthly".
             horizons (list[int] | int | None, optional): The number of periods the forward
                 returns cover. Defaults to None, which uses about a period, a quarter and a
                 year ahead (1, 3 and 12 months for monthly).
@@ -19329,21 +19306,21 @@ class Ratios:
                 period. Defaults to 5.
             periods_apart (int, optional): The number of periods between the dates the
                 quantile turnover and the rank autocorrelation compare. Defaults to 1.
-            detail (str | None, optional): Returns one part of the analysis of a single ratio
-                instead of the summary: "information_coefficient" (per period and horizon),
-                "information_coefficient_by_month" or "information_coefficient_by_year" (the mean IC
-                per calendar month or year), "group_information_coefficient" (the IC statistics
-                within each group, needs group), "quantile_returns" (the mean forward return per
-                quantile and horizon), "quantile_returns_by_date" (per period),
-                "quantile_return_statistics" (the mean, its standard error and both per single
-                period), "quantile_statistics" (the range, mean and count of the factor values in
-                each quantile), "quantile_turnover" (per period and quantile),
-                "rank_autocorrelation" (per period), "factor_weights" (the weights of the
-                factor-weighted long-short portfolio per period and ticker), "factor_returns" (its
-                return per period and horizon), "cumulative_returns" (the growth of 1 in it and in
-                each quantile) or "event_returns" (the mean price path of each quantile from the
-                longest horizon before to the longest horizon after the periods it is formed).
-                Defaults to None.
+            detail (str | None, optional): Returns one part of the analysis of a single ratio instead of the
+                summary. Options are: "information_coefficient" (the IC per period and horizon),
+                "information_coefficient_by_month" (the mean IC per calendar month),
+                "information_coefficient_by_year" (the mean IC per calendar year),
+                "group_information_coefficient" (the IC statistics within each group, needs group),
+                "quantile_returns" (the mean forward return per quantile and horizon),
+                "quantile_returns_by_date" (the mean forward return per quantile and horizon, per period),
+                "quantile_return_statistics" (the mean forward return, its standard error and both per single
+                period), "quantile_statistics" (the range, mean and count of the factor values in each
+                quantile), "quantile_turnover" (the turnover per period and quantile),
+                "rank_autocorrelation" (the rank autocorrelation per period), "factor_weights" (the weights of
+                the factor-weighted long-short portfolio per period and ticker), "factor_returns" (its return
+                per period and horizon), "cumulative_returns" (the growth of 1 in it and in each quantile),
+                "event_returns" (the mean price path of each quantile from the longest horizon before to the
+                longest horizon after the periods it is formed). Defaults to None.
             column (str | None, optional): Not used by the ratios, which have one value per
                 ticker; it exists for the modules whose metrics have several outputs. Defaults
                 to None.
@@ -19357,12 +19334,11 @@ class Ratios:
                 factor-weighted portfolio neutral within each group. Without group the IC
                 stays the same, as subtracting one mean from every ticker keeps their ranks.
                 Defaults to False.
-            binning (str, optional): How the tickers are sorted into quantiles per period:
-                "quantile" (equally sized), "equal_width" (bins of equal width between the lowest
-                and highest value), "zero_aware" (half of the quantiles for the negative and half
-                for the zero and positive values, for a signal centred on zero; needs an even number
-                of quantiles) or "group" (equally sized within each group, needs group). Defaults to
-                "quantile".
+            binning (str, optional): How the tickers are sorted into quantiles per period. Options are:
+                "quantile" (equally sized), "equal_width" (bins of equal width between the lowest and highest
+                value), "zero_aware" (half of the quantiles for the negative and half for the zero and positive
+                values, for a signal centred on zero; needs an even number of quantiles), "group" (equally sized
+                within each group, needs group). Defaults to "quantile".
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
             **kwargs: Parameters passed to the ratios that take them, e.g. trailing=4 or

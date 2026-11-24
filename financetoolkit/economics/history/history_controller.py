@@ -65,29 +65,27 @@ class HistoryEconomics(PricesEconomics):
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Get the yearly total returns of equity, housing, government bonds and bills for 18
-        advanced economies from 1870 to 2020, from the Jordà-Schularick-Taylor Macrohistory
-        Database (Jordà, Knoll, Kuvshinov, Schularick and Taylor, 2019, "The Rate of Return on
-        Everything, 1870-2015", Quarterly Journal of Economics). A century and a half of
-        returns across wars, depressions and inflations is what calibrates the long-run
-        trend, the equity and housing risk premia and the cycles of scenario generators for
-        50 to 100-year horizons.
+        Get the yearly total returns of equity, housing, government bonds and bills of 18 advanced economies from
+        1870, from the Jordà-Schularick-Taylor Macrohistory Database.
 
-        The asset classes: "equity" (dividends reinvested), "housing" (rental income
-        included), "bonds" (long-term government bonds, coupons included), "bills"
-        (short-term government bills), "risky" (a wealth-weighted mix of equity and housing),
-        "safe" (a mix of bonds and bills) and "wealth" (all of them weighted by their share of
-        national wealth). The countries: Australia, Belgium, Canada, Denmark, Finland,
-        France, Germany, Ireland, Italy, Japan, the Netherlands, Norway, Portugal, Spain,
-        Sweden, Switzerland, the United Kingdom and the United States, with gaps in the war
-        years.
+        The database is that of Jordà, Knoll, Kuvshinov, Schularick and Taylor (2019, "The Rate of Return on
+        Everything, 1870-2015", Quarterly Journal of Economics) and runs to 2020. A century and a half of returns
+        across wars, depressions and inflations is what calibrates the long-run trend, the equity and housing risk
+        premia and the cycles of scenario generators for 50 to 100-year horizons.
 
-        Returns are decimal fractions (0.08 for 8%), in local currency, and with real=True
+        The asset classes are equity (dividends reinvested), housing (rental income included), long-term government
+        bonds (coupons included), short-term government bills, risky assets (a wealth-weighted mix of equity and
+        housing), safe assets (a mix of bonds and bills) and wealth (all of them weighted by their share of national
+        wealth). The countries: Australia, Belgium, Canada, Denmark, Finland, France, Germany, Ireland, Italy, Japan,
+        the Netherlands, Norway, Portugal, Spain, Sweden, Switzerland, the United Kingdom and the United States, with
+        gaps in the war years.
+
+        Returns are decimal fractions (0.08 for 8%), in local currency, and in real terms
         deflated by consumer price inflation.
 
         The database is licensed under CC BY-NC-SA 4.0: it may be used for non-commercial
         purposes with attribution, and its authors expressly exclude commercial data
-        providers. Pass accept_licence=True to confirm the use is non-commercial; the data
+        providers. Accept the licence to confirm the use is non-commercial; the data
         is retrieved from macrohistory.net when needed and is not distributed with the
         Finance Toolkit.
 
@@ -97,8 +95,11 @@ class HistoryEconomics(PricesEconomics):
         historical equity premium.
 
         Args:
-            asset_class (str, optional): "equity", "housing", "bonds", "bills", "risky",
-                "safe" or "wealth". Defaults to "equity".
+            asset_class (str, optional): The asset class. Options are: "equity" (dividends reinvested),
+                "housing" (rental income included), "bonds" (long-term government bonds, coupons included),
+                "bills" (short-term government bills), "risky" (a wealth-weighted mix of equity and housing),
+                "safe" (a mix of bonds and bills), "wealth" (all of them weighted by their share of national
+                wealth). Defaults to "equity".
             countries (list[str] | str | None, optional): The countries to include. Defaults
                 to None, which includes all of them.
             real (bool, optional): Whether to deflate the returns by consumer price
@@ -196,14 +197,14 @@ class HistoryEconomics(PricesEconomics):
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Get the headline annual series of "A millennium of macroeconomic data for the UK",
-        the Bank of England's research dataset of British economic history (Thomas and
-        Dimsdale, version 3.1): around eighty series of output, population, employment,
-        prices, wages, interest rates, asset prices, exchange rates, money, credit and public
-        finances, from as early as 1086 (GDP and population), 1209 (consumer prices), 1694
-        (Bank Rate) and 1700 (share prices) to 2016. It is the longest consistent record of
-        interest rates, inflation and asset prices of any economy, for calibrating the very
-        long-run behaviour of scenario generators.
+        Get the headline annual series of the Bank of England's "A millennium of macroeconomic data for the UK":
+        British output, prices, rates and asset prices over centuries.
+
+        The dataset (Thomas and Dimsdale, version 3.1) holds around eighty series of output, population, employment,
+        prices, wages, interest rates, asset prices, exchange rates, money, credit and public finances, from as early
+        as 1086 (GDP and population), 1209 (consumer prices), 1694 (Bank Rate) and 1700 (share prices) to 2016. It is
+        the longest consistent record of interest rates, inflation and asset prices of any economy, for calibrating
+        the very long-run behaviour of scenario generators.
 
         The series keep the names of the dataset, such as "Bank Rate", "Consols / long-term
         government bond yields", "Corporate bond yields", "Share prices", "Consumer price
@@ -215,10 +216,10 @@ class HistoryEconomics(PricesEconomics):
         The dataset is not updated anymore. The workbook is large (around 28 MB), so it is
         cached for a year.
 
-        With deflate_with, every series is in real terms: in the money of the latest year of
+        Deflated with a country's prices, every series is in real terms: in the money of the latest year of
         that country's yearly consumer price index up to the end date (see
         get_consumer_price_index), such as the dollar oil price ("$ Oil prices") in 2025
-        dollars with deflate_with="United States", which compares the oil price of 1864
+        dollars deflated with the United States, which compares the oil price of 1864
         with that of 2008. A year before the first year of the consumer price index has no
         real value. Only deflate series in money, such as prices, in the currency of that
         country: rates, indices and growth rates are not amounts of money.
@@ -345,18 +346,19 @@ class HistoryEconomics(PricesEconomics):
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Get a regulator's published scenario set: the thousands of simulated paths of
-        interest rates, equity returns and inflation that pension funds or insurers must
-        use, generated by a documented and reviewed economic scenario generator. It is a
-        reference to calibrate and validate an own scenario generator against, both for the
-        real-world distribution and for the market-consistent one.
+        Get a regulator's published scenario set: the thousands of simulated paths of interest rates, equity returns
+        and inflation that pension funds or insurers must use.
 
-        Available is the scenario set of De Nederlandsche Bank (authority="dnb"), which
+        The paths come from a documented and reviewed economic scenario generator. It is a reference to calibrate and
+        validate an own scenario generator against, both for the real-world distribution and for the market-consistent
+        one.
+
+        Available is the scenario set of De Nederlandsche Bank (DNB), which
         Dutch pension funds use for their feasibility test and the transition to the new
         pension contract: 20,000 scenarios over a horizon of 100 years, generated every
         quarter with the model the Commissie Parameters 2022 specified, under the
-        real-world measure (measure="real_world", the P-set) and the market-consistent
-        measure (measure="market_consistent", the Q-set, arbitrage-free and calibrated to
+        real-world measure (the P-set) and the market-consistent
+        measure (the Q-set, arbitrage-free and calibrated to
         market prices including swaptions).
 
         The variables, as decimals per year of the horizon (year 0 is the end of the
@@ -366,7 +368,7 @@ class HistoryEconomics(PricesEconomics):
         "Inflation NL" (from year 1).
 
         By default the distribution per year is returned: the quantiles of the 20,000
-        scenarios and their mean. With scenarios=True every scenario is returned instead
+        scenarios and their mean. On request every scenario is returned instead
         (20,000 columns per variable). The set is a large workbook (around 180 MB) that
         takes a minute or two to download and read the first time; it is cached for 30
         days.
@@ -377,10 +379,11 @@ class HistoryEconomics(PricesEconomics):
         Q-set, regulatory economic scenario generator.
 
         Args:
-            authority (str, optional): The regulator: "dnb". Defaults to "dnb".
-            measure (str, optional): "real_world" or "market_consistent". Defaults to
-                "real_world".
-            variables (list[str] | str | None, optional): The variables to include, from
+            authority (str, optional): The regulator. Options are: "dnb" (De Nederlandsche Bank). Defaults
+                to "dnb".
+            measure (str, optional): The probability measure. Options are: "real_world" (the P-set),
+                "market_consistent" (the Q-set). Defaults to "real_world".
+            variables (list[str] | str | None, optional): The variables to include. Options are:
                 "Nominal rate 1Y", "Nominal rate 5Y", "Nominal rate 10Y", "Nominal rate 20Y",
                 "Nominal rate 30Y", "Real rate EU 10Y", "Equity return", "Inflation EU" and
                 "Inflation NL". Defaults to None, which includes all of them.
@@ -398,7 +401,7 @@ class HistoryEconomics(PricesEconomics):
 
         Returns:
             pd.DataFrame: Indexed by the year of the horizon, with a column per variable and
-            quantile (or "Mean"), or per variable and scenario with scenarios=True.
+            quantile (or "Mean"), or per variable and scenario with every scenario.
 
         As an example:
 
@@ -502,13 +505,13 @@ class HistoryEconomics(PricesEconomics):
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Get the total returns of listed funds that track asset classes without a public
-        return index: private equity, infrastructure, hedge funds, private credit, real
-        estate and investment grade and high yield credit. Their returns approximate those
-        of the asset classes for calibrating a scenario generator, with two caveats: listed
-        prices are marked to market daily, so they are more volatile and more correlated
-        with equities than the appraisal-based returns of private funds, and they include
-        the funds' fees.
+        Get the total returns of listed funds that track asset classes without a public return index, such as private
+        equity, infrastructure, hedge funds and private credit.
+
+        The asset classes are private equity, infrastructure, hedge funds, private credit, real estate and investment
+        grade and high yield credit. Their returns approximate those of the asset classes for calibrating a scenario
+        generator, with two caveats: listed prices are marked to market daily, so they are more volatile and more
+        correlated with equities than the appraisal-based returns of private funds, and they include the funds' fees.
 
         The asset classes and the funds that track them, with the start of their history:
         - "Private Equity": the Invesco Global Listed Private Equity ETF (PSP), from 2006.
@@ -525,20 +528,20 @@ class HistoryEconomics(PricesEconomics):
           2007.
 
         Returns are the change of the dividend-adjusted price over each period, as decimals,
-        in US dollars; with returns=False the dividend-adjusted price itself is returned.
-        The prices come from FinancialModelingPrep when an API key is set (the api_key of the
-        Economics class) and from Yahoo Finance otherwise.
+        in US dollars; without returns the dividend-adjusted price itself is returned.
+        The prices come from FinancialModelingPrep when an API key is set on the
+        Economics class and from Yahoo Finance otherwise.
 
         Also known as: private market proxies, listed private equity, alternative asset
         returns, hedge fund replication.
 
         Args:
-            asset_classes (list[str] | str | None, optional): The asset classes to include,
-                from "Private Equity", "Infrastructure", "Hedge Funds", "Merger Arbitrage",
+            asset_classes (list[str] | str | None, optional): The asset classes to include. Options are:
+                "Private Equity", "Infrastructure", "Hedge Funds", "Merger Arbitrage",
                 "Private Credit", "Real Estate", "Investment Grade Credit" and "High Yield
                 Credit". Defaults to None, which includes all of them.
-            period (str, optional): Whether to return the daily, weekly or monthly data.
-                Defaults to "daily".
+            period (str, optional): The frequency of the data. Options are: "daily" (daily data), "weekly" (weekly
+                data), "monthly" (monthly data). Defaults to "daily".
             returns (bool, optional): Whether to return the total return per period instead
                 of the dividend-adjusted price. Defaults to True.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple
@@ -650,14 +653,13 @@ class HistoryEconomics(PricesEconomics):
         show_columns: str | list[str] | None = None,
     ):
         """
-        Retrieves Robert Shiller's monthly US stock market data from 1871, the data behind
-        "Irrational Exuberance" and the CAPE ratio: the S&P Composite price, dividends and
-        earnings, the consumer price index, the long-term interest rate, the same in real
-        (inflation-adjusted) terms, the trailing price-earnings ratio (P/E), the price over the
-        earnings of the last twelve months, and the cyclically adjusted price-earnings ratio
-        (CAPE), the price over the average of ten years of real earnings. With more than 150 years of
-        history it is the standard source for long-run equity returns, valuations and their
-        relation to subsequent returns.
+        Get Robert Shiller's monthly US stock market data from 1871: the S&P Composite price, dividends, earnings,
+        interest rates and the CAPE ratio, nominal and real.
+
+        It is the data behind "Irrational Exuberance" and the CAPE ratio, with the trailing price-earnings ratio (P/E)
+        over the earnings of the last twelve months and the cyclically adjusted price-earnings ratio (CAPE) over the
+        average of ten years of real earnings. With more than 150 years of history it is the standard source for
+        long-run equity returns, valuations and their relation to subsequent returns.
 
         Prices are monthly averages of daily closes; dividends and earnings are trailing
         twelve-month totals, with the latest months not yet published. The long interest

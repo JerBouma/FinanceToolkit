@@ -95,13 +95,14 @@ def get_yield_curve(
     curve: str = "nominal", start_date: str | None = None, end_date: str | None = None
 ) -> pd.DataFrame:
     """
-    Retrieves the daily nominal or real par yield curve of US Treasuries as published by
-    the U.S. Department of the Treasury. Only the years between the start and end date
-    are requested, one file per year.
+    Retrieves the daily nominal or real par yield curve of US Treasuries as published by the U.S. Department of the
+    Treasury.
+
+    Only the years between the start and end date are requested, one file per year.
 
     Args:
-        curve (str): "nominal" (from 1990) or "real" (TIPS, from 2003). Defaults to
-            "nominal".
+        curve (str): The curve. Options are: "nominal" (nominal par yields, from 1990), "real" (TIPS real yields, from
+            2003). Defaults to "nominal".
         start_date (str | None): The start date (YYYY-MM-DD). Defaults to None, which
             starts at the first year of the curve.
         end_date (str | None): The end date (YYYY-MM-DD). Defaults to None, which ends in
@@ -165,9 +166,10 @@ def get_long_term_interest_rate(
 
 def get_real_yield_curve(start_date: str, end_date: str) -> pd.DataFrame:
     """
-    Retrieves the daily real par yield curve of Treasury Inflation-Protected Securities
-    (TIPS) for the 5, 7, 10, 20 and 30-Year maturities, the same figures FRED republishes
-    as the DFII series.
+    Retrieve the daily real par yield curve of Treasury Inflation-Protected Securities (TIPS): the yield above
+    inflation of the 5, 7, 10, 20 and 30-year maturities.
+
+    These are the same figures FRED republishes as the DFII series.
 
     Args:
         start_date (str): The start date (YYYY-MM-DD).
@@ -198,10 +200,10 @@ def get_breakeven_inflation_expectations(
     start_date: str, end_date: str
 ) -> pd.DataFrame:
     """
-    Computes the daily breakeven inflation rates, the nominal par yield minus the real
-    par yield, for the 5, 7, 10, 20 and 30-Year maturities, plus the 5-Year, 5-Year
-    Forward Inflation Expectation Rate. These are the formulas FRED uses for its T5YIE,
-    T10YIE and T5YIFR series, applied to the same Treasury curves.
+    Computes the daily breakeven inflation rates, the nominal par yield minus the real par yield, for the 5, 7, 10, 20
+    and 30-Year maturities, plus the 5-Year, 5-Year Forward Inflation Expectation Rate.
+
+    These are the formulas FRED uses for its T5YIE, T10YIE and T5YIFR series, applied to the same Treasury curves.
 
     Args:
         start_date (str): The start date (YYYY-MM-DD).

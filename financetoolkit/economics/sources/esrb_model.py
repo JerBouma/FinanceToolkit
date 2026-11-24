@@ -138,14 +138,16 @@ def _parse_sheet(data: pd.DataFrame, scenario: str) -> dict[tuple[str, int], flo
 
 def get_macro_financial_scenario(scenario: str) -> pd.DataFrame:
     """
-    Retrieves the latest macro-financial scenario of the EU-wide bank stress test,
-    yearly for three years: GDP, inflation, unemployment, residential and commercial
-    property prices and long-term rates for the EU members and the main other economies,
-    stock prices by region, commodity prices and foreign demand, iTraxx credit spreads and
-    exchange rates.
+    Retrieve the latest macro-financial scenario of the EU-wide bank stress test: the paths of GDP, inflation,
+    unemployment, property prices, rates and stock prices over three years.
+
+    It covers GDP, inflation, unemployment, residential and commercial property prices and long-term rates for the EU
+    members and the main other economies, stock prices by region, commodity prices and foreign demand, iTraxx credit
+    spreads and exchange rates, yearly for three years.
 
     Args:
-        scenario (str): "historic" (the starting point), "baseline" or "adverse".
+        scenario (str): The scenario. Options are: "historic" (the starting point), "baseline" (the baseline
+            scenario), "adverse" (the adverse scenario).
 
     Returns:
         pd.DataFrame: The variables as decimals (exchange rates as published), indexed by

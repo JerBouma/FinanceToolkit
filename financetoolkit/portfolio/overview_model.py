@@ -759,8 +759,8 @@ def create_transactions_performance(
         costs_column (str): The name of the column representing transaction costs in `portfolio_dataset`.
         period_prices (pd.DataFrame): The closing price of every asset at the end of every period, one
             row per period and one column per ticker.
-        period_string (str): The time period for grouping transactions. Supported values are
-            'Y', 'Q', 'M', 'W' or 'D'.
+        period_string (str): The time period for grouping transactions. Options are: "Y" (yearly),
+            "Q" (quarterly), "M" (monthly), "W" (weekly), "D" (daily).
         benchmark_specific_prices (pd.Series): The closing price of the benchmark on the date of every
             transaction, aligned with `portfolio_dataset`.
         benchmark_period_prices (pd.DataFrame | pd.Series): The closing price of the benchmark at the end
@@ -1122,8 +1122,9 @@ def create_portfolio_performance(
             'Realized Proceeds', 'Dividends', 'Current Value', 'Invested Weight', and 'Current Weight'.
         date_column (str): The name of the column representing the dates in `positions_dataset`.
         ticker_column (str): The name of the column representing the tickers in `positions_dataset`.
-        period_string (str): The time period for which portfolio performance metrics should be calculated. This can be
-            'yearly', 'quarterly', 'monthly', 'weekly', or 'daily'.
+        period_string (str): The time period for which portfolio performance metrics should be
+            calculated. Options are: "Y" (yearly), "Q" (quarterly), "M" (monthly), "W" (weekly), "D"
+            (daily).
 
     Returns:
         pd.DataFrame: A DataFrame containing portfolio performance metrics aggregated by date and ticker.
@@ -1209,10 +1210,12 @@ def match_lots(
 ) -> tuple[list[tuple[int, int, float]], list[tuple[int, float]], bool]:
     """
     Match the transactions of one asset, in the order they are given, against the lots they
-    close: every purchase or sale opens a lot, and a transaction in the other direction closes
-    the oldest open lots first (FIFO) or the newest (LIFO). A transaction larger than the
-    lots it closes opens a lot in its own direction with the units left, so a sale of more
-    than is held opens a short lot (with `short_selling=True`) that later purchases close.
+    close.
+
+    Every purchase or sale opens a lot, and a transaction in the other direction closes the
+    oldest open lots first (FIFO) or the newest (LIFO). A transaction larger than the lots
+    it closes opens a lot in its own direction with the units left, so a sale of more than
+    is held opens a short lot (when short selling is on) that later purchases close.
 
     The matches are the round trips of the asset: each pairs the transaction that opened
     units with the one that closed them, so the realized profit and loss of a sale and the
@@ -1221,8 +1224,9 @@ def match_lots(
     Args:
         volumes (np.ndarray): The volume of every transaction, positive for a purchase and
             negative for a sale, in the order they are matched in.
-        method (str, optional): "FIFO" closes the oldest lots first, "LIFO" the newest.
-            Defaults to "FIFO".
+        method (str, optional): Which lots a sale closes first. Options are: "FIFO" (first in, first
+            out: the oldest lots close first), "LIFO" (last in, first out: the newest lots close
+            first). Defaults to "FIFO".
         short_selling (bool, optional): Whether a sale of more units than are held opens a
             short lot. Defaults to False, which leaves the units sold beyond those held out.
 
@@ -1296,8 +1300,10 @@ def create_profit_and_loss_overview(
         volume_column (str): The column name representing the transaction volumes
             (positive for buys, negative for sells).
         price_column (str): The column name representing the transaction prices.
-        method (str, optional): Method for inventory valuation.
-            Can be 'FIFO', 'LIFO', or 'AVERAGE'. Default is 'FIFO'.
+        method (str, optional): Method for inventory valuation. Options are: "FIFO" (first in, first
+            out: the oldest lots close first), "LIFO" (last in, first out: the newest lots close
+            first), "AVERAGE" (every sale at the average cost of the units held). Defaults to
+            "FIFO".
         purchases_first (bool, optional): Whether the purchases of a day come before its sales.
             False keeps the order of the rows within a day, for transactions that are in the
             order they were made in (dated with a time of day). Defaults to True.
@@ -1311,12 +1317,12 @@ def create_profit_and_loss_overview(
         - FIFO (First-In, First-Out): Sells the earliest purchased assets first.
         - LIFO (Last-In, First-Out): Sells the most recently purchased assets first.
         - AVERAGE: Uses the average cost of all assets in inventory for PnL calculation.
-        - The inventory is built up in date order. Within a day the purchases come before the
-          sales, so a position bought and sold on the same day realizes its PnL whatever the
-          order of the rows; otherwise the rows keep their order. With `purchases_first=False`,
-          as the Portfolio passes for transactions dated with a time of day, the rows keep
-          their order within the day as well, so a sale in the morning is matched against the
-          units held before a purchase in the afternoon.
+        - The inventory is built up in date order. Within a day the purchases come before
+          the sales, so a position bought and sold on the same day realizes its PnL whatever
+          the order of the rows; otherwise the rows keep their order. When the purchases do
+          not come first, as the Portfolio passes for transactions dated with a time of day,
+          the rows keep their order within the day as well, so a sale in the morning is
+          matched against the units held before a purchase in the afternoon.
         - Transaction costs are deliberately excluded from the realized PnL. They are carried by the
           invested amount instead, so that a cost is counted once rather than in both places.
         - Selling more units than the inventory holds realizes the PnL of the units that were held
@@ -1413,19 +1419,20 @@ def get_turnover(
     - Gross Value_t = Σ_i |value of position i| (pyfolio's "actual gross book")
     - Turnover_t = Traded Value_t / ((Gross Value_t + Gross Value_t-1) / 2), the average of
       the gross value of the day and the day before (half the gross value on the first
-      day), or Traded Value_t / Net Value_t with denominator="net_value" (pyfolio's
+      day), or Traded Value_t / Net Value_t over the net value (pyfolio's
       "portfolio_value"), Net Value_t = Σ_i value of position i.
 
     A purchase of a whole portfolio in one day is a turnover of 2 on that day, as the
     gross value averages to half its size.
 
-    See pyfolio's get_turnover (https://github.com/stefan-jansen/pyfolio-reloaded).
+    Shares similar logic:
+    - pyfolio, get_turnover: https://github.com/stefan-jansen/pyfolio-reloaded/blob/0.9.9/src/pyfolio/txn.py#L148
 
     Args:
         traded_values (pd.Series): The value traded per day, positive.
         position_values (pd.DataFrame): The value of every position (columns) per day.
-        denominator (str, optional): "gross_value" or "net_value". Defaults to
-            "gross_value".
+        denominator (str, optional): Options are: "gross_value" (the average gross value of the day
+            and the day before), "net_value" (the net value). Defaults to "gross_value".
 
     Returns:
         pd.DataFrame: The Traded Value, the Gross Value (or Net Value) and the Turnover per
@@ -1448,8 +1455,10 @@ def get_turnover(
 
 def get_gross_leverage(position_values: pd.DataFrame) -> pd.DataFrame:
     """
-    The gross leverage of a portfolio per day, the value of its long and short positions
-    together as a multiple of its net value, as defined in pyfolio (Quantopian) by gross_lev:
+    The gross leverage of a portfolio per day: its long and short positions together as a
+    multiple of its net value.
+
+    It is defined in pyfolio (Quantopian) by gross_lev:
 
     - Gross Leverage_t = Σ_i |value of position i| / Σ_i value of position i
 
@@ -1457,7 +1466,8 @@ def get_gross_leverage(position_values: pd.DataFrame) -> pd.DataFrame:
     130/30 portfolio has 1.6). The positions hold no cash, so the net value is that of the
     positions, where pyfolio adds the cash.
 
-    See pyfolio's gross_lev (https://github.com/stefan-jansen/pyfolio-reloaded).
+    Shares similar logic:
+    - pyfolio, gross_lev: https://github.com/stefan-jansen/pyfolio-reloaded/blob/0.9.9/src/pyfolio/timeseries.py#L605
 
     Args:
         position_values (pd.DataFrame): The value of every position (columns) per day.

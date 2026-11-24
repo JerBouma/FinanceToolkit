@@ -44,7 +44,11 @@ logger = get_logger()
 @track_sources
 class DistressModels:
     """
-    Bankruptcy and credit risk models: the Altman, Ohlson, Zmijewski, Springate, Grover, Fulmer, Taffler and Campbell-Hilscher-Szilagyi scores, Merton's distance to default and the synthetic credit rating.
+    Bankruptcy and credit risk models.
+
+    They are the Altman, Ohlson, Zmijewski, Springate, Grover, Fulmer, Taffler and
+    Campbell-Hilscher-Szilagyi scores, Merton's distance to default and the synthetic credit
+    rating.
     """
 
     @handle_errors
@@ -61,21 +65,26 @@ class DistressModels:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculates the Altman Z-Score, a financial metric used to predict the likelihood of a company going bankrupt.
-        The Altman Z-Score is calculated using several financial ratios, including working capital to total assets,
-        retained earnings to total assets, earnings before interest and taxes (EBIT) to total assets, equity to
-        book value of total liabilities, and (for manufacturers) sales to total assets. Altman estimated four
-        versions, chosen with `model`: the original Z-Score for listed manufacturers, the Z'-Score for private
-        manufacturers, the Z''-Score for non-manufacturers and the Z''-EM score for emerging market companies.
+        Calculates the Altman Z-Score, a financial metric used to predict the likelihood of a
+        company going bankrupt.
+
+        The Altman Z-Score is calculated using several financial ratios, including working
+        capital to total assets, retained earnings to total assets, earnings before interest and
+        taxes (EBIT) to total assets, equity to book value of total liabilities, and (for
+        manufacturers) sales to total assets. Altman estimated four versions, chosen with
+        `model`: the original Z-Score for listed manufacturers, the Z'-Score for private
+        manufacturers, the Z''-Score for non-manufacturers and the Z''-EM score for emerging
+        market companies.
 
         The formula is as follows:
 
             - Working Capital to Total Assets (X1) = Working Capital / Total Assets
             - Retained Earnings to Total Assets (X2) = Retained Earnings / Total Assets
             - EBIT to Total Assets (X3) = EBIT / Total Assets
-            - Market Value to Total Liabilities (X4, "original") = Market Value of Equity / Total Liabilities
+            - Market Value to Total Liabilities (X4, the original model) = Market Value of
+              Equity / Total Liabilities
             - Book Value to Total Liabilities (X4, the other models) = Total Shareholder Equity / Total Liabilities
-            - Sales to Total Assets (X5, "original" and "private") = Sales / Total Assets
+            - Sales to Total Assets (X5, the original and private models) = Sales / Total Assets
             - Original (Altman 1968): Z = 1.2 X1 + 1.4 X2 + 3.3 X3 + 0.6 X4 + 1.0 X5
             - Private (Altman 1983): Z' = 0.717 X1 + 0.847 X2 + 3.107 X3 + 0.420 X4 + 0.998 X5
             - Non-manufacturing (Altman, Hartzell and Peck 1995): Z'' = 6.56 X1 + 3.26 X2 + 6.72 X3 + 1.05 X4
@@ -345,13 +354,15 @@ class DistressModels:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculates the Ohlson O-Score, a financial metric used to predict the likelihood of a company
-        going bankrupt. Unlike the Altman Z-Score, which is built with multiple discriminant analysis,
-        the O-Score's coefficients come from a fitted logistic regression (logit) model. This is why
-        the two models are usually reported side by side rather than one being treated as a replacement
-        for the other: the Z-Score is only meaningful compared against Altman's empirically derived
-        threshold bands, while the O-Score is directly interpretable as a probability of bankruptcy
-        once passed through the logistic transform.
+        Calculates the Ohlson O-Score, a financial metric used to predict the likelihood of a
+        company going bankrupt.
+
+        Unlike the Altman Z-Score, which is built with multiple discriminant analysis, the
+        O-Score's coefficients come from a fitted logistic regression (logit) model. This is why
+        the two models are usually reported side by side rather than one being treated as a
+        replacement for the other: the Z-Score is only meaningful compared against Altman's
+        empirically derived threshold bands, while the O-Score is directly interpretable as a
+        probability of bankruptcy once passed through the logistic transform.
 
         The formula is as follows:
 
@@ -582,11 +593,13 @@ class DistressModels:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculates the Zmijewski Score, a financial metric used to predict the likelihood of a company
-        going bankrupt. It is a simpler, three-variable model compared to both the Altman Z-Score and
-        the Ohlson O-Score, and is commonly used as a robustness check when those two models disagree,
-        since it is estimated on a different sample and with a different statistical technique (a
-        probit model rather than discriminant analysis or logistic regression).
+        Calculates the Zmijewski Score, a financial metric used to predict the likelihood of a
+        company going bankrupt.
+
+        It is a simpler, three-variable model compared to both the Altman Z-Score and the Ohlson
+        O-Score, and is commonly used as a robustness check when those two models disagree,
+        since it is estimated on a different sample and with a different statistical technique
+        (a probit model rather than discriminant analysis or logistic regression).
 
         The formula is as follows:
 
@@ -741,10 +754,12 @@ class DistressModels:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculates the Springate Score, a financial metric used to predict the likelihood of
-        a company going bankrupt. It follows the same multiple discriminant analysis
-        methodology as the Altman Z-Score, but was calibrated on a smaller, Canadian-firm
-        sample using four financial ratios instead of five.
+        Calculates the Springate Score, a financial metric used to predict the likelihood of a
+        company going bankrupt.
+
+        It follows the same multiple discriminant analysis methodology as the Altman Z-Score,
+        but was calibrated on a smaller, Canadian-firm sample using four financial ratios
+        instead of five.
 
         The formula is as follows:
 
@@ -902,10 +917,11 @@ class DistressModels:
     ) -> pd.DataFrame:
         """
         Calculates the Grover Score, a financial metric used to predict the likelihood of a
-        company going bankrupt. It was developed by re-estimating the coefficients of a
-        reduced-form Altman Z-Score and adding a Return on Assets term, using a sample that
-        paired each of Altman's original bankrupt firms with a matched non-bankrupt firm from
-        the same industry and year.
+        company going bankrupt.
+
+        It was developed by re-estimating the coefficients of a reduced-form Altman Z-Score and
+        adding a Return on Assets term, using a sample that paired each of Altman's original
+        bankrupt firms with a matched non-bankrupt firm from the same industry and year.
 
         The formula is as follows:
 
@@ -1042,10 +1058,12 @@ class DistressModels:
     ) -> pd.DataFrame:
         """
         Calculates the Fulmer H-Score, a financial metric used to predict the likelihood of a
-        company going bankrupt. Unlike the Altman Z-Score, which was built on relatively
-        large, listed manufacturing companies, the Fulmer H-Score was calibrated on a
-        matched-pair sample of small, failed and non-failed U.S. companies, using nine
-        financial ratios selected via step-wise multiple discriminant analysis.
+        company going bankrupt.
+
+        Unlike the Altman Z-Score, which was built on relatively large, listed manufacturing
+        companies, the Fulmer H-Score was calibrated on a matched-pair sample of small, failed
+        and non-failed U.S. companies, using nine financial ratios selected via step-wise
+        multiple discriminant analysis.
 
         The formula is as follows:
 
@@ -1273,10 +1291,12 @@ class DistressModels:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculates the Taffler z-score, a discriminant model of financial distress estimated on UK listed
-        industrial companies (Taffler, 1983). It combines profitability, working capital, financial risk and
-        liquidity, and Agarwal and Taffler (2007) showed that it kept its predictive ability over 25 years of
-        UK data. A negative score places a company in the at-risk region.
+        Calculates the Taffler z-score, a discriminant model of financial distress estimated on
+        UK listed industrial companies (Taffler, 1983).
+
+        It combines profitability, working capital, financial risk and liquidity, and Agarwal
+        and Taffler (2007) showed that it kept its predictive ability over 25 years of UK data.
+        A negative score places a company in the at-risk region.
 
         The formula is as follows:
 
@@ -1449,11 +1469,13 @@ class DistressModels:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculate the distance to default and probability of default with the Merton
-        (1974) structural credit model. Equity is seen as a call option on the company's
-        assets with its debt as strike price: shareholders receive what is left after the
-        debt is repaid. The market value and volatility of the assets, which cannot be
-        observed, are solved from the market value and volatility of the equity:
+        Calculate the distance to default and probability of default with the Merton (1974)
+        structural credit model.
+
+        Equity is seen as a call option on the company's assets with its debt as strike price:
+        shareholders receive what is left after the debt is repaid. The market value and
+        volatility of the assets, which cannot be observed, are solved from the market value and
+        volatility of the equity:
 
             - E = V N(d1) - D e^(-rT) N(d2)
             - σ_E E = N(d1) σ_V V
@@ -1491,10 +1513,12 @@ class DistressModels:
         - Bharath, S.T. and Shumway, T. (2008). "Forecasting Default with the Merton Distance
           to Default Model." The Review of Financial Studies, 21(3), 1339-1369.
 
-        The debt value and credit spread are referenced against FinancePy's MertonFirm.
-
         Also known as: KMV model, structural credit model, expected default frequency, Merton
         credit spread.
+
+        Referenced against:
+        - FinancePy, MertonFirm.credit_spread: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/models/merton_firm.py#L124
+        - FinancePy, MertonFirm.debt_value: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/models/merton_firm.py#L109
 
         Args:
             time_horizon (float, optional): The horizon in years over which default is
@@ -1660,12 +1684,13 @@ class DistressModels:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculate the probability of failure of Campbell, Hilscher and Szilagyi (2008), a
-        logit model that combines accounting figures with market data to predict failure: a
-        bankruptcy filing, a delisting or a D (default) rating. It measures profitability
-        and leverage against the market value of the assets rather than the book value, and
-        adds the excess return of the shares, their volatility, the company's size, its
-        cash, its market-to-book ratio and its share price. In the paper it predicts failure
+        Calculate the probability of failure of Campbell, Hilscher and Szilagyi (2008), a logit
+        model that combines accounting figures with market data to predict failure.
+
+        Failure is a bankruptcy filing, a delisting or a D (default) rating. It measures
+        profitability and leverage against the market value of the assets rather than the book
+        value, and adds the excess return of the shares, their volatility, the company's size,
+        its cash, its market-to-book ratio and its share price. In the paper it predicts failure
         better than Shumway's (2001) model and than the Merton distance to default.
 
         The model is the 12-month-ahead logit of Table IV, column (3), of the paper:
@@ -1934,13 +1959,14 @@ class DistressModels:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculate the bankruptcy probability of Shumway's (2001) hazard model, which combines two
-        accounting ratios of Zmijewski's model with three market variables: the company's size
-        relative to the market, its excess return over the past year and the volatility of its
-        returns that the market does not explain. Shumway estimated it as a discrete-time hazard
-        model (a logit on every firm year), which uses every year a company is observed rather
-        than one per company, and found that the market variables predict bankruptcy better than
-        most accounting ratios.
+        Calculate the bankruptcy probability of Shumway's (2001) hazard model, which combines
+        two accounting ratios of Zmijewski's model with three market variables.
+
+        The market variables are the company's size relative to the market, its excess return
+        over the past year and the volatility of its returns that the market does not explain.
+        Shumway estimated it as a discrete-time hazard model (a logit on every firm year), which
+        uses every year a company is observed rather than one per company, and found that the
+        market variables predict bankruptcy better than most accounting ratios.
 
         The model is Table 6 of the paper, panel B (the combined model) or panel A (the market model):
 
@@ -2145,11 +2171,11 @@ class DistressModels:
     ) -> pd.DataFrame:
         """
         Calculate a synthetic credit rating and the cost of debt that comes with it, from the
-        interest coverage ratio (EBIT divided by interest expense), following Aswath
-        Damodaran. Most companies have no traded bonds or rating of their own; the coverage
-        ratio is the measure that explains ratings best, so it is mapped to the rating that
-        companies with a similar ratio have, and to that rating's default spread over the
-        risk free rate:
+        interest coverage ratio (EBIT divided by interest expense), following Aswath Damodaran.
+
+        Most companies have no traded bonds or rating of their own; the coverage ratio is the
+        measure that explains ratings best, so it is mapped to the rating that companies with a
+        similar ratio have, and to that rating's default spread over the risk free rate:
 
             - Interest Coverage Ratio = EBIT / Interest Expense
             - Rating and Default Spread from Damodaran's synthetic rating table
@@ -2168,10 +2194,9 @@ class DistressModels:
         Also known as: implied credit rating, interest coverage rating, cost of debt.
 
         Args:
-            firm_type (str, optional): The table to use: "large" (market capitalization above
-                five billion), "small" (smaller and riskier firms), "financial" (banks and
-                other financial firms) or "auto", which picks large or small from the market
-                capitalization of every period. Defaults to "auto".
+            firm_type (str, optional): The table to use. Options are: "large" (market capitalization above five
+                billion), "small" (smaller and riskier firms), "financial" (banks and other financial firms), "auto"
+                (large or small from the market capitalization of every period). Defaults to "auto".
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched

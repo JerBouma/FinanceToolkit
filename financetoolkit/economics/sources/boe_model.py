@@ -57,8 +57,9 @@ def collect_boe_series(
     columns: dict[str, str] | None = None,
 ) -> pd.DataFrame:
     """
-    Retrieves the days between two dates of one or more Bank of England database series
-    in a single request. Only the days that are not cached yet are requested.
+    Retrieves the days between two dates of one or more Bank of England database series in a single request.
+
+    Only the days that are not cached yet are requested.
 
     Args:
         series_code (str): The series code, e.g. "IUDMNPY", or several separated by commas.
@@ -148,8 +149,9 @@ def get_yield_curve(start_date: str, end_date: str) -> pd.DataFrame:
 
 def get_long_term_interest_rate(start_date: str, end_date: str) -> pd.DataFrame:
     """
-    Retrieves the daily nominal par yield of a 10-year UK government bond (gilt). It is
-    taken from the yield curve request, so both share one query.
+    Retrieves the daily nominal par yield of a 10-year UK government bond (gilt).
+
+    It is taken from the yield curve request, so both share one query.
 
     Args:
         start_date (str): The start date (YYYY-MM-DD).
@@ -168,7 +170,8 @@ def get_long_term_interest_rate(start_date: str, end_date: str) -> pd.DataFrame:
 
 def get_overnight_rate(start_date: str, end_date: str) -> pd.DataFrame:
     """
-    Retrieves the daily Sterling Overnight Index Average (SONIA).
+    Retrieve the daily Sterling Overnight Index Average (SONIA): the rate at which banks lend sterling to each other
+    overnight.
 
     Args:
         start_date (str): The start date (YYYY-MM-DD).
@@ -374,13 +377,15 @@ def _get_archive_workbooks(
 
 def get_spot_curve(curve: str, start_date: str, end_date: str) -> pd.DataFrame:
     """
-    Retrieves the daily spot curve the Bank of England estimates: the nominal and real
-    curves of UK government bonds (gilts), the implied inflation curve, the difference of
-    the two and so the UK breakeven inflation, and the curve of overnight index swaps (OIS)
-    on SONIA. The curves run from 1985 (OIS from 2009) for maturities of up to 40 years.
+    Retrieve the daily spot curves the Bank of England estimates: the nominal, real and implied inflation curves of UK
+    government bonds (gilts) and the overnight index swap (OIS) curve.
+
+    The difference of the nominal and real curves is the UK breakeven inflation, and the OIS curve is that of
+    overnight index swaps on SONIA. The curves run from 1985 (OIS from 2009) for maturities of up to 40 years.
 
     Args:
-        curve (str): "nominal", "real", "inflation" or "ois".
+        curve (str): The curve. Options are: "nominal" (nominal gilt yields), "real" (real yields of index-linked
+            gilts), "inflation" (implied inflation), "ois" (overnight index swap rates).
         start_date (str): The start date (YYYY-MM-DD).
         end_date (str): The end date (YYYY-MM-DD).
 
@@ -454,9 +459,11 @@ PERCENT_UNITS = ("%", "growth rate", "pp contribution")
 
 def get_millennium_data() -> pd.DataFrame:
     """
-    Retrieves the headline annual series of the Bank of England's "A millennium of
-    macroeconomic data for the UK": output, prices, wages, interest rates, asset prices,
-    exchange rates, money, credit and public finances, from as early as 1086 to 2016.
+    Retrieve the headline annual series of the Bank of England's "A millennium of macroeconomic data for the UK":
+    British output, prices, rates and asset prices from as early as 1086 to 2016.
+
+    The series cover output, prices, wages, interest rates, asset prices, exchange rates, money, credit and public
+    finances.
 
     Returns:
         pd.DataFrame: The series, rates and shares as decimals and levels and indices as

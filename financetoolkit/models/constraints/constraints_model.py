@@ -20,9 +20,11 @@ def get_cash_flow_to_capital(
     lagged_capital: pd.Series | pd.DataFrame,
 ) -> pd.Series | pd.DataFrame:
     """
-    The cash flow to capital of the Kaplan-Zingales index: the cash flow (income before
-    extraordinary items plus depreciation and amortization) relative to the net property,
-    plant and equipment at the start of the period.
+    The cash flow to capital of the Kaplan-Zingales index.
+
+    It is the cash flow (income before extraordinary items plus depreciation and
+    amortization) relative to the net property, plant and equipment at the start of the
+    period.
 
     The formula is as follows:
 
@@ -53,9 +55,10 @@ def get_kaplan_zingales_q(
     deferred_taxes: pd.Series | pd.DataFrame,
 ) -> pd.Series | pd.DataFrame:
     """
-    The Q (market to book ratio) of the Kaplan-Zingales index: the book value of the assets
-    with the book value of the common equity replaced by its market value, relative to the
-    book value of the assets.
+    The Q (market to book ratio) of the Kaplan-Zingales index.
+
+    It is the book value of the assets with the book value of the common equity replaced by
+    its market value, relative to the book value of the assets.
 
     The formula is as follows:
 
@@ -169,12 +172,14 @@ def get_kaplan_zingales_index(
 ) -> pd.Series | pd.DataFrame:
     """
     The Kaplan-Zingales (KZ) index of financial constraints, with the coefficients of
-    Lamont, Polk and Saa-Requejo (2001): Steven Kaplan's re-estimation of the ordered logit
-    of Kaplan and Zingales (1997) on the variables available in Compustat (Table 9 of
-    Lamont, Polk and Saa-Requejo: 719 observations, the firm-years of the low-dividend
-    manufacturing firms of Kaplan and Zingales). A higher index means a more
-    constrained firm: high debt, low cash flow, low cash and low dividends, and a high Q
-    (a constrained firm needs good investment opportunities to be constrained).
+    Lamont, Polk and Saa-Requejo (2001).
+
+    Steven Kaplan's re-estimation of the ordered logit of Kaplan and Zingales (1997) on the
+    variables available in Compustat (Table 9 of Lamont, Polk and Saa-Requejo: 719
+    observations, the firm-years of the low-dividend manufacturing firms of Kaplan and
+    Zingales). A higher index means a more constrained firm: high debt, low cash flow, low
+    cash and low dividends, and a high Q (a constrained firm needs good investment
+    opportunities to be constrained).
 
     The formula is as follows:
 
@@ -305,9 +310,11 @@ def get_industry_sales_growth(
     industries: pd.Series,
 ) -> pd.DataFrame:
     """
-    The industry sales growth (ISG) of the Whited-Wu index: per period, the average sales
-    growth of the firms in each firm's industry, the firm itself included. A firm without
-    an industry is its own industry, so it gets its own sales growth.
+    The industry sales growth (ISG) of the Whited-Wu index.
+
+    Per period, the average sales growth of the firms in each firm's industry, the firm
+    itself included. A firm without an industry is its own industry, so it gets its own
+    sales growth.
 
     The formula is as follows:
 
@@ -338,11 +345,12 @@ def get_whited_wu_index(
     sales_growth: pd.Series | pd.DataFrame,
 ) -> pd.Series | pd.DataFrame:
     """
-    The Whited-Wu (WW) index of financial constraints: the shadow value of external funds
-    estimated from the Euler equation of investment on quarterly Compustat data for
-    1975-2001 (Whited and Wu 2006, equation 13 from column 4 of Table 1). A higher index
-    means a more constrained firm: a small firm with low cash flow, no dividends and much
-    long-term debt that grows slowly in a fast-growing industry.
+    The Whited-Wu (WW) index of financial constraints.
+
+    It is the shadow value of external funds estimated from the Euler equation of investment
+    on quarterly Compustat data for 1975-2001 (Whited and Wu 2006, equation 13 from column 4
+    of Table 1). A higher index means a more constrained firm: a small firm with low cash
+    flow, no dividends and much long-term debt that grows slowly in a fast-growing industry.
 
     The formula is as follows:
 
@@ -434,11 +442,12 @@ def get_size_age_index(
     age: pd.Series | pd.DataFrame,
 ) -> pd.Series | pd.DataFrame:
     """
-    The size-age (SA) index of financial constraints of Hadlock and Pierce (2010), the
-    ordered logit of the financial constraints they coded from the 10-K filings of a random
-    sample of firms (1995-2004) on size and age only. A higher (less negative) index
-    means a more constrained firm: constraints fall as firms grow and age, and less so as
-    they get large (the Size squared term).
+    The size-age (SA) index of financial constraints of Hadlock and Pierce (2010).
+
+    It is the ordered logit of the financial constraints they coded from the 10-K filings of
+    a random sample of firms (1995-2004) on size and age only. A higher (less negative)
+    index means a more constrained firm: constraints fall as firms grow and age, and less so
+    as they get large (the Size squared term).
 
     The formula is as follows:
 

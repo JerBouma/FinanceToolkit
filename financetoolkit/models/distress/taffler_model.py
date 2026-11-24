@@ -12,9 +12,11 @@ def get_profit_before_tax_to_current_liabilities_ratio(
     current_liabilities: float | pd.Series | pd.DataFrame,
 ) -> float | pd.Series | pd.DataFrame:
     """
-    The Profit Before Tax to Current Liabilities Ratio measures how well a company's pre-tax earnings cover its
-    short-term obligations. It is the profitability component (X1) of the Taffler z-score and carries about
-    53% of the model's discriminating power.
+    The Profit Before Tax to Current Liabilities Ratio measures how well a company's pre-tax
+    earnings cover its short-term obligations.
+
+    It is the profitability component (X1) of the Taffler z-score and carries about 53% of
+    the model's discriminating power.
 
     The formula is as follows:
 
@@ -39,8 +41,10 @@ def get_current_assets_to_total_liabilities_ratio(
     total_liabilities: float | pd.Series | pd.DataFrame,
 ) -> float | pd.Series | pd.DataFrame:
     """
-    The Current Assets to Total Liabilities Ratio measures how much of a company's liabilities its current
-    assets cover. It is the working capital component (X2) of the Taffler z-score.
+    The Current Assets to Total Liabilities Ratio measures how much of a company's
+    liabilities its current assets cover.
+
+    It is the working capital component (X2) of the Taffler z-score.
 
     The formula is as follows:
 
@@ -66,8 +70,10 @@ def get_current_liabilities_to_total_assets_ratio(
     total_assets: float | pd.Series | pd.DataFrame,
 ) -> float | pd.Series | pd.DataFrame:
     """
-    The Current Liabilities to Total Assets Ratio measures the share of a company's assets financed by
-    short-term obligations. It is the financial risk component (X3) of the Taffler z-score.
+    The Current Liabilities to Total Assets Ratio measures the share of a company's assets
+    financed by short-term obligations.
+
+    It is the financial risk component (X3) of the Taffler z-score.
 
     The formula is as follows:
 
@@ -96,10 +102,12 @@ def get_no_credit_interval(
     days: float = 365,
 ) -> float | pd.Series | pd.DataFrame:
     """
-    The No-Credit Interval is the number of days a company could finance its operations from its quick assets
-    after paying its current liabilities, without new credit or revenue. It is the liquidity component (X4) of
-    the Taffler z-score, where the daily operating expenses are approximated by sales less profit before tax
-    and depreciation, spread over the days of the period.
+    The No-Credit Interval is the number of days a company could finance its operations from
+    its quick assets after paying its current liabilities, without new credit or revenue.
+
+    It is the liquidity component (X4) of the Taffler z-score, where the daily operating
+    expenses are approximated by sales less profit before tax and depreciation, spread over
+    the days of the period.
 
     The formula is as follows:
 
@@ -135,9 +143,11 @@ def get_taffler_z_score(
     no_credit_interval: float | pd.Series | pd.DataFrame,
 ) -> float | pd.Series | pd.DataFrame:
     """
-    The Taffler z-score is a discriminant model of financial distress for UK listed industrial companies,
-    estimated by Taffler (1983) and validated over 1979-2003 by Agarwal and Taffler (2007). A negative score
-    places a company in the at-risk region.
+    The Taffler z-score is a discriminant model of financial distress for UK listed
+    industrial companies.
+
+    It was estimated by Taffler (1983) and validated over 1979-2003 by Agarwal and Taffler
+    (2007). A negative score places a company in the at-risk region.
 
     The formula is as follows:
 

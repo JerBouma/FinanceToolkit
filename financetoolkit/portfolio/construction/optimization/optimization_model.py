@@ -90,11 +90,12 @@ def _validate_covariance(covariance: pd.DataFrame, positive: bool = True) -> Non
 
 class WeightConstraints(NamedTuple):
     """
-    The constraints on the weights as a linear system over the variables x: the weights
-    w, followed by one variable t_i ≥ |w_i| per asset when the gross exposure is limited
-    and short positions are allowed, and by one variable d_i ≥ |w_i - w0_i| per asset
-    when there are current weights w0 to trade from. Every optimizer solves over x and
-    keeps its first `assets` entries.
+    The constraints on the weights as a linear system over the variables x.
+
+    The variables are the weights w, followed by one variable t_i ≥ |w_i| per asset when the
+    gross exposure is limited and short positions are allowed, and by one variable d_i ≥
+    |w_i - w0_i| per asset when there are current weights w0 to trade from. Every optimizer
+    solves over x and keeps its first `assets` entries.
     """
 
     assets: int
@@ -137,9 +138,10 @@ def get_weight_constraints(
     maximum_turnover: float | None = None,
 ) -> WeightConstraints:
     """
-    The constraints on the weights of a portfolio as a linear system, checked for
-    feasibility so that an impossible combination fails with a clear message before any
-    optimization runs.
+    The constraints on the weights of a portfolio as a linear system.
+
+    They are checked for feasibility so that an impossible combination fails with a clear
+    message before any optimization runs.
 
     - Per asset, minimum_weight ≤ w_i ≤ maximum_weight; a bound given as {asset: bound}
       applies to the assets it names, the others keep 0 (minimum) or 1 (maximum).
@@ -542,18 +544,25 @@ def _shrink_to_identity(
 
 def get_ledoit_wolf_covariance(returns: pd.DataFrame) -> tuple[pd.DataFrame, float]:
     """
-    The Ledoit-Wolf shrinkage estimator of the covariance matrix: the sample covariance
-    pulled towards the identity matrix scaled by the average variance, with the shrinkage
-    intensity that minimizes the expected squared (Frobenius) error. This keeps the matrix
-    well-conditioned when there are many assets compared to the number of periods, which
-    is where the sample covariance makes optimizers chase estimation noise.
+    The Ledoit-Wolf shrinkage estimator of the covariance matrix.
 
-    The maximum likelihood sample covariance it shrinks (divided by the number of
-    periods, not one less) is the one scikit-learn's LedoitWolf takes; referenced against
-    it, the results agree.
+    It is the sample covariance pulled towards the identity matrix scaled by the average
+    variance, with the shrinkage intensity that minimizes the expected squared (Frobenius)
+    error. This keeps the matrix well-conditioned when there are many assets compared to the
+    number of periods, which is where the sample covariance makes optimizers chase
+    estimation noise.
+
+    It shrinks the maximum likelihood sample covariance, divided by the number of periods
+    rather than one less.
 
     See Ledoit, O. and Wolf, M. (2004), "A well-conditioned estimator for large-dimensional
     covariance matrices", Journal of Multivariate Analysis, 88(2), 365-411.
+
+    Referenced against:
+    - scikit-learn, LedoitWolf: https://scikit-learn.org/stable/modules/generated/sklearn.covariance.LedoitWolf.html
+
+    Shares similar logic:
+    - PyPortfolioOpt, CovarianceShrinkage.ledoit_wolf: https://pyportfolioopt.readthedocs.io/en/latest/RiskModels.html#pypfopt.risk_models.CovarianceShrinkage.ledoit_wolf
 
     Args:
         returns (pd.DataFrame): The returns per period, one column per asset, without
@@ -591,17 +600,22 @@ def get_oracle_approximating_shrinkage_covariance(
     returns: pd.DataFrame,
 ) -> tuple[pd.DataFrame, float]:
     """
-    The Oracle Approximating Shrinkage (OAS) estimator of the covariance matrix: like
-    Ledoit-Wolf, the sample covariance shrunk towards the identity matrix scaled by the
-    average variance, but with an intensity derived for normally distributed returns,
-    which converges faster and shrinks more when there are few periods.
+    The Oracle Approximating Shrinkage (OAS) estimator of the covariance matrix.
 
-    The maximum likelihood sample covariance it shrinks is the one scikit-learn's OAS
-    takes; referenced against it, the results agree.
+    Like Ledoit-Wolf, the sample covariance shrunk towards the identity matrix scaled by the
+    average variance, but with an intensity derived for normally distributed returns, which
+    converges faster and shrinks more when there are few periods. It shrinks the maximum
+    likelihood sample covariance, divided by the number of periods rather than one less.
 
     See Chen, Y., Wiesel, A., Eldar, Y. C. and Hero, A. O. (2010), "Shrinkage Algorithms
     for MMSE Covariance Estimation", IEEE Transactions on Signal Processing, 58(10),
     5016-5029.
+
+    Referenced against:
+    - scikit-learn, OAS: https://scikit-learn.org/stable/modules/generated/sklearn.covariance.OAS.html
+
+    Shares similar logic:
+    - PyPortfolioOpt, CovarianceShrinkage.oracle_approximating: https://pyportfolioopt.readthedocs.io/en/latest/RiskModels.html#pypfopt.risk_models.CovarianceShrinkage.oracle_approximating
 
     Args:
         returns (pd.DataFrame): The returns per period, one column per asset, without
@@ -632,12 +646,14 @@ def get_ledoit_wolf_constant_correlation_covariance(
 ) -> tuple[pd.DataFrame, float]:
     """
     The Ledoit-Wolf shrinkage estimator of the covariance matrix with the constant
-    correlation target: the sample covariance S pulled towards the matrix F that keeps
-    every sample variance and sets every correlation to the average sample correlation,
-    f_ii = s_ii and f_ij = r̄ √(s_ii s_jj) with r̄ = 2 / (N (N - 1)) Σ_(i<j) r_ij. Unlike
-    the scaled identity, the target keeps each asset's own variance and the general level
-    of co-movement between assets, so it shrinks only what is noisy: the differences
-    between the correlations.
+    correlation target.
+
+    It is the sample covariance S pulled towards the matrix F that keeps every sample
+    variance and sets every correlation to the average sample correlation, f_ii = s_ii and
+    f_ij = r̄ √(s_ii s_jj) with r̄ = 2 / (N (N - 1)) Σ_(i<j) r_ij. Unlike the scaled
+    identity, the target keeps each asset's own variance and the general level of
+    co-movement between assets, so it shrinks only what is noisy: the differences between
+    the correlations.
 
     The shrinkage intensity is the one of the paper that minimizes the expected squared
     (Frobenius) distance to the true covariance matrix, δ = max(0, min(κ / T, 1)) with
@@ -654,6 +670,9 @@ def get_ledoit_wolf_constant_correlation_covariance(
 
     See Ledoit, O. and Wolf, M. (2004), "Honey, I Shrunk the Sample Covariance Matrix",
     The Journal of Portfolio Management, 30(4), 110-119.
+
+    Shares similar logic:
+    - PyPortfolioOpt, CovarianceShrinkage.ledoit_wolf: https://pyportfolioopt.readthedocs.io/en/latest/RiskModels.html#pypfopt.risk_models.CovarianceShrinkage.ledoit_wolf
 
     Args:
         returns (pd.DataFrame): The returns per period, one column per asset, without
@@ -708,9 +727,11 @@ def get_ledoit_wolf_single_factor_covariance(
 ) -> tuple[pd.DataFrame, float]:
     """
     The Ledoit-Wolf shrinkage estimator of the covariance matrix with the single factor
-    target: the sample covariance S pulled towards the covariance matrix F that the market
-    model implies, with the benchmark as the market. Each asset's return is β_i r_m plus
-    a residual that is unrelated to the other assets, so f_ij = s_im s_jm / s_mm off the
+    target.
+
+    It is the sample covariance S pulled towards the covariance matrix F that the market
+    model implies, with the benchmark as the market. Each asset's return is β_i r_m plus a
+    residual that is unrelated to the other assets, so f_ij = s_im s_jm / s_mm off the
     diagonal (β_i β_j σ²_m, with s_im the sample covariance of asset i and the benchmark and
     s_mm the sample variance of the benchmark) and f_ii = s_ii on it. The target holds only
     2N + 1 parameters, so it is estimated precisely, and S adds what the factor leaves out.
@@ -734,6 +755,9 @@ def get_ledoit_wolf_single_factor_covariance(
     Stock Returns with an Application to Portfolio Selection", Journal of Empirical
     Finance, 10(5), 603-621.
 
+    Shares similar logic:
+    - PyPortfolioOpt, CovarianceShrinkage.ledoit_wolf: https://pyportfolioopt.readthedocs.io/en/latest/RiskModels.html#pypfopt.risk_models.CovarianceShrinkage.ledoit_wolf
+
     Args:
         returns (pd.DataFrame): The returns per period, one column per asset, without
             missing values.
@@ -743,6 +767,10 @@ def get_ledoit_wolf_single_factor_covariance(
     Returns:
         tuple[pd.DataFrame, float]: The covariance matrix per period and the shrinkage
             intensity between 0 (the sample covariance) and 1 (the single factor target).
+
+    Notes:
+    - Unlike PyPortfolioOpt, whose single factor is the equal-weighted average of the
+      assets, the factor is the benchmark.
     """
     market = benchmark_returns.reindex(returns.index).dropna()
     if len(market) < 2:  # noqa: PLR2004
@@ -794,15 +822,20 @@ def get_ledoit_wolf_single_factor_covariance(
 
 def get_semicovariance(returns: pd.DataFrame, threshold: float = 0.0) -> pd.DataFrame:
     """
-    The semicovariance matrix: the co-movement of the returns below a threshold, each
-    return above it counting as zero. It measures only the downside risk, which is what
-    an investor who doesn't mind upside surprises wants to minimize.
+    The semicovariance matrix: the co-movement of the returns below a threshold, each return
+    above it counting as zero.
+
+    It measures only the downside risk, which is what an investor who doesn't mind upside
+    surprises wants to minimize.
 
     Every period counts in the average, the ones above the threshold as zero, as in
     Estrada.
 
     See Estrada, J. (2008), "Mean-Semivariance Optimization: A Heuristic Approach",
     Journal of Applied Finance, 18(1), 57-72.
+
+    Referenced against:
+    - PyPortfolioOpt, semicovariance: https://pyportfolioopt.readthedocs.io/en/latest/RiskModels.html#pypfopt.risk_models.semicovariance
 
     Args:
         returns (pd.DataFrame): The returns per period, one column per asset, without
@@ -819,17 +852,17 @@ def get_semicovariance(returns: pd.DataFrame, threshold: float = 0.0) -> pd.Data
 
 def get_exponential_covariance(returns: pd.DataFrame, span: int = 180) -> pd.DataFrame:
     """
-    The exponentially weighted covariance matrix: the products of the deviations from
-    the mean return weighted by (1 − α)^age with α = 2 / (span + 1), so that recent
-    periods count most and the matrix follows changes in volatility and correlation.
+    The exponentially weighted covariance matrix.
 
-    The deviations are taken from the mean over the whole range and the weights are
-    normalized to sum to one, as in PyPortfolioOpt's `exp_cov`. The weighting is the one
-    of RiskMetrics with decay factor λ = 1 − α, but the matrix differs from the RiskMetrics
-    estimate in two ways: RiskMetrics assumes a mean return of zero rather than demeaning
-    by the sample mean, and its daily decay factor λ = 0.94 is a span of about 32 periods,
-    while the default span of 180 is λ ≈ 0.989 (a half-life of about 62 periods). Pass
-    `span=32` for the RiskMetrics daily weighting.
+    Its entries are the products of the deviations from the mean return weighted by (1 −
+    α)^age with α = 2 / (span + 1), so that recent periods count most and the matrix follows
+    changes in volatility and correlation. The deviations are taken from the mean over the
+    whole range and the weights are normalized to sum to one, as PyPortfolioOpt's exp_cov
+    does. The weighting is the one of RiskMetrics with decay factor λ = 1 − α, but the
+    matrix differs from the RiskMetrics estimate in two ways: RiskMetrics assumes a mean
+    return of zero rather than demeaning by the sample mean, and its daily decay factor λ =
+    0.94 is a span of about 32 periods, while the default span of 180 is λ ≈ 0.989 (a
+    half-life of about 62 periods). A span of 32 gives the RiskMetrics daily weighting.
 
     See RiskMetrics Technical Document (J.P. Morgan/Reuters, 1996), chapter 5, for the
     exponential weighting.
@@ -839,6 +872,9 @@ def get_exponential_covariance(returns: pd.DataFrame, span: int = 180) -> pd.Dat
     - α = 2 / (span + 1), λ = 1 − α
     - w_t = λ^(T − t) / Σ λ^(T − s), for the periods t = 1, ..., T
     - Covariance(i, j) = Σ w_t × (r_i,t − mean(r_i)) × (r_j,t − mean(r_j))
+
+    Referenced against:
+    - PyPortfolioOpt, exp_cov: https://pyportfolioopt.readthedocs.io/en/latest/RiskModels.html#pypfopt.risk_models.exp_cov
 
     Args:
         returns (pd.DataFrame): The returns per period, one column per asset, without
@@ -866,9 +902,11 @@ def get_marcenko_pastur_fit(
     eigenvalues: np.ndarray, ratio: float
 ) -> tuple[float, float, float]:
     """
-    The Marčenko-Pastur distribution that fits the eigenvalues of a correlation matrix
-    best. The eigenvalues of the correlation matrix of T periods of N unrelated returns
-    with variance σ² follow, as T and N grow with T / N = q, the density
+    The Marčenko-Pastur distribution that fits the eigenvalues of a correlation matrix best.
+
+    It separates the eigenvalues that random returns alone could produce from those that
+    carry signal. The eigenvalues of the correlation matrix of T periods of N unrelated
+    returns with variance σ² follow, as T and N grow with T / N = q, the density
 
     - f(λ) = q / (2π σ² λ) √((λ+ - λ)(λ - λ-)) for λ- ≤ λ ≤ λ+
     - λ± = σ² (1 ± √(1 / q))²
@@ -878,16 +916,15 @@ def get_marcenko_pastur_fit(
     between the edges λ- and λ+, minimized with SciPy's L-BFGS-B for σ² between 0.00001
     and 0.99999 from 0.5 (López de Prado, 2020, section 2.4, which fits σ² this way). The
     eigenvalues above λ+ are the signal; those below it could come from noise alone.
-    Referenced against RiskLabAI's find_max_eval and marcenko_pastur_pdf
-    (https://github.com/RiskLabAI/RiskLabAI.py), which fit σ² the same way with
-    scikit-learn's KernelDensity and match to 1e-9 at the book's 1,000 points; RiskLabAI
-    itself evaluates the densities at as many points as there are eigenvalues, which moves
-    σ² by a few percent when there are few.
 
     See Marčenko, V. A. and Pastur, L. A. (1967), "Distribution of Eigenvalues for Some
     Sets of Random Matrices", Mathematics of the USSR-Sbornik, 1(4), 457-483, and López de
     Prado, M. (2020), Machine Learning for Asset Managers, Cambridge University Press,
     chapter 2.
+
+    Shares similar logic:
+    - RiskLabAI, find_max_eval: https://github.com/RiskLabAI/RiskLabAI.py/blob/v3.2.0/src/RiskLabAI/data/denoise/denoising.py#L138
+    - RiskLabAI, marcenko_pastur_pdf: https://github.com/RiskLabAI/RiskLabAI.py/blob/v3.2.0/src/RiskLabAI/data/denoise/denoising.py#L26
 
     Args:
         eigenvalues (np.ndarray): The eigenvalues of the correlation matrix.
@@ -896,6 +933,11 @@ def get_marcenko_pastur_fit(
     Returns:
         tuple[float, float, float]: The variance σ² of the noise and the lower and upper
             edges λ- and λ+ of its eigenvalues.
+
+    Notes:
+    - RiskLabAI fits σ² the same way with scikit-learn's KernelDensity, but evaluates the
+      densities at as many points as there are eigenvalues rather than at the book's 1,000
+      points, which moves σ² by a few percent when there are few.
     """
 
     def density_error(variance: np.ndarray) -> float:
@@ -928,11 +970,12 @@ def get_denoised_covariance(
 ) -> tuple[pd.DataFrame, int]:
     """
     The denoised covariance matrix: the sample covariance with the eigenvalues of its
-    correlation matrix that random returns could produce replaced by their average. Under
-    random matrix theory, the eigenvalues of the correlation matrix of T periods of N
-    unrelated returns fall below the Marčenko-Pastur upper edge λ+ = σ²(1 + √(N/T))², so
-    the eigenvalues below it carry noise rather than structure. Averaging them keeps the
-    trace (the total variance) and the eigenvectors of the signal, and removes the small
+    correlation matrix that random returns could produce replaced by their average.
+
+    Under random matrix theory, the eigenvalues of the correlation matrix of T periods of N
+    unrelated returns fall below the Marčenko-Pastur upper edge λ+ = σ²(1 + √(N/T))², so the
+    eigenvalues below it carry noise rather than structure. Averaging them keeps the trace
+    (the total variance) and the eigenvectors of the signal, and removes the small
     eigenvalues that make the inverse of the matrix, and with it optimized weights, chase
     estimation error.
 
@@ -943,37 +986,47 @@ def get_denoised_covariance(
     at 0.5. The noise eigenvalues are then treated by one of the methods of López de
     Prado (2020):
 
-    - "fixed": the noise eigenvalues are replaced by their average, the "constant
-      residual eigenvalue" method, which keeps the trace.
-    - "spectral": the noise eigenvalues are set to zero, so only the signal remains.
-    - "shrink": targeted shrinkage, the noise part of the correlation matrix shrunk
-      towards its own diagonal, C = C_signal + α C_noise + (1 - α) diag(C_noise), with
-      C_signal and C_noise the parts of the signal and noise eigenvalues; α = 0 keeps
-      only the diagonal of the noise, α = 1 the sample correlation.
+    - The constant residual eigenvalue method: the noise eigenvalues are replaced by their
+      average, which keeps the trace.
+    - The spectral method: the noise eigenvalues are set to zero, so only the signal
+      remains.
+    - Targeted shrinkage: the noise part of the correlation matrix shrunk towards its own
+      diagonal, C = C_signal + α C_noise + (1 - α) diag(C_noise), with C_signal and C_noise
+      the parts of the signal and noise eigenvalues; α = 0 keeps only the diagonal of the
+      noise, α = 1 the sample correlation.
 
-    The correlation matrix is rescaled to a unit diagonal after the replacement and
-    turned back into a covariance with the sample standard deviations (ddof=1). The
-    three methods are referenced against Riskfolio-Lib's denoiseCov (kind="fixed",
-    "spectral", "shrink") and "fixed" also against skfolio's DenoiseCovariance, whose
-    values they match. Riskfolio-Lib's covar_matrix
-    defaults to α = 0.1 for "shrink"; the default here is López de Prado's α = 0.
+    The correlation matrix is rescaled to a unit diagonal after the replacement and turned
+    back into a covariance with the sample standard deviations (ddof=1).
 
     See Laloux, L., Cizeau, P., Potters, M. and Bouchaud, J.-P. (2000), "Random Matrix
     Theory and Financial Correlations", International Journal of Theoretical and Applied
     Finance, 3(3), 391-397, and López de Prado, M. (2020), "Machine Learning for Asset Managers", Cambridge
     University Press, chapter 2.
 
+    Referenced against:
+    - skfolio, DenoiseCovariance (constant residual eigenvalue): https://skfolio.org/generated/skfolio.moments.DenoiseCovariance.html
+    - Riskfolio-Lib, denoiseCov (spectral and targeted shrinkage): https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/auxiliary.html#AuxFunctions.denoiseCov
+
+    Shares similar logic:
+    - RiskLabAI, denoise_cov: https://github.com/RiskLabAI/RiskLabAI.py/blob/v3.2.0/src/RiskLabAI/data/denoise/denoising.py#L376
+
     Args:
         returns (pd.DataFrame): The returns per period, one column per asset, without
             missing values.
-        method (str, optional): How the noise eigenvalues are treated: "fixed",
-            "spectral" or "shrink". Defaults to "fixed".
-        alpha (float, optional): The share α of the noise correlations kept by
-            "shrink", between 0 and 1. Defaults to 0.
+        method (str, optional): How the noise eigenvalues are treated. Options are: "fixed" (the
+            noise eigenvalues replaced by their average), "spectral" (the noise eigenvalues set to
+            zero), "shrink" (targeted shrinkage towards the diagonal of the noise). Defaults to
+            "fixed".
+        alpha (float, optional): The share α of the noise correlations that targeted shrinkage
+            keeps, between 0 and 1. Defaults to 0.
 
     Returns:
         tuple[pd.DataFrame, int]: The covariance matrix per period and the number of
             eigenvalues kept as signal (those above the Marčenko-Pastur upper edge).
+
+    Notes:
+    - Riskfolio-Lib's covar_matrix defaults to α = 0.1 for targeted shrinkage; the default
+      here is López de Prado's α = 0.
     """
     check_option("method", method, DENOISE_METHODS)
     if not 0 <= alpha <= 1:
@@ -1075,46 +1128,56 @@ def get_covariance_matrix(
     seed: int | None = 0,
 ) -> pd.DataFrame:
     """
-    The covariance matrix per period of a set of returns, by one of the estimators.
+    The covariance matrix per period of a set of returns, by one of the estimators, which
+    shape how much the weights of an optimizer chase estimation noise:
 
-    - "sample": the sample covariance (ddof=1).
-    - "ledoit_wolf", "ledoit_wolf_constant_correlation", "ledoit_wolf_single_factor",
-      "oas": shrinkage with an estimated intensity towards the scaled identity, the
-      constant correlation matrix or the single factor (benchmark) covariance.
-    - "shrunk": shrinkage with a fixed intensity towards the scaled identity (see
+    - The sample covariance (ddof=1).
+    - The Ledoit-Wolf and Oracle Approximating Shrinkage estimators: shrinkage with an
+      estimated intensity towards the scaled identity, the constant correlation matrix or
+      the single factor (benchmark) covariance.
+    - Shrinkage with a fixed intensity towards the scaled identity (see
       estimation_model.get_shrunk_covariance).
-    - "semicovariance": the co-movement below a zero return.
-    - "exponential": exponentially weighted, recent periods weigh most.
-    - "denoised", "denoised_spectral", "denoised_shrink": the Marčenko-Pastur noise
-      eigenvalues of the correlation matrix averaged, set to zero or shrunk towards
-      the diagonal (see get_denoised_covariance).
-    - "gerber": the Gerber covariance (see estimation_model.get_gerber_covariance).
-    - "factor": the covariance a time series factor model implies, B Σ_f B' + D, with the
-      OLS loadings on every factor, estimated on the periods both the returns and the
-      factors have (see estimation_model.get_factor_model).
-    - "minimum_covariance_determinant": the reweighted covariance of the periods with the
+    - The semicovariance: the co-movement below a zero return.
+    - The exponentially weighted covariance: recent periods weigh most.
+    - The denoised covariances: the Marčenko-Pastur noise eigenvalues of the correlation
+      matrix averaged, set to zero or shrunk towards the diagonal (see
+      get_denoised_covariance).
+    - The Gerber covariance (see estimation_model.get_gerber_covariance).
+    - The factor covariance: the covariance a time series factor model implies, B Σ_f B' +
+      D, with the OLS loadings on every factor, estimated on the periods both the returns
+      and the factors have (see estimation_model.get_factor_model).
+    - The Minimum Covariance Determinant: the reweighted covariance of the periods with the
       smallest covariance determinant, robust to outliers (see
       estimation_model.get_minimum_covariance_determinant).
-    - "jlogo": the inverse of the sparse LoGo precision matrix on the TMFG of the
-      correlations (see estimation_model.get_logo_covariance).
-    - "geodesic": shrinkage with a fixed intensity towards the scaled identity along the
-      geodesic of the positive definite matrices (see
+    - The j-LoGo covariance: the inverse of the sparse LoGo precision matrix on the TMFG of
+      the correlations (see estimation_model.get_logo_covariance).
+    - Geodesic shrinkage: shrinkage with a fixed intensity towards the scaled identity along
+      the geodesic of the positive definite matrices (see
       estimation_model.get_geodesic_shrinkage_covariance).
-    - "regime_adjusted_ew": exponentially weighted, rescaled by the recent ratio of
+    - The regime adjusted exponentially weighted covariance: rescaled by the recent ratio of
       realized to predicted risk (see
       estimation_model.get_regime_adjusted_exponential_covariance).
-    - "nercome": the eigenvectors of one part of the periods with the variances along them
-      of the other, averaged over random splits (see
-      estimation_model.get_nercome_covariance).
-    - "ccc_garch": the next-period covariance of the constant conditional correlation
-      GARCH(1, 1) model (see estimation_model.get_ccc_garch_covariance).
-    - "mm", "rocke": the robust MM-estimator and Rocke's S-estimator (see
+    - NERCOME: the eigenvectors of one part of the periods with the variances along them of
+      the other, averaged over random splits (see estimation_model.get_nercome_covariance).
+    - The CCC-GARCH covariance: the next-period covariance of the constant conditional
+      correlation GARCH(1, 1) model (see estimation_model.get_ccc_garch_covariance).
+    - The robust MM-estimator and Rocke's S-estimator (see
       estimation_model.get_robust_covariance).
 
     Args:
         returns (pd.DataFrame): The returns per period, one column per asset, without
             missing values.
-        method (str, optional): The estimator. Defaults to "sample".
+        method (str, optional): The estimator. Options are: "sample" (sample covariance),
+            "ledoit_wolf" (Ledoit-Wolf), "ledoit_wolf_constant_correlation" (Ledoit-Wolf constant
+            correlation), "ledoit_wolf_single_factor" (Ledoit-Wolf single factor), "oas" (Oracle
+            Approximating Shrinkage), "shrunk" (fixed shrinkage), "semicovariance" (semicovariance),
+            "exponential" (exponentially weighted), "denoised" (denoised, constant residual
+            eigenvalue), "denoised_spectral" (denoised, spectral), "denoised_shrink" (denoised,
+            targeted shrinkage), "gerber" (Gerber), "factor" (factor model),
+            "minimum_covariance_determinant" (Minimum Covariance Determinant), "jlogo" (j-LoGo),
+            "geodesic" (geodesic shrinkage), "regime_adjusted_ew" (regime adjusted exponentially
+            weighted), "nercome" (NERCOME), "ccc_garch" (CCC-GARCH), "mm" (MM-estimator), "rocke"
+            (Rocke's S-estimator). Defaults to "sample".
         span (int, optional): The span in periods of the "exponential" covariance.
             Defaults to 180.
         benchmark_returns (pd.Series | None, optional): The returns per period of the
@@ -1218,73 +1281,90 @@ def get_expected_returns(
     ranking: list | dict | pd.Series | None = None,
 ) -> pd.Series:
     """
-    The annualized expected return of each asset, estimated from its returns per period.
+    The annualized expected return of each asset, estimated from its returns per period, the
+    input of a mean-variance optimization whose estimate moves the weights most:
 
-    - "mean": the average return per period times the number of periods in a year, the
+    - The mean: the average return per period times the number of periods in a year, the
       arithmetic historical mean.
-    - "geometric": the compounded (geometric) average return, (Π (1 + r_t))^(P / T) - 1
-      for T periods with P periods in a year, matching PyPortfolioOpt's
-      mean_historical_return with compounding=True (its default).
-    - "exponential": the exponentially weighted average return, with the weight of a
-      period (1 - α)^age, α = 2 / (span + 1), normalized to sum to one, so recent
-      periods count most (pandas' ewm with adjust=True), times P. With adjust=False the
-      average is the recursion m_t = α r_t + (1 - α) m_(t-1) seeded with the first
-      return (as Riskfolio-Lib's mean_vector "ewma2"; its "ewma1" matches adjust=True).
-    - "exponential_geometric": the exponentially weighted average compounded over a
-      year, (1 + m)^P - 1, matching PyPortfolioOpt's ema_historical_return with
-      compounding=True.
-    - "capm": the return the Capital Asset Pricing Model implies, r_f + β_i (E[r_m] -
-      r_f), with β_i = Cov(r_i, r_m) / Var(r_m) of the returns per period and E[r_m]
-      the annualized average return of the benchmark (Sharpe, 1964).
-    - "bayes_stein": the Bayes-Stein shrinkage estimator of Jorion (1986), which pulls
-      every average return towards the average return of the minimum variance portfolio,
-      μ_0 = 1'Σ⁻¹μ̂ / 1'Σ⁻¹1, by φ = (N + 2) / ((N + 2) + T (μ̂ - μ_0 1)'Σ⁻¹(μ̂ - μ_0 1)),
-      with μ̂ the average of the T returns per period of the N assets and Σ = S (T - 1) /
-      (T - N - 2) Jorion's estimate of the covariance matrix from the sample covariance
-      S (ddof=1): μ = (1 - φ) μ̂ + φ μ_0 1. skfolio's ShrunkMu (BAYES_STEIN,
-      vol_weighted_target=True) and Riskfolio-Lib's mean_vector (method="BS",
-      target="b2") use S itself rather than Jorion's rescaled Σ.
-    - "james_stein": the James-Stein estimator, the averages pulled towards their grand
-      mean (see estimation_model.get_james_stein_expected_returns).
-    - "bodnar_okhrin_parolya": the shrinkage estimator of Bodnar, Okhrin and Parolya
-      (2019) towards the grand mean (see
-      estimation_model.get_bodnar_okhrin_parolya_expected_returns).
-    - "centroid": the returns an ordering of the assets implies, the centroid of Almgren
+    - The geometric average: the compounded average return, (Π (1 + r_t))^(P / T) - 1 for T
+      periods with P periods in a year.
+    - The exponentially weighted average: with the weight of a period (1 - α)^age, α = 2 /
+      (span + 1), normalized to sum to one, so recent periods count most (as pandas' ewm
+      does by default), times P. Without that normalization the average is the recursion m_t
+      = α r_t + (1 - α) m_(t-1) seeded with the first return.
+    - The exponentially weighted geometric average: that average compounded over a year,
+      (1 + m)^P - 1.
+    - The CAPM return: the return the Capital Asset Pricing Model implies, r_f + β_i
+      (E[r_m] - r_f), with β_i = Cov(r_i, r_m) / Var(r_m) of the returns per period and
+      E[r_m] the annualized average return of the benchmark (Sharpe, 1964).
+    - The Bayes-Stein estimator of Jorion (1986), which pulls every average return towards
+      the average return of the minimum variance portfolio, μ_0 = 1'Σ⁻¹μ̂ / 1'Σ⁻¹1, by φ =
+      (N + 2) / ((N + 2) + T (μ̂ - μ_0 1)'Σ⁻¹(μ̂ - μ_0 1)), with μ̂ the average of the T
+      returns per period of the N assets and Σ = S (T - 1) / (T - N - 2) Jorion's estimate
+      of the covariance matrix from the sample covariance S (ddof=1): μ = (1 - φ) μ̂ + φ μ_0
+      1.
+    - The James-Stein estimator: the averages pulled towards their grand mean (see
+      estimation_model.get_james_stein_expected_returns).
+    - The shrinkage estimator of Bodnar, Okhrin and Parolya (2019) towards the grand mean
+      (see estimation_model.get_bodnar_okhrin_parolya_expected_returns).
+    - The centroid: the returns an ordering of the assets implies, the centroid of Almgren
       and Chriss (2006) times the annualized volatility (see
       estimation_model.get_centroid_expected_returns); it needs the ranking.
 
     The average returns are the noisiest input of a mean-variance optimization; the
     shrinkage estimators are strongest when the averages differ little compared to their
-    estimation error. Every estimator except "geometric" and "exponential_geometric" is
-    an arithmetic return per period times P, without compounding.
+    estimation error. Every estimator except the geometric ones is an arithmetic return per
+    period times P, without compounding.
 
     See Sharpe, W. F. (1964), "Capital Asset Prices: A Theory of Market Equilibrium under
     Conditions of Risk", The Journal of Finance, 19(3), 425-442, and Jorion, P. (1986),
     "Bayes-Stein Estimation for Portfolio Analysis", Journal of Financial and
     Quantitative Analysis, 21(3), 279-292.
 
+    Referenced against:
+    - PyPortfolioOpt, mean_historical_return (geometric average): https://pyportfolioopt.readthedocs.io/en/latest/ExpectedReturns.html#pypfopt.expected_returns.mean_historical_return
+    - PyPortfolioOpt, ema_historical_return (exponentially weighted averages): https://pyportfolioopt.readthedocs.io/en/latest/ExpectedReturns.html#pypfopt.expected_returns.ema_historical_return
+    - PyPortfolioOpt, capm_return (CAPM return): https://pyportfolioopt.readthedocs.io/en/latest/ExpectedReturns.html#pypfopt.expected_returns.capm_return
+    - Riskfolio-Lib, mean_vector (the exponential recursion): https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/parameters.html#ParamsEstimation.mean_vector
+
+    Shares similar logic:
+    - skfolio, ShrunkMu (Bayes-Stein): https://skfolio.org/generated/skfolio.moments.ShrunkMu.html
+
     Args:
         returns (pd.DataFrame): The returns per period, one column per asset, without
             missing values.
         periods_per_year (int): The number of periods in a year, e.g. 252 for daily data.
-        method (str, optional): "mean", "geometric", "exponential",
-            "exponential_geometric", "capm", "bayes_stein", "james_stein",
-            "bodnar_okhrin_parolya" or "centroid". Defaults to "mean".
+        method (str, optional): Options are: "mean" (the historical average), "geometric" (the
+            compounded average), "exponential" (the exponentially weighted average, recent periods
+            weigh most), "exponential_geometric" (that average compounded over a year), "capm" (the
+            returns the Capital Asset Pricing Model implies from each asset's beta to the benchmark,
+            Sharpe, 1964), "bayes_stein" (the averages shrunk towards that of the minimum variance
+            portfolio, Jorion, 1986), "james_stein" (the averages shrunk towards their grand mean,
+            James and Stein, 1961), "bodnar_okhrin_parolya" (the averages and their grand mean
+            combined with optimal weights, Bodnar, Okhrin and Parolya, 2019), "centroid" (the
+            returns an ordering of the assets implies, Almgren and Chriss, 2006). Defaults to
+            "mean".
         span (int, optional): The span in periods of the exponential averages. Defaults
             to 180.
         benchmark_returns (pd.Series | None, optional): The returns per period of the
             market, for "capm". Defaults to None.
         risk_free_rate (float, optional): The annualized risk free rate, for "capm".
             Defaults to 0.
-        adjust (bool, optional): Whether the exponential averages normalize the weights
-            over the whole history (pandas' adjust=True) rather than follow the
-            recursion. Defaults to True.
-        ranking (list | dict | pd.Series | None, optional): The ordering of "centroid",
-            from the highest expected return to the lowest: a list of assets (an entry can
-            be a list of assets ranked together) or scores per asset. Defaults to None.
+        adjust (bool, optional): Whether the exponential averages normalize the weights over the
+            whole history, as pandas' ewm does by default, rather than follow the recursion.
+            Defaults to True.
+        ranking (list | dict | pd.Series | None, optional): The ordering of the centroid, from the
+            highest expected return to the lowest: a list of assets (an entry can be a list of
+            assets ranked together) or scores per asset. Defaults to None.
 
     Returns:
         pd.Series: The annualized expected return per asset.
+
+    Notes:
+    - Unlike skfolio's ShrunkMu and Riskfolio-Lib's mean_vector, which take the sample
+      covariance S itself, the Bayes-Stein estimator uses Jorion's rescaled Σ.
+    - Riskfolio-Lib's mean_vector holds the exponential average with normalized weights as
+      its first variant and the recursion as its second.
     """
     if method in ("exponential", "exponential_geometric") and span < 1:
         raise ValueError("The span of the exponential average must be at least 1.")
@@ -1371,32 +1451,41 @@ def get_expected_returns_and_covariance(
     factors: pd.DataFrame | None = None,
 ) -> tuple[pd.Series, pd.DataFrame]:
     """
-    The annualized expected returns (see get_expected_returns) and the annualized
-    covariance matrix (the covariance per period times the number of periods in a year,
-    see get_covariance_matrix) of a set of returns.
+    The annualized expected returns and covariance matrix of a set of returns.
+
+    See get_expected_returns and get_covariance_matrix; the annualized covariance is the
+    covariance per period times the number of periods in a year.
 
     Args:
         returns (pd.DataFrame): The returns per period, one column per asset.
         periods_per_year (int): The number of periods in a year, e.g. 252 for daily data.
-        covariance (str, optional): The estimator of the covariance matrix: "sample"
+        covariance (str, optional): The estimator of the covariance matrix. Options are: "sample"
             (ddof=1), "ledoit_wolf" (towards the scaled identity),
-            "ledoit_wolf_constant_correlation", "ledoit_wolf_single_factor" (towards the
-            covariance the benchmark as a single factor implies), "oas", "shrunk" (a
-            fixed intensity of 0.1 towards the scaled identity), "semicovariance" (below
-            a zero return), "exponential", "denoised", "denoised_spectral",
-            "denoised_shrink" (Marčenko-Pastur), "gerber" (threshold 0.5, statistic 1),
-            "factor" (a factor model with OLS loadings), "minimum_covariance_determinant"
-            (robust, seed 0), "jlogo" (the LoGo sparse inverse on the TMFG), "geodesic" (10%
-            towards the scaled identity along the geodesic), "regime_adjusted_ew"
-            (half-life 40, rescaled by the recent realized risk), "nercome" (split-sample
-            eigenvalues, seed 0), "ccc_garch" (the next-period CCC-GARCH(1, 1) covariance),
-            "mm" or "rocke" (robust, seed 0). Defaults to "sample".
+            "ledoit_wolf_constant_correlation" (towards the average correlation),
+            "ledoit_wolf_single_factor" (towards the covariance the benchmark as a single factor
+            implies), "oas" (Oracle Approximating Shrinkage), "shrunk" (a fixed intensity of 0.1
+            towards the scaled identity), "semicovariance" (below a zero return), "exponential"
+            (exponentially weighted), "denoised" (Marčenko-Pastur noise eigenvalues averaged),
+            "denoised_spectral" (set to zero), "denoised_shrink" (shrunk towards the diagonal),
+            "gerber" (threshold 0.5, statistic 1), "factor" (a factor model with OLS loadings),
+            "minimum_covariance_determinant" (robust, seed 0), "jlogo" (the LoGo sparse inverse on
+            the TMFG), "geodesic" (10% towards the scaled identity along the geodesic),
+            "regime_adjusted_ew" (half-life 40, rescaled by the recent realized risk), "nercome"
+            (split-sample eigenvalues, seed 0), "ccc_garch" (the next-period CCC-GARCH(1, 1)
+            covariance), "mm" (robust MM-estimator, seed 0), "rocke" (Rocke's robust S-estimator,
+            seed 0). Defaults to "sample".
         covariance_span (int, optional): The span in periods of the "exponential"
             covariance. Defaults to 180.
-        expected_returns (str, optional): The estimator of the expected returns: "mean",
-            "geometric", "exponential", "exponential_geometric", "capm", "bayes_stein",
-            "james_stein" or "bodnar_okhrin_parolya" ("centroid" needs a ranking, see
-            get_expected_returns). Defaults to "mean".
+        expected_returns (str, optional): The estimator of the expected returns; the centroid needs
+            a ranking, see get_expected_returns. Options are: "mean" (the historical average),
+            "geometric" (the compounded average), "exponential" (the exponentially weighted average,
+            recent periods weigh most), "exponential_geometric" (that average compounded over a
+            year), "capm" (the returns the Capital Asset Pricing Model implies from each asset's
+            beta to the benchmark, Sharpe, 1964), "bayes_stein" (the averages shrunk towards that of
+            the minimum variance portfolio, Jorion, 1986), "james_stein" (the averages shrunk
+            towards their grand mean, James and Stein, 1961), "bodnar_okhrin_parolya" (the averages
+            and their grand mean combined with optimal weights, Bodnar, Okhrin and Parolya, 2019).
+            Defaults to "mean".
         expected_returns_span (int, optional): The span in periods of the exponential
             expected returns. Defaults to 180.
         benchmark_returns (pd.Series | None, optional): The returns per period of the
@@ -1436,12 +1525,13 @@ def get_portfolio_statistics(
     risk_free_rate: float = 0.0,
 ) -> pd.Series:
     """
-    The expected return, volatility and Sharpe ratio of a portfolio. The part of the
-    portfolio that is not invested, 1 - Σw, is cash that earns the risk free rate (and,
-    above a net exposure of one, is borrowed at it), so the expected return is
+    The expected return, volatility and Sharpe ratio of a portfolio.
+
+    The part of the portfolio that is not invested, 1 - Σw, is cash that earns the risk free
+    rate (and, above a net exposure of one, is borrowed at it), so the expected return is
     w'μ + (1 - Σw) r_f and the Sharpe ratio w'(μ - r_f) / √(w'Σw), the ratio the maximum
-    Sharpe ratio optimizer maximizes, which is the same for every net exposure of the
-    same mix of assets (Tobin, 1958).
+    Sharpe ratio optimizer maximizes, which is the same for every net exposure of the same
+    mix of assets (Tobin, 1958).
 
     Args:
         weights (pd.Series): The weight per asset.
@@ -1484,17 +1574,22 @@ def get_minimum_variance_weights(
     l2_regularization: float = 0.0,
 ) -> pd.Series:
     """
-    The fully invested portfolio with the lowest variance (Markowitz, 1952). An L2
-    regularization γ adds the penalty γ w'w, so the variance minimized is w'(Σ + γI)w, a
-    ridge on the weights: with weights summing to one, w'w is the squared distance from
+    The fully invested portfolio with the lowest variance (Markowitz, 1952).
+
+    An L2 regularization γ adds the penalty γ w'w, so the variance minimized is w'(Σ + γI)w,
+    a ridge on the weights: with weights summing to one, w'w is the squared distance from
     the equal weights plus 1/N, so a higher γ moves the portfolio towards equal weights.
 
     See DeMiguel, V., Garlappi, L., Nogales, F. J. and Uppal, R. (2009), "A Generalized
     Approach to Portfolio Optimization: Improving Performance by Constraining Portfolio
     Norms", Management Science, 55(5), 798-812, and Hoerl, A. E. and Kennard, R. W.
     (1970), "Ridge Regression: Biased Estimation for Nonorthogonal Problems",
-    Technometrics, 12(1), 55-67. The penalty shares similar logic as PyPortfolioOpt's
-    objective_functions.L2_reg.
+    Technometrics, 12(1), 55-67.
+
+    Referenced against:
+    - PyPortfolioOpt, EfficientFrontier.min_volatility: https://pyportfolioopt.readthedocs.io/en/latest/MeanVariance.html#pypfopt.efficient_frontier.EfficientFrontier.min_volatility
+    - PyPortfolioOpt, objective_functions.L2_reg: https://pyportfolioopt.readthedocs.io/en/latest/MeanVariance.html#pypfopt.objective_functions.L2_reg
+    - skfolio, MeanRisk: https://skfolio.org/generated/skfolio.optimization.MeanRisk.html
 
     Args:
         covariance (pd.DataFrame): The covariance matrix of the assets.
@@ -1566,22 +1661,27 @@ def get_maximum_sharpe_weights(
 ) -> pd.Series:
     """
     The fully invested portfolio with the highest Sharpe ratio, the tangency portfolio of
-    the efficient frontier (Sharpe, 1966; Tobin, 1958). A transaction cost c lowers the
-    expected return by c Σ |w_i - w0_i|, so the ratio maximized is
-    (w'(μ - r_f) - c Σ d_i) / √(w'Σw) with d_i ≥ |w_i - w0_i|. The part of the portfolio
-    that is not invested, 1 - Σw, earns the risk free rate (see get_portfolio_statistics),
-    so, when no bound binds, a net exposure other than one scales the weights of the
-    same portfolio, as on the capital market line (Tobin, 1958). An L2 regularization γ
-    replaces Σ by Σ + γI in the denominator, √(w'Σw + γ w'w), which pulls the portfolio
-    towards equal weights. It equals adding γ y'y to the variance y'Σy that the
-    homogeneous form of the problem minimizes (y = κw with (μ - r_f)'y = 1).
+    the efficient frontier (Sharpe, 1966; Tobin, 1958).
+
+    A transaction cost c lowers the expected return by c Σ |w_i - w0_i|, so the ratio
+    maximized is (w'(μ - r_f) - c Σ d_i) / √(w'Σw) with d_i ≥ |w_i - w0_i|. The part of the
+    portfolio that is not invested, 1 - Σw, earns the risk free rate (see
+    get_portfolio_statistics), so, when no bound binds, a net exposure other than one scales
+    the weights of the same portfolio, as on the capital market line (Tobin, 1958). An L2
+    regularization γ replaces Σ by Σ + γI in the denominator, √(w'Σw + γ w'w), which pulls
+    the portfolio towards equal weights. It equals adding γ y'y to the variance y'Σy that
+    the homogeneous form of the problem minimizes (y = κw with (μ - r_f)'y = 1).
 
     See DeMiguel, V., Garlappi, L., Nogales, F. J. and Uppal, R. (2009), "A Generalized
     Approach to Portfolio Optimization: Improving Performance by Constraining Portfolio
     Norms", Management Science, 55(5), 798-812, and Hoerl, A. E. and Kennard, R. W.
     (1970), "Ridge Regression: Biased Estimation for Nonorthogonal Problems",
-    Technometrics, 12(1), 55-67. The penalty shares similar logic as PyPortfolioOpt's
-    objective_functions.L2_reg.
+    Technometrics, 12(1), 55-67.
+
+    Referenced against:
+    - PyPortfolioOpt, EfficientFrontier.max_sharpe: https://pyportfolioopt.readthedocs.io/en/latest/MeanVariance.html#pypfopt.efficient_frontier.EfficientFrontier.max_sharpe
+    - PyPortfolioOpt, objective_functions.L2_reg: https://pyportfolioopt.readthedocs.io/en/latest/MeanVariance.html#pypfopt.objective_functions.L2_reg
+    - skfolio, MeanRisk (with transaction costs): https://skfolio.org/generated/skfolio.optimization.MeanRisk.html
 
     Args:
         expected_returns (pd.Series): The annualized expected return per asset.
@@ -1683,15 +1783,19 @@ def get_mean_variance_weights(
     l2_regularization: float = 0.0,
 ) -> pd.Series:
     """
-    A mean-variance efficient portfolio (Markowitz, 1952). With a target return, the
-    portfolio with the lowest variance that expects that return. With a target
-    volatility σ*, the portfolio with the highest expected return whose volatility is at
-    most σ*: max w'μ subject to w'Σw ≤ σ*², the same efficient frontier approached from
-    the risk side (Merton, 1972). Otherwise the portfolio that maximizes the expected
-    return minus half the risk aversion times the variance. A transaction cost c lowers
-    the expected return by c Σ |w_i - w0_i|, so the utility maximized is
-    w'μ - c Σ d_i - (λ/2) w'Σw with d_i ≥ |w_i - w0_i|, and with a target volatility the
-    return maximized is w'μ - c Σ d_i.
+    A mean-variance efficient portfolio (Markowitz, 1952).
+
+    It is a portfolio on the efficient frontier, the lowest variance for its expected
+    return, at a target return, a target volatility or a risk aversion.
+
+    With a target return, the portfolio with the lowest variance that expects that return.
+    With a target volatility σ*, the portfolio with the highest expected return whose
+    volatility is at most σ*: max w'μ subject to w'Σw ≤ σ*², the same efficient frontier
+    approached from the risk side (Merton, 1972). Otherwise the portfolio that maximizes the
+    expected return minus half the risk aversion times the variance. A transaction cost c
+    lowers the expected return by c Σ |w_i - w0_i|, so the utility maximized is w'μ - c Σ
+    d_i - (λ/2) w'Σw with d_i ≥ |w_i - w0_i|, and with a target volatility the return
+    maximized is w'μ - c Σ d_i.
 
     See Markowitz, H. (1952), "Portfolio Selection", The Journal of Finance, 7(1), 77-91,
     and Merton, R. C. (1972), "An Analytic Derivation of the Efficient Portfolio
@@ -1706,8 +1810,13 @@ def get_mean_variance_weights(
     Approach to Portfolio Optimization: Improving Performance by Constraining Portfolio
     Norms", Management Science, 55(5), 798-812, and Hoerl, A. E. and Kennard, R. W.
     (1970), "Ridge Regression: Biased Estimation for Nonorthogonal Problems",
-    Technometrics, 12(1), 55-67. The penalty shares similar logic as PyPortfolioOpt's
-    objective_functions.L2_reg.
+    Technometrics, 12(1), 55-67.
+
+    Referenced against:
+    - PyPortfolioOpt, EfficientFrontier.efficient_return (target return): https://pyportfolioopt.readthedocs.io/en/latest/MeanVariance.html#pypfopt.efficient_frontier.EfficientFrontier.efficient_return
+    - PyPortfolioOpt, EfficientFrontier.efficient_risk (target volatility): https://pyportfolioopt.readthedocs.io/en/latest/MeanVariance.html#pypfopt.efficient_frontier.EfficientFrontier.efficient_risk
+    - PyPortfolioOpt, EfficientFrontier.max_quadratic_utility (risk aversion): https://pyportfolioopt.readthedocs.io/en/latest/MeanVariance.html#pypfopt.efficient_frontier.EfficientFrontier.max_quadratic_utility
+    - PyPortfolioOpt, objective_functions.L2_reg: https://pyportfolioopt.readthedocs.io/en/latest/MeanVariance.html#pypfopt.objective_functions.L2_reg
 
     Args:
         expected_returns (pd.Series): The annualized expected return per asset.
@@ -1879,18 +1988,21 @@ def get_efficient_frontier(
     l2_regularization: float = 0.0,
 ) -> pd.DataFrame:
     """
-    The efficient frontier: for evenly spaced target returns between the minimum variance
-    portfolio and the highest return the constraints allow, the portfolio with the lowest
-    variance (Markowitz, 1952). An L2 regularization γ minimizes w'(Σ + γI)w instead,
-    which pulls each portfolio towards equal weights; the volatility and Sharpe ratio
-    reported are those of w'Σw.
+    The efficient frontier: the lowest variance for every expected return (Markowitz, 1952).
+
+    For evenly spaced target returns between the minimum variance portfolio and the highest
+    return the constraints allow, the portfolio with the lowest variance (Markowitz, 1952).
+    An L2 regularization γ minimizes w'(Σ + γI)w instead, which pulls each portfolio towards
+    equal weights; the volatility and Sharpe ratio reported are those of w'Σw.
 
     See DeMiguel, V., Garlappi, L., Nogales, F. J. and Uppal, R. (2009), "A Generalized
     Approach to Portfolio Optimization: Improving Performance by Constraining Portfolio
     Norms", Management Science, 55(5), 798-812, and Hoerl, A. E. and Kennard, R. W.
     (1970), "Ridge Regression: Biased Estimation for Nonorthogonal Problems",
-    Technometrics, 12(1), 55-67. The penalty shares similar logic as PyPortfolioOpt's
-    objective_functions.L2_reg.
+    Technometrics, 12(1), 55-67.
+
+    Referenced against:
+    - PyPortfolioOpt, objective_functions.L2_reg: https://pyportfolioopt.readthedocs.io/en/latest/MeanVariance.html#pypfopt.objective_functions.L2_reg
 
     Args:
         expected_returns (pd.Series): The annualized expected return per asset.
@@ -1999,8 +2111,11 @@ def get_efficient_frontier(
 
 def get_inverse_volatility_weights(covariance: pd.DataFrame) -> pd.Series:
     """
-    Weights proportional to one over each asset's volatility, a simple risk-based
-    allocation that ignores correlations.
+    Weights proportional to one over each asset's volatility, a simple risk-based allocation
+    that gives the calmer assets more weight and ignores correlations.
+
+    Shares similar logic:
+    - skfolio, InverseVolatility: https://skfolio.org/generated/skfolio.optimization.InverseVolatility.html
 
     Args:
         covariance (pd.DataFrame): The covariance matrix of the assets.
@@ -2023,11 +2138,12 @@ def get_risk_parity_weights(
     group_bounds: dict[str, dict[str, tuple[float, float]]] | None = None,
 ) -> pd.Series:
     """
-    The equal risk contribution (risk parity) portfolio: every asset contributes the same
-    share of the portfolio's volatility, or the share given by a risk budget (Maillard,
-    Roncalli and Teïletche, 2010). It is found by minimizing the convex function
-    1/2 y'Σy - Σ b_i ln(y_i) over y > 0 and scaling the result to sum to one, w = y / 1'y
-    (Spinu, 2013).
+    The equal risk contribution (risk parity) portfolio.
+
+    Every asset contributes the same share of the portfolio's volatility, or the share given
+    by a risk budget (Maillard, Roncalli and Teïletche, 2010). It is found by minimizing the
+    convex function 1/2 y'Σy - Σ b_i ln(y_i) over y > 0 and scaling the result to sum to
+    one, w = y / 1'y (Spinu, 2013).
 
     Weight and group bounds are constraints on w = y / 1'y, which are linear and
     homogeneous in y (w_i ≤ u becomes y_i - u 1'y ≤ 0), so the problem stays convex and
@@ -2038,6 +2154,9 @@ def get_risk_parity_weights(
 
     See Richard, J.-C. and Roncalli, T. (2019), "Constrained Risk Budgeting Portfolios:
     Theory, Algorithms, Applications & Puzzles", arXiv:1902.05710.
+
+    Referenced against:
+    - skfolio, RiskBudgeting: https://skfolio.org/generated/skfolio.optimization.RiskBudgeting.html
 
     Args:
         covariance (pd.DataFrame): The covariance matrix of the assets.
@@ -2164,42 +2283,43 @@ def get_codependence(
     gnpr_bandwidth: float = 0.01,
 ) -> pd.DataFrame:
     """
-    The codependence matrix the hierarchical clustering of the assets works on: a
-    correlation, or another measure of how much two assets move together, that
+    The codependence matrix the hierarchical clustering of the assets works on.
+
+    It is a correlation, or another measure of how much two assets move together, that
     get_codependence_distance turns into the distance the clusters are formed on.
 
-    - "pearson": the linear correlation ρ_ij = σ_ij / (σ_i σ_j) of the covariance matrix,
-      so a shrinkage or denoised covariance estimator also shapes the clusters (as in
-      skfolio's CovarianceDistance).
-    - "spearman": the rank correlation of Spearman (1904), the Pearson correlation of the
-      ranks of the returns, 1 - 6 Σ d_t² / (T (T² - 1)) without ties, with d_t the
-      difference between the ranks of the two assets' returns in period t.
-    - "kendall": the rank correlation τ_b of Kendall (1938, 1945), (n_c - n_d) /
-      √((n_0 - n_1)(n_0 - n_2)), with n_c and n_d the concordant and discordant pairs of
+    - The Pearson correlation: the linear correlation ρ_ij = σ_ij / (σ_i σ_j) of the
+      covariance matrix, so a shrinkage or denoised covariance estimator also shapes the
+      clusters.
+    - The Spearman correlation: the rank correlation of Spearman (1904), the Pearson
+      correlation of the ranks of the returns, 1 - 6 Σ d_t² / (T (T² - 1)) without ties,
+      with d_t the difference between the ranks of the two assets' returns in period t.
+    - The Kendall correlation: the rank correlation τ_b of Kendall (1938, 1945), (n_c - n_d)
+      / √((n_0 - n_1)(n_0 - n_2)), with n_c and n_d the concordant and discordant pairs of
       periods, n_0 = T (T - 1) / 2 and n_1, n_2 the pairs tied in either asset.
-    - "gerber": the Gerber statistic, which counts only moves beyond a threshold (see
+    - The Gerber statistic, which counts only moves beyond a threshold (see
       estimation_model.get_gerber_covariance).
-    - "detoned": the correlation with the first principal components, the market,
-      removed (see estimation_model.get_detoned_covariance), so the clusters reflect
+    - The detoned correlation: the correlation with the first principal components, the
+      market, removed (see estimation_model.get_detoned_covariance), so the clusters reflect
       what assets share besides the market.
-    - "distance": the distance correlation of Székely, Rizzo and Bakirov (2007), zero
-      only for independent returns (see estimation_model.get_distance_correlation_matrix).
-    - "mutual_information": the normalized mutual information of histograms of the
-      returns (see estimation_model.get_mutual_information_matrix).
-    - "lower_tail": the lower tail dependence, how often two assets fall into their
-      lowest returns together (see estimation_model.get_lower_tail_dependence_matrix).
-    - "absolute_angular", "squared_angular": |ρ| and ρ² of the linear correlation of the
-      covariance matrix, which treat a negative correlation as as close as a positive one
-      of the same size (López de Prado, 2020, chapter 3).
-    - "gnpr": 1 - d², with d the distance of the Generic Non-Parametric Representation of
-      Marti et al. (2016), a mix of the rank co-movement and the difference between the
-      distributions of the returns (see estimation_model.get_gnpr_distance_matrix).
+    - The distance correlation of Székely, Rizzo and Bakirov (2007), zero only for
+      independent returns (see estimation_model.get_distance_correlation_matrix).
+    - The mutual information: the normalized mutual information of histograms of the returns
+      (see estimation_model.get_mutual_information_matrix).
+    - The lower tail dependence: how often two assets fall into their lowest returns
+      together (see estimation_model.get_lower_tail_dependence_matrix).
+    - The absolute and squared angular codependences: |ρ| and ρ² of the linear correlation
+      of the covariance matrix, which treat a negative correlation as as close as a positive
+      one of the same size (López de Prado, 2020, chapter 3).
+    - The GNPR codependence: 1 - d², with d the distance of the Generic Non-Parametric
+      Representation of Marti et al. (2016), a mix of the rank co-movement and the
+      difference between the distributions of the returns (see
+      estimation_model.get_gnpr_distance_matrix).
 
     The rank, Gerber, distance, information and tail measures depend on the returns
     themselves, whatever the covariance estimator; the rank correlations capture any
     monotonic co-movement and the distance correlation and mutual information also
-    non-monotonic co-movement. Riskfolio-Lib's codep_dist and skfolio's distance
-    estimators offer the same codependences.
+    non-monotonic co-movement.
 
     See Spearman, C. (1904), "The Proof and Measurement of Association between Two
     Things", The American Journal of Psychology, 15(1), 72-101, Kendall, M. G. (1938),
@@ -2208,21 +2328,29 @@ def get_codependence(
     B, 11(1), 193-197, and López de Prado, M. (2020), Machine Learning for Asset
     Managers, Cambridge University Press, chapter 3.
 
+    Shares similar logic:
+    - Riskfolio-Lib, codep_dist: https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/auxiliary.html#AuxFunctions.codep_dist
+    - skfolio, CovarianceDistance (Pearson correlation): https://skfolio.org/generated/skfolio.distance.CovarianceDistance.html
+
     Args:
         returns (pd.DataFrame): The returns per period, one column per asset, without
             missing values.
-        covariance (pd.DataFrame): The covariance matrix of the assets, for "pearson".
-        method (str, optional): "pearson", "spearman", "kendall", "gerber", "detoned",
-            "distance", "mutual_information" or "lower_tail". Defaults to "pearson".
+        covariance (pd.DataFrame): The covariance matrix of the assets, for the Pearson correlation.
+        method (str, optional): The codependence. Options are: "pearson" (Pearson correlation),
+            "spearman" (Spearman correlation), "kendall" (Kendall correlation), "gerber" (Gerber
+            statistic), "detoned" (detoned correlation), "distance" (distance correlation),
+            "mutual_information" (mutual information), "lower_tail" (lower tail dependence),
+            "absolute_angular" (absolute angular codependence), "squared_angular" (squared angular
+            codependence), "gnpr" (GNPR codependence). Defaults to "pearson".
         gerber_threshold (float, optional): The threshold in standard deviations of
             "gerber". Defaults to 0.5.
         gerber_statistic (int, optional): The Gerber statistic (0, 1 or 2). Defaults
             to 1.
         components (int, optional): The number of principal components "detoned"
             removes. Defaults to 1.
-        bins (str | int, optional): The number of histogram bins of
-            "mutual_information", or "freedman" or "hacine_gharbi". Defaults to
-            "freedman".
+        bins (str | int, optional): The number of histogram bins of the mutual information, or the
+            rule that sets it. Options are: "freedman" (the rule of Freedman and Diaconis),
+            "hacine_gharbi" (the rule of Hacine-Gharbi et al.). Defaults to "freedman".
         alpha (float, optional): The share of the lowest returns that forms the
             tail of "lower_tail". Defaults to 0.05.
         gnpr_theta (float, optional): The weight θ of the co-movement in "gnpr", between 0
@@ -2295,31 +2423,41 @@ def get_codependence_distance(
     The distance between every pair of assets that the hierarchical clustering works on,
     from the codependence of get_codependence (with the same arguments):
 
-    - "pearson", "spearman", "kendall", "gerber", "detoned": the correlation distance
-      d = √((1 - ρ) / 2) of Mantegna (1999) and López de Prado (2016).
-    - "distance": d = √(1 - dCor), as in skfolio's DistanceCorrelation and Riskfolio-Lib's
-      codep_dist.
-    - "mutual_information": the normalized variation of information, VI(X, Y) / H(X, Y),
-      as in skfolio's MutualInformation and Riskfolio-Lib's codep_dist ("mutual_info").
-    - "lower_tail": d = -ln(λ), with the tail dependence λ raised to at least 1e-8, as in
-      Riskfolio-Lib's codep_dist ("tail").
-    - "absolute_angular": d = √(1 - |ρ|) (López de Prado, 2020, chapter 3), and
-      "squared_angular": d = √(1 - ρ²), the same construction on ρ², so strongly
-      negatively correlated assets, which hedge each other, end up close. Taking half
-      of 1 - |ρ| and 1 - ρ², as the correlation distance takes of 1 - ρ, gives a
-      distance √2 times smaller with the same clusters.
-    - "gnpr": the GNPR distance d_θ itself (see estimation_model.get_gnpr_distance_matrix).
+    - The Pearson, Spearman, Kendall, Gerber and detoned correlations: the correlation
+      distance d = √((1 - ρ) / 2) of Mantegna (1999) and López de Prado (2016).
+    - The distance correlation: d = √(1 - dCor).
+    - The mutual information: the normalized variation of information, VI(X, Y) / H(X, Y).
+    - The lower tail dependence: d = -ln(λ), with the tail dependence λ raised to at least
+      1e-8.
+    - The absolute angular codependence: d = √(1 - |ρ|) (López de Prado, 2020, chapter 3),
+      and the squared angular one: d = √(1 - ρ²), the same construction on ρ², so strongly
+      negatively correlated assets, which hedge each other, end up close. Taking half of 1 -
+      |ρ| and 1 - ρ², as the correlation distance takes of 1 - ρ, gives a distance √2 times
+      smaller with the same clusters.
+    - The GNPR codependence: the GNPR distance d_θ itself (see
+      estimation_model.get_gnpr_distance_matrix).
+
+    Shares similar logic:
+    - skfolio, DistanceCorrelation: https://skfolio.org/generated/skfolio.distance.DistanceCorrelation.html
+    - skfolio, MutualInformation: https://skfolio.org/generated/skfolio.distance.MutualInformation.html
+    - Riskfolio-Lib, codep_dist: https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/auxiliary.html#AuxFunctions.codep_dist
 
     Args:
         returns (pd.DataFrame): The returns per period, one column per asset, without
             missing values.
-        covariance (pd.DataFrame): The covariance matrix of the assets, for "pearson".
-        method (str, optional): The codependence. Defaults to "pearson".
+        covariance (pd.DataFrame): The covariance matrix of the assets, for the Pearson correlation.
+        method (str, optional): The codependence. Options are: "pearson" (Pearson correlation),
+            "spearman" (Spearman correlation), "kendall" (Kendall correlation), "gerber" (Gerber
+            statistic), "detoned" (detoned correlation), "distance" (distance correlation),
+            "mutual_information" (mutual information), "lower_tail" (lower tail dependence),
+            "absolute_angular" (absolute angular codependence), "squared_angular" (squared angular
+            codependence), "gnpr" (GNPR codependence). Defaults to "pearson".
         gerber_threshold (float, optional): The threshold of "gerber". Defaults to 0.5.
         gerber_statistic (int, optional): The Gerber statistic. Defaults to 1.
         components (int, optional): The components "detoned" removes. Defaults to 1.
-        bins (str | int, optional): The histogram bins of "mutual_information".
-            Defaults to "freedman".
+        bins (str | int, optional): The histogram bins of the mutual information, or the rule that
+            sets them. Options are: "freedman" (the rule of Freedman and Diaconis), "hacine_gharbi"
+            (the rule of Hacine-Gharbi et al.). Defaults to "freedman".
         alpha (float, optional): The share of the lowest returns that forms the tail
             of the lower tail dependence. Defaults to 0.05.
         gnpr_theta (float, optional): The weight θ of "gnpr". Defaults to 0.5.
@@ -2374,31 +2512,41 @@ def get_codependence_similarity(
 ) -> pd.DataFrame:
     """
     The non-negative similarity between every pair of assets that the Directed Bubble
-    Hierarchical Tree (see get_dbht_linkage) builds its planar graph on, next to the
-    distance of get_codependence_distance, from the codependence of get_codependence
-    (with the same arguments):
+    Hierarchical Tree (see get_dbht_linkage) builds its planar graph on.
 
-    - "pearson", "spearman", "kendall", "gerber", "detoned": s = 1 - d² = (1 + ρ) / 2,
-      with d = √((1 - ρ) / 2) the correlation distance. Song, Di Matteo and Aste (2012)
+    It is returned next to the distance of get_codependence_distance, from the codependence
+    of get_codependence (with the same arguments):
+
+    - The Pearson, Spearman, Kendall, Gerber and detoned correlations: s = 1 - d² = (1 + ρ)
+      / 2, with d = √((1 - ρ) / 2) the correlation distance. Song, Di Matteo and Aste (2012)
       take 1 + ρ, which gives the same graph and clusters.
-    - "distance", "mutual_information", "lower_tail", "absolute_angular",
-      "squared_angular", "gnpr": the codependence itself, the distance correlation, the
-      normalized mutual information, the lower tail dependence, |ρ|, ρ² or 1 - d² of the
-      GNPR distance, all between 0 and 1 (the last three equal to 1 - d² of their
-      distance d).
+    - The distance correlation, the mutual information, the lower tail dependence, the
+      angular codependences and the GNPR codependence: the codependence itself, the distance
+      correlation, the normalized mutual information, the lower tail dependence, |ρ|, ρ² or
+      1 - d² of the GNPR distance, all between 0 and 1 (the last three equal to 1 - d² of
+      their distance d).
 
-    The choice per codependence is that of Riskfolio-Lib's HCPortfolio(linkage="DBHT").
+    The choice per codependence is that of Riskfolio-Lib's DBHT clustering.
+
+    Referenced against:
+    - Riskfolio-Lib, HCPortfolio (DBHT linkage): https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/hcportfolio.html#HCPortfolio.HCPortfolio
 
     Args:
         returns (pd.DataFrame): The returns per period, one column per asset, without
             missing values.
-        covariance (pd.DataFrame): The covariance matrix of the assets, for "pearson".
-        method (str, optional): The codependence. Defaults to "pearson".
+        covariance (pd.DataFrame): The covariance matrix of the assets, for the Pearson correlation.
+        method (str, optional): The codependence. Options are: "pearson" (Pearson correlation),
+            "spearman" (Spearman correlation), "kendall" (Kendall correlation), "gerber" (Gerber
+            statistic), "detoned" (detoned correlation), "distance" (distance correlation),
+            "mutual_information" (mutual information), "lower_tail" (lower tail dependence),
+            "absolute_angular" (absolute angular codependence), "squared_angular" (squared angular
+            codependence), "gnpr" (GNPR codependence). Defaults to "pearson".
         gerber_threshold (float, optional): The threshold of "gerber". Defaults to 0.5.
         gerber_statistic (int, optional): The Gerber statistic. Defaults to 1.
         components (int, optional): The components "detoned" removes. Defaults to 1.
-        bins (str | int, optional): The histogram bins of "mutual_information".
-            Defaults to "freedman".
+        bins (str | int, optional): The histogram bins of the mutual information, or the rule that
+            sets them. Options are: "freedman" (the rule of Freedman and Diaconis), "hacine_gharbi"
+            (the rule of Hacine-Gharbi et al.). Defaults to "freedman".
         alpha (float, optional): The share of the lowest returns that forms the tail
             of the lower tail dependence. Defaults to 0.05.
         gnpr_theta (float, optional): The weight θ of "gnpr". Defaults to 0.5.
@@ -2446,16 +2594,18 @@ def get_hierarchical_risk_parity_weights(
     similarity: pd.DataFrame | None = None,
 ) -> pd.Series:
     """
-    Hierarchical Risk Parity (López de Prado, 2016): the assets are clustered on their
-    correlations, ordered so that similar assets sit next to each other, and the weight is
-    split top-down between the two halves of each cluster in inverse proportion to their
-    variance. It needs no matrix inversion, so it stays stable when assets are highly
-    correlated.
+    Hierarchical Risk Parity (López de Prado, 2016): weights that spread the risk over
+    clusters of similar assets.
+
+    The assets are clustered on their correlations, ordered so that similar assets sit next
+    to each other, and the weight is split top-down between the two halves of each cluster
+    in inverse proportion to their variance. It needs no matrix inversion, so it stays
+    stable when assets are highly correlated.
 
     The risk of a half is that of its inverse risk portfolio, w_i ∝ 1 / ρ_i with ρ_i the
     risk of asset i alone: the inverse variance portfolio and its variance by default, or
     another risk measure ρ, such as the volatility, the CVaR or the CDaR, measured on the
-    returns (see get_hierarchical_risk), as Riskfolio-Lib and skfolio offer for HRP.
+    returns (see get_hierarchical_risk).
 
     As in the paper (Stage 1, step 2), the clustering uses the Euclidean distance between
     the columns of the correlation distance matrix d = √((1 - ρ) / 2), a distance of
@@ -2469,12 +2619,21 @@ def get_hierarchical_risk_parity_weights(
     move weight between the two halves of a cluster, so group bounds, which cut across
     the clusters, cannot be applied.
 
+    Referenced against:
+    - Riskfolio-Lib, HCPortfolio (HRP): https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/hcportfolio.html#HCPortfolio.HCPortfolio
+    - skfolio, HierarchicalRiskParity: https://skfolio.org/generated/skfolio.optimization.HierarchicalRiskParity.html
+
+    Shares similar logic:
+    - PyPortfolioOpt, HRPOpt: https://pyportfolioopt.readthedocs.io/en/latest/OtherOptimizers.html#pypfopt.hierarchical_portfolio.HRPOpt
+    - RiskLabAI, hrp: https://github.com/RiskLabAI/RiskLabAI.py/blob/v3.2.0/src/RiskLabAI/optimization/hrp.py#L169
+
     Args:
         covariance (pd.DataFrame): The covariance matrix of the assets.
-        linkage_method (str, optional): The linkage of the hierarchical clustering, e.g.
-            "single", "complete", "average", "ward" or "dbht" (the Directed Bubble
-            Hierarchical Tree on the distance itself, see get_dbht_linkage). Defaults to
-            "single".
+        linkage_method (str, optional): The linkage of the hierarchical clustering; the Directed
+            Bubble Hierarchical Tree works on the distance itself (see get_dbht_linkage). Options
+            are: "single" (single linkage), "complete" (complete linkage), "average" (average
+            linkage), "ward" (Ward's method), "dbht" (the Directed Bubble Hierarchical Tree of Song,
+            Di Matteo and Aste, 2012). Defaults to "single".
         minimum_weight (float | dict[str, float], optional): The lowest weight of every
             asset, or per asset ({"AAPL": 0.05}, the others 0). Defaults to 0.
         maximum_weight (float | dict[str, float], optional): The highest weight of every
@@ -2488,15 +2647,22 @@ def get_hierarchical_risk_parity_weights(
         returns (pd.DataFrame | None, optional): The returns per period, one column per
             asset, which the risk measures besides the variance and volatility need.
             Defaults to None.
-        risk_measure (str, optional): The risk measure of the splits, a key of
-            HIERARCHICAL_RISK_MEASURES. Defaults to "variance".
+        risk_measure (str, optional): The risk measure of the splits. Options are: "variance" (of
+            the covariance matrix), "volatility" (of the covariance matrix), "mad" (mean absolute
+            deviation, Konno and Yamazaki, 1991), "semideviation" (below the minimum acceptable
+            return), "lower_partial_moment" (first order), "worst_realization" (the worst return),
+            "gini_mean_difference" (Yitzhaki, 1982), "tail_gini" (Furman et al., 2017), "range" (the
+            best minus the worst return), "cvar_range" (the CVaR of the losses and of the gains),
+            "tail_gini_range" (the Tail Gini of the losses and of the gains), "ulcer_index" (of the
+            uncompounded cumulative return), "cvar" (Rockafellar and Uryasev, 2002), "cdar"
+            (Chekhlov et al., 2005). Defaults to "variance".
         alpha (float, optional): The tail probability of the tail measures, e.g. 0.05 for the worst 5% of
             periods. Defaults to 0.05.
         minimum_acceptable_return (float | str, optional): The threshold of the
             semideviation and lower partial moment per period, or "mean". Defaults to 0.
-        similarity (pd.DataFrame | None, optional): The similarity matrix of
-            linkage_method="dbht", e.g. from get_codependence_similarity. Defaults to
-            None, 1 - d² of the distance, (1 + ρ) / 2 for the correlation distance.
+        similarity (pd.DataFrame | None, optional): The similarity matrix of the Directed Bubble
+            Hierarchical Tree, e.g. from get_codependence_similarity. Defaults to None, 1 - d² of
+            the distance, (1 + ρ) / 2 for the correlation distance.
 
     Returns:
         pd.Series: The weight per asset.
@@ -2599,47 +2765,55 @@ def get_hierarchical_clusters(
     instead does not fall as clusters split and tends to pick more clusters than the
     correlation blocks hold.
 
-    With cluster_criterion="standardized_silhouette", it is the number of clusters, from 2
+    With the standardized silhouette as the criterion, it is the number of clusters, from 2
     up to the same limit, whose cut has the highest standardized silhouette of López de
     Prado (2020), the mean of the silhouette coefficients over their standard deviation
     (see get_standardized_silhouette).
 
-    With cluster_criterion="onc", the clusters are those of the Optimal Number of Clusters
-    algorithm of López de Prado and Lewis (2019), k-means on the rows of the distance matrix
-    with its own choice of their number (see estimation_model.get_optimal_number_of_clusters,
-    seed 0), as Nested Clustered Optimization clusters in López de Prado (2020, chapter 7);
-    they are not a cut of the tree, which is returned as well.
+    With the Optimal Number of Clusters criterion, the clusters are those of the Optimal
+    Number of Clusters algorithm of López de Prado and Lewis (2019), k-means on the rows of
+    the distance matrix with its own choice of their number (see
+    estimation_model.get_optimal_number_of_clusters, seed 0), as Nested Clustered
+    Optimization clusters in López de Prado (2020, chapter 7); they are not a cut of the
+    tree, which is returned as well.
 
-    With linkage_method="dbht", the tree is the Directed Bubble Hierarchical Tree of Song,
-    Di Matteo and Aste (2012) on the distance and the similarity (see get_dbht_linkage),
-    and without a number of clusters the clusters are its own, the converging bubbles;
-    the cluster criterion then does not apply. Its heights are ranks that tie between
-    clusters, so a given number of clusters that falls within a tie returns the nearest
-    cut with fewer clusters, as SciPy's fcluster does.
+    With the Directed Bubble Hierarchical Tree as the linkage, the tree is the Directed
+    Bubble Hierarchical Tree of Song, Di Matteo and Aste (2012) on the distance and the
+    similarity (see get_dbht_linkage), and without a number of clusters the clusters are its
+    own, the converging bubbles; the cluster criterion then does not apply. Its heights are
+    ranks that tie between clusters, so a given number of clusters that falls within a tie
+    returns the nearest cut with fewer clusters, as SciPy's fcluster does.
 
     See Yue, S., Wang, X. and Wei, M. (2008), "Application of Two-Order Difference to Gap
     Statistic", Transactions of Tianjin University, 14(3), 217-221, and Tibshirani, R.,
     Walther, G. and Hastie, T. (2001), "Estimating the Number of Clusters in a Data Set
     via the Gap Statistic", Journal of the Royal Statistical Society B, 63(2), 411-423.
 
+    Referenced against:
+    - skfolio, HierarchicalClustering: https://skfolio.org/generated/skfolio.cluster.HierarchicalClustering.html
+
     Args:
         covariance (pd.DataFrame): The covariance matrix of the assets.
-        linkage_method (str, optional): The linkage of the hierarchical clustering:
-            "single", "complete", "average", "ward" or "dbht". Defaults to "ward".
-        clusters (int | None, optional): The number of clusters. Defaults to None, chosen
-            by the two-order difference of the gap statistic (by the DBHT itself for
-            "dbht").
+        linkage_method (str, optional): The linkage of the hierarchical clustering. Options are:
+            "single" (single linkage), "complete" (complete linkage), "average" (average linkage),
+            "ward" (Ward's method), "dbht" (the Directed Bubble Hierarchical Tree of Song, Di Matteo
+            and Aste, 2012). Defaults to "ward".
+        clusters (int | None, optional): The number of clusters. Defaults to None, chosen by the
+            two-order difference of the gap statistic (by the Directed Bubble Hierarchical Tree
+            itself for that linkage).
         correlation (pd.DataFrame | None, optional): The correlation matrix the assets
             are clustered on, e.g. a rank correlation from get_codependence. Defaults to
             None, the correlation matrix of the covariance matrix.
         distance (pd.DataFrame | None, optional): The distance matrix the assets are
             clustered on, e.g. from get_codependence_distance, in place of the
             correlation distance of the correlation. Defaults to None.
-        cluster_criterion (str, optional): How the number of clusters is chosen when it
-            is not given: "two_difference_gap", "standardized_silhouette" or "onc".
-            Defaults to "two_difference_gap".
-        similarity (pd.DataFrame | None, optional): The similarity matrix of "dbht", e.g.
-            from get_codependence_similarity. Defaults to None, 1 - d² of the distance.
+        cluster_criterion (str, optional): How the number of clusters is chosen when it is not
+            given. Options are: "two_difference_gap" (the two-order difference of the gap
+            statistic), "standardized_silhouette" (the highest standardized silhouette), "onc" (the
+            Optimal Number of Clusters algorithm). Defaults to "two_difference_gap".
+        similarity (pd.DataFrame | None, optional): The similarity matrix of the Directed Bubble
+            Hierarchical Tree, e.g. from get_codependence_similarity. Defaults to None, 1 - d² of
+            the distance.
 
     Returns:
         tuple[np.ndarray, np.ndarray]: The linkage matrix of the clustering and the
@@ -2731,13 +2905,14 @@ def get_dbht_linkage(
     similarity: pd.DataFrame | np.ndarray | None = None,
 ) -> np.ndarray:
     """
-    The Directed Bubble Hierarchical Tree (DBHT) of Song, Di Matteo and Aste (2012): a
-    clustering that needs no number of clusters, found in the topology of a planar graph
-    of the strongest links between the assets rather than by merging the closest pair
-    over and over. Here the graph is the Triangulated Maximally Filtered Graph (TMFG) of
-    the similarities (Massara, Di Matteo and Aste, 2017), whose bubbles, the parts that no
-    triangle separates, are its 4-cliques, joined by the triangles that separate them
-    into a tree.
+    The Directed Bubble Hierarchical Tree (DBHT) of Song, Di Matteo and Aste (2012).
+
+    It is a clustering that needs no number of clusters, found in the topology of a planar
+    graph of the strongest links between the assets rather than by merging the closest pair
+    over and over. Here the graph is the Triangulated Maximally Filtered Graph (TMFG) of the
+    similarities (Massara, Di Matteo and Aste, 2017), whose bubbles, the parts that no
+    triangle separates, are its 4-cliques, joined by the triangles that separate them into a
+    tree.
 
     The algorithm is as follows, with S the similarities, D the distances and L the
     shortest path distances over the TMFG with every link as long as its distance:
@@ -2784,18 +2959,16 @@ def get_dbht_linkage(
       the attachment to a bubble or the mean distance goes to the first in this order,
       and a tie between pairs of groups to the pair with the lowest numbers.
 
-    Referenced against Riskfolio-Lib's DBHTs (https://github.com/dcajasn/Riskfolio-Lib),
-    whose clusters and linkage matrix it equals, with two deliberate differences: a link
-    of the TMFG stays a link when its similarity or distance is zero, which Riskfolio-Lib
-    drops from the graph, and the triangle of the first three assets counts as separating
-    when it separates the graph, which Riskfolio-Lib's FindDisjoint never does (it leaves
-    the third vertex in the graph it splits), so that there it joins two 4-cliques into one
-    bubble and can find other clusters.
+    The clusters and the linkage matrix equal those of Riskfolio-Lib's DBHTs, with two
+    deliberate differences (see Notes).
 
     See Song, W.-M., Di Matteo, T. and Aste, T. (2012), "Hierarchical Information
     Clustering by Means of Topologically Embedded Graphs", PLoS ONE, 7(3), e31929, and
     Massara, G. P., Di Matteo, T. and Aste, T. (2017), "Network Filtering for Big Data:
     Triangulated Maximally Filtered Graph", Journal of Complex Networks, 5(2), 161-178.
+
+    Referenced against:
+    - Riskfolio-Lib, DBHTs: https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/auxiliary.html#DBHT.DBHTs
 
     Args:
         distance (pd.DataFrame | np.ndarray): The N × N distance matrix D, symmetric with
@@ -2808,6 +2981,14 @@ def get_dbht_linkage(
     Returns:
         np.ndarray: The linkage matrix in SciPy's format, one row per merge with the two
             clusters, the height and the number of assets.
+
+    Notes:
+    - Unlike Riskfolio-Lib, which drops a link of the TMFG whose similarity or distance is
+      zero from the graph, such a link stays a link.
+    - The triangle of the first three assets counts as separating when it separates the
+      graph, which Riskfolio-Lib's FindDisjoint never does (it leaves the third vertex in
+      the graph it splits), so that there it joins two 4-cliques into one bubble and can
+      find other clusters.
     """
     distance = np.asarray(distance, dtype=float)
     count = len(distance)
@@ -3006,21 +3187,23 @@ def get_hierarchical_equal_risk_contribution_weights(
     similarity: pd.DataFrame | None = None,
 ) -> pd.Series:
     """
-    Hierarchical Equal Risk Contribution (Raffinot, 2018): the assets are clustered on
-    their correlations and the tree is cut into clusters. Within a cluster the weights
-    are inverse variance (naive risk parity). Between clusters, the weight is split
-    top-down along the dendrogram: at every node the two branches get weights in
-    inverse proportion to their risk, the sum of the variances of the inverse variance
-    portfolios of the clusters in each branch. Unlike Hierarchical Risk Parity, which
-    bisects the ordered list of assets, the splits follow the tree, so similar assets
+    Hierarchical Equal Risk Contribution (Raffinot, 2018): weights that give clusters of
+    similar assets an equal share of the risk.
+
+    The assets are clustered on their correlations and the tree is cut into clusters. Within
+    a cluster the weights are inverse variance (naive risk parity). Between clusters, the
+    weight is split top-down along the dendrogram: at every node the two branches get
+    weights in inverse proportion to their risk, the sum of the variances of the inverse
+    variance portfolios of the clusters in each branch. Unlike Hierarchical Risk Parity,
+    which bisects the ordered list of assets, the splits follow the tree, so similar assets
     stay together.
 
     The risk of a cluster is that of its inverse risk portfolio, w_i ∝ 1 / ρ_i with ρ_i
     the risk of asset i alone: the variance by default, or another risk measure ρ, such
     as the volatility, the CVaR or the CDaR, measured on the returns (Raffinot, 2018,
-    see get_hierarchical_risk). With within_clusters="equal", the assets of a cluster
-    share its weight equally while the clusters are still split by the risk of their
-    inverse risk portfolios, Riskfolio-Lib's HERC2.
+    see get_hierarchical_risk). With equal weights within the clusters, the assets of a
+    cluster share its weight equally while the clusters are still split by the risk of their
+    inverse risk portfolios, the HERC2 of Riskfolio-Lib.
 
     The weight and group bounds are applied afterwards: when the
     weights fall outside them, they move to the weights within the bounds with the
@@ -3029,12 +3212,17 @@ def get_hierarchical_equal_risk_contribution_weights(
     See Raffinot, T. (2018), "The Hierarchical Equal Risk Contribution Portfolio", SSRN
     3237540.
 
+    Referenced against:
+    - skfolio, HierarchicalEqualRiskContribution: https://skfolio.org/generated/skfolio.optimization.HierarchicalEqualRiskContribution.html
+    - Riskfolio-Lib, HCPortfolio (HERC and HERC2): https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/hcportfolio.html#HCPortfolio.HCPortfolio
+
     Args:
         covariance (pd.DataFrame): The covariance matrix of the assets.
-        linkage_method (str, optional): The linkage of the hierarchical clustering:
-            "single", "complete", "average", "ward" or "dbht" (the Directed Bubble
-            Hierarchical Tree and, without a number of clusters, its own clusters).
-            Defaults to "ward", as in the paper.
+        linkage_method (str, optional): The linkage of the hierarchical clustering; without a number
+            of clusters the Directed Bubble Hierarchical Tree takes its own clusters. Options are:
+            "single" (single linkage), "complete" (complete linkage), "average" (average linkage),
+            "ward" (Ward's method), "dbht" (the Directed Bubble Hierarchical Tree of Song, Di Matteo
+            and Aste, 2012). Defaults to "ward".
         clusters (int | None, optional): The number of clusters. Defaults to None, chosen
             by the two-order difference of the gap statistic.
         minimum_weight (float | dict[str, float], optional): The lowest weight of every
@@ -3056,20 +3244,28 @@ def get_hierarchical_equal_risk_contribution_weights(
         returns (pd.DataFrame | None, optional): The returns per period, one column per
             asset, which the risk measures besides the variance and volatility need.
             Defaults to None.
-        risk_measure (str, optional): The risk measure of the clusters, a key of
-            HIERARCHICAL_RISK_MEASURES. Defaults to "variance".
+        risk_measure (str, optional): The risk measure of the clusters. Options are: "variance" (of
+            the covariance matrix), "volatility" (of the covariance matrix), "mad" (mean absolute
+            deviation, Konno and Yamazaki, 1991), "semideviation" (below the minimum acceptable
+            return), "lower_partial_moment" (first order), "worst_realization" (the worst return),
+            "gini_mean_difference" (Yitzhaki, 1982), "tail_gini" (Furman et al., 2017), "range" (the
+            best minus the worst return), "cvar_range" (the CVaR of the losses and of the gains),
+            "tail_gini_range" (the Tail Gini of the losses and of the gains), "ulcer_index" (of the
+            uncompounded cumulative return), "cvar" (Rockafellar and Uryasev, 2002), "cdar"
+            (Chekhlov et al., 2005). Defaults to "variance".
         alpha (float, optional): The tail probability of the tail measures, e.g. 0.05 for the worst 5% of
             periods. Defaults to 0.05.
         minimum_acceptable_return (float | str, optional): The threshold of the
             semideviation and lower partial moment per period, or "mean". Defaults to 0.
-        within_clusters (str, optional): The weights within a cluster: "inverse_risk"
-            or "equal" (HERC2). Defaults to "inverse_risk".
-        cluster_criterion (str, optional): How the number of clusters is chosen when it
-            is not given: "two_difference_gap" or "standardized_silhouette". Defaults to
+        within_clusters (str, optional): The weights within a cluster. Options are: "inverse_risk"
+            (inverse risk weights), "equal" (equal weights, HERC2). Defaults to "inverse_risk".
+        cluster_criterion (str, optional): How the number of clusters is chosen when it is not
+            given. Options are: "two_difference_gap" (the two-order difference of the gap
+            statistic), "standardized_silhouette" (the highest standardized silhouette). Defaults to
             "two_difference_gap".
-        similarity (pd.DataFrame | None, optional): The similarity matrix of
-            linkage_method="dbht", e.g. from get_codependence_similarity. Defaults to
-            None, 1 - d² of the distance, (1 + ρ) / 2 for the correlation distance.
+        similarity (pd.DataFrame | None, optional): The similarity matrix of the Directed Bubble
+            Hierarchical Tree, e.g. from get_codependence_similarity. Defaults to None, 1 - d² of
+            the distance, (1 + ρ) / 2 for the correlation distance.
 
     Returns:
         pd.Series: The weight per asset.
@@ -3181,45 +3377,59 @@ def get_nested_clustered_optimization_weights(
     similarity: pd.DataFrame | None = None,
 ) -> pd.Series:
     """
-    Nested Clustered Optimization (López de Prado, 2019): the assets are clustered on
-    their correlations, the objective is optimized within every cluster, and then again
-    across the clusters, each treated as one asset with the returns of its portfolio.
-    The noise of the covariance matrix mostly lives within clusters of correlated assets,
-    so containing each optimization to one level keeps the weights stable.
+    Nested Clustered Optimization (López de Prado, 2019).
+
+    Weights optimized within clusters of similar assets and then across the clusters, which
+    keeps the noise of the covariance matrix from spreading over the whole portfolio. The
+    assets are clustered on their correlations, the objective is optimized within every
+    cluster, and then again across the clusters, each treated as one asset with the returns
+    of its portfolio. The noise of the covariance matrix mostly lives within clusters of
+    correlated assets, so containing each optimization to one level keeps the weights
+    stable.
 
     With W the N × K matrix whose column k holds the weights within cluster k, the
     clusters have the expected returns W'μ and the covariance matrix W'ΣW, the weights
     across the clusters v are optimal for those, and the weight of every asset is
-    w = W v. A cluster of one asset holds that asset only. With "maximum_sharpe", a
-    cluster without an asset above the risk free rate holds its minimum variance
-    portfolio. Both levels are long only and fully invested. The paper clusters with
-    k-means and solves both levels without bounds, allowing short positions; here the
-    clustering is hierarchical, as in HERC, or the paper's k-means with
-    cluster_criterion="onc".
+    w = W v. A cluster of one asset holds that asset only. With the maximum Sharpe ratio
+    objective, a cluster without an asset above the risk free rate holds its minimum
+    variance portfolio. Both levels are long only and fully invested. The paper clusters
+    with k-means and solves both levels without bounds, allowing short positions; here the
+    clustering is hierarchical, as in HERC, or the paper's k-means with the Optimal Number
+    of Clusters criterion.
 
-    With another risk measure than the variance (or the volatility, whose minimum and
-    equal risk contribution portfolios are those of the variance), "minimum_variance"
+    With another risk measure than the variance (or the volatility, whose minimum and equal
+    risk contribution portfolios are those of the variance), the minimum risk objective
     minimizes that measure of the returns (get_mean_risk_weights, get_minimum_cvar_weights
-    or get_minimum_drawdown_weights) and "risk_parity" equalizes its risk contributions
-    (get_risk_budgeting_weights), within the clusters on the returns of their assets and
-    across them on the returns of the clusters' portfolios, R W, as Riskfolio-Lib's
-    HCPortfolio(model="NCO", rm=...) does. "maximum_sharpe" takes the variance only.
+    or get_minimum_drawdown_weights) and the risk parity objective equalizes its risk
+    contributions (get_risk_budgeting_weights), within the clusters on the returns of their
+    assets and across them on the returns of the clusters' portfolios, R W, as
+    Riskfolio-Lib's HCPortfolio does for NCO. The maximum Sharpe ratio objective takes the
+    variance only.
 
     See López de Prado, M. (2019), "A Robust Estimator of the Efficient Frontier", SSRN
     3469961, and López de Prado, M. (2020), Machine Learning for Asset Managers,
     Cambridge University Press, chapter 7.
 
+    Referenced against:
+    - Riskfolio-Lib, HCPortfolio (NCO): https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/hcportfolio.html#HCPortfolio.HCPortfolio
+
+    Shares similar logic:
+    - skfolio, NestedClustersOptimization: https://skfolio.org/generated/skfolio.optimization.NestedClustersOptimization.html
+    - RiskLabAI, get_optimal_portfolio_weights_nco: https://github.com/RiskLabAI/RiskLabAI.py/blob/v3.2.0/src/RiskLabAI/optimization/nco.py#L49
+
     Args:
         expected_returns (pd.Series): The annualized expected return per asset.
         covariance (pd.DataFrame): The annualized covariance matrix.
-        objective (str, optional): The objective at both levels: "minimum_variance",
-            "maximum_sharpe" or "risk_parity". Defaults to "minimum_variance".
+        objective (str, optional): The objective at both levels. Options are: "minimum_variance"
+            (the lowest risk), "maximum_sharpe" (the highest Sharpe ratio), "risk_parity" (equal
+            risk contributions). Defaults to "minimum_variance".
         risk_free_rate (float, optional): The annualized risk free rate of the maximum
             Sharpe ratio. Defaults to 0.
-        linkage_method (str, optional): The linkage of the hierarchical clustering:
-            "single", "complete", "average", "ward" or "dbht" (the Directed Bubble
-            Hierarchical Tree and, without a number of clusters, its own clusters).
-            Defaults to "ward".
+        linkage_method (str, optional): The linkage of the hierarchical clustering; without a number
+            of clusters the Directed Bubble Hierarchical Tree takes its own clusters. Options are:
+            "single" (single linkage), "complete" (complete linkage), "average" (average linkage),
+            "ward" (Ward's method), "dbht" (the Directed Bubble Hierarchical Tree of Song, Di Matteo
+            and Aste, 2012). Defaults to "ward".
         clusters (int | None, optional): The number of clusters. Defaults to None, chosen
             by the two-order difference of the gap statistic.
         correlation (pd.DataFrame | None, optional): The correlation matrix the assets
@@ -3231,20 +3441,28 @@ def get_nested_clustered_optimization_weights(
         returns (pd.DataFrame | None, optional): The returns per period, one column per
             asset, which the risk measures besides the variance and volatility need.
             Defaults to None.
-        risk_measure (str, optional): The risk measure of "minimum_variance" and
-            "risk_parity", a key of HIERARCHICAL_RISK_MEASURES. Defaults to "variance".
+        risk_measure (str, optional): The risk measure of the minimum risk and risk parity
+            objectives. Options are: "variance" (of the covariance matrix), "volatility" (of the
+            covariance matrix), "mad" (mean absolute deviation, Konno and Yamazaki, 1991),
+            "semideviation" (below the minimum acceptable return), "lower_partial_moment" (first
+            order), "worst_realization" (the worst return), "gini_mean_difference" (Yitzhaki, 1982),
+            "tail_gini" (Furman et al., 2017), "range" (the best minus the worst return),
+            "cvar_range" (the CVaR of the losses and of the gains), "tail_gini_range" (the Tail Gini
+            of the losses and of the gains), "ulcer_index" (of the uncompounded cumulative return),
+            "cvar" (Rockafellar and Uryasev, 2002), "cdar" (Chekhlov et al., 2005). Defaults to
+            "variance".
         alpha (float, optional): The tail probability of the tail measures, e.g. 0.05 for the worst 5% of
             periods. Defaults to 0.05.
         minimum_acceptable_return (float | str, optional): The threshold of the
             semideviation and lower partial moment per period, or "mean". Defaults to 0.
-        cluster_criterion (str, optional): How the number of clusters is chosen when it
-            is not given: "two_difference_gap", "standardized_silhouette" or "onc" (the
-            k-means clusters of the Optimal Number of Clusters algorithm, as in López de
-            Prado, 2020, chapter 7, see get_hierarchical_clusters). Defaults to
-            "two_difference_gap".
-        similarity (pd.DataFrame | None, optional): The similarity matrix of
-            linkage_method="dbht", e.g. from get_codependence_similarity. Defaults to
-            None, 1 - d² of the distance, (1 + ρ) / 2 for the correlation distance.
+        cluster_criterion (str, optional): How the number of clusters is chosen when it is not
+            given. Options are: "two_difference_gap" (the two-order difference of the gap
+            statistic), "standardized_silhouette" (the highest standardized silhouette), "onc" (the
+            k-means clusters of the Optimal Number of Clusters algorithm, as in López de Prado,
+            2020, chapter 7). Defaults to "two_difference_gap".
+        similarity (pd.DataFrame | None, optional): The similarity matrix of the Directed Bubble
+            Hierarchical Tree, e.g. from get_codependence_similarity. Defaults to None, 1 - d² of
+            the distance, (1 + ρ) / 2 for the correlation distance.
 
     Returns:
         pd.Series: The weight per asset.
@@ -3356,8 +3574,16 @@ def get_minimum_cvar_weights(
 ) -> pd.Series:
     """
     The fully invested portfolio with the lowest Conditional Value at Risk (expected
-    shortfall) over the historical returns, solved as a linear programme (Rockafellar and
-    Uryasev, 2000).
+    shortfall) over the historical returns.
+
+    It is solved as a linear programme (Rockafellar and Uryasev, 2000).
+
+    Referenced against:
+    - skfolio, MeanRisk (CVaR): https://skfolio.org/generated/skfolio.optimization.MeanRisk.html
+
+    Shares similar logic:
+    - PyPortfolioOpt, EfficientCVaR.min_cvar: https://pyportfolioopt.readthedocs.io/en/latest/GeneralEfficientFrontier.html#pypfopt.efficient_frontier.EfficientCVaR.min_cvar
+    - Riskfolio-Lib, Portfolio.optimization: https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/portfolio.html#Portfolio.Portfolio.optimization
 
     Args:
         returns (pd.DataFrame): The returns per period, one column per asset.
@@ -3458,11 +3684,12 @@ def get_minimum_cvar_weights(
 
 def get_tail_probabilities(losses: np.ndarray | pd.Series, alpha: float) -> np.ndarray:
     """
-    The weight of every period in the expected tail loss of Rockafellar and Uryasev
-    (2002): 1 / ((1 - α)T) for each of the ⌊(1 - α)T⌋ largest losses, the remaining
-    fraction of the tail for the next largest and 0 for the others, so that the weights
-    sum to one. The expected tail loss is the losses weighted by them; the returns
-    weighted by them give each asset's share of it (Euler allocation).
+    The weight of every period in the expected tail loss of Rockafellar and Uryasev (2002).
+
+    1 / ((1 - α)T) for each of the ⌊(1 - α)T⌋ largest losses, the remaining fraction of the
+    tail for the next largest and 0 for the others, so that the weights sum to one. The
+    expected tail loss is the losses weighted by them; the returns weighted by them give
+    each asset's share of it (Euler allocation).
 
     Args:
         losses (np.ndarray | pd.Series): The losses per period, a loss being positive.
@@ -3489,11 +3716,12 @@ def get_tail_probabilities(losses: np.ndarray | pd.Series, alpha: float) -> np.n
 
 def get_expected_tail_loss(losses: np.ndarray | pd.Series, alpha: float) -> float:
     """
-    The average of the worst 1 - α share of the losses, the minimum over ζ of
-    ζ + Σ max(0, L_t - ζ) / ((1 - α)T) (Rockafellar and Uryasev, 2002). It counts a
-    fraction of the loss on the boundary when (1 - α)T is not a whole number, and it is
-    the value the CVaR and CDaR linear programmes minimize. Every CVaR, CDaR and expected
-    shortfall of the portfolio construction uses it.
+    The average of the worst 1 - α share of the losses, the minimum over ζ of ζ + Σ max(0,
+    L_t - ζ) / ((1 - α)T) (Rockafellar and Uryasev, 2002).
+
+    It counts a fraction of the loss on the boundary when (1 - α)T is not a whole number,
+    and it is the value the CVaR and CDaR linear programmes minimize. Every CVaR, CDaR and
+    expected shortfall of the portfolio construction uses it.
 
     Args:
         losses (np.ndarray | pd.Series): The losses per period, a loss being positive.
@@ -3508,11 +3736,13 @@ def get_expected_tail_loss(losses: np.ndarray | pd.Series, alpha: float) -> floa
 
 def get_drawdowns(returns: pd.Series | pd.DataFrame) -> pd.Series | pd.DataFrame:
     """
-    The drawdown in every period on uncompounded returns (Chekhlov, Uryasev and
-    Zabarankin, 2005): the highest cumulative sum of the returns so far, starting from
-    zero, minus the current cumulative sum. These are absolute drawdowns of a portfolio
-    that keeps its invested amount constant, which keeps the drawdown optimizers linear;
-    compounded drawdowns are relative to the peak value.
+    The drawdown in every period on uncompounded returns (Chekhlov, Uryasev and Zabarankin,
+    2005).
+
+    A drawdown is the highest cumulative sum of the returns so far, starting from zero,
+    minus the current cumulative sum. These are absolute drawdowns of a portfolio that keeps
+    its invested amount constant, which keeps the drawdown optimizers linear; compounded
+    drawdowns are relative to the peak value.
 
     Args:
         returns (pd.Series | pd.DataFrame): The returns per period.
@@ -3542,19 +3772,26 @@ def get_minimum_drawdown_weights(
 ) -> pd.Series:
     """
     The portfolio with the lowest drawdown risk over the historical returns, solved as a
-    linear programme (Chekhlov, Uryasev and Zabarankin, 2005). With y_t = Σ_(s≤t) r_s'w
-    the uncompounded cumulative return and u_t ≥ y_t, u_t ≥ u_(t-1), u_0 = 0 its running
-    peak, the drawdown is u_t - y_t and the programme minimizes:
+    linear programme (Chekhlov, Uryasev and Zabarankin, 2005).
 
-    - "cdar": the Conditional Drawdown at Risk, the average of the worst 1 - α share of
-      the drawdowns, ζ + Σ z_t / ((1 - α)T) with z_t ≥ u_t - y_t - ζ and z_t ≥ 0.
-    - "maximum": the maximum drawdown m, with u_t - y_t ≤ m.
-    - "average": the average drawdown Σ (u_t - y_t) / T.
+    With y_t = Σ_(s≤t) r_s'w the uncompounded cumulative return and u_t ≥ y_t, u_t ≥
+    u_(t-1), u_0 = 0 its running peak, the drawdown is u_t - y_t and the programme
+    minimizes:
+
+    - The Conditional Drawdown at Risk: the average of the worst 1 - α share of the
+      drawdowns, ζ + Σ z_t / ((1 - α)T) with z_t ≥ u_t - y_t - ζ and z_t ≥ 0.
+    - The maximum drawdown m, with u_t - y_t ≤ m.
+    - The average drawdown Σ (u_t - y_t) / T.
+
+    Referenced against:
+    - Riskfolio-Lib, Portfolio.optimization: https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/portfolio.html#Portfolio.Portfolio.optimization
+    - skfolio, MeanRisk: https://skfolio.org/generated/skfolio.optimization.MeanRisk.html
+    - PyPortfolioOpt, EfficientCDaR.min_cdar (Conditional Drawdown at Risk): https://pyportfolioopt.readthedocs.io/en/latest/GeneralEfficientFrontier.html#pypfopt.efficient_frontier.EfficientCDaR.min_cdar
 
     Args:
         returns (pd.DataFrame): The returns per period, one column per asset.
-        measure (str, optional): The drawdown measure: "cdar", "maximum" or "average".
-            Defaults to "cdar".
+        measure (str, optional): The drawdown measure. Options are: "cdar" (Conditional Drawdown at
+            Risk), "maximum" (maximum drawdown), "average" (average drawdown). Defaults to "cdar".
         alpha (float, optional): The tail probability of the CDaR, e.g. 0.05 for the
             average of the worst 5% of drawdowns. Defaults to 0.05.
         minimum_weight (float | dict[str, float], optional): The lowest weight of every
@@ -3702,11 +3939,14 @@ def get_maximum_omega_weights(
     expected_returns: pd.Series | None = None,
 ) -> pd.Series:
     """
-    The portfolio with the highest Omega ratio over the historical returns,
-    Ω(w) = 1 + (r̄'w - τ) / E[max(0, τ - r_t'w)] with τ the minimum acceptable return
-    (Keating and Shadwick, 2002). The ratio of a linear function to a convex
-    piecewise-linear one is maximized as a linear programme with the Charnes-Cooper
-    transformation y = κw, κ > 0 (Kapsos, Christofides and Rustem, 2014):
+    The portfolio with the highest Omega ratio over the historical returns.
+
+    The ratio is Ω(w) = 1 + (r̄'w - τ) / E[max(0, τ - r_t'w)] with τ the minimum acceptable
+    return (Keating and Shadwick, 2002).
+
+    The ratio of a linear function to a convex piecewise-linear one is maximized as a linear
+    programme with the Charnes-Cooper transformation y = κw, κ > 0 (Kapsos, Christofides and
+    Rustem, 2014):
 
     maximize r̄'y - τκ subject to Σ d_t / T = 1, d_t ≥ τκ - r_t'y, d_t ≥ 0 and the
     weight constraints in homogeneous form; the weights are w = y / κ.
@@ -3714,6 +3954,9 @@ def get_maximum_omega_weights(
     See Kapsos, M., Christofides, N. and Rustem, B. (2014), "Worst-Case Robust Omega
     Ratio", European Journal of Operational Research, 234(2), 499-507, and Mausser, H.,
     Saunders, D. and Seco, L. (2006), "Optimising Omega", Risk, 19(11), 88-92.
+
+    Referenced against:
+    - Riskfolio-Lib, Portfolio.optimization (first lower partial moment): https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/portfolio.html#Portfolio.Portfolio.optimization
 
     Args:
         returns (pd.DataFrame): The returns per period, one column per asset.
@@ -3848,17 +4091,24 @@ def get_maximum_cvar_ratio_weights(
     expected_returns: pd.Series | None = None,
 ) -> pd.Series:
     """
-    The portfolio with the highest ratio of expected excess return to Conditional Value
-    at Risk over the historical returns, (r̄ - r_f)'w / CVaR_α(w), the STARR ratio of
-    Martin, Rachev and Siboulet (2003). With the CVaR as the linear programme of
-    Rockafellar and Uryasev (2000) and the Charnes-Cooper transformation y = κw, κ > 0,
-    it is the linear programme:
+    The portfolio with the highest ratio of expected excess return to Conditional Value at
+    Risk over the historical returns.
+
+    The ratio is (r̄ - r_f)'w / CVaR_α(w), the STARR ratio of Martin, Rachev and Siboulet
+    (2003).
+
+    With the CVaR as the linear programme of Rockafellar and Uryasev (2000) and the
+    Charnes-Cooper transformation y = κw, κ > 0, it is the linear programme:
 
     maximize (r̄ - r_f)'y subject to ζ + Σ s_t / ((1 - α)T) ≤ 1, s_t ≥ -r_t'y - ζ,
     s_t ≥ 0 and the weight constraints in homogeneous form; the weights are w = y / κ.
 
     See Martin, R. D., Rachev, S. T. and Siboulet, F. (2003), "Phi-Alpha Optimal
     Portfolios and Extreme Risk Management", Wilmott Magazine, November, 70-83.
+
+    Referenced against:
+    - Riskfolio-Lib, Portfolio.optimization (CVaR): https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/portfolio.html#Portfolio.Portfolio.optimization
+    - skfolio, MeanRisk (CVaR): https://skfolio.org/generated/skfolio.optimization.MeanRisk.html
 
     Args:
         returns (pd.DataFrame): The returns per period, one column per asset.
@@ -4038,10 +4288,11 @@ OWA_RISK_MEASURES = ("gini_mean_difference", "tail_gini", "tail_gini_range")
 class RiskProgramme(NamedTuple):
     """
     A risk measure of the portfolio's returns as a linear programme over the weights w and
-    auxiliary variables z: the measure is cost'z at the smallest z that meets
-    A_w w + A_z z ≤ upper and E_w w + E_z z = 0 within the bounds on z. The right-hand
-    side upper is only nonzero for a minimum acceptable return; it scales with κ in the
-    Charnes-Cooper transformation of a ratio.
+    auxiliary variables z.
+
+    The measure is cost'z at the smallest z that meets A_w w + A_z z ≤ upper and E_w w + E_z
+    z = 0 within the bounds on z. The right-hand side upper is only nonzero for a minimum
+    acceptable return; it scales with κ in the Charnes-Cooper transformation of a ratio.
     """
 
     weights: sparse.csr_matrix
@@ -4063,29 +4314,28 @@ def get_risk_measure_programme(
     The linear programme of a risk measure of the portfolio's returns X_t = r_t'w over T
     periods, with α the tail probability:
 
-    - "mad": the mean absolute deviation Σ |X_t - X̄| / T, as 2 Σ d_t / T with
-      d_t ≥ -(r_t - r̄)'w and d_t ≥ 0, since the deviations below and above the mean are
-      equal in total (Konno and Yamazaki, 1991).
-    - "lower_partial_moment": Σ max(τ - X_t, 0) / T with d_t ≥ τ - r_t'w and d_t ≥ 0, τ
-      the minimum acceptable return or each asset's mean (Bawa, 1975).
-    - "worst_realization": the largest loss m ≥ -r_t'w (Young, 1998).
-    - "range": the largest gain plus the largest loss, m_G ≥ r_t'w and m_L ≥ -r_t'w.
-    - "cvar": the Conditional Value at Risk ζ + Σ s_t / (αT) with
-      s_t ≥ -r_t'w - ζ and s_t ≥ 0 (Rockafellar and Uryasev, 2000).
-    - "cvar_range": the CVaR of the losses plus that of the gains, the average of the best
+    - The mean absolute deviation Σ |X_t - X̄| / T, as 2 Σ d_t / T with d_t ≥ -(r_t - r̄)'w
+      and d_t ≥ 0, since the deviations below and above the mean are equal in total (Konno
+      and Yamazaki, 1991).
+    - The first lower partial moment Σ max(τ - X_t, 0) / T with d_t ≥ τ - r_t'w and d_t ≥ 0,
+      τ the minimum acceptable return or each asset's mean (Bawa, 1975).
+    - The worst realization: the largest loss m ≥ -r_t'w (Young, 1998).
+    - The range: the largest gain plus the largest loss, m_G ≥ r_t'w and m_L ≥ -r_t'w.
+    - The Conditional Value at Risk ζ + Σ s_t / (αT) with s_t ≥ -r_t'w - ζ and s_t ≥ 0
+      (Rockafellar and Uryasev, 2000).
+    - The CVaR range: the CVaR of the losses plus that of the gains, the average of the best
       α share of the returns minus the average of the worst (Cajas, 2021).
-    - "cdar": the Conditional Drawdown at Risk of the uncompounded cumulative returns, with
-      running peaks u_t ≥ Σ_(s≤t) r_s'w, u_t ≥ u_(t-1), u_t ≥ 0 and the CVaR programme on
-      the drawdowns u_t - Σ_(s≤t) r_s'w (Chekhlov, Uryasev and Zabarankin, 2005).
-    - "maximum_drawdown": the largest drawdown m ≥ u_t - Σ_(s≤t) r_s'w, with the same
+    - The Conditional Drawdown at Risk of the uncompounded cumulative returns, with running
+      peaks u_t ≥ Σ_(s≤t) r_s'w, u_t ≥ u_(t-1), u_t ≥ 0 and the CVaR programme on the
+      drawdowns u_t - Σ_(s≤t) r_s'w (Chekhlov, Uryasev and Zabarankin, 2005).
+    - The maximum drawdown: the largest drawdown m ≥ u_t - Σ_(s≤t) r_s'w, with the same
       running peaks.
-    - "average_drawdown": the average drawdown a ≥ Σ (u_t - Σ_(s≤t) r_s'w) / T, with the
-      same running peaks.
-    - "gini_mean_difference", "tail_gini" and "tail_gini_range": ordered weighted averages
-      Σ c_i X_(i) of the sorted returns (see get_owa_risk). Their programme is a single
-      variable θ, the measure, with cost one and no rows: the solvers add the cuts
-      θ ≥ g'w of get_owa_risk as they go, since writing the ordered weighted average out
-      as a linear programme takes T² variables (Ogryczak and Śliwiński, 2003).
+    - The average drawdown: a ≥ Σ (u_t - Σ_(s≤t) r_s'w) / T, with the same running peaks.
+    - The Gini mean difference, the Tail Gini and the Tail Gini range: ordered weighted
+      averages Σ c_i X_(i) of the sorted returns (see get_owa_risk). Their programme is a
+      single variable θ, the measure, with cost one and no rows: the solvers add the cuts θ
+      ≥ g'w of get_owa_risk as they go, since writing the ordered weighted average out as a
+      linear programme takes T² variables (Ogryczak and Śliwiński, 2003).
 
     The returns are divided by their largest absolute value first, which leaves the
     weights that minimize the measure or maximize a ratio to it unchanged and keeps the
@@ -4103,11 +4353,17 @@ def get_risk_measure_programme(
 
     Args:
         data (np.ndarray): The T × N returns, without missing values.
-        risk_measure (str): The risk measure, see above.
+        risk_measure (str): The risk measure. Options are: "mad" (mean absolute deviation),
+            "lower_partial_moment" (first lower partial moment), "worst_realization" (the largest
+            loss), "range" (the largest gain plus the largest loss), "cvar" (Conditional Value at
+            Risk), "cvar_range" (the CVaR of the losses plus that of the gains), "cdar" (Conditional
+            Drawdown at Risk), "maximum_drawdown" (the largest drawdown), "average_drawdown" (the
+            average drawdown), "gini_mean_difference" (Gini mean difference), "tail_gini" (Tail
+            Gini), "tail_gini_range" (Tail Gini range).
         alpha (float, optional): The tail probability α of the tail measures, e.g. 0.05 for the worst
             5% of periods. Defaults to 0.05.
-        minimum_acceptable_return (float | str, optional): The threshold τ of the lower
-            partial moment per period, or "mean" for each asset's mean. Defaults to 0.
+        minimum_acceptable_return (float | str, optional): The threshold τ of the lower partial
+            moment per period, or "mean" for each asset's mean. Defaults to 0.
 
     Returns:
         RiskProgramme: The rows, cost and bounds of the programme.
@@ -4241,20 +4497,21 @@ def get_squared_risk(
     The square of a quadratic risk measure of the portfolio's returns X_t = r_t'w over T
     periods, and its gradient in the weights:
 
-    - "semideviation": Σ min(X_t - τ, 0)² / T below a minimum acceptable return τ, or
-      Σ min(X_t - X̄, 0)² / (T - 1) below the mean, the square of the Risk module's
-      downside deviation (Markowitz, 1959; Sortino and Price, 1994). Its gradient,
-      2 Σ min(X_t - τ, 0) r_t / T, is continuous, so SLSQP minimizes it directly in the
-      weights as Estrada (2008) suggests.
-    - "ulcer_index": Σ D_t² / T with D_t = max_(s≤t) Y_s - Y_t the drawdowns of the
+    - The semideviation: Σ min(X_t - τ, 0)² / T below a minimum acceptable return τ, or Σ
+      min(X_t - X̄, 0)² / (T - 1) below the mean, the square of the Risk module's downside
+      deviation (Markowitz, 1959; Sortino and Price, 1994). Its gradient, 2 Σ min(X_t - τ,
+      0) r_t / T, is continuous, so SLSQP minimizes it directly in the weights as Estrada
+      (2008) suggests.
+    - The Ulcer Index: Σ D_t² / T with D_t = max_(s≤t) Y_s - Y_t the drawdowns of the
       uncompounded cumulative return Y_t (from Y_0 = 0), the square of the Ulcer Index of
-      Martin and McCann (1989), with gradient 2 Σ D_t (C_s*(t) - C_t) / T for the
-      cumulative asset returns C and s*(t) the latest peak.
+      Martin and McCann (1989), with gradient 2 Σ D_t (C_s*(t) - C_t) / T for the cumulative
+      asset returns C and s*(t) the latest peak.
 
     Args:
         data (np.ndarray): The T × N returns, without missing values.
         weights (np.ndarray): The weight per asset.
-        risk_measure (str): "semideviation" or "ulcer_index".
+        risk_measure (str): The quadratic risk measure. Options are: "semideviation"
+            (semideviation), "ulcer_index" (Ulcer Index).
         minimum_acceptable_return (float | str, optional): The threshold τ of the
             semideviation per period, or "mean". Defaults to 0.
 
@@ -4295,15 +4552,17 @@ def get_owa_risk(
 ) -> tuple[float, np.ndarray]:
     """
     An ordered weighted average Σ c_i X_(i) of the portfolio's returns X_t = r_t'w sorted
-    from low to high, and a subgradient in the weights, with the weights c_i of the Risk
-    module's dispersion measures: the Gini mean difference (Yitzhaki, 1982), minus the
-    Tail Gini of the returns (Furman, Wang and Zitikis, 2017), and the Tail Gini range,
-    minus the Tail Gini of the returns plus that of the returns sorted from high to low.
-    The weights rise with i, so by the rearrangement inequality the average is the largest
-    of Σ c_i X_π(i) over all orderings π: a maximum of functions that are linear in the
-    weights, hence convex and positively homogeneous (Cajas, 2021). The linear function
-    of the sorted order, g'w with g = Σ c_i r_(i), touches it at w and lies below it
-    everywhere else, which makes θ ≥ g'w a cut of the cutting plane solvers.
+    from low to high, with a subgradient in the weights.
+
+    The weights c_i are those of the Risk module's dispersion measures: the Gini mean
+    difference (Yitzhaki, 1982), minus the Tail Gini of the returns (Furman, Wang and
+    Zitikis, 2017), and the Tail Gini range, minus the Tail Gini of the returns plus that of
+    the returns sorted from high to low. The weights rise with i, so by the rearrangement
+    inequality the average is the largest of Σ c_i X_π(i) over all orderings π: a maximum of
+    functions that are linear in the weights, hence convex and positively homogeneous
+    (Cajas, 2021). The linear function of the sorted order, g'w with g = Σ c_i r_(i),
+    touches it at w and lies below it everywhere else, which makes θ ≥ g'w a cut of the
+    cutting plane solvers.
 
     See Yitzhaki, S. (1982), "Stochastic Dominance, Mean Variance, and Gini's Mean
     Difference", The American Economic Review, 72(1), 178-185; Furman, E., Wang, R. and
@@ -4315,7 +4574,8 @@ def get_owa_risk(
     Args:
         data (np.ndarray): The T × N returns, without missing values.
         weights (np.ndarray): The weight per asset.
-        risk_measure (str): One of OWA_RISK_MEASURES.
+        risk_measure (str): The ordered weighted average. Options are: "gini_mean_difference" (Gini
+            mean difference), "tail_gini" (Tail Gini), "tail_gini_range" (Tail Gini range).
         alpha (float, optional): The tail probability of the Tail Gini measures.
             Defaults to 0.05.
 
@@ -4345,19 +4605,28 @@ def get_mean_risk_measure(
 ) -> pd.Series:
     """
     A risk measure of the mean-risk and risk budgeting optimizers for every column of
-    returns (each an asset or portfolio), per period and positive for a loss, from the
-    Risk module's measures: the mean absolute deviation, the semideviation (the downside
-    deviation below τ, or below the mean with T - 1), the first lower partial moment, the
-    worst realization, the Gini mean difference, the Tail Gini, the range, the Tail Gini
-    range and the Ulcer Index and the maximum and average drawdown of the uncompounded
-    cumulative returns. The CVaR, the CVaR range and the CDaR are the averages of the tail
-    with a fraction of the boundary period (Rockafellar and Uryasev, 2002), the values the
-    linear programmes minimize, where the Risk module's CVaR averages the returns at or
-    below an interpolated quantile.
+    returns (each an asset or portfolio).
+
+    It is per period and positive for a loss, from the Risk module's measures: the mean
+    absolute deviation, the semideviation (the downside deviation below τ, or below the mean
+    with T - 1), the first lower partial moment, the worst realization, the Gini mean
+    difference, the Tail Gini, the range, the Tail Gini range and the Ulcer Index and the
+    maximum and average drawdown of the uncompounded cumulative returns. The CVaR, the CVaR
+    range and the CDaR are the averages of the tail with a fraction of the boundary period
+    (Rockafellar and Uryasev, 2002), the values the linear programmes minimize, where the
+    Risk module's CVaR averages the returns at or below an interpolated quantile.
 
     Args:
         returns (pd.DataFrame): The returns per period, one column per asset or portfolio.
-        risk_measure (str): A key of MEAN_RISK_MEASURES.
+        risk_measure (str): The risk measure. Options are: "mad" (mean absolute deviation, Konno and
+            Yamazaki, 1991), "semideviation" (below the minimum acceptable return),
+            "lower_partial_moment" (first order), "worst_realization" (the worst return),
+            "gini_mean_difference" (Yitzhaki, 1982), "tail_gini" (Furman et al., 2017), "range" (the
+            best minus the worst return), "cvar_range" (the CVaR of the losses and of the gains),
+            "tail_gini_range" (the Tail Gini of the losses and of the gains), "ulcer_index" (of the
+            uncompounded cumulative return), "cvar" (Rockafellar and Uryasev, 2002), "cdar"
+            (Chekhlov et al., 2005), "maximum_drawdown" (of the uncompounded cumulative return),
+            "average_drawdown" (of the uncompounded cumulative return).
         alpha (float, optional): The tail probability of the tail measures, e.g. 0.05 for the worst 5% of
             periods. Defaults to 0.05.
         minimum_acceptable_return (float | str, optional): The threshold of the
@@ -4415,17 +4684,27 @@ def get_mean_risk_contributions(
     minimum_acceptable_return: float | str = 0.0,
 ) -> pd.Series:
     """
-    The share of a mean-risk or risk budgeting measure (see get_mean_risk_measure) that
-    each asset contributes, w_i ∂ρ/∂w_i / ρ(w) (Euler allocation, Tasche, 2000), with the
-    derivative found by central finite differences with a step of 1e-7, as in
-    get_finite_difference_risk_contributions. The shares add up to one for the measures
-    that are positively homogeneous in the weights, which are those of the risk budgeting
-    portfolios (with a minimum acceptable return of 0 or "mean").
+    The share of a mean-risk or risk budgeting measure (see get_mean_risk_measure) that each
+    asset contributes.
+
+    It is w_i ∂ρ/∂w_i / ρ(w) (Euler allocation, Tasche, 2000), with the derivative found by
+    central finite differences with a step of 1e-7, as in
+    get_finite_difference_risk_contributions. The shares add up to one for the measures that
+    are positively homogeneous in the weights, which are those of the risk budgeting
+    portfolios (with a minimum acceptable return of zero or the mean).
 
     Args:
         weights (pd.Series): The weight per asset.
         returns (pd.DataFrame): The returns per period, one column per asset.
-        risk_measure (str): A key of MEAN_RISK_MEASURES or RISK_BUDGETING_MEASURES.
+        risk_measure (str): The risk measure. Options are: "mad" (mean absolute deviation, Konno and
+            Yamazaki, 1991), "semideviation" (below the minimum acceptable return),
+            "lower_partial_moment" (first order), "worst_realization" (the worst return),
+            "gini_mean_difference" (Yitzhaki, 1982), "tail_gini" (Furman et al., 2017), "range" (the
+            best minus the worst return), "cvar_range" (the CVaR of the losses and of the gains),
+            "tail_gini_range" (the Tail Gini of the losses and of the gains), "ulcer_index" (of the
+            uncompounded cumulative return), "cvar" (Rockafellar and Uryasev, 2002), "cdar"
+            (Chekhlov et al., 2005), "maximum_drawdown" (of the uncompounded cumulative return),
+            "average_drawdown" (of the uncompounded cumulative return).
         alpha (float, optional): The tail probability of the tail measures, e.g. 0.05 for the worst 5% of
             periods. Defaults to 0.05.
         minimum_acceptable_return (float | str, optional): The threshold of the
@@ -4474,10 +4753,12 @@ def get_mean_risk_weights(
 ) -> pd.Series:
     """
     A mean-risk portfolio over the historical returns for a risk measure ρ other than the
-    variance (Markowitz, 1959; Konno and Yamazaki, 1991): with objective="minimum_risk"
-    the portfolio with the lowest ρ(w), or with a target return the lowest ρ(w) that
-    expects that return, and with objective="maximum_ratio" the portfolio with the
-    highest (r̄ - r_f)'w / ρ(w).
+    variance (Markowitz, 1959; Konno and Yamazaki, 1991).
+
+    It is the portfolio with the lowest risk, or with the best return per unit of that risk.
+    With the minimum risk objective it is the portfolio with the lowest ρ(w), or with a
+    target return the lowest ρ(w) that expects that return, and with the maximum ratio
+    objective the portfolio with the highest (r̄ - r_f)'w / ρ(w).
 
     The linear measures (see get_risk_measure_programme) are solved as linear programmes
     with HiGHS, the ratio with the Charnes-Cooper transformation y = κw, κ > 0: maximize
@@ -4489,16 +4770,29 @@ def get_mean_risk_weights(
     the Ulcer Index (see get_squared_risk) are minimized, or the ratio to them maximized,
     with SLSQP directly in the weights.
 
-    With "cvar" the minimum risk portfolio is that of get_minimum_cvar_weights and the
-    maximum ratio portfolio that of get_maximum_cvar_ratio_weights; with "cdar",
-    "maximum_drawdown" and "average_drawdown" the minimum risk portfolio is that of
-    get_minimum_drawdown_weights with the measure "cdar", "maximum" or "average".
+    With the CVaR the minimum risk portfolio is that of get_minimum_cvar_weights and the
+    maximum ratio portfolio that of get_maximum_cvar_ratio_weights; with the CDaR and the
+    maximum and average drawdown the minimum risk portfolio is that of
+    get_minimum_drawdown_weights with the same measure.
+
+    Referenced against:
+    - skfolio, MeanRisk: https://skfolio.org/generated/skfolio.optimization.MeanRisk.html
+    - Riskfolio-Lib, Portfolio.optimization: https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/portfolio.html#Portfolio.Portfolio.optimization
+    - Riskfolio-Lib, Portfolio.owa_optimization (Tail Gini): https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/portfolio.html#Portfolio.Portfolio.owa_optimization
 
     Args:
         returns (pd.DataFrame): The returns per period, one column per asset.
-        risk_measure (str, optional): A key of MEAN_RISK_MEASURES. Defaults to "mad".
-        objective (str, optional): "minimum_risk" or "maximum_ratio". Defaults to
-            "minimum_risk".
+        risk_measure (str, optional): The risk measure. Options are: "mad" (mean absolute deviation,
+            Konno and Yamazaki, 1991), "semideviation" (below the minimum acceptable return),
+            "lower_partial_moment" (first order), "worst_realization" (the worst return),
+            "gini_mean_difference" (Yitzhaki, 1982), "tail_gini" (Furman et al., 2017), "range" (the
+            best minus the worst return), "cvar_range" (the CVaR of the losses and of the gains),
+            "tail_gini_range" (the Tail Gini of the losses and of the gains), "ulcer_index" (of the
+            uncompounded cumulative return), "cvar" (Rockafellar and Uryasev, 2002), "cdar"
+            (Chekhlov et al., 2005), "maximum_drawdown" (of the uncompounded cumulative return),
+            "average_drawdown" (of the uncompounded cumulative return). Defaults to "mad".
+        objective (str, optional): Options are: "minimum_risk" (the lowest risk), "maximum_ratio"
+            (the highest excess return per unit of risk). Defaults to "minimum_risk".
         target_return (float | None, optional): The expected return per period the
             minimum risk portfolio must have. Defaults to None, no target.
         risk_free_rate (float, optional): The risk free rate per period of the ratio.
@@ -4829,11 +5123,12 @@ def get_risk_budgeting_weights(
 ) -> pd.Series:
     """
     The risk budgeting portfolio for a risk measure ρ of the historical returns that is
-    positively homogeneous of degree one and convex: every asset contributes the share b_i
-    of the risk set by the budget, w_i ∂ρ/∂w_i = b_i ρ(w) (Roncalli, 2013). It is the
-    solution of min ρ(y) subject to Σ b_i ln y_i ≥ 0 and y ≥ 0, scaled to w = y / 1'y:
-    the first-order conditions y_i ∂ρ/∂y_i = λ b_i give the budget (Bruder and Roncalli,
-    2012).
+    positively homogeneous of degree one and convex.
+
+    Every asset contributes the share b_i of the risk set by the budget, w_i ∂ρ/∂w_i = b_i
+    ρ(w) (Roncalli, 2013). It is the solution of min ρ(y) subject to Σ b_i ln y_i ≥ 0 and y
+    ≥ 0, scaled to w = y / 1'y: the first-order conditions y_i ∂ρ/∂y_i = λ b_i give the
+    budget (Bruder and Roncalli, 2012).
 
     For the linear measures ρ is the linear programme of get_risk_measure_programme and
     the logarithmic constraint is met by cutting planes (Kelley, 1960): the concave
@@ -4853,19 +5148,28 @@ def get_risk_budgeting_weights(
     Method for Solving Convex Programs", Journal of the Society for Industrial and
     Applied Mathematics, 8(4), 703-712.
 
+    Referenced against:
+    - skfolio, RiskBudgeting: https://skfolio.org/generated/skfolio.optimization.RiskBudgeting.html
+    - Riskfolio-Lib, Portfolio.rp_optimization: https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/portfolio.html#Portfolio.Portfolio.rp_optimization
+
     Args:
         returns (pd.DataFrame): The returns per period, one column per asset.
-        risk_measure (str, optional): A key of RISK_BUDGETING_MEASURES. Defaults to
-            "cvar".
+        risk_measure (str, optional): The risk measure. Options are: "mad" (mean absolute deviation,
+            Konno and Yamazaki, 1991), "semideviation" (below the minimum acceptable return),
+            "lower_partial_moment" (first order), "gini_mean_difference" (Yitzhaki, 1982),
+            "tail_gini" (Furman et al., 2017), "cvar_range" (the CVaR of the losses and of the
+            gains), "tail_gini_range" (the Tail Gini of the losses and of the gains), "ulcer_index"
+            (of the uncompounded cumulative return), "cvar" (Rockafellar and Uryasev, 2002), "cdar"
+            (Chekhlov et al., 2005). Defaults to "cvar".
         risk_budget (pd.Series | None, optional): The share of the risk each asset should
             contribute, positive for every asset; it is scaled to sum to one. A budget for
             an asset outside the portfolio, or an asset without one, raises a ValueError
             that names them. Defaults to None, an equal share each.
         alpha (float, optional): The tail probability of the tail measures, e.g. 0.05 for the worst 5% of
             periods. Defaults to 0.05.
-        minimum_acceptable_return (float | str, optional): The threshold of the
-            semideviation and lower partial moment, 0 or "mean" (any other threshold
-            does not scale with the weights). Defaults to 0.
+        minimum_acceptable_return (float | str, optional): The threshold of the semideviation and
+            lower partial moment; any other threshold does not scale with the weights. Options are:
+            0 (a return of zero), "mean" (each asset's mean). Defaults to 0.
         minimum_weight (float | dict[str, float], optional): The lowest weight of every
             asset, or per asset. Defaults to 0.
         maximum_weight (float | dict[str, float], optional): The highest weight of every
@@ -4962,9 +5266,10 @@ def get_risk_budgeting_weights(
 
     def tangent(point):
         """
-        The tangent Σ (b_i / p_i) y_i ≥ 1 of Σ b_i ln y_i ≥ 0 at the point scaled onto
-        the boundary Σ b_i ln p_i = 0, the tightest cut in its direction; a weight of
-        zero has no tangent, so it is taken just above zero.
+        The tangent Σ (b_i / p_i) y_i ≥ 1 of Σ b_i ln y_i ≥ 0 at the point scaled onto the
+        boundary Σ b_i ln p_i = 0, the tightest cut in its direction.
+
+        A weight of zero has no tangent, so it is taken just above zero.
         """
         point = np.maximum(point, ZERO_WEIGHT * point.max())
         point = point * np.exp(-budget @ np.log(point))
@@ -5066,12 +5371,14 @@ def get_random_weights(
     assets: pd.Index, seed: int | np.random.Generator | None = None
 ) -> pd.Series:
     """
-    Random weights drawn uniformly from all fully invested long-only portfolios, a flat
-    Dirichlet distribution with every concentration parameter 1 (Rubin, 1981), the
-    baseline an optimizer should beat out of sample.
+    Random weights drawn uniformly from all fully invested long-only portfolios.
 
-    See Rubin, D. B. (1981), "The Bayesian Bootstrap", The Annals of Statistics, 9(1),
-    130-134.
+    They follow a flat Dirichlet distribution with every concentration parameter 1 (Rubin,
+    1981), the baseline an optimizer should beat out of sample. See Rubin, D. B. (1981),
+    "The Bayesian Bootstrap", The Annals of Statistics, 9(1), 130-134.
+
+    Shares similar logic:
+    - skfolio, Random: https://skfolio.org/generated/skfolio.optimization.Random.html
 
     Args:
         assets (pd.Index): The assets of the portfolio.
@@ -5110,19 +5417,26 @@ def get_hierarchical_risk(
     minimum_acceptable_return: float | str = 0.0,
 ) -> np.ndarray:
     """
-    The risk of portfolios by which the hierarchical optimizers split their weight: the
-    variance w'Σw or the volatility √(w'Σw) of the covariance matrix, or a measure of
-    get_mean_risk_measure on the portfolio's returns X_t = r_t'w (per period, positive
-    for a loss), the measures Raffinot (2018) allocates HERC by and Riskfolio-Lib and
-    skfolio offer for HRP and HERC.
+    The risk of portfolios by which the hierarchical optimizers split their weight.
+
+    It is the variance w'Σw or the volatility √(w'Σw) of the covariance matrix, or a measure
+    of get_mean_risk_measure on the portfolio's returns X_t = r_t'w (per period, positive
+    for a loss), the measures Raffinot (2018) allocates HERC by.
 
     Args:
         weights (np.ndarray): The N × K weights of K portfolios, one column each.
         covariance (np.ndarray): The N × N covariance matrix.
         returns (np.ndarray | None, optional): The T × N returns, without missing values,
             for the measures besides the variance and volatility. Defaults to None.
-        risk_measure (str, optional): A key of HIERARCHICAL_RISK_MEASURES. Defaults to
-            "variance".
+        risk_measure (str, optional): The risk measure. Options are: "variance" (of the covariance
+            matrix), "volatility" (of the covariance matrix), "mad" (mean absolute deviation, Konno
+            and Yamazaki, 1991), "semideviation" (below the minimum acceptable return),
+            "lower_partial_moment" (first order), "worst_realization" (the worst return),
+            "gini_mean_difference" (Yitzhaki, 1982), "tail_gini" (Furman et al., 2017), "range" (the
+            best minus the worst return), "cvar_range" (the CVaR of the losses and of the gains),
+            "tail_gini_range" (the Tail Gini of the losses and of the gains), "ulcer_index" (of the
+            uncompounded cumulative return), "cvar" (Rockafellar and Uryasev, 2002), "cdar"
+            (Chekhlov et al., 2005). Defaults to "variance".
         alpha (float, optional): The tail probability of the tail measures, e.g. 0.05 for the worst 5% of
             periods. Defaults to 0.05.
         minimum_acceptable_return (float | str, optional): The threshold of the
@@ -5154,25 +5468,28 @@ def get_hierarchical_order(
 ) -> np.ndarray:
     """
     The order of the assets that Hierarchical Risk Parity bisects (López de Prado, 2016,
-    Stages 1 and 2): the leaves of the hierarchical clustering on the Euclidean distance
-    between the columns of the correlation distance matrix d = √((1 - ρ) / 2), so that
-    similar assets sit next to each other.
+    Stages 1 and 2).
 
-    With linkage_method="dbht", the leaves of the Directed Bubble Hierarchical Tree of
-    the distance d itself and the similarity (see get_dbht_linkage), as the DBHT works
-    on the graph of the distances rather than on a distance between their columns.
+    These are the leaves of the hierarchical clustering on the Euclidean distance between
+    the columns of the correlation distance matrix d = √((1 - ρ) / 2), so that similar
+    assets sit next to each other. With the Directed Bubble Hierarchical Tree as the
+    linkage, the leaves of the Directed Bubble Hierarchical Tree of the distance d itself
+    and the similarity (see get_dbht_linkage), as the DBHT works on the graph of the
+    distances rather than on a distance between their columns.
 
     Args:
         covariance (pd.DataFrame): The covariance matrix of the assets.
-        linkage_method (str, optional): The linkage of the hierarchical clustering.
-            Defaults to "single".
+        linkage_method (str, optional): The linkage of the hierarchical clustering. Options are:
+            "single" (single linkage), "complete" (complete linkage), "average" (average linkage),
+            "ward" (Ward's method), "dbht" (the Directed Bubble Hierarchical Tree of Song, Di Matteo
+            and Aste, 2012). Defaults to "single".
         correlation (pd.DataFrame | None, optional): The correlation matrix the assets
             are clustered on. Defaults to None, the correlation matrix of the covariance
             matrix.
         distance (pd.DataFrame | None, optional): The distance matrix the assets are
             clustered on, in place of the correlation distance. Defaults to None.
-        similarity (pd.DataFrame | None, optional): The similarity matrix of "dbht".
-            Defaults to None, 1 - d² of the distance.
+        similarity (pd.DataFrame | None, optional): The similarity matrix of the Directed Bubble
+            Hierarchical Tree. Defaults to None, 1 - d² of the distance.
 
     Returns:
         np.ndarray: The positions of the assets in the order of the leaves.
@@ -5212,18 +5529,23 @@ def get_hierarchical_order(
 
 def get_standardized_silhouette(distance: np.ndarray, labels: np.ndarray) -> float:
     """
-    The standardized silhouette of a clustering, the quality score q = E[S] / √V[S] of
-    López de Prado (2020, chapter 4) over the silhouette coefficients of Rousseeuw
-    (1987), S_i = (b_i - a_i) / max(a_i, b_i), with a_i the average distance of asset i to
-    the other assets of its cluster and b_i the smallest average distance to the assets of
-    another cluster (S_i = 0 for an asset alone in its cluster). As in the book, the
-    assets are the rows of the distance matrix, so the distances are the Euclidean
-    distances between those rows, and the variance has no degrees of freedom correction.
+    The standardized silhouette of a clustering: how well separated its clusters are.
+
+    It is the quality score q = E[S] / √V[S] of López de Prado (2020, chapter 4) over the
+    silhouette coefficients of Rousseeuw (1987), S_i = (b_i - a_i) / max(a_i, b_i), with a_i
+    the average distance of asset i to the other assets of its cluster and b_i the smallest
+    average distance to the assets of another cluster (S_i = 0 for an asset alone in its
+    cluster). As in the book, the assets are the rows of the distance matrix, so the
+    distances are the Euclidean distances between those rows, and the variance has no
+    degrees of freedom correction.
 
     See López de Prado, M. (2020), Machine Learning for Asset Managers, Cambridge
     University Press, and Rousseeuw, P. J. (1987), "Silhouettes: A Graphical Aid to the
     Interpretation and Validation of Cluster Analysis", Journal of Computational and
     Applied Mathematics, 20, 53-65.
+
+    Referenced against:
+    - scikit-learn, silhouette_samples: https://scikit-learn.org/stable/modules/generated/sklearn.metrics.silhouette_samples.html
 
     Args:
         distance (np.ndarray): The N × N distance matrix the assets are clustered on.
@@ -5249,13 +5571,14 @@ def get_schur_complementary_weights(
     similarity: pd.DataFrame | None = None,
 ) -> pd.Series:
     """
-    Schur Complementary Allocation (Cotton, 2024): Hierarchical Risk Parity whose splits
-    see the covariance between the two halves. HRP splits every cluster with the
-    covariance blocks A and D of its two halves and ignores the block B between them,
-    which the minimum variance portfolio w ∝ Σ⁻¹1 uses through the Schur complements of
-    the block inverse. Cotton writes the minimum variance weights of each half as a
-    scaled minimum variance portfolio of an augmented matrix and shrinks the step from A
-    to it with γ:
+    Schur Complementary Allocation (Cotton, 2024): Hierarchical Risk Parity whose splits see
+    the covariance between the two halves.
+
+    HRP splits every cluster with the covariance blocks A and D of its two halves and
+    ignores the block B between them, which the minimum variance portfolio w ∝ Σ⁻¹1 uses
+    through the Schur complements of the block inverse. Cotton writes the minimum variance
+    weights of each half as a scaled minimum variance portfolio of an augmented matrix and
+    shrinks the step from A to it with γ:
 
     - A_c = A - γ B D⁻¹ B', the Schur complement of D scaled by γ.
     - b = 1 - γ B D⁻¹ M' 1, with M the n_A × n_D step-up matrix that spreads the n_D assets
@@ -5273,20 +5596,23 @@ def get_schur_complementary_weights(
     A split of a cluster with a half of one asset uses no augmentation, as both halves
     are then a single asset or the augmentation has nothing to spread.
 
-    The correction as a matrix, with the step-up matrix for halves of unequal size, is
-    the form of Cotton's precise package and shares similar logic as skfolio's
-    SchurComplementary, which these weights equal with keep_monotonic=False.
+    The correction as a matrix, with the step-up matrix for halves of unequal size, is the
+    form of Cotton's precise package.
 
     See Cotton, P. (2024), "Schur Complementary Allocation: A Unification of
     Hierarchical Risk Parity and Minimum Variance Portfolios", arXiv 2411.05807.
+
+    Referenced against:
+    - skfolio, SchurComplementary: https://skfolio.org/generated/skfolio.optimization.SchurComplementary.html
 
     Args:
         covariance (pd.DataFrame): The covariance matrix of the assets.
         gamma (float, optional): How much of the covariance between the halves the splits
             use, from 0 (Hierarchical Risk Parity) to 1. Defaults to 0.5.
-        linkage_method (str, optional): The linkage of the hierarchical clustering, as
-            in Hierarchical Risk Parity, including "dbht". Defaults to "single", as in
-            Hierarchical Risk Parity.
+        linkage_method (str, optional): The linkage of the hierarchical clustering, as in
+            Hierarchical Risk Parity. Options are: "single" (single linkage), "complete" (complete
+            linkage), "average" (average linkage), "ward" (Ward's method), "dbht" (the Directed
+            Bubble Hierarchical Tree of Song, Di Matteo and Aste, 2012). Defaults to "single".
         minimum_weight (float | dict[str, float], optional): The lowest weight of every
             asset, or per asset ({"AAPL": 0.05}, the others 0). Defaults to 0.
         maximum_weight (float | dict[str, float], optional): The highest weight of every
@@ -5296,12 +5622,16 @@ def get_schur_complementary_weights(
             matrix.
         distance (pd.DataFrame | None, optional): The distance matrix the assets are
             clustered on, in place of the correlation distance. Defaults to None.
-        similarity (pd.DataFrame | None, optional): The similarity matrix of
-            linkage_method="dbht", e.g. from get_codependence_similarity. Defaults to
-            None, 1 - d² of the distance, (1 + ρ) / 2 for the correlation distance.
+        similarity (pd.DataFrame | None, optional): The similarity matrix of the Directed Bubble
+            Hierarchical Tree, e.g. from get_codependence_similarity. Defaults to None, 1 - d² of
+            the distance, (1 + ρ) / 2 for the correlation distance.
 
     Returns:
         pd.Series: The weight per asset.
+
+    Notes:
+    - skfolio's SchurComplementary can also keep the weights monotonic in γ; these weights
+      equal its weights without that adjustment.
     """
     if not 0 <= gamma <= 1:
         raise ValueError(f"Gamma must lie between 0 and 1, not {gamma}.")
@@ -5404,21 +5734,24 @@ def get_stacking_weights(
     folds: int | None = 5,
 ) -> tuple[pd.Series, pd.DataFrame, pd.Series]:
     """
-    Stacking (Wolpert, 1992) of portfolio optimizers: every method gives its weights, a
-    final method is optimized over the returns of the methods' portfolios as if they were
-    assets, and the weights are the methods' weights combined with the final method's,
-    w = W v, with W the N × K matrix of the K methods' weights and v the final weights.
+    Stacking (Wolpert, 1992) of portfolio optimizers.
 
-    The final method should learn how the portfolios do out of sample, not how well each
-    fits the periods it was optimized on. With folds, the periods are cut into that many
-    consecutive blocks, the methods are optimized on all periods outside a block and
-    their portfolios earn the returns of the block, so the final method sees returns
-    none of the portfolios was fitted on; this is a K-fold cross-validation without
-    shuffling (the cross_val_predict of skfolio's StackingOptimization). Without folds,
-    the final method is optimized on the in-sample returns R W. The weights of the methods
-    themselves are always optimized on all periods.
+    Every method gives its weights, a final method is optimized over the returns of the
+    methods' portfolios as if they were assets, and the weights are the methods' weights
+    combined with the final method's, w = W v, with W the N × K matrix of the K methods'
+    weights and v the final weights. The final method should learn how the portfolios do out
+    of sample, not how well each fits the periods it was optimized on. With folds, the
+    periods are cut into that many consecutive blocks, the methods are optimized on all
+    periods outside a block and their portfolios earn the returns of the block, so the final
+    method sees returns none of the portfolios was fitted on; this is a K-fold
+    cross-validation without shuffling. Without folds, the final method is optimized on the
+    in-sample returns R W. The weights of the methods themselves are always optimized on all
+    periods.
 
     See Wolpert, D. H. (1992), "Stacked Generalization", Neural Networks, 5(2), 241-259.
+
+    Referenced against:
+    - skfolio, StackingOptimization: https://skfolio.org/generated/skfolio.optimization.StackingOptimization.html
 
     Args:
         returns (pd.DataFrame): The returns per period, one column per asset, without
@@ -5470,10 +5803,11 @@ def get_stacking_weights(
 def get_diversification_ratio(weights: pd.Series, covariance: pd.DataFrame) -> float:
     """
     The diversification ratio of a portfolio (Choueifaty and Coignard, 2008): the weighted
-    average volatility of its assets divided by its volatility, w'σ / √(w'Σw). It is one
-    for a single asset or perfectly correlated assets and grows as the correlations fall;
-    its square is the number of independent risk factors a long-only portfolio holds
-    (Choueifaty, Froidure and Reynier, 2013).
+    average volatility of its assets divided by its volatility, w'σ / √(w'Σw).
+
+    It is one for a single asset or perfectly correlated assets and grows as the
+    correlations fall; its square is the number of independent risk factors a long-only
+    portfolio holds (Choueifaty, Froidure and Reynier, 2013).
 
     Args:
         weights (pd.Series): The weight per asset.
@@ -5500,9 +5834,13 @@ def get_maximum_diversification_weights(
 ) -> pd.Series:
     """
     The fully invested portfolio with the highest diversification ratio w'σ / √(w'Σw), the
-    most diversified portfolio of Choueifaty and Coignard (2008). The ratio is maximized
-    directly with SLSQP within the weight bounds, with its gradient
-    σ / √(w'Σw) - (w'σ) Σw / (w'Σw)^(3/2).
+    most diversified portfolio of Choueifaty and Coignard (2008).
+
+    The ratio is maximized directly with SLSQP within the weight bounds, with its gradient σ
+    / √(w'Σw) - (w'σ) Σw / (w'Σw)^(3/2).
+
+    Referenced against:
+    - skfolio, MaximumDiversification: https://skfolio.org/generated/skfolio.optimization.MaximumDiversification.html
 
     Args:
         covariance (pd.DataFrame): The covariance matrix of the assets.
@@ -5575,14 +5913,20 @@ def get_minimum_tracking_error_weights(
     risk_free_rate: float = 0.0,
 ) -> pd.Series:
     """
-    The fully invested portfolio closest to a benchmark (Roll, 1992): with the objective
-    "tracking_error", the one with the lowest tracking error, the volatility of its return
-    minus the benchmark's, TE²(w) = Var(R w - r_b) = w'Σ_AA w - 2 w'Σ_Ab + σ_b²; with
-    "information_ratio", the one with the highest information ratio, the expected active
-    return per unit of tracking error, (w'μ + (1 - Σw) r_f - μ_b) / TE(w). The part of
-    the portfolio that is not invested, 1 - Σw, is cash at the risk free rate (borrowed
-    at it above a net exposure of one), as in get_tracking_error; it has no risk, so it
-    leaves the tracking error as it is.
+    The fully invested portfolio closest to a benchmark (Roll, 1992).
+
+    With the tracking error objective, the one with the lowest tracking error, the
+    volatility of its return minus the benchmark's, TE²(w) = Var(R w - r_b) = w'Σ_AA w - 2
+    w'Σ_Ab + σ_b²; with the information ratio objective, the one with the highest
+    information ratio, the expected active return per unit of tracking error, (w'μ + (1 -
+    Σw) r_f - μ_b) / TE(w). The part of the portfolio that is not invested, 1 - Σw, is cash
+    at the risk free rate (borrowed at it above a net exposure of one), as in
+    get_tracking_error; it has no risk, so it leaves the tracking error as it is.
+
+    Referenced against:
+    - skfolio, BenchmarkTracker (tracking error): https://skfolio.org/generated/skfolio.optimization.BenchmarkTracker.html
+    - PyPortfolioOpt, objective_functions.ex_post_tracking_error (tracking error): https://pyportfolioopt.readthedocs.io/en/latest/MeanVariance.html#pypfopt.objective_functions.ex_post_tracking_error
+    - skfolio, MeanRisk (information ratio): https://skfolio.org/generated/skfolio.optimization.MeanRisk.html
 
     Args:
         expected_returns (pd.Series): The annualized expected return of the assets and the
@@ -5591,8 +5935,8 @@ def get_minimum_tracking_error_weights(
             benchmark.
         benchmark (str): The name of the benchmark in the expected returns and covariance
             matrix; it is not an asset of the portfolio.
-        objective (str, optional): "tracking_error" or "information_ratio". Defaults to
-            "tracking_error".
+        objective (str, optional): Options are: "tracking_error" (the lowest tracking error),
+            "information_ratio" (the highest information ratio). Defaults to "tracking_error".
         minimum_weight (float | dict[str, float], optional): The lowest weight of every
             asset, or per asset ({"AAPL": 0.05}, the others 0); a negative value allows
             a short position. Defaults to 0.
@@ -5691,11 +6035,13 @@ def get_tracking_error(
     risk_free_rate: float = 0.0,
 ) -> pd.Series:
     """
-    The expected active return, tracking error and information ratio of a portfolio
-    against a benchmark: w'μ + (1 - Σw) r_f - μ_b, √(w'Σ_AA w - 2 w'Σ_Ab + σ_b²) and
-    their ratio (Roll, 1992; Grinold and Kahn, 2000). The part of the portfolio that is
-    not invested, 1 - Σw, is cash at the risk free rate (borrowed at it above a net
-    exposure of one), as in get_portfolio_statistics.
+    The expected active return, tracking error and information ratio of a portfolio against
+    a benchmark.
+
+    W'μ + (1 - Σw) r_f - μ_b, √(w'Σ_AA w - 2 w'Σ_Ab + σ_b²) and their ratio (Roll, 1992;
+    Grinold and Kahn, 2000). The part of the portfolio that is not invested, 1 - Σw, is cash
+    at the risk free rate (borrowed at it above a net exposure of one), as in
+    get_portfolio_statistics.
 
     Args:
         weights (pd.Series): The weight per asset.
@@ -5750,14 +6096,17 @@ def get_growth_optimal_weights(
 ) -> pd.Series:
     """
     The growth optimal (Kelly) portfolio: the fully invested portfolio with the highest
-    expected logarithmic growth of wealth (Kelly, 1956; Breiman, 1961; Thorp, 2006). The
-    "exact" method maximizes the average log return over the historical returns,
-    (1/T) Σ ln(1 + r_t'w), with gradient (1/T) Σ r_t / (1 + r_t'w). The "approximate"
-    method maximizes its second-order approximation w'μ - ½ w'Σw, a mean-variance
-    portfolio with a risk aversion of one. Fractional Kelly scales the weights by the
-    fraction; the remainder (1 - fraction) is cash, or borrowed when the fraction is
-    above one. The constraints apply to the full Kelly portfolio, before the fraction
-    scales it.
+    expected logarithmic growth of wealth (Kelly, 1956; Breiman, 1961; Thorp, 2006).
+
+    The exact method maximizes the average log return over the historical returns, (1/T) Σ
+    ln(1 + r_t'w), with gradient (1/T) Σ r_t / (1 + r_t'w). The approximate method maximizes
+    its second-order approximation w'μ - ½ w'Σw, a mean-variance portfolio with a risk
+    aversion of one. Fractional Kelly scales the weights by the fraction; the remainder (1 -
+    fraction) is cash, or borrowed when the fraction is above one. The constraints apply to
+    the full Kelly portfolio, before the fraction scales it.
+
+    Referenced against:
+    - Riskfolio-Lib, Portfolio.optimization (Kelly criterion): https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/portfolio.html#Portfolio.Portfolio.optimization
 
     Args:
         returns (pd.DataFrame): The returns per period, one column per asset, for the
@@ -5767,7 +6116,8 @@ def get_growth_optimal_weights(
             covariance.
         covariance (pd.DataFrame): The covariance matrix of the assets, for the
             "approximate" method.
-        method (str, optional): "exact" or "approximate". Defaults to "exact".
+        method (str, optional): Options are: "exact" (the average log return of the historical
+            returns), "approximate" (its second-order approximation). Defaults to "exact".
         fraction (float, optional): The share of the growth optimal weights to hold, e.g.
             0.5 for half Kelly. Defaults to 1.
         minimum_weight (float | dict[str, float], optional): The lowest weight of every
@@ -5863,13 +6213,14 @@ def get_resampled_efficient_weights(
     maximum_turnover: float | None = None,
 ) -> pd.DataFrame:
     """
-    The weights of the resampled efficient portfolio (Michaud, 1998): the optimal weights
-    for many return histories that could have been drawn instead of the one observed,
-    whose average is the resampled portfolio. Each draw has as many periods as the
-    returns and comes from a normal distribution with the expected returns and
-    covariance ("parametric", as in Michaud), or is drawn with replacement from the
-    periods of the returns ("bootstrap", which keeps their fat tails and skew). The
-    expected returns and covariance of every draw are its sample mean and sample
+    The weights of the resampled efficient portfolio (Michaud, 1998).
+
+    These are the optimal weights for many return histories that could have been drawn
+    instead of the one observed, whose average is the resampled portfolio. Each draw has as
+    many periods as the returns and comes from a normal distribution with the expected
+    returns and covariance (the parametric draws of Michaud), or is drawn with replacement
+    from the periods of the returns (the bootstrap, which keeps their fat tails and skew).
+    The expected returns and covariance of every draw are its sample mean and sample
     covariance (ddof=1), annualized, and the objective is optimized on them within the
     constraints.
 
@@ -5884,28 +6235,30 @@ def get_resampled_efficient_weights(
     Scherer, B. (2002), "Portfolio Resampling: Review and Critique", Financial Analysts
     Journal, 58(6), 98-109.
 
+    Referenced against:
+    - Riskfolio-Lib, Portfolio.optimization (every draw): https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/portfolio.html#Portfolio.Portfolio.optimization
+
     Args:
-        returns (pd.DataFrame): The returns per period, one column per asset; their
-            number of periods sets that of every draw and, for "bootstrap", the draws
-            come from them.
-        expected_returns (pd.Series): The annualized expected returns the "parametric"
-            draws are centred on.
-        covariance (pd.DataFrame): The annualized covariance matrix of the "parametric"
-            draws.
+        returns (pd.DataFrame): The returns per period, one column per asset; their number of
+            periods sets that of every draw and, for the bootstrap, the draws come from them.
+        expected_returns (pd.Series): The annualized expected returns the parametric draws are
+            centred on.
+        covariance (pd.DataFrame): The annualized covariance matrix of the parametric draws.
         periods_per_year (int): The number of periods in a year, e.g. 252 for daily
             returns.
-        objective (str, optional): The portfolio of every draw: "maximum_sharpe",
-            "minimum_variance" or "mean_variance" (with the risk aversion). Defaults to
-            "maximum_sharpe".
+        objective (str, optional): The portfolio of every draw. Options are: "maximum_sharpe" (the
+            highest Sharpe ratio), "minimum_variance" (the lowest variance), "mean_variance" (the
+            utility with the risk aversion). Defaults to "maximum_sharpe".
         resamples (int, optional): The number of draws. Defaults to 500.
-        resampling (str, optional): How the draws are made: "parametric" or
-            "bootstrap". Defaults to "parametric".
+        resampling (str, optional): How the draws are made. Options are: "parametric" (drawn from a
+            normal distribution), "bootstrap" (drawn with replacement from the periods). Defaults to
+            "parametric".
         seed (int | None, optional): The seed of the random draws, so that the same seed
             gives the same weights. Defaults to 0; None draws anew every time.
         risk_free_rate (float, optional): The annualized risk free rate of the maximum
             Sharpe ratio. Defaults to 0.
-        risk_aversion (float, optional): The risk aversion of "mean_variance".
-            Defaults to 2.5.
+        risk_aversion (float, optional): The risk aversion of the mean-variance objective. Defaults
+            to 2.5.
         minimum_weight (float | dict[str, float], optional): The lowest weight of every
             asset, or per asset ({"AAPL": 0.05}, the others 0); a negative value allows
             a short position. Defaults to 0.
@@ -6020,11 +6373,15 @@ def get_black_litterman_returns(
     risk_free_rate: float | pd.Series = 0.0,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """
-    The Black-Litterman expected returns (Black and Litterman, 1992), as total returns,
-    and their posterior covariance matrix.
-    The prior is the return the market implies through its weights: the excess return
-    Π = δΣw at which holding the market is optimal (He and Litterman, 1999), plus the risk
-    free rate. Views move it towards the investor's expectations in proportion to their
+    The Black-Litterman expected returns (Black and Litterman, 1992), as total returns, and
+    their posterior covariance matrix.
+
+    It is the returns the market implies, moved towards the investor's views in proportion
+    to the confidence in them.
+
+    The prior is the return the market implies through its weights: the excess return Π =
+    δΣw at which holding the market is optimal (He and Litterman, 1999), plus the risk free
+    rate. Views move it towards the investor's expectations in proportion to their
     confidence. A view is absolute ("AAPL": 0.10, AAPL returns 10% a year in total) or
     relative ("AAPL-MSFT": 0.02, AAPL beats MSFT by 2%, which the risk free rate does not
     affect). Without a confidence, a view's uncertainty is the variance of the view
@@ -6048,6 +6405,10 @@ def get_black_litterman_returns(
           Incorporating User-Specified Confidence Levels." Working paper.
         - Walters, J. (2014). "The Black-Litterman Model in Detail."
           https://ssrn.com/abstract=1314585
+
+    Shares similar logic:
+    - PyPortfolioOpt, BlackLittermanModel: https://pyportfolioopt.readthedocs.io/en/latest/BlackLitterman.html#pypfopt.black_litterman.BlackLittermanModel
+    - Riskfolio-Lib, black_litterman: https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/parameters.html#ParamsEstimation.black_litterman
 
     Args:
         covariance (pd.DataFrame): The annualized covariance matrix.
@@ -6151,8 +6512,9 @@ def get_augmented_black_litterman_returns(
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """
     The augmented Black-Litterman expected returns of Cheung (2009), which take views on
-    factors next to (or instead of) views on assets. The assets and the factors are
-    stacked into one vector with the covariance matrix
+    factors next to (or instead of) views on assets.
+
+    The assets and the factors are stacked into one vector with the covariance matrix
 
     - Σ_a = [[Σ, B Σ_f], [Σ_f B', Σ_f]]
 
@@ -6165,14 +6527,15 @@ def get_augmented_black_litterman_returns(
     is added to the assets only: factor returns are excess returns already, so a factor
     view is a factor premium ("HML": 0.03, value beats growth by 3% a year).
 
-    Without factor views and with the factors left out, this is the Black-Litterman
-    model itself. Riskfolio-Lib's augmented_black_litterman adds the intercepts of the
-    loadings matrix to the posterior returns when it holds a constant; here the
-    intercepts are left out, as in Cheung (2009), where the equilibrium has no alpha.
+    Without factor views and with the factors left out, this is the Black-Litterman model
+    itself. The intercepts of the loadings are left out, as in Cheung (2009), where the
+    equilibrium has no alpha.
 
     See Cheung, W. (2009), "The Augmented Black-Litterman Model: A Ranking-Free Approach to
-    Factor-Based Portfolio Construction and Beyond", https://ssrn.com/abstract=1347648,
-    and Riskfolio-Lib's augmented_black_litterman (https://github.com/dcajasn/Riskfolio-Lib).
+    Factor-Based Portfolio Construction and Beyond", https://ssrn.com/abstract=1347648.
+
+    Referenced against:
+    - Riskfolio-Lib, augmented_black_litterman: https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/parameters.html#ParamsEstimation.augmented_black_litterman
 
     Args:
         covariance (pd.DataFrame): The annualized covariance matrix of the assets.
@@ -6197,6 +6560,11 @@ def get_augmented_black_litterman_returns(
         tuple[pd.DataFrame, pd.DataFrame]: The Implied Return and the Black-Litterman
             Return per asset, both annualized total returns, and the annualized posterior
             covariance matrix of the assets.
+
+    Notes:
+    - Unlike Riskfolio-Lib's augmented_black_litterman, which adds the intercepts of the
+      loadings matrix to the posterior returns when it holds a constant, the intercepts are
+      left out.
     """
     assets = covariance.index
     factor_names = factor_covariance.index
@@ -6238,27 +6606,26 @@ def get_bayesian_black_litterman_returns(
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """
     The Bayesian Black-Litterman expected returns of Kolm and Ritter (2017), which put the
-    views on the factors of a factor model r = α + B f + ε rather than on the assets. The
-    factor premiums have the prior N(μ_f, τ Σ_f), with μ_f the historical average factor
-    returns, and the views P μ_f = Q the uncertainty Ω_k = τ p_k'Σ_f p_k, scaled by
-    (1 - c) / c for a confidence c (as in get_black_litterman_returns). Their posterior is
+    views on the factors of a factor model r = α + B f + ε rather than on the assets.
+
+    The factor premiums have the prior N(μ_f, τ Σ_f), with μ_f the historical average factor
+    returns, and the views P μ_f = Q the uncertainty Ω_k = τ p_k'Σ_f p_k, scaled by (1 - c)
+    / c for a confidence c (as in get_black_litterman_returns). Their posterior is
 
     - Ŝ = τΣ_f - τΣ_f P'(P τΣ_f P' + Ω)⁻¹ P τΣ_f
     - Π̂ = μ_f + τΣ_f P'(P τΣ_f P' + Ω)⁻¹ (Q - P μ_f)
 
-    and the asset returns follow from the factor model: μ = α + B Π̂ and
-    Σ_post = B Σ_f B' + D + B Ŝ B', with D the residual variances. Referenced against
-    Riskfolio-Lib's black_litterman_bayesian, which inverts Σ to the same result: its Π_BLB = Σ_BLB S⁻¹ B (Ŝ⁻¹ +
-    B'S⁻¹B)⁻¹ Ŝ⁻¹ Π̂ equals B Π̂ and its Σ_BLB = (S⁻¹ - S⁻¹B(Ŝ⁻¹ + B'S⁻¹B)⁻¹B'S⁻¹)⁻¹ equals
-    S + B Ŝ B' (Woodbury). Riskfolio-Lib takes the prior N(μ_f, Σ_f) and Ω with τ = 1 / T;
-    with tau=1 and a confidence of T / (T + 1) for every view this gives its result.
+    and the asset returns follow from the factor model: μ = α + B Π̂ and Σ_post = B Σ_f B' +
+    D + B Ŝ B', with D the residual variances.
 
     Without views the prior is the factor model itself and μ is the average return of
     every asset (the OLS intercept makes the residuals average zero).
 
-    See Kolm, P. and Ritter, G. (2017), "On the Bayesian Interpretation of
-    Black-Litterman", European Journal of Operational Research, 258(2), 564-572, and
-    Riskfolio-Lib's black_litterman_bayesian (https://github.com/dcajasn/Riskfolio-Lib).
+    See Kolm, P. and Ritter, G. (2017), "On the Bayesian Interpretation of Black-Litterman",
+    European Journal of Operational Research, 258(2), 564-572.
+
+    Referenced against:
+    - Riskfolio-Lib, black_litterman_bayesian: https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/parameters.html#ParamsEstimation.black_litterman_bayesian
 
     Args:
         loadings (pd.DataFrame): The Intercept and the factor loadings per asset, annualized
@@ -6277,6 +6644,13 @@ def get_bayesian_black_litterman_returns(
         tuple[pd.DataFrame, pd.DataFrame]: The Prior Return (α + B μ_f) and the
             Black-Litterman Return per asset, annualized, and the annualized posterior
             covariance matrix.
+
+    Notes:
+    - Riskfolio-Lib's black_litterman_bayesian inverts Σ to the same result: its Π_BLB =
+      Σ_BLB S⁻¹ B (Ŝ⁻¹ + B'S⁻¹B)⁻¹ Ŝ⁻¹ Π̂ equals B Π̂ and its Σ_BLB = (S⁻¹ - S⁻¹B(Ŝ⁻¹ +
+      B'S⁻¹B)⁻¹B'S⁻¹)⁻¹ equals S + B Ŝ B' (Woodbury). It takes the prior N(μ_f, Σ_f) and Ω
+      with τ = 1 / T; a tau of 1 and a confidence of T / (T + 1) for every view give its
+      result.
     """
     if not factor_views:
         raise ValueError("The Bayesian Black-Litterman model needs views on factors.")
@@ -6338,11 +6712,12 @@ def get_market_implied_risk_aversion(
     benchmark_returns: pd.Series, periods_per_year: int, risk_free_rate: float = 0.0
 ) -> float:
     """
-    The risk aversion of the market, the excess return it earns per unit of variance:
-    δ = (E[r_m] - r_f) / σ²_m. A representative investor who holds the market is
-    indifferent to the next unit of risk at exactly this δ, which makes it the risk
-    aversion that the market implied returns Π = δΣw_mkt of Black and Litterman
-    (1992) are consistent with.
+    The risk aversion of the market, the excess return it earns per unit of variance: δ =
+    (E[r_m] - r_f) / σ²_m.
+
+    A representative investor who holds the market is indifferent to the next unit of risk
+    at exactly this δ, which makes it the risk aversion that the market implied returns Π =
+    δΣw_mkt of Black and Litterman (1992) are consistent with.
 
     E[r_m] is the average return per period of the benchmark times the number of periods
     in a year (arithmetic, not compounded) and σ²_m its variance per period (ddof=1)
@@ -6351,6 +6726,9 @@ def get_market_implied_risk_aversion(
     See Black, F. and Litterman, R. (1992), "Global Portfolio Optimization", Financial
     Analysts Journal, 48(5), 28-43, and Walters, J. (2014), "The Black-Litterman Model in
     Detail", https://ssrn.com/abstract=1314585.
+
+    Shares similar logic:
+    - PyPortfolioOpt, market_implied_risk_aversion: https://pyportfolioopt.readthedocs.io/en/latest/BlackLitterman.html#pypfopt.black_litterman.market_implied_risk_aversion
 
     Args:
         benchmark_returns (pd.Series): The returns per period of the benchmark.
@@ -6384,9 +6762,13 @@ def get_risk_contributions(
     weights: pd.Series, covariance: pd.DataFrame
 ) -> pd.DataFrame:
     """
-    How much each asset adds to the volatility of a portfolio (Euler allocation): the
-    marginal contribution ∂σ/∂w_i = (Σw)_i / σ, the risk contribution w_i times that, and
-    its share of the total, which sums to one.
+    How much each asset adds to the volatility of a portfolio (Euler allocation).
+
+    These are the marginal contribution ∂σ/∂w_i = (Σw)_i / σ, the risk contribution w_i
+    times that, and its share of the total, which sums to one.
+
+    Shares similar logic:
+    - Riskfolio-Lib, Risk_Contribution: https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/risk.html#RiskFunctions.Risk_Contribution
 
     Args:
         weights (pd.Series): The weight per asset.
@@ -6421,15 +6803,17 @@ def get_expected_shortfall_contributions(
 ) -> pd.DataFrame:
     """
     How much each asset adds to the historical expected shortfall (CVaR) of a portfolio
-    (Euler allocation). The expected shortfall is the average loss in the worst
-    1 - α share of the periods, ES = -Σ p_t r_p,t, with p_t the tail probabilities of
-    Rockafellar and Uryasev (2002): 1 / ((1 - α)T) for each of the ⌊(1 - α)T⌋ worst
-    periods of the portfolio and the remaining fraction of the tail for the next one.
-    Because it is homogeneous of degree one in the weights, its derivative per asset,
-    ∂ES/∂w_i = -Σ p_t r_i,t, times the weight gives contributions that add up to the
-    expected shortfall (Tasche, 2000; Scaillet, 2004). The tail periods are those of the
-    portfolio, so an asset that tends to gain when the portfolio loses contributes less
-    than its own expected shortfall, or a negative amount when it hedges.
+    (Euler allocation).
+
+    The expected shortfall is the average loss in the worst 1 - α share of the periods, ES =
+    -Σ p_t r_p,t, with p_t the tail probabilities of Rockafellar and Uryasev (2002): 1 /
+    ((1 - α)T) for each of the ⌊(1 - α)T⌋ worst periods of the portfolio and the remaining
+    fraction of the tail for the next one. Because it is homogeneous of degree one in the
+    weights, its derivative per asset, ∂ES/∂w_i = -Σ p_t r_i,t, times the weight gives
+    contributions that add up to the expected shortfall (Tasche, 2000; Scaillet, 2004). The
+    tail periods are those of the portfolio, so an asset that tends to gain when the
+    portfolio loses contributes less than its own expected shortfall, or a negative amount
+    when it hedges.
 
     The expected shortfall is the one the minimum CVaR and maximum CVaR ratio
     optimizations minimize and report, the average of the tail with a fraction of the
@@ -6438,6 +6822,9 @@ def get_expected_shortfall_contributions(
     See Tasche, D. (2000), "Conditional Expectations as Quantile Derivatives", arXiv
     math/0104190, and Scaillet, O. (2004), "Nonparametric Estimation and Sensitivity
     Analysis of Expected Shortfall", Mathematical Finance, 14(1), 115-129.
+
+    Referenced against:
+    - Riskfolio-Lib, Risk_Contribution (CVaR): https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/risk.html#RiskFunctions.Risk_Contribution
 
     Args:
         weights (pd.Series): The weight per asset.
@@ -6484,29 +6871,28 @@ def get_historical_risk_contributions(
     alpha: float = 0.05,
 ) -> pd.DataFrame:
     """
-    How much each asset adds to a risk measure of a portfolio's historical returns
-    (Euler allocation). Each measure is homogeneous of degree one in the weights, so the
-    weight times its derivative per asset, w_i ∂ρ/∂w_i, adds up to the portfolio's
-    measure (Tasche, 2000). With r_p,t = Σ w_i r_i,t the portfolio's return over T
-    periods:
+    How much each asset adds to a risk measure of a portfolio's historical returns (Euler
+    allocation).
 
-    - "semideviation": the downside deviation below a return of zero,
-      SD⁻ = √(Σ min(r_p,t, 0)² / T) (Sortino and Price, 1994), with
-      ∂SD⁻/∂w_i = Σ min(r_p,t, 0) r_i,t / (T SD⁻). An asset contributes by losing in the
-      periods in which the portfolio loses. The threshold stays at zero: a threshold
-      other than zero would not scale with the weights and the contributions would not
-      add up.
-    - "mad": the mean absolute deviation, MAD = Σ |r_p,t - μ_p| / T (Konno and
-      Yamazaki, 1991), with ∂MAD/∂w_i = Σ sign(r_p,t - μ_p)(r_i,t - μ_i) / T: an
-      asset contributes by moving with the portfolio's deviations from its mean.
-    - "cdar": the Conditional Drawdown at Risk, the average of the worst 1 - α share of
-      the drawdowns D_t = max_(s≤t) Y_s - Y_t of the uncompounded cumulative return
-      Y_t = Σ_(s≤t) r_p,s (from Y_0 = 0), weighted by the tail probabilities p_t of
-      Rockafellar and Uryasev (2002), the drawdowns the minimum drawdown optimization
-      minimizes (Chekhlov, Uryasev and Zabarankin, 2005). A drawdown is the sum of the
-      assets' drawdowns from the portfolio's peak s*(t), so
-      ∂CDaR/∂w_i = Σ p_t (C_i,s*(t) - C_i,t) with C_i the cumulative return of asset i
-      (Goldberg and Mahmoud, 2017).
+    Each measure is homogeneous of degree one in the weights, so the weight times its
+    derivative per asset, w_i ∂ρ/∂w_i, adds up to the portfolio's measure (Tasche, 2000).
+    With r_p,t = Σ w_i r_i,t the portfolio's return over T periods:
+
+    - The semideviation: the downside deviation below a return of zero, SD⁻ = √(Σ min(r_p,t,
+      0)² / T) (Sortino and Price, 1994), with ∂SD⁻/∂w_i = Σ min(r_p,t, 0) r_i,t / (T SD⁻).
+      An asset contributes by losing in the periods in which the portfolio loses. The
+      threshold stays at zero: a threshold other than zero would not scale with the weights
+      and the contributions would not add up.
+    - The mean absolute deviation, MAD = Σ |r_p,t - μ_p| / T (Konno and Yamazaki, 1991),
+      with ∂MAD/∂w_i = Σ sign(r_p,t - μ_p)(r_i,t - μ_i) / T: an asset contributes by moving
+      with the portfolio's deviations from its mean.
+    - The Conditional Drawdown at Risk, the average of the worst 1 - α share of the
+      drawdowns D_t = max_(s≤t) Y_s - Y_t of the uncompounded cumulative return Y_t =
+      Σ_(s≤t) r_p,s (from Y_0 = 0), weighted by the tail probabilities p_t of Rockafellar
+      and Uryasev (2002), the drawdowns the minimum drawdown optimization minimizes
+      (Chekhlov, Uryasev and Zabarankin, 2005). A drawdown is the sum of the assets'
+      drawdowns from the portfolio's peak s*(t), so ∂CDaR/∂w_i = Σ p_t (C_i,s*(t) - C_i,t)
+      with C_i the cumulative return of asset i (Goldberg and Mahmoud, 2017).
 
     The measures are per period (e.g. daily), like the downside deviation and mean
     absolute deviation of the Risk module, and not annualized.
@@ -6522,8 +6908,9 @@ def get_historical_risk_contributions(
     Args:
         weights (pd.Series): The weight per asset.
         returns (pd.DataFrame): The returns per period, one column per asset.
-        risk_measure (str, optional): "semideviation", "mad" or "cdar". Defaults to
-            "semideviation".
+        risk_measure (str, optional): The risk measure. Options are: "semideviation" (downside
+            deviation below zero), "mad" (mean absolute deviation), "cdar" (Conditional Drawdown at
+            Risk). Defaults to "semideviation".
         alpha (float, optional): The tail probability of the CDaR, e.g. 0.05 for the
             average of the worst 5% of drawdowns. Defaults to 0.05.
 
@@ -6609,16 +6996,24 @@ def get_risk_measure(
 ) -> pd.Series:
     """
     A risk measure of every column of returns (each a portfolio), from the Risk module's
-    measures, as a positive loss per period: the historical Value at Risk and Entropic
-    Value at Risk, the worst realization, the Gini mean difference, the Tail Gini, the
-    first lower partial moment below zero, the square root of the fourth central moment
-    (Riskfolio-Lib's "KT"), and the maximum and average drawdown, the Drawdown at Risk, the
-    Entropic Drawdown at Risk and the Ulcer Index of the uncompounded cumulative returns
-    (Riskfolio-Lib's absolute drawdowns), which scale with the weights.
+    measures, as a positive loss per period.
+
+    These are the historical Value at Risk and Entropic Value at Risk, the worst
+    realization, the Gini mean difference, the Tail Gini, the first lower partial moment
+    below zero, the square root of the fourth central moment (the kurtosis measure of
+    Riskfolio-Lib), and the maximum and average drawdown, the Drawdown at Risk, the Entropic
+    Drawdown at Risk and the Ulcer Index of the uncompounded cumulative returns (the
+    absolute drawdowns of Riskfolio-Lib), which scale with the weights.
 
     Args:
         returns (pd.DataFrame): The returns per period, one column per portfolio.
-        risk_measure (str): One of FINITE_DIFFERENCE_RISK_MEASURES.
+        risk_measure (str): The risk measure. Options are: "var" (historical Value at Risk), "evar"
+            (Entropic Value at Risk), "worst_realization" (the largest loss), "gini_mean_difference"
+            (Gini mean difference), "tail_gini" (Tail Gini), "lower_partial_moment" (first lower
+            partial moment below zero), "kurtosis" (square root of the fourth central moment),
+            "maximum_drawdown" (maximum drawdown), "average_drawdown" (average drawdown),
+            "drawdown_at_risk" (Drawdown at Risk), "entropic_drawdown_at_risk" (Entropic Drawdown at
+            Risk), "ulcer_index" (Ulcer Index).
         alpha (float, optional): The tail probability of the tail measures, e.g. 0.05 for the worst 5% of
             periods. Defaults to 0.05.
 
@@ -6671,14 +7066,15 @@ def get_finite_difference_risk_contributions(
 ) -> pd.DataFrame:
     """
     How much each asset adds to a risk measure of a portfolio's historical returns (Euler
-    allocation), with the derivative of the measure found by central finite differences,
-    as in Riskfolio-Lib's Risk_Contribution: ∂ρ/∂w_i ≈ (ρ(w + h e_i) - ρ(w - h e_i)) /
-    (2h), with h = 1e-7 (1e-4 for the entropic measures). A measure that is homogeneous of
-    order k in the weights satisfies Σ w_i ∂ρ/∂w_i = k ρ (Euler's theorem), so the risk
-    contribution w_i ∂ρ/∂w_i / k adds up to ρ (Tasche, 2000). The measures that are not
-    smooth (the Value at Risk, the worst realization, the drawdowns) have a derivative
-    almost everywhere: the measure follows the returns of a single period, or a few, and
-    the derivative is the return of each asset in those periods.
+    allocation), with the derivative of the measure found by central finite differences.
+
+    ∂ρ/∂w_i ≈ (ρ(w + h e_i) - ρ(w - h e_i)) / (2h), with h = 1e-7 (1e-4 for the entropic
+    measures). A measure that is homogeneous of order k in the weights satisfies Σ w_i
+    ∂ρ/∂w_i = k ρ (Euler's theorem), so the risk contribution w_i ∂ρ/∂w_i / k adds up to ρ
+    (Tasche, 2000). The measures that are not smooth (the Value at Risk, the worst
+    realization, the drawdowns) have a derivative almost everywhere: the measure follows the
+    returns of a single period, or a few, and the derivative is the return of each asset in
+    those periods.
 
     The measure is taken of the portfolio's returns, see get_risk_measure; every measure is
     per period (e.g. daily), not annualized.
@@ -6694,13 +7090,21 @@ def get_finite_difference_risk_contributions(
         factor is one up to the finite-difference error.
 
     See Tasche, D. (2000), "Conditional Expectations as Quantile Derivatives", arXiv
-    math/0104190, and Riskfolio-Lib's Risk_Contribution
-    (https://github.com/dcajasn/Riskfolio-Lib).
+    math/0104190.
+
+    Referenced against:
+    - Riskfolio-Lib, Risk_Contribution: https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/risk.html#RiskFunctions.Risk_Contribution
 
     Args:
         weights (pd.Series): The weight per asset.
         returns (pd.DataFrame): The returns per period, one column per asset.
-        risk_measure (str, optional): One of FINITE_DIFFERENCE_RISK_MEASURES. Defaults to
+        risk_measure (str, optional): The risk measure. Options are: "var" (historical Value at
+            Risk), "evar" (Entropic Value at Risk), "worst_realization" (the largest loss),
+            "gini_mean_difference" (Gini mean difference), "tail_gini" (Tail Gini),
+            "lower_partial_moment" (first lower partial moment below zero), "kurtosis" (square root
+            of the fourth central moment), "maximum_drawdown" (maximum drawdown), "average_drawdown"
+            (average drawdown), "drawdown_at_risk" (Drawdown at Risk), "entropic_drawdown_at_risk"
+            (Entropic Drawdown at Risk), "ulcer_index" (Ulcer Index). Defaults to
             "maximum_drawdown".
         alpha (float, optional): The tail probability of the tail measures, e.g. 0.05 for the worst 5% of
             periods. Defaults to 0.05.
@@ -6761,20 +7165,23 @@ def get_factor_risk_contributions(
     weights: pd.Series, loadings: pd.DataFrame, marginal_contributions: pd.Series
 ) -> pd.DataFrame:
     """
-    How much each factor of a factor model adds to the risk of a portfolio, the factor
-    risk contributions of Meucci (2009) and Roncalli and Weisang (2016), referenced against
-    Riskfolio-Lib's Factors_Risk_Contribution. With B the N × K loadings of the assets on the
-    factors, the portfolio's exposure to the factors is y = B'w, and the marginal risk of
-    a factor follows from the marginal risk of the assets m = ∂ρ/∂w through the
-    pseudo-inverse, ∂ρ/∂y = B⁺'m with B⁺ = pinv(B'). The risk contribution of factor f is
-    y_f (B⁺'m)_f. The part of the weights the factors do not span (the null space of B')
-    forms an Other factor, Σ (B̃'w) ∘ (B̃⁺'m) with B̃ = pinv(null(B')'), so the factor
-    contributions and Other add up to the risk measure, Σ w_i m_i.
+    How much each factor of a factor model adds to the risk of a portfolio, the factor risk
+    contributions of Meucci (2009) and Roncalli and Weisang (2016).
+
+    With B the N × K loadings of the assets on the factors, the portfolio's exposure to the
+    factors is y = B'w, and the marginal risk of a factor follows from the marginal risk of
+    the assets m = ∂ρ/∂w through the pseudo-inverse, ∂ρ/∂y = B⁺'m with B⁺ = pinv(B'). The
+    risk contribution of factor f is y_f (B⁺'m)_f. The part of the weights the factors do
+    not span (the null space of B') forms an Other factor, Σ (B̃'w) ∘ (B̃⁺'m) with B̃ =
+    pinv(null(B')'), so the factor contributions and Other add up to the risk measure, Σ w_i
+    m_i.
 
     See Meucci, A. (2009), "Managing Diversification", Risk, 22(5), 74-79; Roncalli, T. and
     Weisang, G. (2016), "Risk Parity Portfolios with Risk Factors", Quantitative Finance,
-    16(3), 377-388; and Riskfolio-Lib's Factors_Risk_Contribution
-    (https://github.com/dcajasn/Riskfolio-Lib).
+    16(3), 377-388.
+
+    Referenced against:
+    - Riskfolio-Lib, Factors_Risk_Contribution: https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/risk.html#RiskFunctions.Factors_Risk_Contribution
 
     Args:
         weights (pd.Series): The weight per asset.
@@ -6823,7 +7230,8 @@ def get_diversification_metrics(
     weights: pd.Series, covariance: pd.DataFrame
 ) -> pd.Series:
     """
-    How diversified a portfolio is, by its weights and by its risk.
+    How diversified a portfolio is, by how concentrated its weights are and by how many
+    independent sources its risk comes from.
 
     - Herfindahl-Hirschman Index: Σ w_i², the concentration of the weights, from 1/N for
       equal weights to 1 for a single asset.
@@ -6840,6 +7248,9 @@ def get_diversification_metrics(
     See Meucci, A. (2009), "Managing Diversification", Risk, 22(5), 74-79, and
     Choueifaty, Y. and Coignard, Y. (2008), "Toward Maximum Diversification", The Journal
     of Portfolio Management, 35(1), 40-51.
+
+    Referenced against:
+    - skfolio, Portfolio (diversification and effective_number_assets): https://skfolio.org/generated/skfolio.portfolio.Portfolio.html
 
     Args:
         weights (pd.Series): The weight per asset.
@@ -6887,23 +7298,23 @@ def get_discrete_allocation(
     method: str = "integer",
 ) -> pd.DataFrame:
     """
-    The whole number of shares per asset that comes closest to the weights for a
-    portfolio value, with the cash that is left over. The target amount of asset i is
-    t_i = w_i V, and n_i shares at a price p_i hold n_i p_i.
+    The whole number of shares per asset that comes closest to the weights for a portfolio
+    value, with the cash that is left over.
 
-    - "integer": the integer programme that minimizes the absolute deviation from the
-      target amounts with the leftover cash counted as a holding with a target of zero,
-      min Σ |t_i - n_i p_i| + c subject to Σ n_i p_i + c = V, c ≥ 0 and n_i whole, with
-      the absolute deviations written as d_i ≥ ±(t_i - n_i p_i), solved with branch and
-      bound (Cornuejols, Peña and Tütüncü, 2018, ch. 11). The amounts are rescaled for
-      the solver, and its allocation replaces the greedy one only when it deviates less,
-      so it is never further from the targets than "greedy".
-    - "greedy": every position is first rounded down to whole shares, ⌊t_i / p_i⌋, and
-      the leftover cash then buys one more share at a time of the asset furthest below
-      its target amount, while one is below it and its price fits the cash. A share of
-      an asset below its target never increases the total deviation, and after the
-      rounding each asset is less than one share below it, so this takes at most one
-      round per asset.
+    The target amount of asset i is t_i = w_i V, and n_i shares at a price p_i hold n_i p_i.
+
+    - The integer programme that minimizes the absolute deviation from the target amounts
+      with the leftover cash counted as a holding with a target of zero, min Σ |t_i - n_i
+      p_i| + c subject to Σ n_i p_i + c = V, c ≥ 0 and n_i whole, with the absolute
+      deviations written as d_i ≥ ±(t_i - n_i p_i), solved with branch and bound
+      (Cornuejols, Peña and Tütüncü, 2018, ch. 11). The amounts are rescaled for the solver,
+      and its allocation replaces the greedy one only when it deviates less, so it is never
+      further from the targets than the greedy allocation.
+    - The greedy allocation: every position is first rounded down to whole shares, ⌊t_i /
+      p_i⌋, and the leftover cash then buys one more share at a time of the asset furthest
+      below its target amount, while one is below it and its price fits the cash. A share of
+      an asset below its target never increases the total deviation, and after the rounding
+      each asset is less than one share below it, so this takes at most one round per asset.
 
     A short weight is held as a negative number of shares: rounding down makes a
     short position larger, so the proceeds never fall short of the long positions they
@@ -6918,11 +7329,16 @@ def get_discrete_allocation(
     See Cornuejols, G., Peña, J. and Tütüncü, R. (2018), "Optimization Methods in
     Finance", 2nd edition, Cambridge University Press.
 
+    Shares similar logic:
+    - PyPortfolioOpt, DiscreteAllocation.lp_portfolio (integer programme): https://pyportfolioopt.readthedocs.io/en/latest/Postprocessing.html#pypfopt.discrete_allocation.DiscreteAllocation.lp_portfolio
+    - PyPortfolioOpt, DiscreteAllocation.greedy_portfolio (greedy allocation): https://pyportfolioopt.readthedocs.io/en/latest/Postprocessing.html#pypfopt.discrete_allocation.DiscreteAllocation.greedy_portfolio
+
     Args:
         weights (pd.Series): The weight per asset, summing to one.
         prices (pd.Series): The price of one share per asset.
         portfolio_value (float, optional): The amount to invest. Defaults to 10000.
-        method (str, optional): "integer" or "greedy". Defaults to "integer".
+        method (str, optional): Options are: "integer" (the integer programme), "greedy" (the greedy
+            allocation). Defaults to "integer".
 
     Returns:
         pd.DataFrame: Per asset the Price, Shares, Amount (shares times price), Target
@@ -7101,9 +7517,10 @@ def get_critical_line_weights(
     maximum_weight: float | dict[str, float] = 1.0,
 ) -> pd.DataFrame:
     """
-    The corner portfolios of the efficient frontier with weight bounds and a budget,
-    computed exactly with the critical line algorithm (Markowitz, 1956), and the
-    minimum variance and maximum Sharpe ratio portfolios on that frontier.
+    The corner portfolios of the efficient frontier with weight bounds and a budget.
+
+    They are computed exactly with the critical line algorithm (Markowitz, 1956), next to
+    the minimum variance and maximum Sharpe ratio portfolios on that frontier.
 
     Every efficient portfolio minimizes ½ w'Σw - λ μ'w subject to Σ w_i = 1 and
     l_i ≤ w_i ≤ u_i for some λ ≥ 0. For a fixed split of the assets into free assets F
@@ -7129,6 +7546,9 @@ def get_critical_line_weights(
     Linear Constraints", Naval Research Logistics Quarterly, 3(1-2), 111-133, and
     Bailey, D. H. and López de Prado, M. (2013), "An Open-Source Implementation of the
     Critical-Line Algorithm for Portfolio Optimization", Algorithms, 6(1), 169-196.
+
+    Referenced against:
+    - PyPortfolioOpt, CLA: https://pyportfolioopt.readthedocs.io/en/latest/OtherOptimizers.html#pypfopt.cla.CLA
 
     Args:
         expected_returns (pd.Series): The annualized expected return per asset.
@@ -7322,15 +7742,17 @@ def get_worst_case_return(
 ) -> float:
     """
     The lowest expected return of a portfolio over an uncertainty set of the expected
-    returns centred on the estimate μ (Tütüncü and Koenig, 2004; Goldfarb and Iyengar,
-    2003), with Σ_μ the covariance of the estimate and α the confidence level:
+    returns centred on the estimate μ.
 
-    - "box": every expected return within μ_i ± δ_i, δ_i = z_(1+α)/2 √(Σ_μ,ii), the
-      two-sided confidence interval of each estimate on its own. The worst case is
-      μ'w - δ'|w|.
-    - "ellipsoid": the expected returns within (m - μ)'Σ_μ⁻¹(m - μ) ≤ κ², with
-      κ² = χ²_n(α), the joint confidence region of the n estimates. The worst case is
-      μ'w - κ √(w'Σ_μ w).
+    The set follows Tütüncü and Koenig, 2004; Goldfarb and Iyengar, 2003), with Σ_μ the
+    covariance of the estimate and α the confidence level:
+
+    - A box: every expected return within μ_i ± δ_i, δ_i = z_(1+α)/2 √(Σ_μ,ii), the
+      two-sided confidence interval of each estimate on its own. The worst case is μ'w -
+      δ'|w|.
+    - An ellipsoid: the expected returns within (m - μ)'Σ_μ⁻¹(m - μ) ≤ κ², with κ² =
+      χ²_n(α), the joint confidence region of the n estimates. The worst case is μ'w - κ
+      √(w'Σ_μ w).
 
     Args:
         weights (pd.Series): The weight per asset.
@@ -7338,7 +7760,8 @@ def get_worst_case_return(
         mean_covariance (pd.DataFrame): The covariance of the estimate of the expected
             returns, e.g. the covariance of the returns divided by the number of periods
             for the historical average, in the same units as the expected returns.
-        uncertainty (str, optional): "box" or "ellipsoid". Defaults to "box".
+        uncertainty (str, optional): The uncertainty set. Options are: "box" (a confidence interval
+            per estimate), "ellipsoid" (the joint confidence region). Defaults to "box".
         confidence_level (float, optional): The confidence level of the uncertainty set.
             Defaults to 0.95.
 
@@ -7381,20 +7804,21 @@ def get_worst_case_mean_variance_weights(
     maximum_turnover: float | None = None,
 ) -> pd.Series:
     """
-    The robust mean-variance portfolio that is optimal for the worst expected returns
-    within an uncertainty set around the estimate (Tütüncü and Koenig, 2004; Goldfarb
-    and Iyengar, 2003). The expected return μ'w of the mean-variance objectives is
-    replaced by its worst case R(w) over the set (see get_worst_case_return):
-    μ'w - δ'|w| for a box and μ'w - κ √(w'Σ_μ w) for an ellipsoid. Both are concave in
-    w, so the problems stay convex:
+    The robust mean-variance portfolio that is optimal for the worst expected returns around
+    the estimate.
 
-    - "maximum_sharpe": maximize (R(w) - n r_f) / √(w'Σw) with n = Σw the net exposure,
-      solved with the Charnes-Cooper transformation y = κw, κ ≥ 0 (Charnes and Cooper,
-      1962): maximize R(y) - n r_f κ subject to y'Σy ≤ 1 and the weight constraints
+    The uncertainty set follows Tütüncü and Koenig (2004) and Goldfarb and Iyengar (2003).
+
+    The expected return μ'w of the mean-variance objectives is replaced by its worst case
+    R(w) over the set (see get_worst_case_return): μ'w - δ'|w| for a box and μ'w - κ √(w'Σ_μ
+    w) for an ellipsoid. Both are concave in w, so the problems stay convex:
+
+    - The maximum Sharpe ratio: maximize (R(w) - n r_f) / √(w'Σw) with n = Σw the net
+      exposure, solved with the Charnes-Cooper transformation y = κw, κ ≥ 0 (Charnes and
+      Cooper, 1962): maximize R(y) - n r_f κ subject to y'Σy ≤ 1 and the weight constraints
       scaled by κ, then w = y / κ.
-    - "utility": maximize R(w) - (λ/2) w'Σw with λ the risk aversion.
-    - "minimum_variance": minimize w'Σw subject to R(w) + (1 - n) r_f ≥ the target
-      return.
+    - The utility: maximize R(w) - (λ/2) w'Σw with λ the risk aversion.
+    - The minimum variance: minimize w'Σw subject to R(w) + (1 - n) r_f ≥ the target return.
 
     The part of the portfolio that is not invested, 1 - n, is cash that earns the risk
     free rate without uncertainty (borrowed at it above a net exposure of one), as in
@@ -7411,17 +7835,23 @@ def get_worst_case_mean_variance_weights(
     Operations Research, 132, 157-187, and Goldfarb, D. and Iyengar, G. (2003), "Robust
     Portfolio Selection Problems", Mathematics of Operations Research, 28(1), 1-38.
 
+    Referenced against:
+    - Riskfolio-Lib, Portfolio.wc_optimization (box): https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/portfolio.html#Portfolio.Portfolio.wc_optimization
+    - skfolio, MeanRisk (with an EmpiricalMuUncertaintySet): https://skfolio.org/generated/skfolio.optimization.MeanRisk.html
+
     Args:
         expected_returns (pd.Series): The annualized expected return per asset.
         covariance (pd.DataFrame): The annualized covariance matrix.
         mean_covariance (pd.DataFrame): The covariance of the estimate of the expected
             returns, in the same units; for the annualized historical average it is the
             annualized covariance times the periods per year over the number of periods.
-        uncertainty (str, optional): "box" or "ellipsoid". Defaults to "box".
+        uncertainty (str, optional): The uncertainty set. Options are: "box" (a confidence interval
+            per estimate), "ellipsoid" (the joint confidence region). Defaults to "box".
         confidence_level (float, optional): The confidence level of the uncertainty set.
             Defaults to 0.95.
-        objective (str, optional): "maximum_sharpe", "utility" or "minimum_variance".
-            Defaults to "maximum_sharpe".
+        objective (str, optional): Options are: "maximum_sharpe" (the highest worst-case Sharpe
+            ratio), "utility" (the highest worst-case utility), "minimum_variance" (the lowest
+            variance at a worst-case target return). Defaults to "maximum_sharpe".
         risk_free_rate (float, optional): The annualized risk free rate. Defaults to 0.
         risk_aversion (float, optional): The risk aversion λ of the utility. Defaults to
             2.5.
@@ -7668,10 +8098,12 @@ def get_worst_case_mean_variance_weights(
 
 class WassersteinProgramme(NamedTuple):
     """
-    The rows of the distributionally robust mean-CVaR linear programme over the
-    variables (w, τ, λ, s, y): the weights w (n), the CVaR threshold τ, the multiplier
-    λ of the Wasserstein ball, the worst-case loss s_t per period (T) and the shifts
-    y_kj of the two loss pieces per asset (2n). The rows are A (w, τ, λ, s, y) ≤ 0.
+    The rows of the distributionally robust mean-CVaR linear programme over the variables
+    (w, τ, λ, s, y).
+
+    The variables are the weights w (n), the CVaR threshold τ, the multiplier λ of the
+    Wasserstein ball, the worst-case loss s_t per period (T) and the shifts y_kj of the two
+    loss pieces per asset (2n). The rows are A (w, τ, λ, s, y) ≤ 0.
     """
 
     cost: np.ndarray
@@ -7688,12 +8120,14 @@ def get_wasserstein_cvar_programme(
     mean_weight: float = 1.0,
 ) -> WassersteinProgramme:
     """
-    The linear programme of the worst-case expectation of
-    -m X + ρ (τ + max(-X - τ, 0) / α), with X = ξ'w the portfolio return, over
-    every distribution of the asset returns ξ within a type-1 Wasserstein ball of radius
-    ε around the T historical returns (Mohajerin Esfahani and Kuhn, 2018). The transport
-    cost is the 1-norm of the change in the returns, and returns cannot fall below -100%
-    (ξ ≥ -1). Minimized over τ it is the worst case of -m E[X] + ρ CVaR_α(-X).
+    The linear programme of the worst-case mean-CVaR objective within a Wasserstein ball.
+
+    It is the worst-case expectation of -m X + ρ (τ + max(-X - τ, 0) / α), with X = ξ'w the
+    portfolio return, over every distribution of the asset returns ξ within a type-1
+    Wasserstein ball of radius ε around the T historical returns (Mohajerin Esfahani and
+    Kuhn, 2018). The transport cost is the 1-norm of the change in the returns, and returns
+    cannot fall below -100% (ξ ≥ -1). Minimized over τ it is the worst case of -m E[X] + ρ
+    CVaR_α(-X).
 
     The loss is the maximum of two linear pieces ℓ_k(ξ) = c_k w'ξ + b_k τ, with
     c_1 = -m, b_1 = ρ, c_2 = -m - ρ / α and b_2 = ρ (1 - 1 / α), the pieces of
@@ -7809,12 +8243,13 @@ def get_worst_case_cvar(
     wasserstein_radius: float = 0.0005,
 ) -> float:
     """
-    The highest CVaR of a portfolio over every distribution of the asset returns within
-    a Wasserstein ball of radius ε around the historical returns, with the 1-norm as the
-    transport cost and returns of at least -100% (Mohajerin Esfahani and Kuhn, 2018).
-    It is the programme of get_wasserstein_cvar_programme with the weights fixed, without the
-    expected loss (m = 0) and with ρ = 1; at a radius of 0 it is the historical CVaR of
-    get_expected_tail_loss.
+    The highest CVaR of a portfolio over every distribution of the asset returns within a
+    Wasserstein ball of radius ε around the historical returns.
+
+    The transport cost is the 1-norm as the transport cost and returns of at least -100%
+    (Mohajerin Esfahani and Kuhn, 2018). It is the programme of
+    get_wasserstein_cvar_programme with the weights fixed, without the expected loss (m = 0)
+    and with ρ = 1; at a radius of 0 it is the historical CVaR of get_expected_tail_loss.
 
     Args:
         returns (pd.DataFrame): The returns per period, one column per asset.
@@ -7863,16 +8298,22 @@ def get_distributionally_robust_cvar_weights(
     maximum_turnover: float | None = None,
 ) -> pd.Series:
     """
-    The portfolio that minimizes the worst case of -E[X] + ρ CVaR_α(-X), with X the
-    portfolio return, over every distribution within a type-1 Wasserstein ball of radius
-    ε around the historical returns (Mohajerin Esfahani and Kuhn, 2018, Section 7.1),
-    solved exactly as one linear programme with HiGHS (see get_wasserstein_cvar_programme). At a
-    radius of 0 it is the historical mean-CVaR portfolio; a larger radius guards against
-    distributions that put more weight on losses than the sample did.
+    The portfolio with the lowest mean-CVaR objective under the least favourable
+    distribution near the historical returns.
+
+    It minimizes the worst case of -E[X] + ρ CVaR_α(-X), with X the portfolio return, over
+    every distribution within a type-1 Wasserstein ball of radius ε around the historical
+    returns (Mohajerin Esfahani and Kuhn, 2018, Section 7.1), solved exactly as one linear
+    programme with HiGHS (see get_wasserstein_cvar_programme). At a radius of 0 it is the
+    historical mean-CVaR portfolio; a larger radius guards against distributions that put
+    more weight on losses than the sample did.
 
     See Mohajerin Esfahani, P. and Kuhn, D. (2018), "Data-Driven Distributionally
     Robust Optimization Using the Wasserstein Metric: Performance Guarantees and
     Tractable Reformulations", Mathematical Programming, 171(1-2), 115-166.
+
+    Referenced against:
+    - skfolio, DistributionallyRobustCVaR: https://skfolio.org/generated/skfolio.optimization.DistributionallyRobustCVaR.html
 
     Args:
         returns (pd.DataFrame): The returns per period, one column per asset.

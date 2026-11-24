@@ -49,7 +49,7 @@ def get_truncated_variable(values: pd.DataFrame, variable: str) -> pd.DataFrame:
 
     Args:
         values (pd.DataFrame): The variable per ticker and period.
-        variable (str): The variable: "NI/TA", "TL/TA", "RELSIZE", "EXRET" or "SIGMA".
+        variable (str): The variable. Options are: "NI/TA", "TL/TA", "RELSIZE", "EXRET", "SIGMA".
 
     Returns:
         pd.DataFrame: The clipped variable.
@@ -65,8 +65,9 @@ def get_monthly_returns(
     months: int = 12,
 ) -> list[pd.DataFrame]:
     """
-    The simple returns of every month before a set of dates, where month k is the month
-    that ends k months before the date (k = 0 being the month that ends on the date itself).
+    The simple returns of every month before a set of dates, where month k is the month that
+    ends k months before the date (k = 0 being the month that ends on the date itself).
+
     A price is the last one on or before a day, at most ten days earlier.
 
     Args:
@@ -96,8 +97,10 @@ def get_excess_return(
     company_returns: list[pd.DataFrame], market_returns: list[pd.DataFrame]
 ) -> pd.DataFrame:
     """
-    The past excess return of Shumway (2001): the return of the company over the months
-    (cumulated from the monthly returns) minus the return of the market over the same months.
+    The past excess return of Shumway (2001).
+
+    It is the return of the company over the months (cumulated from the monthly returns)
+    minus the return of the market over the same months.
 
         - EXRET = Π (1 + r(month)) - Π (1 + m(month))
 
@@ -122,9 +125,11 @@ def get_residual_sigma(
     company_returns: list[pd.DataFrame], market_returns: list[pd.DataFrame]
 ) -> pd.DataFrame:
     """
-    The idiosyncratic volatility of Shumway (2001): the standard deviation of the residual of
-    a regression of the company's monthly returns on the market's monthly returns over the
-    months, the standard error of the regression:
+    The idiosyncratic volatility of Shumway (2001).
+
+    It is the standard deviation of the residual of a regression of the company's monthly
+    returns on the market's monthly returns over the months, the standard error of the
+    regression:
 
         - r(month) = a + b * m(month) + e(month)
         - SIGMA = sqrt(Σ e² / (N - 2))

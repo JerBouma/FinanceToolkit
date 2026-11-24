@@ -37,8 +37,9 @@ def get_latest_values(frame: pd.DataFrame | pd.Series) -> pd.Series:
 
 def get_harmonic_mean(values: pd.Series) -> float:
     """
-    The harmonic mean of the positive values, the average of a valuation multiple. A
-    multiple divides a price by a fundamental, so its arithmetic mean is dominated by the
+    The harmonic mean of the positive values, the average of a valuation multiple.
+
+    A multiple divides a price by a fundamental, so its arithmetic mean is dominated by the
     companies with the smallest earnings (or book value, or sales), such as a
     Price-to-Earnings ratio of 200 on earnings close to zero. The harmonic mean is the
     inverse of the average yield (the fundamental divided by the price), where these

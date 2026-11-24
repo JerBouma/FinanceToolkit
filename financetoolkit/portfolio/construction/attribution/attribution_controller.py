@@ -60,12 +60,13 @@ class AttributionConstruction:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculate how a portfolio would have fared in historical market crises: the return
-        of every asset and of the buy-and-hold portfolio from the start to the end of each
-        scenario, next to the benchmark. The default scenarios run from the peak to the
-        trough of the S&P 500: the Dot-com Crash, the Global Financial Crisis, the Euro
-        Area Debt Crisis, the 2015-2016 and 2018 Q4 sell-offs, the COVID-19 Crash and the
-        2022 Rate Shock.
+        Calculate how a portfolio would have fared in historical market crises.
+
+        It shows the return of every asset and of the buy-and-hold portfolio from the start to
+        the end of each scenario, next to the benchmark. The default scenarios run from the peak
+        to the trough of the S&P 500: the Dot-com Crash, the Global Financial Crisis, the Euro
+        Area Debt Crisis, the 2015-2016 and 2018 Q4 sell-offs, the COVID-19 Crash and the 2022
+        Rate Shock.
 
         The prices are retrieved for each scenario, so the scenarios do not have to fall
         within the Toolkit's date range.
@@ -237,12 +238,13 @@ class AttributionConstruction:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculate a portfolio's exposure after looking through its funds. An ETF's weight is
-        spread over its own sectors, countries or holdings, a stock counts fully towards its
-        own sector, country or itself, and everything is summed. It shows, for example, that
-        a portfolio of a technology ETF and Apple holds far more Apple and technology than
-        either position suggests. The benchmark's exposure and the difference (the active
-        exposure) are shown next to it when the benchmark is a fund.
+        Calculate a portfolio's exposure after looking through its funds.
+
+        An ETF's weight is spread over its own sectors, countries or holdings, a stock counts
+        fully towards its own sector, country or itself, and everything is summed. It shows, for
+        example, that a portfolio of a technology ETF and Apple holds far more Apple and
+        technology than either position suggests. The benchmark's exposure and the difference
+        (the active exposure) are shown next to it when the benchmark is a fund.
 
         Also known as: look-through analysis, underlying exposure, X-ray.
 
@@ -250,8 +252,8 @@ class AttributionConstruction:
             weights (dict[str, float] | None, optional): The weight per asset. Defaults to
                 None, which uses the latest weights of the Portfolio the Toolkit came from,
                 or equal weights.
-            by (str, optional): What to look through to: "sector", "country" or "holdings".
-                Defaults to "sector".
+            by (str, optional): What to look through to. Options are: "sector" (the sectors), "country" (the
+                countries), "holdings" (the holdings). Defaults to "sector".
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -339,9 +341,10 @@ class AttributionConstruction:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculate the Brinson-Fachler attribution of the portfolio's return over the
-        benchmark, by sector, over the Toolkit's date range. The excess return is split
-        into three effects per sector:
+        Calculate the Brinson-Fachler attribution of the portfolio's return over the benchmark,
+        by sector, over the Toolkit's date range.
+
+        The excess return is split into three effects per sector:
 
         - Allocation: the reward for overweighting sectors that beat the benchmark (and
           underweighting those that lagged).
@@ -403,13 +406,11 @@ class AttributionConstruction:
             weights (dict[str, float] | None, optional): The weight per asset at the start of
                 the date range. Defaults to None, which uses the latest weights of the
                 Portfolio the Toolkit came from, or equal weights.
-            period (str | None, optional): The sub-periods whose attributions are linked:
-                "weekly", "monthly", "quarterly" or "yearly", each ending on the last
-                trading day of the calendar period. Defaults to None, which attributes the
-                whole range as one period.
-            linking (str, optional): How the effects of the sub-periods are linked when a
-                period is given: "carino" (Cariño, 1999) or "menchero" (Menchero, 2000).
-                Defaults to "carino".
+            period (str | None, optional): The sub-periods whose attributions are linked, each ending on the last
+                trading day of the calendar period. Options are: "weekly", "monthly", "quarterly", "yearly". Defaults
+                to None, which attributes the whole range as one period.
+            linking (str, optional): How the effects of the sub-periods are linked when a period is given. Options
+                are: "carino" (Cariño, 1999), "menchero" (Menchero, 2000). Defaults to "carino".
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -690,10 +691,11 @@ class AttributionConstruction:
     ) -> pd.DataFrame:
         """
         Attribute the return of a portfolio in every period to factors, by default the five
-        factors of Fama and French (market, size, value, profitability and investment): the
-        part of the return its exposure to each factor explains, and the specific return
-        that is left. The loadings of the assets on the factors come from a regression over
-        the whole period (see get_factor_loadings), and the portfolio's exposure to a
+        factors of Fama and French (market, size, value, profitability and investment).
+
+        It shows the part of the return its exposure to each factor explains, and the specific
+        return that is left. The loadings of the assets on the factors come from a regression
+        over the whole period (see get_factor_loadings), and the portfolio's exposure to a
         factor is the weighted sum of its assets' loadings.
 
         - Exposure_f,t = Σ_i w_i,t β_i,f
@@ -718,26 +720,33 @@ class AttributionConstruction:
           edition, McGraw-Hill, chapter 17.
         - Fama, E. F. and French, K. R. (2015). "A Five-Factor Asset Pricing Model."
           Journal of Financial Economics, 116(1), 1-22.
-        - empyrical: perf_attrib, compute_exposures
-          (https://github.com/stefan-jansen/empyrical-reloaded).
-        - pyfolio: perf_attrib (https://github.com/stefan-jansen/pyfolio-reloaded).
 
         Also known as: performance attribution to risk factors, factor return attribution,
         returns-based attribution, common and specific returns.
+
+        Referenced against:
+        - empyrical, perf_attrib: https://github.com/stefan-jansen/empyrical-reloaded/blob/0.7.3/src/empyrical/perf_attrib.py#L5
+
+        Shares similar logic:
+        - empyrical, compute_exposures: https://github.com/stefan-jansen/empyrical-reloaded/blob/0.7.3/src/empyrical/perf_attrib.py#L139
+        - pyfolio, perf_attrib: https://github.com/stefan-jansen/pyfolio-reloaded/blob/0.9.9/src/pyfolio/perf_attrib.py#L29
 
         Args:
             weights (dict[str, float] | None, optional): The weight per asset. Defaults to
                 None, which uses the weights of the Portfolio the Toolkit came from over
                 time, or equal weights.
-            selection (str, optional): How the loadings are estimated: "ols", "forward",
-                "backward" or "pcr" (see get_factor_loadings). Defaults to "ols".
+            selection (str, optional): How the loadings are estimated (see get_factor_loadings). Options are: "ols"
+                (every factor), "forward" (forward selection), "backward" (backward selection), "pcr" (principal
+                components regression). Defaults to "ols".
             factors (pd.DataFrame | None, optional): The factor returns, one column per
                 factor, at the frequency of the period. Defaults to None, the Fama and
                 French five factors of the region.
-            region (str, optional): The region of the Fama and French factors. Defaults to
-                "United States".
-            period (str, optional): The frequency of the returns (daily, weekly, monthly,
-                quarterly or yearly). Defaults to "daily".
+            region (str, optional): The region of the Fama and French factors. Options are: "United States",
+                "Developed", "Developed ex US", "Europe", "Japan", "Asia Pacific ex Japan", "North America".
+                Defaults to "United States".
+            period (str, optional): The frequency of the returns. Options are: "daily" (daily returns), "weekly"
+                (weekly returns), "monthly" (monthly returns), "quarterly" (quarterly returns), "yearly" (yearly
+                returns). Defaults to "daily".
             include_benchmark (bool, optional): Whether to include the benchmark as an
                 asset. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to.
@@ -753,8 +762,7 @@ class AttributionConstruction:
             the factors all have a return.
 
         Notes:
-        - Equals empyrical's perf_attrib with the regression loadings for every period.
-          The loadings are estimated on the whole period, so the attribution of an early
+        - The loadings are estimated on the whole period, so the attribution of an early
           period uses information from later ones; it explains the past, it does not
           forecast.
 

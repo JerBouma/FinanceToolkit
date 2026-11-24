@@ -55,10 +55,12 @@ class ActivityEconomics:
         show_columns: str | list[str] | None = None,
     ):
         """
-        This consumer confidence indicator provides an indication of future developments of
-        households consumption and saving, based upon answers regarding their expected
-        financial situation, their sentiment about the general economic situation,
-        unemployment and capability of savings.
+        Get the Consumer Confidence Index of a variety of countries: how optimistic households are about the economy
+        and their own finances, and so how willing they are to spend.
+
+        This consumer confidence indicator provides an indication of future developments of households consumption and
+        saving, based upon answers regarding their expected financial situation, their sentiment about the general
+        economic situation, unemployment and capability of savings.
 
         An indicator above 100 signals a boost in the consumers’ confidence towards
         the future economic situation, as a consequence of which they are less prone
@@ -146,10 +148,12 @@ class ActivityEconomics:
         show_columns: str | list[str] | None = None,
     ):
         """
-        This business confidence indicator provides information on future developments,
-        based upon opinion surveys on developments in production, orders and stocks of
-        finished goods in the industry sector. It can be used to monitor output growth
-        and to anticipate turning points in economic activity.
+        Get the Business Confidence Index of a variety of countries: how optimistic manufacturers are about
+        production, orders and stocks, an early sign of turning points in output.
+
+        This business confidence indicator provides information on future developments, based upon opinion surveys on
+        developments in production, orders and stocks of finished goods in the industry sector. It can be used to
+        monitor output growth and to anticipate turning points in economic activity.
 
         Numbers above 100 suggest an increased confidence in near future business
         performance, and numbers below 100 indicate pessimism towards future performance.
@@ -233,10 +237,12 @@ class ActivityEconomics:
         show_columns: str | list[str] | None = None,
     ):
         """
-        The composite leading indicator (CLI) is designed to provide early signals
-        of turning points in business cycles showing fluctuation of the economic
-        activity around its long term potential level. CLIs show short-term economic
-        movements in qualitative rather than quantitative terms.
+        Get the Composite Leading Indicator (CLI) of a variety of countries: early signals of turning points in the
+        business cycle, with values above 100 pointing to growth above the long-term trend.
+
+        The composite leading indicator (CLI) is designed to provide early signals of turning points in business
+        cycles showing fluctuation of the economic activity around its long term potential level. CLIs show short-term
+        economic movements in qualitative rather than quantitative terms.
 
         The series returned is the OECD-harmonised, amplitude-adjusted index at monthly
         frequency, oscillating around a long-run average of 100: readings above 100 point to
@@ -330,10 +336,12 @@ class ActivityEconomics:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Share price indices are calculated from the prices of common shares of companies
-        traded on national or foreign stock exchanges. They are usually determined by the
-        stock exchange, using the closing daily values for the monthly data, and normally
-        expressed as simple arithmetic averages of the daily data.
+        Get the share price index of a variety of countries: how the prices of the shares traded on each country's
+        stock exchanges move over time.
+
+        Share price indices are calculated from the prices of common shares of companies traded on national or foreign
+        stock exchanges. They are usually determined by the stock exchange, using the closing daily values for the
+        monthly data, and normally expressed as simple arithmetic averages of the daily data.
 
         A share price index measures how the value of the stocks in the index is changing,
         a share return index tells the investor what their “return” is, meaning how much
@@ -352,9 +360,9 @@ class ActivityEconomics:
 
         Args:
             countries (list[str] | str | None, optional): The countries to include in the data. Defaults to None.
-            period (str | None, optional): Whether to return the monthly, quarterly or the annual data.
-                Defaults to None, which is quarterly when the Economics class was initialized with
-                quarterly=True and monthly otherwise.
+            period (str | None, optional): The frequency of the data. Options are: "monthly" (monthly data),
+                "quarterly" (quarterly data), "yearly" (yearly data). Defaults to None, which is quarterly when
+                the Economics class was initialized with quarterly=True and monthly otherwise.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
@@ -438,8 +446,8 @@ class ActivityEconomics:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Get Advance Retail Sales (Retail and Food Services) for the United States from
-        the Census Bureau.
+        Get the advance retail sales (retail and food services) of the United States from the Census Bureau: what
+        consumers spend in shops and restaurants each month.
 
         Retail Sales measures nominal spending at retail and food-service
         establishments. Since Personal Consumption Expenditures make up roughly
@@ -448,14 +456,14 @@ class ActivityEconomics:
         Bank of Atlanta's GDPNow.
 
         The series is monthly, in millions of US dollars, seasonally adjusted, and covers
-        retail trade and food services. It is nominal, so growth=True mixes volume and price
-        changes together. With inflation_adjusted=True the sales are deflated by the US
+        retail trade and food services. It is nominal, so its growth mixes volume and price
+        changes together. Adjusted for inflation, the sales are deflated by the US
         Consumer Price Index for All Urban Consumers, all items, of the same month (see
-        get_consumer_price_index), in the money of its latest month, so growth=True returns
+        get_consumer_price_index), in the money of its latest month, so their growth is
         the real change: the change in volume. The growth is taken of the deflated level,
         so the real growth equals (1 + nominal growth) / (1 + CPI growth) - 1 over the same
         months. The index is not seasonally adjusted, so the real change is best read over
-        12 months (lag=12), and a month without a published index, such as October 2025 or
+        12 months (a lag of 12), and a month without a published index, such as October 2025 or
         a month whose index is not released yet, has no real value.
 
         The formula is as follows:
@@ -463,8 +471,7 @@ class ActivityEconomics:
         - Real Retail Sales (t) = Retail Sales (t) * CPI (latest month) / CPI (t)
 
         Without a FRED API key the data comes from the Census Bureau directly, which gives
-        the same figures. When a FRED API key is set (see the `fred_api_key` parameter of
-        the `Economics` class), it comes from FRED.
+        the same figures. When a FRED API key is set on the Economics class, it comes from FRED.
 
         See definition: https://fred.stlouisfed.org/series/RSAFS
 
@@ -493,7 +500,7 @@ class ActivityEconomics:
         Returns:
             pd.DataFrame: A single-column ("United States") DataFrame of total retail
             and food services sales, in millions of dollars (of the latest month of the
-            consumer price index with inflation_adjusted=True).
+            consumer price index when adjusted for inflation).
 
         As an example:
 
@@ -577,8 +584,8 @@ class ActivityEconomics:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Get the Industrial Production Index for the United States from the Federal
-        Reserve's G.17 statistical release (via FRED).
+        Get the Industrial Production Index of the United States from the Federal Reserve's G.17 release: the real
+        output of manufacturing, mining and utilities.
 
         The Industrial Production Index measures real output in manufacturing,
         mining, and electric and gas utilities. Unlike survey-based sentiment
@@ -589,8 +596,8 @@ class ActivityEconomics:
         employment).
 
         Without a FRED API key the data comes from the Federal Reserve's G.17 release
-        directly, which gives the same figures. When a FRED API key is set (see the
-        `fred_api_key` parameter of the `Economics` class), it comes from FRED.
+        directly, which gives the same figures. When a FRED API key is set
+        on the Economics class, it comes from FRED.
 
         See definition: https://fred.stlouisfed.org/series/INDPRO
 
@@ -676,12 +683,14 @@ class ActivityEconomics:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Capacity utilization is the share of the productive capacity of industry that is
-        in use. Output close to capacity means firms have little slack: they raise prices
-        sooner and invest to expand, so a high utilization rate points to inflationary
-        pressure and future investment, while a low one points to slack and, with the
-        output gap (see get_output_gap), to an economy producing below its potential. It
-        moves with the business cycle alongside industrial production.
+        Get the capacity utilization of industry: how much of its productive capacity is in use, a sign of slack or of
+        inflationary pressure.
+
+        Capacity utilization is the share of the productive capacity of industry that is in use. Output close to
+        capacity means firms have little slack: they raise prices sooner and invest to expand, so a high utilization
+        rate points to inflationary pressure and future investment, while a low one points to slack and, with the
+        output gap (see get_output_gap), to an economy producing below its potential. It moves with the business cycle
+        alongside industrial production.
 
         The two publishers measure it differently, so compare each country with its own
         history rather than levels between the United States and Europe:
@@ -717,11 +726,11 @@ class ActivityEconomics:
 
         Args:
             countries (list[str] | str | None, optional): The countries to include in the data. Defaults to None.
-            period (str | None, optional): Whether to return the monthly or the quarterly data.
-                Defaults to None, which is monthly when only the United States, the one country
-                published monthly, is requested and quarterly otherwise (and quarterly when the
-                Economics class was initialized with quarterly=True). With period='monthly'
-                the other countries are left out with a warning.
+            period (str | None, optional): The frequency of the data. Options are: "monthly" (monthly data),
+                "quarterly" (quarterly data). Defaults to None, which is monthly when only the United States, the one
+                country published monthly, is requested and quarterly otherwise (and quarterly when the Economics
+                class was initialized with quarterly=True). With period='monthly' the other countries are left out
+                with a warning.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
@@ -849,8 +858,8 @@ class ActivityEconomics:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Get Housing Starts (Total New Privately-Owned Housing Units Started) for the
-        United States from the Census Bureau.
+        Get the housing starts (new privately-owned housing units started) of the United States from the Census
+        Bureau, a leading indicator of construction and the housing market.
 
         Housing Starts counts the number of new residential construction projects
         that have begun in a given month. Residential investment is one of the most
@@ -860,8 +869,7 @@ class ActivityEconomics:
         of the Conference Board's Leading Economic Index.
 
         Without a FRED API key the data comes from the Census Bureau directly, which gives
-        the same figures. When a FRED API key is set (see the `fred_api_key` parameter of
-        the `Economics` class), it comes from FRED.
+        the same figures. When a FRED API key is set on the Economics class, it comes from FRED.
 
         See definition: https://fred.stlouisfed.org/series/HOUST
 
@@ -948,8 +956,8 @@ class ActivityEconomics:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Get Real Personal Income Excluding Current Transfer Receipts for the United
-        States from the Bureau of Economic Analysis.
+        Get the real personal income excluding current transfer receipts of the United States from the Bureau of
+        Economic Analysis: the income households earn, adjusted for inflation.
 
         This is the exact series (not a proxy) the NBER's Business Cycle Dating
         Committee uses as one of its four primary coincident indicators for dating
@@ -963,8 +971,8 @@ class ActivityEconomics:
         during a downturn.
 
         Without a FRED API key the data comes from the Bureau of Economic Analysis
-        directly, which gives the same figures. When a FRED API key is set (see the
-        `fred_api_key` parameter of the `Economics` class), it comes from FRED.
+        directly, which gives the same figures. When a FRED API key is set
+        on the Economics class, it comes from FRED.
 
         See definition: https://fred.stlouisfed.org/series/W875RX1
 
@@ -1052,7 +1060,8 @@ class ActivityEconomics:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Get the NBER-based US Recession Indicator from FRED.
+        Get the NBER-based US recession indicator: 1 in the months the National Bureau of Economic Research dates as a
+        recession and 0 otherwise.
 
         This is the official US business-cycle chronology maintained by the
         National Bureau of Economic Research (NBER) Business Cycle Dating
@@ -1068,7 +1077,7 @@ class ActivityEconomics:
 
         Without a FRED API key the data comes from the NBER's business cycle dates
         directly, built the way FRED builds USREC, which gives the same figures. When a
-        FRED API key is set (see the `fred_api_key` parameter of the `Economics` class), it
+        FRED API key is set on the Economics class, it
         comes from FRED.
 
         See definition: https://fred.stlouisfed.org/series/USREC
@@ -1152,15 +1161,15 @@ class ActivityEconomics:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Get the Global Supply Chain Pressure Index (GSCPI) of the Federal Reserve Bank of New
-        York, monthly from 1998: one measure of the pressure on global supply chains,
-        combining 27 series. Shipping costs come from the Baltic Dry Index, the Harpex index
-        of container ship charter rates and the US Bureau of Labor Statistics air freight
-        price indices; the rest are the delivery times, backlogs and purchased stocks of the
-        manufacturing purchasing managers' surveys of the euro area, China, Japan, South
-        Korea, Taiwan, the United Kingdom and the United States. The index peaked in December
-        2021 at more than four standard deviations, when the reopening after COVID-19 met
-        congested ports, and is a common leading indicator of goods inflation.
+        Get the Global Supply Chain Pressure Index (GSCPI) of the Federal Reserve Bank of New York: how strained
+        global supply chains are, in standard deviations from their average, monthly from 1998.
+
+        The index combines 27 series. Shipping costs come from the Baltic Dry Index, the Harpex index of container
+        ship charter rates and the US Bureau of Labor Statistics air freight price indices; the rest are the delivery
+        times, backlogs and purchased stocks of the manufacturing purchasing managers' surveys of the euro area,
+        China, Japan, South Korea, Taiwan, the United Kingdom and the United States. The index peaked in December 2021
+        at more than four standard deviations, when the reopening after COVID-19 met congested ports, and is a common
+        leading indicator of goods inflation.
 
         Benigno, G., di Giovanni, J., Groen, J. J. J., & Noble, A. I. (2022). The GSCPI: A New
         Barometer of Global Supply Chain Pressures. Federal Reserve Bank of New York Staff
@@ -1248,13 +1257,13 @@ class ActivityEconomics:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Retrieves IMF PortWatch's daily ship transits through the world's maritime
-        chokepoints from 2019, such as the Strait of Hormuz, the Suez Canal, the Bab
-        el-Mandeb Strait, the Panama Canal, the Malacca Strait and the Bosporus, 28 in all.
-        For each chokepoint and day it gives the number of ships that passed it (transits)
-        or the estimated cargo they carried (trade volume, in metric tons), by ship
-        category: Container, Dry Bulk, General Cargo, Ro-Ro and Tanker, with Cargo (all
-        but tankers) and Total.
+        Get IMF PortWatch's daily ship transits through the world's maritime chokepoints from 2019: how much shipping
+        passes the Strait of Hormuz, the Suez Canal and 26 other straits and canals.
+
+        The 28 chokepoints also include the Bab el-Mandeb Strait, the Panama Canal, the Malacca Strait and the
+        Bosporus. For each chokepoint and day it gives the number of ships that passed it (transits) or the estimated
+        cargo they carried (trade volume, in metric tons), by ship category: Container, Dry Bulk, General Cargo, Ro-Ro
+        and Tanker, with Cargo (all but tankers) and Total.
 
         The transits show disruptions to trade as they happen, weeks before trade
         statistics are published: tankers through the Strait of Hormuz fell from 36 on 28
@@ -1282,11 +1291,11 @@ class ActivityEconomics:
                 of Hormuz" or ["Suez Canal", "Cape of Good Hope"], in any casing; a part of
                 a name that identifies one chokepoint, such as "Hormuz" or "Suez", works
                 too. Defaults to None, which returns all of them.
-            measure (str, optional): "transits" for the number of ships or "trade_volume"
-                for the estimated cargo they carried in metric tons. Defaults to
-                "transits".
-            period (str, optional): "daily", "weekly", "monthly", "quarterly" or "yearly".
-                Defaults to "daily".
+            measure (str, optional): What is counted. Options are: "transits" (the number of ships),
+                "trade_volume" (the estimated cargo they carried in metric tons). Defaults to "transits".
+            period (str, optional): The frequency of the data, the sum over each period. Options are: "daily"
+                (daily data), "weekly" (weekly data), "monthly" (monthly data), "quarterly" (quarterly data),
+                "yearly" (yearly data). Defaults to "daily".
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the rounding of the Economics class.
             growth (bool, optional): Whether to calculate the growth. Defaults to False.
@@ -1446,15 +1455,16 @@ class ActivityEconomics:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Returns the scheduled releases of economic data for every country, such as
-        inflation, employment, GDP and central bank decisions. Each release comes with
-        its previous value, the consensus estimate and, once published, the actual value
-        and the change. The estimate versus the actual value is what moves markets: a
-        release far from the consensus tends to cause the largest reaction.
+        Get the scheduled releases of economic data for every country, such as inflation, employment, GDP and central
+        bank decisions, with the consensus estimate and the actual value.
+
+        Each release comes with its previous value, the consensus estimate and, once published, the actual value and
+        the change. The estimate versus the actual value is what moves markets: a release far from the consensus tends
+        to cause the largest reaction.
 
         The calendar covers well over a hundred countries, so it is best narrowed down:
         select a date range and filter by country, currency, impact and/or event. Filtering
-        on events="PMI" gives the latest purchasing managers' indices with their consensus,
+        on the PMI events gives the latest purchasing managers' indices with their consensus,
         figures that are otherwise only available as licensed data. The "Impact"
         column rates how much a release usually moves the market (Low, Medium or High).
         The "Unit" column gives the unit of each release. Releases quoted in percent (for
@@ -1469,10 +1479,9 @@ class ActivityEconomics:
         release before it, e.g. after a revision.
 
         The calendar comes from FinancialModelingPrep and starts in 2013 for most
-        countries; the first release of a series is the first period of its as_series
-        answer.
+        countries; the first release of a series is the first period of its time series.
 
-        With as_series=True the releases become time series: the Actual value of every
+        Returned as time series, the releases give the Actual value of every
         event by the period it covers, with a column per country and event and the
         consensus Estimate next to it ("<event> Estimate"). The calendar only names the
         period in the event, e.g. "Producer Price Index YoY (Oct)", so the period is read
@@ -1487,14 +1496,14 @@ class ActivityEconomics:
         period, of an event that otherwise has one, is left out. The index is monthly for
         monthly events, quarterly for quarterly ones and
         daily, at the last day of each period, when events of different frequencies are
-        combined. The series can be analysed further with `Econometrics(data=...)`, e.g. how
+        combined. The series can be analysed further with the Econometrics class, e.g. how
         unusual the latest value is (get_level_significance) or how long it has been above or
         below zero (get_streaks).
 
-        Without a start_date and end_date the dates this Economics instance was created
+        Without a start date and end date the dates this Economics instance was created
         with are used, and without those the last 90 days. The endpoint returns at most 90
         days per request, so a longer range is retrieved in 90-day windows. This requires a
-        FinancialModelingPrep API key, passed via api_key when initializing.
+        FinancialModelingPrep API key, passed when initializing.
 
         Also known as: economic calendar, macro calendar, economic releases.
 
@@ -1508,8 +1517,9 @@ class ActivityEconomics:
                 Defaults to None, which keeps every country.
             currencies (str | list[str], optional): The currencies to keep, e.g. "USD" or
                 ["USD", "EUR"]. Defaults to None, which keeps every currency.
-            impact (str | list[str], optional): The market impact to keep: "Low", "Medium"
-                and/or "High", or "All" for every release. Defaults to None, which keeps every release.
+            impact (str | list[str], optional): The market impact to keep, one or a list of them. Options
+                are: "Low" (low impact), "Medium" (medium impact), "High" (high impact), "All" (every
+                release). Defaults to None, which keeps every release.
             events (str | list[str], optional): Parts of event names to keep, matched without
                 regard to case, e.g. "PMI" for every purchasing managers' index or ["CPI",
                 "Unemployment"]. Defaults to None, which keeps every event.
@@ -1522,7 +1532,7 @@ class ActivityEconomics:
                 exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
-            pd.DataFrame: The economic data releases, indexed by date, or with as_series=True
+            pd.DataFrame: The economic data releases, indexed by date, or as time series
             the values of every event by the period they cover.
 
         As an example:

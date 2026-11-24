@@ -58,7 +58,8 @@ def get_scenario_set_link(measure: str) -> tuple[str, str]:
     Finds the latest scenario set of a measure on DNB's page.
 
     Args:
-        measure (str): "real_world" or "market_consistent".
+        measure (str): The probability measure. Options are: "real_world" (the P-set), "market_consistent" (the
+            Q-set).
 
     Returns:
         tuple[str, str]: The link and the quarter it is for (e.g. "2026Q3").
@@ -181,12 +182,15 @@ def _zero_rates(
 
 def get_scenario_set(measure: str) -> pd.DataFrame:
     """
-    Retrieves the latest scenario set of a measure: for every one of the 20,000 scenarios
-    and every year of the 100-year horizon, the nominal zero rates, the euro area real zero
-    rate, the equity return and the price inflation of the euro area and the Netherlands.
+    Retrieve DNB's latest scenario set of a measure: 20,000 simulated paths over 100 years of the nominal and real
+    zero rates, the equity return and price inflation.
+
+    For every scenario and every year of the horizon it holds the nominal zero rates, the euro area real zero rate,
+    the equity return and the price inflation of the euro area and the Netherlands.
 
     Args:
-        measure (str): "real_world" or "market_consistent".
+        measure (str): The probability measure. Options are: "real_world" (the P-set), "market_consistent" (the
+            Q-set).
 
     Returns:
         pd.DataFrame: The variables as decimals, indexed by the year of the horizon (0 is

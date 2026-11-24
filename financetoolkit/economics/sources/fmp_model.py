@@ -64,9 +64,10 @@ def get_economic_calendar(
     user_subscription: str = "Free",
 ) -> pd.DataFrame:
     """
-    Get the scheduled releases of economic data (such as inflation, employment and GDP
-    figures) with the previous value, the consensus estimate and, once published, the
-    actual value, optionally narrowed down to specific countries, currencies and impact.
+    Get the scheduled releases of economic data, such as inflation, employment and GDP figures, with the previous
+    value, the consensus estimate and the actual value.
+
+    The releases can be narrowed down to specific countries, currencies and impact.
 
     The endpoint returns at most 90 days per request, so a longer range is retrieved in
     90-day windows. Each window is cached the same way as the discovery calendars, since
@@ -82,8 +83,9 @@ def get_economic_calendar(
             or codes ("US"), in a list or comma-separated. Defaults to None, which keeps all.
         currencies (str | list[str], optional): The currencies to keep, e.g. "USD" or
             ["USD", "EUR"]. Defaults to None, which keeps all.
-        impact (str | list[str], optional): The market impact to keep: "Low", "Medium" and/or
-            "High", or "All" for every release. Defaults to None, which keeps all.
+        impact (str | list[str], optional): The market impact to keep, one or a list of them. Options are: "Low" (low
+            impact), "Medium" (medium impact), "High" (high impact), "All" (every release). Defaults to None, which
+            keeps all.
         events (str | list[str], optional): Parts of event names to keep, matched without
             regard to case, e.g. "PMI" or ["CPI", "Unemployment"]. Defaults to None, which
             keeps every event.
@@ -279,9 +281,8 @@ MONTHS_PUBLISHED_AHEAD = 1
 
 def get_reference_period(event: str, release: pd.Timestamp) -> tuple[str, pd.Period]:
     """
-    Reads the event and the period a release covers from the event name of the economic
-    calendar, e.g. "Producer Price Index YoY (Oct)" released on 2026-11-09 is the
-    Producer Price Index YoY of October 2026.
+    Reads the event and the period a release covers from the event name of the economic calendar, e.g. "Producer Price
+    Index YoY (Oct)" released on 2026-11-09 is the Producer Price Index YoY of October 2026.
 
     The name only gives the month or quarter, so the year is the one that puts the period
     between ten months before and one month after the release month. Most releases cover
@@ -389,9 +390,8 @@ def _merge_joint_releases(releases: pd.DataFrame) -> pd.DataFrame:
 
 def get_economic_calendar_series(economic_calendar: pd.DataFrame) -> pd.DataFrame:
     """
-    Arranges the releases of the economic calendar as time series: the Actual value of
-    every event by the period it covers, with a column per country and event, and the
-    consensus Estimate next to it ("<event> Estimate").
+    Arranges the releases of the economic calendar as time series: the Actual value of every event by the period it
+    covers, with a column per country and event, and the consensus Estimate next to it ("<event> Estimate").
 
     The period is read from the event name (see get_reference_period). Several releases
     of the same period, such as a flash estimate followed by the final figure, keep the

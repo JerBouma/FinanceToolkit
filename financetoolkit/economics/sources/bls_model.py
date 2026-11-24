@@ -171,9 +171,8 @@ def get_unemployment_rate() -> pd.DataFrame:
 
 def get_nonfarm_payrolls() -> pd.DataFrame:
     """
-    Retrieves the latest months of total nonfarm payroll employment, in thousands of
-    persons and seasonally adjusted (series CES0000000001), the headline figure of the
-    monthly Employment Situation report.
+    Retrieves the latest months of total nonfarm payroll employment, in thousands of persons and seasonally adjusted
+    (series CES0000000001), the headline figure of the monthly Employment Situation report.
 
     The BLS API returns about the last three years, so the full history, from
     1939, requires a FRED API key.
@@ -200,10 +199,11 @@ def get_nonfarm_payrolls() -> pd.DataFrame:
 
 def get_job_openings_rate() -> pd.DataFrame:
     """
-    Retrieves the latest months of the US job openings rate of total nonfarm, seasonally
-    adjusted (series JTS000000000000000JOR), from the Job Openings and Labor Turnover
-    Survey (JOLTS): the job openings on the last business day of the month as a share of
-    employment plus job openings.
+    Retrieve the latest months of the US job openings rate from the Job Openings and Labor Turnover Survey (JOLTS):
+    the job openings as a share of employment plus job openings.
+
+    The rate covers total nonfarm, seasonally adjusted (series JTS000000000000000JOR), with the job openings on the
+    last business day of the month.
 
     The BLS API returns about the last three years, so the full history, from December
     2000, requires a FRED API key.
@@ -221,15 +221,15 @@ def get_job_openings_rate() -> pd.DataFrame:
 
 def get_price_index(measure: str) -> pd.DataFrame:
     """
-    Retrieves the latest months of a US price index, not seasonally adjusted: the
-    Producer Price Index for final demand (series WPUFD4), or the export or import price
-    index of all commodities (series EIUIQ and EIUIR).
+    Retrieves the latest months of a US price index, not seasonally adjusted: the Producer Price Index for final
+    demand (series WPUFD4), or the export or import price index of all commodities (series EIUIQ and EIUIR).
 
     The BLS API returns about the last three years, so the full history requires
     a FRED API key.
 
     Args:
-        measure (str): "producer", "export" or "import".
+        measure (str): The price index. Options are: "producer" (producer price index), "export" (export price index),
+            "import" (import price index).
 
     Returns:
         pd.DataFrame: A single "United States" column indexed by month.
@@ -241,11 +241,12 @@ def get_price_index(measure: str) -> pd.DataFrame:
 
 def get_consumer_price_index() -> pd.DataFrame:
     """
-    Retrieves the latest months of the US Consumer Price Index for All Urban Consumers
-    (CPI-U), not seasonally adjusted, 1982-84 = 100: all items, the core index (all items
-    less food and energy), energy, food, goods (commodities), services and shelter, in a
-    single request. The BLS publishes a month at 8:30 ET on its release day, before any
-    other source.
+    Retrieve the latest months of the US Consumer Price Index for All Urban Consumers (CPI-U): all items, the core
+    index and the main components, 1982-84 = 100.
+
+    The index is not seasonally adjusted; the components are the core index (all items less food and energy), energy,
+    food, goods (commodities), services and shelter, retrieved in a single request. The BLS publishes a month at 8:30
+    ET on its release day, before any other source.
 
     The BLS API returns about the last three years, so the full history requires
     a FRED API key.

@@ -1545,9 +1545,14 @@ def get_downside_deviation(
                 else np.nan
             )
 
-        shortfalls = (returns - minimum_acceptable_return).clip(upper=0)
-
-        return np.sqrt((shortfalls**2).mean())
+        # The downside deviation of a single return is its shortfall, so one observation is enough.
+        return get_partial_moment(
+            returns,
+            order=2,
+            minimum_acceptable_return=minimum_acceptable_return,
+            root=True,
+            minimum_observations=1,
+        )
 
     raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
 
@@ -1591,9 +1596,14 @@ def get_rolling_downside_deviation(
             ),
         )
 
-    shortfalls = (returns - minimum_acceptable_return).clip(upper=0)
-
-    return np.sqrt((shortfalls**2).rolling(window=window_size).mean())
+    return get_partial_moment(
+        returns,
+        order=2,
+        minimum_acceptable_return=minimum_acceptable_return,
+        root=True,
+        window_size=window_size,
+        minimum_observations=1,
+    )
 
 
 def get_partial_moment(
@@ -1603,6 +1613,7 @@ def get_partial_moment(
     side: str = "lower",
     root: bool = False,
     window_size: int | None = None,
+    minimum_observations: int = MINIMUM_QUANTILE_OBSERVATIONS,
 ) -> pd.Series | pd.DataFrame | float:
     """
     Calculate the lower or upper partial moment of returns around a minimum acceptable
@@ -1628,6 +1639,8 @@ def get_partial_moment(
             above. Defaults to "lower".
         root (bool, optional): Whether to take the order-th root. Defaults to False.
         window_size (int | None, optional): The size of the rolling window. Defaults to None.
+        minimum_observations (int, optional): The returns a column or period needs, fewer give
+            NaN. Defaults to 2.
 
     Returns:
         pd.Series | pd.DataFrame | float: The partial moment, see `apply_to_observations`.
@@ -1656,7 +1669,9 @@ def get_partial_moment(
 
         return moment ** (1 / order) if root else moment
 
-    return apply_to_observations(returns, partial_moment, window_size)
+    return apply_to_observations(
+        returns, partial_moment, window_size, minimum_observations
+    )
 
 
 def get_volatility_skewness(

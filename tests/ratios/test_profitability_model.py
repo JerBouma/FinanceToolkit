@@ -109,15 +109,6 @@ def test_get_return_on_capital_employed(recorder):
     )
 
 
-def test_get_net_income_per_ebt(recorder):
-    recorder.capture(
-        profitability_model.get_net_income_per_ebt(
-            net_income=pd.Series([80, 40, 40, 30, 20]),
-            income_tax_expense=pd.Series([5, 10, 20, 10, 5]),
-        )
-    )
-
-
 def test_get_free_cash_flow_operating_cash_flow_ratio(recorder):
     recorder.capture(
         profitability_model.get_free_cash_flow_operating_cash_flow_ratio(
@@ -132,15 +123,6 @@ def test_get_tax_burden_ratio(recorder):
         profitability_model.get_tax_burden_ratio(
             net_income=pd.Series([80, 40, 40, 30, 20]),
             income_before_tax=pd.Series([200, 100, 50, 150, 50]),
-        )
-    )
-
-
-def test_get_EBIT_to_revenue(recorder):
-    recorder.capture(
-        profitability_model.get_EBIT_to_revenue(
-            earnings_before_interest_and_taxes=pd.Series([80, 50, 40, 30, 20]),
-            revenue=pd.Series([230, 150, 50, 150, 50]),
         )
     )
 

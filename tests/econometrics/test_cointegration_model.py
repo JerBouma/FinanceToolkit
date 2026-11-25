@@ -186,3 +186,28 @@ def test_get_engle_granger_cointegration_matches_statsmodels_coint():
                 ].to_numpy(dtype=float),
                 critical_values,
             )
+
+
+def test_the_tests_run_without_the_mackinnon_functions_in_stattools(monkeypatch):
+    # statsmodels 0.15 no longer has mackinnonp and mackinnoncrit in stattools, only in
+    # adfvalues; without them the ADF and Engle-Granger tests give the same results.
+    from statsmodels.tsa import stattools
+
+    rng = np.random.default_rng(2)
+    series_a = pd.Series(np.cumsum(rng.standard_normal(500)))
+    series_b = series_a + rng.standard_normal(500)
+    expected_adf = unitroot_model.get_augmented_dickey_fuller(series_a)
+    expected_engle_granger = cointegration_model.get_engle_granger_cointegration(
+        series_a, series_b
+    )
+
+    monkeypatch.delattr(stattools, "mackinnonp", raising=False)
+    monkeypatch.delattr(stattools, "mackinnoncrit", raising=False)
+
+    pd.testing.assert_series_equal(
+        unitroot_model.get_augmented_dickey_fuller(series_a), expected_adf
+    )
+    pd.testing.assert_series_equal(
+        cointegration_model.get_engle_granger_cointegration(series_a, series_b),
+        expected_engle_granger,
+    )

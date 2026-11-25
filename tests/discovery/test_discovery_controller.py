@@ -621,3 +621,26 @@ def test_a_page_count_that_is_not_a_whole_number_is_refused():
         # A numpy whole number, as read from a DataFrame, is a page count.
         mock_fn.return_value = pd.DataFrame()
         discovery.get_stock_news(pages=np.int64(2))
+
+
+def test_a_concurrent_failed_request_does_not_stop_the_step_back(caplog):
+    import contextvars
+
+    from financetoolkit.utilities import error_model
+
+    discovery = discovery_controller.Discovery(api_key="test_key")
+    snapshot = pd.DataFrame({"Sector": ["Energy"]})
+    answers = iter([pd.DataFrame(), snapshot])
+
+    def holiday_while_another_call_fails(**kwargs):  # noqa: ARG001
+        # Another MCP request, in its own context, fails meanwhile.
+        contextvars.Context().run(error_model.report_request_failure)
+        return next(answers)
+
+    with patch(
+        "financetoolkit.discovery.discovery_model.get_sector_performance",
+        side_effect=holiday_while_another_call_fails,
+    ) as mock_fn:
+        assert discovery.get_sector_performance().equals(snapshot)
+
+    assert mock_fn.call_count == 2  # noqa: PLR2004

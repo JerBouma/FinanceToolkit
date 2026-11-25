@@ -205,7 +205,7 @@ def get_delta_hedging_simulation(
         strike_price (float): The strike price.
         time_to_expiration (float): The time to expiration in years.
         risk_free_rate (float): The continuously compounded risk free rate.
-        volatility (float): The volatility the stock moves with.
+        volatility (float): The volatility the stock moves with, 0 or above.
         implied_volatility (float | None, optional): The volatility the option is sold and
             hedged at. Defaults to None, the volatility the stock moves with.
         dividend_yield (float, optional): The continuously compounded dividend yield.
@@ -229,8 +229,8 @@ def get_delta_hedging_simulation(
     """
     if steps < 1 or simulations < 1:
         raise ValueError("The simulation needs at least one step and one path.")
-    if volatility <= 0:
-        raise ValueError("The volatility must be positive.")
+    if volatility < 0:
+        raise ValueError("The volatility can not be negative.")
 
     step = time_to_expiration / steps
     drift = risk_free_rate if drift is None else drift

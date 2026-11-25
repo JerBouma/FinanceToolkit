@@ -22,6 +22,7 @@ def fetch_single_series(
     end_date: str,
     api_key: str,
     failures: dict[str, str] | None = None,
+    unreachable: set[str] | None = None,
 ) -> pd.DataFrame:
     """
     Fetches observations for a single FRED series and returns them as a DataFrame.
@@ -39,6 +40,9 @@ def fetch_single_series(
         failures (dict[str, str] | None, optional): Where a failed request is recorded, as the
             reason per series ID, for a caller that retrieves several series and reports the
             failures in one line. Defaults to None, which logs the failure here.
+        unreachable (set[str] | None, optional): Where a series is recorded whose request found
+            FRED itself down (no answer, a server error or a rate limit) rather than the series
+            missing, so a caller can stop requesting the others. Defaults to None.
 
     Returns:
         pd.DataFrame: A DataFrame indexed by a daily PeriodIndex with the series ID as the column name.
@@ -67,7 +71,9 @@ def fetch_single_series(
         fetch_start = fetch_span[0].strftime("%Y-%m-%d")
         fetch_end = fetch_span[1].strftime("%Y-%m-%d")
 
-    data = _request_series(series_id, fetch_start, fetch_end, api_key, failures)
+    data = _request_series(
+        series_id, fetch_start, fetch_end, api_key, failures, unreachable
+    )
 
     if cache is not None and not data.empty:
         cache.store(
@@ -92,6 +98,7 @@ def _request_series(
     end_date: str,
     api_key: str,
     failures: dict[str, str] | None = None,
+    unreachable: set[str] | None = None,
 ) -> pd.DataFrame:
     """
     Perform the actual FRED observations request for a single series.
@@ -103,12 +110,16 @@ def _request_series(
         api_key (str): FRED API key, sent as the `api_key` query parameter.
         failures (dict[str, str] | None, optional): Where a failed request is recorded, as the
             reason per series ID. Defaults to None, which logs the failure here.
+        unreachable (set[str] | None, optional): Where the series ID is recorded when FRED
+            itself is down: no answer, a server error (5xx) or a rate limit (429). A rejected
+            request (another 4xx, such as a series that does not exist) concerns that series
+            only and is not recorded here. Defaults to None.
 
     Returns:
         pd.DataFrame: A DataFrame indexed by a daily PeriodIndex with the series ID as
             the column name, or an empty DataFrame when there are no observations, FRED
-            cannot be reached or FRED answers with something other than observations, such
-            as an HTML error page (which is logged or recorded in failures).
+            cannot be reached, rejects the request or answers with something other than
+            observations, such as an HTML error page (which is logged or recorded in failures).
     """
 
     def report(reason: str) -> pd.DataFrame:
@@ -131,7 +142,32 @@ def _request_series(
 
     try:
         response = get_request(url, timeout=30)
+    except requests.exceptions.HTTPError as error:
+        status_code = error.response.status_code if error.response is not None else None
+        if unreachable is not None and (
+            status_code is None
+            or status_code >= 500  # noqa: PLR2004
+            or status_code == requests.codes.too_many_requests
+        ):
+            unreachable.add(series_id)
+
+        # FRED explains a rejected request (an invalid key, a series that does not exist) in
+        # the error_message of a JSON body, which says more than the status line.
+        try:
+            message = error.response.json().get("error_message")
+        except (AttributeError, ValueError):
+            message = None
+
+        if message:
+            return report(
+                f"FRED answered HTTP {status_code}: {redact_credentials(str(message))}"
+            )
+
+        # The request error names the URL, which carries the API key, so it is redacted.
+        return report(f"FRED answered with an error ({redact_credentials(str(error))})")
     except requests.exceptions.RequestException as error:
+        if unreachable is not None:
+            unreachable.add(series_id)
         # The request error names the URL, which carries the API key, so it is redacted.
         return report(f"FRED could not be reached ({redact_credentials(str(error))})")
 
@@ -179,10 +215,11 @@ def get_fred_data(
     Requires a free FRED API key. Register at https://fred.stlouisfed.org/docs/api/api_key.html
     and pass the key via the `fred_api_key` argument or set the `FRED_API_KEY` environment variable.
 
-    The first series is requested on its own: when it fails (FRED unreachable, the key
-    rejected), the others would fail alike, each after its own retries, so they are not
-    requested. A series that fails while the others come back is left out, and the failures
-    are reported in a single line.
+    The first series is requested on its own: when FRED is down (no answer, a server error or
+    a rate limit), the others would fail alike, each after its own retries, so they are not
+    requested. A series FRED rejects (such as a discontinued series) concerns that series
+    only, so the others are still requested. A series that fails while the others come back
+    is left out, and the failures are reported in a single line.
 
     Args:
         fred_series_id (str or list): The series ID(s) of the data to retrieve.
@@ -198,12 +235,15 @@ def get_fred_data(
         [fred_series_id] if isinstance(fred_series_id, str) else list(fred_series_id)
     )
     failures: dict[str, str] = {}
+    unreachable: set[str] = set()
 
     frames = [
-        fetch_single_series(series_ids[0], start_date, end_date, api_key, failures)
+        fetch_single_series(
+            series_ids[0], start_date, end_date, api_key, failures, unreachable
+        )
     ]
 
-    if failures:
+    if unreachable:
         logger.error(
             "No data is returned for the FRED series %s: %s.%s",
             series_ids[0],
@@ -219,16 +259,22 @@ def get_fred_data(
 
     frames += helpers.run_in_parallel(
         lambda series_id: fetch_single_series(
-            series_id, start_date, end_date, api_key, failures
+            series_id, start_date, end_date, api_key, failures, unreachable
         ),
         [(series_id,) for series_id in series_ids[1:]],
     )
 
     if failures:
+        # Series that failed for the same reason (an invalid key rejects each of them) are
+        # named together, so the reason is not repeated per series.
+        series_per_reason: dict[str, list[str]] = {}
+        for series_id, reason in failures.items():
+            series_per_reason.setdefault(reason, []).append(series_id)
         logger.error(
             "No data is returned for the FRED series %s, so they are left out.",
             "; ".join(
-                f"{series_id} ({reason})" for series_id, reason in failures.items()
+                f"{', '.join(failed)} ({reason})"
+                for reason, failed in series_per_reason.items()
             ),
         )
 

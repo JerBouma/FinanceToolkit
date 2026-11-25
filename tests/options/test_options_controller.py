@@ -2230,9 +2230,9 @@ def test_get_monte_carlo_option_price_american_and_variance_reduction(
 def options_with_constant_prices(test_toolkit):
     # MSFT without any price moves, so its volatility is 0, next to AAPL with its own data.
     module = test_toolkit.options
-    volatility = module._volatility.copy()
+    volatility = module._trailing_volatility.copy()
     volatility["MSFT"] = 0.0
-    module.__dict__["_volatility"] = volatility
+    module.__dict__["_trailing_volatility"] = volatility
     return module
 
 
@@ -2244,7 +2244,6 @@ def options_with_constant_prices(test_toolkit):
         ("get_binomial_model", {"time_steps": 5}),
         ("get_cev_model", {}),
         ("get_chooser_option", {}),
-        ("get_delta_hedging_simulation", {"simulations": 100}),
         ("get_exchange_option", {"second_ticker": "AAPL"}),
         ("get_forward_start_option", {}),
         ("get_lookback_option", {}),
@@ -2376,10 +2375,9 @@ def test_bjerksund_stensland_warns_about_a_negative_cost_of_carry(
         ("get_stock_price_simulation", {"time_steps": 17}, "time_steps"),
         ("get_binomial_model", {"time_steps": 2000}, "time_steps"),
         ("get_delta_hedging_simulation", {"volatility": -0.2}, "volatility"),
-        ("get_delta_hedging_simulation", {"volatility": 0}, "volatility"),
         (
             "get_delta_hedging_simulation",
-            {"implied_volatility": 0},
+            {"implied_volatility": -0.1},
             "implied_volatility",
         ),
         (
@@ -2427,14 +2425,24 @@ def test_only_expired_expiries_give_one_warning_for_the_volatility_surface(
     assert caplog.text.count("None of the expiries") == 1
 
 
-def test_a_history_too_short_for_a_volatility_is_said_once(test_toolkit, caplog):
+def test_a_history_too_short_for_a_volatility_is_said_once_per_call(
+    test_toolkit, caplog
+):
     module = test_toolkit.options
     module.__dict__["_daily_historical"] = module._daily_historical.iloc[:2]
 
     values = module.get_black_scholes_model()
-    module.get_delta()
-
     assert values.isna().all().all()
+    assert caplog.text.count("too few for a volatility") == 1
+
+    # A later call on the same Options says it again, as its values are NaN as well.
+    caplog.clear()
+    module.get_delta()
+    assert caplog.text.count("too few for a volatility") == 1
+
+    # Once for the call, also where the volatility is read per ticker.
+    caplog.clear()
+    module.get_delta_hedging_simulation(simulations=10)
     assert caplog.text.count("too few for a volatility") == 1
 
 
@@ -2456,3 +2464,30 @@ def test_the_options_take_numpy_whole_numbers(options_module):
     ).empty
     with pytest.raises(InvalidArgumentError, match="whole number"):
         options_module.get_binomial_model(time_steps=10.0)
+
+
+def test_delta_hedging_at_zero_volatility_sells_the_discounted_intrinsic_value(
+    options_module,
+):
+    import numpy as np
+
+    from financetoolkit.utilities.error_model import InvalidArgumentError
+
+    # At zero volatility the option is worth its discounted intrinsic value and the delta
+    # steps from 0 to 1, so both methods return finite numbers rather than an error.
+    backtest = options_module.get_delta_hedging_backtest(volatility=0.0, rounding=None)
+    simulation = options_module.get_delta_hedging_simulation(
+        volatility=0.0, implied_volatility=0.0, simulations=200, rounding=None
+    )
+
+    assert np.isfinite(backtest["Profit and Loss"].to_numpy(dtype=float)).all()
+    assert np.isfinite(simulation["Option Value"].to_numpy(dtype=float)).all()
+    assert (simulation["Option Value"] >= 0).all()
+
+    # Only a negative volatility is refused, once for every ticker.
+    with pytest.raises(InvalidArgumentError, match="volatility must be 0 or above"):
+        options_module.get_delta_hedging_backtest(volatility=-0.1)
+    with pytest.raises(
+        InvalidArgumentError, match="implied_volatility must be 0 or above"
+    ):
+        options_module.get_delta_hedging_simulation(implied_volatility=-0.1)

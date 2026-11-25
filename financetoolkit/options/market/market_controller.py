@@ -1564,7 +1564,9 @@ class MarketOptions:
     ) -> tuple[float, float, float]:
         """The volatility, risk free rate and dividend yield of a ticker on a date."""
         if volatility is None:
-            volatility = float(self._volatility[ticker].loc[:date].dropna().iloc[-1])
+            volatility = float(
+                self._trailing_volatility[ticker].loc[:date].dropna().iloc[-1]
+            )
         risk_free_rate = float(self._risk_free_rate.loc[:date].dropna().iloc[-1])
         dividend_yield = self._dividend_yield_on(ticker, date)
         return (
@@ -1625,12 +1627,13 @@ class MarketOptions:
             moneyness (float, optional): The strike as a fraction of the stock price on the
                 start date. Defaults to 1.0, at the money.
             volatility (float | None, optional): The volatility the option is sold and hedged
-                at, such as an implied volatility, for every ticker. Defaults to None, the
-                volatility of the year of daily returns up to the start date, which is known on
-                that date.
+                at, such as an implied volatility, for every ticker, 0 or above (at 0 the option
+                is sold at its discounted intrinsic value and the delta is 0 or 1). Defaults to
+                None, the volatility of the year of daily returns up to the start date, which is
+                known on that date.
             put_option (bool, optional): Whether the option is a put. Defaults to False.
             transaction_cost (float, optional): The cost of a trade as a fraction of its value
-                (0.001 is 10 basis points). Defaults to 0.0.
+                (0.001 is 10 basis points), 0 or above. Defaults to 0.0.
             rebalancing_days (int, optional): The trading days between rebalances. Defaults to
                 1, daily.
             rounding (int | None, optional): The number of decimals to round the results to.
@@ -1644,6 +1647,10 @@ class MarketOptions:
             pd.DataFrame: Per ticker the Start Date, Expiration Date, Stock Price, Strike Price,
             Volatility, Realized Volatility, Option Value, Payoff, Transaction Costs and Profit
             and Loss. The costs and the profit and loss are discounted to the start date.
+
+        Raises:
+            InvalidArgumentError: When the days or rebalancing days are below 1, the moneyness
+                is not positive, or the volatility or transaction cost is negative.
 
         Notes:
         - Time runs on each ticker's own trading days, 252 to a year, the same clock as the
@@ -1687,10 +1694,14 @@ class MarketOptions:
             )
         if moneyness <= 0:
             raise InvalidArgumentError("The moneyness must be positive.")
-        # Checked once for every ticker: a volatility of zero or below has no delta to hedge with.
+        # Checked once for every ticker. A volatility of zero is valid: the option is then worth
+        # its discounted intrinsic value and the delta steps from 0 to 1 at the forward price.
         try:
-            validate_positive_inputs(volatility=volatility)
-            validate_positive_inputs(allow_zero=True, transaction_cost=transaction_cost)
+            validate_positive_inputs(
+                allow_zero=True,
+                volatility=volatility,
+                transaction_cost=transaction_cost,
+            )
         except ValueError as error:
             raise InvalidArgumentError(str(error)) from None
 
@@ -1699,6 +1710,9 @@ class MarketOptions:
             if "Dividends" in self._daily_historical.columns.get_level_values(0)
             else None
         )
+        if volatility is None:
+            # Priced at each ticker's own volatility, which needs enough daily returns.
+            self._report_short_history()
         rows = {}
         for ticker in self._tickers:
             history = self._prices[ticker].dropna()
@@ -1836,13 +1850,15 @@ class MarketOptions:
             moneyness (float, optional): The strike as a fraction of the stock price. Defaults
                 to 1.0, at the money.
             volatility (float | None, optional): The volatility the stock moves with, for every
-                ticker. Defaults to None, the volatility of the year of daily returns up to the
-                start date.
+                ticker, 0 or above (at 0 every path grows at the risk free rate less the
+                dividend yield). Defaults to None, the volatility of the year of daily returns
+                up to the start date.
             implied_volatility (float | None, optional): The volatility the option is sold and
-                hedged at. Defaults to None, the volatility the stock moves with.
+                hedged at, 0 or above (at 0 the option is sold at its discounted intrinsic value
+                and the delta is 0 or 1). Defaults to None, the volatility the stock moves with.
             put_option (bool, optional): Whether the option is a put. Defaults to False.
             transaction_cost (float, optional): The cost of a trade as a fraction of its value
-                (0.001 is 10 basis points). Defaults to 0.0.
+                (0.001 is 10 basis points), 0 or above. Defaults to 0.0.
             rebalancing_days (int, optional): The trading days between rebalances. Defaults to
                 1, daily.
             simulations (int, optional): The number of simulated paths, at least 1. Defaults to 10,000.
@@ -1860,6 +1876,11 @@ class MarketOptions:
             Volatility, Option Value, the Mean, Standard Deviation and 5% and 95% Quantiles of
             the Profit and Loss, the Mean Transaction Costs (both discounted to the start date)
             and the Approximate Standard Deviation.
+
+        Raises:
+            InvalidArgumentError: When the days or rebalancing days are below 1, the moneyness
+                is not positive, the simulations are not a whole number of at least 1, or the
+                volatility, implied volatility or transaction cost is negative.
 
         Notes:
         - The paths drift at the risk free rate. The real-world drift barely moves the hedging
@@ -1900,15 +1921,22 @@ class MarketOptions:
         if moneyness <= 0:
             raise InvalidArgumentError("The moneyness must be positive.")
         validate_window("simulations", simulations)
-        # Checked once for every ticker rather than reported per ticker.
+        # Checked once for every ticker rather than reported per ticker. A volatility of zero
+        # is valid: the stock then grows at the risk free rate less the dividend yield, and an
+        # option sold at zero volatility is worth its discounted intrinsic value.
         try:
             validate_positive_inputs(
-                volatility=volatility, implied_volatility=implied_volatility
+                allow_zero=True,
+                volatility=volatility,
+                implied_volatility=implied_volatility,
+                transaction_cost=transaction_cost,
             )
-            validate_positive_inputs(allow_zero=True, transaction_cost=transaction_cost)
         except ValueError as error:
             raise InvalidArgumentError(str(error)) from None
 
+        if volatility is None:
+            # Priced at each ticker's own volatility, which needs enough daily returns.
+            self._report_short_history()
         rows = {}
         for ticker in self._tickers:
             try:

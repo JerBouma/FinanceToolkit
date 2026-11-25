@@ -5,6 +5,9 @@ __docformat__ = "google"
 import inspect
 import os
 import threading
+from collections.abc import Callable, Generator
+from contextlib import contextmanager
+from contextvars import ContextVar
 
 import numpy as np
 import pandas as pd
@@ -60,9 +63,10 @@ def check_period(period: str, periods) -> None:
         periods: The periods it accepts, such as ("daily", "weekly", "monthly").
 
     Raises:
-        InvalidArgumentError: If the period is not one of them, naming them.
+        InvalidArgumentError: If the period is not one of them (or not text, such as a list),
+            naming them.
     """
-    if period not in periods:
+    if not isinstance(period, str) or period not in periods:
         raise InvalidArgumentError(
             f"period must be one of {join_options(periods)}, not {period!r}. "
             f"Please pass one of these as period."
@@ -133,6 +137,13 @@ STATEMENT_MODULES = ("financetoolkit.ratios", "financetoolkit.models")
 _request_failures = 0
 _request_failures_lock = threading.Lock()
 
+# The counters of the count_request_failures blocks the current call is in. A ContextVar, so a
+# concurrent call (another MCP request) never adds to them, while the worker threads of
+# helpers.run_in_parallel, which run in a copy of the caller's context, share the same counters.
+_call_request_failures: ContextVar[tuple[list[int], ...]] = ContextVar(
+    "financetoolkit_call_request_failures", default=()
+)
+
 
 # The single column of the empty frame a source returns instead of an answer.
 ERROR_RESPONSE_COLUMNS = frozenset(
@@ -179,6 +190,8 @@ def report_request_failure() -> None:
 
     with _request_failures_lock:
         _request_failures += 1
+        for counter in _call_request_failures.get():
+            counter[0] += 1
 
 
 def get_request_failures() -> int:
@@ -189,6 +202,24 @@ def get_request_failures() -> int:
         int: The number of failed requests.
     """
     return _request_failures
+
+
+@contextmanager
+def count_request_failures() -> Generator[Callable[[], int]]:
+    """
+    Counts the requests of this call that failed within the block, for a caller that decides
+    from them whether to ask again (step back a day, request the next page). Unlike
+    get_request_failures, a request that failed for a concurrent call is not counted.
+
+    Yields:
+        Callable[[], int]: Returns the number of failed requests of this call so far in the block.
+    """
+    counter = [0]
+    token = _call_request_failures.set((*_call_request_failures.get(), counter))
+    try:
+        yield lambda: counter[0]
+    finally:
+        _call_request_failures.reset(token)
 
 
 def use_strict_errors() -> bool:
@@ -623,11 +654,20 @@ def check_for_error_messages(
         )
 
     if request_failed:
-        logger.error(
-            "The request to Financial Modeling Prep failed with an unrecognised error for the "
-            "following tickers: %s.\nNo data could be collected for them.",
-            ", ".join(request_failed),
-        )
+        # The reason (such as "HTTP 500") travels in the attrs of the error frame.
+        tickers_per_reason: dict[str, list[str]] = {}
+        for ticker in request_failed:
+            reason = dataset_dictionary[ticker].attrs.get(
+                "reason", "an unrecognised error"
+            )
+            tickers_per_reason.setdefault(reason, []).append(ticker)
+        for reason, tickers in tickers_per_reason.items():
+            logger.error(
+                "The request to Financial Modeling Prep failed (%s) for the following "
+                "tickers: %s.\nNo data could be collected for them.",
+                reason,
+                ", ".join(tickers),
+            )
 
     if no_errors:
         # These exhausted every connection retry, so this is a network failure rather than the absence of an error it is named after.  # noqa: E501

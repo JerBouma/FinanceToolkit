@@ -61,6 +61,7 @@ from financetoolkit.helpers import (
     determine_period_end_dates,
     fill_diluted_shares,
     prepare_supplied_historical_data,
+    report_long_trailing,
     trailing_sum,
 )
 from financetoolkit.historical_model import (
@@ -75,7 +76,7 @@ from financetoolkit.normalization_model import (
 )
 from financetoolkit.utilities import logger_model, validation_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
-from financetoolkit.utilities.error_model import check_period
+from financetoolkit.utilities.error_model import check_period, validate_window
 from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import (
     apply_rounding,
@@ -569,9 +570,6 @@ class Toolkit:
         # were retrieved with.
         self._lookback_historical_data: dict[str, pd.DataFrame] = {}
         self._lookback_historical_data_params: tuple | None = None
-        # The date ranges whose few daily observations were reported, so each module that
-        # loads them does not report them again.
-        self._reported_short_histories: set[tuple] = set()
 
         # Initialize other periods as empty DataFrames. They will be populated on demand.
         self._weekly_historical_data: pd.DataFrame = pd.DataFrame()
@@ -6337,6 +6335,9 @@ class Toolkit:
         Returns:
             pd.DataFrame: A pandas DataFrame with the retrieved income statement data.
 
+        Raises:
+            InvalidArgumentError: If trailing is not a whole number of at least one period.
+
         As an example:
 
         ```python
@@ -6359,6 +6360,8 @@ class Toolkit:
         | Revenue    | 4.671e+10 | 5.1217e+10 | 5.1362e+10 | 4.6309e+10 | 4.6398e+10 |
         | Net Income | 6.046e+09 | 5.07e+09   | 5.7e+09    | 3.219e+09  | 3.108e+09  |
         """
+        validate_window("trailing", trailing, 1)
+
         convert_currency = bool(
             self._convert_currency
             and (self._income_statement.empty or overwrite)
@@ -6479,6 +6482,9 @@ class Toolkit:
             income_statement = trailing_sum(self._income_statement, trailing)
 
             income_statement.loc[not_summed.index] = not_summed
+            report_long_trailing(
+                trailing, len(self._income_statement.columns), income_statement
+            )
 
         if growth:
             self._income_statement_growth = calculate_growth(
@@ -6564,6 +6570,9 @@ class Toolkit:
         Returns:
             pd.DataFrame: A pandas DataFrame with the retrieved cash flow statement data.
 
+        Raises:
+            InvalidArgumentError: If trailing is not a whole number of at least one period.
+
         As an example:
 
         ```python
@@ -6590,6 +6599,8 @@ class Toolkit:
         | Free Cash Flow      |  2.1087e+10 |  3.7628e+10 |  1.978e+10  |  1.5044e+10 |  1.6592e+10 |
         | Dividends Paid      | -1.0179e+10 | -1.0968e+10 | -1.1336e+10 | -1.18e+10   | -1.2751e+10 |
         """
+        validate_window("trailing", trailing, 1)
+
         convert_currency = bool(
             self._convert_currency
             and (self._cash_flow_statement.empty or overwrite)
@@ -6712,6 +6723,9 @@ class Toolkit:
             cash_flow_statement.loc[cash_beginning] = shift_periods(
                 self._cash_flow_statement.loc[cash_beginning], trailing - 1
             ).where(cash_flow_statement.loc[cash_beginning].notna())
+            report_long_trailing(
+                trailing, len(self._cash_flow_statement.columns), cash_flow_statement
+            )
 
         if growth:
             self._cash_flow_statement_growth = calculate_growth(
@@ -6982,7 +6996,9 @@ class Toolkit:
 
         return statement.index.get_level_values(0).unique().tolist()
 
-    def _get_module_historical_data(self, period: str) -> pd.DataFrame:
+    def _get_module_historical_data(
+        self, period: str, report: bool = True
+    ) -> pd.DataFrame:
         """
         Returns the historical data of a period for the modules, retrieved when a calculation
         first asks for that period. The daily data is downloaded once and the weekly, monthly,
@@ -6993,6 +7009,10 @@ class Toolkit:
 
         Args:
             period (str): "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly".
+            report (bool, optional): Whether to log a period without data or with a day or two
+                of daily prices. A module reports it when it loads the period for a
+                calculation; a lookup of the tickers does not, so a calculation reports it
+                once. Defaults to True.
 
         Returns:
             pd.DataFrame: The historical data of the period, empty for intraday data without an
@@ -7021,7 +7041,10 @@ class Toolkit:
             if len(within) != len(historical_data):
                 historical_data = within
 
-        # An empty period, or a day or two of daily prices, otherwise surfaces as an empty or all-NaN result of every calculation on it without a reason.  # noqa: E501
+        # An empty period, or a day or two of daily prices, otherwise surfaces as an empty or all-NaN result of every calculation on it without a reason. It is logged on every calculation that loads the period, never once per Toolkit, as the MCP server keeps a Toolkit for many requests.  # noqa: E501
+        if not report:
+            return historical_data
+
         observations = len(historical_data.dropna(how="all"))
         if historical_data.empty:
             logger.warning(
@@ -7031,12 +7054,7 @@ class Toolkit:
                 self._start_date,
                 self._end_date,
             )
-        elif (
-            period == "daily"
-            and observations < MINIMUM_DAILY_OBSERVATIONS
-            and (self._start_date, self._end_date) not in self._reported_short_histories
-        ):
-            self._reported_short_histories.add((self._start_date, self._end_date))
+        elif period == "daily" and observations < MINIMUM_DAILY_OBSERVATIONS:
             logger.warning(
                 "There are only %s daily observations between %s and %s, fewer than the %s that "
                 "give two returns, so the measures of returns and most technical indicators are "
@@ -7074,7 +7092,8 @@ class Toolkit:
         """
         if period == "intraday" or not self._historical.empty:
             if period == "daily" and not self._historical.empty:
-                self.get_historical_data(period="daily")
+                # Loaded as the other modules load it, which reports a range without prices.
+                self._get_module_historical_data("daily")
                 return self._daily_historical_data.loc[: self._end_date]
             return self._get_module_historical_data(period)
 
@@ -7178,7 +7197,7 @@ class Toolkit:
             list[str]: The tickers of the historical data.
         """
         tickers = (
-            self._get_module_historical_data("daily")
+            self._get_module_historical_data("daily", report=False)
             .columns.get_level_values(1)
             .unique()
             .tolist()

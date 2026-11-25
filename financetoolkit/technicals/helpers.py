@@ -12,7 +12,7 @@ import pandas as pd
 
 from financetoolkit.helpers import get_non_trading_days
 from financetoolkit.utilities.dataframe_model import FilteredClass
-from financetoolkit.utilities.logger_model import get_logger
+from financetoolkit.utilities.logger_model import get_logger, log_each_message_once
 
 logger = get_logger()
 
@@ -271,7 +271,8 @@ def _reported_method(function: Callable, name: str) -> Callable:
     result without values is reported, see `report_missing_values`.
     """
     signature = inspect.signature(function)
-    collection = name.startswith("collect_")
+    # The factor analysis calculates many indicators, so it reports them as a collection does.
+    collection = name.startswith("collect_") or name == "get_factor_analysis"
 
     @functools.wraps(function)
     def wrapper(self, *args, **kwargs):
@@ -280,51 +281,56 @@ def _reported_method(function: Callable, name: str) -> Callable:
         if not hasattr(self, "_collecting"):
             return function(self, *args, **kwargs)
 
-        arguments = signature.bind_partial(self, *args, **kwargs).arguments
-        period = arguments.get("period", signature.parameters.get("period"))
-        if isinstance(period, inspect.Parameter):
-            period = period.default
-        outermost = not self._collecting and not self._depth
+        # Each message is logged once per call, also when the indicators an indicator is built from report the same window, and again on the next call of the same instance (the MCP server keeps a Toolkit for many requests).  # noqa: E501
+        with log_each_message_once():
+            arguments = signature.bind_partial(self, *args, **kwargs).arguments
+            period = arguments.get("period", signature.parameters.get("period"))
+            if isinstance(period, inspect.Parameter):
+                period = period.default
+            if name == "get_factor_analysis":
+                # Its period is that of the returns; the indicators are calculated on the daily data.  # noqa: E501
+                period = "daily"
+            outermost = not self._collecting and not self._depth
 
-        if outermost:
-            self._window_too_long = False
-        if collection and not self._collecting:
-            self._long_windows, self._without_values = set(), {}
+            if outermost:
+                self._window_too_long = False
+            if collection and not self._collecting:
+                self._long_windows, self._without_values = set(), {}
 
-        self._collecting += collection
-        self._depth += 1
-        try:
-            result = function(self, *args, **kwargs)
-        finally:
-            self._collecting -= collection
-            self._depth -= 1
+            self._collecting += collection
+            self._depth += 1
+            try:
+                result = function(self, *args, **kwargs)
+            finally:
+                self._collecting -= collection
+                self._depth -= 1
 
-        historical_data = (
-            self._historical_data.get(period) if isinstance(period, str) else None
-        )
-        with_data = (
-            historical_data is not None
-            and not historical_data.loc[self._start_date : self._end_date]
-            .dropna(how="all")
-            .empty
-        )
+            historical_data = (
+                self._historical_data.get(period) if isinstance(period, str) else None
+            )
+            with_data = (
+                historical_data is not None
+                and not historical_data.loc[self._start_date : self._end_date]
+                .dropna(how="all")
+                .empty
+            )
 
-        if collection and not self._collecting:
-            report_collection(self, name, period, historical_data)
-        elif not collection and with_data and _has_no_values(result):
-            if self._collecting:
-                self._without_values[name] = None
-            elif outermost and not self._window_too_long:
-                logger.warning(
-                    "%s has no values for the %s %s periods of data: its windows (or the "
-                    "periods it needs to warm up) are longer than the data. Use a "
-                    "higher-frequency period, shorter windows or a longer date range.",
-                    name,
-                    len(historical_data.dropna(how="all")),
-                    period,
-                )
+            if collection and not self._collecting:
+                report_collection(self, name, period, historical_data)
+            elif not collection and with_data and _has_no_values(result):
+                if self._collecting:
+                    self._without_values[name] = None
+                elif outermost and not self._window_too_long:
+                    logger.warning(
+                        "%s has no values for the %s %s periods of data: its windows (or the "
+                        "periods it needs to warm up) are longer than the data. Use a "
+                        "higher-frequency period, shorter windows or a longer date range.",
+                        name,
+                        len(historical_data.dropna(how="all")),
+                        period,
+                    )
 
-        return result
+            return result
 
     return wrapper
 
@@ -380,8 +386,9 @@ def report_missing_values(cls: FilteredClass) -> FilteredClass:
     Class decorator that reports an indicator without values: a result that is NaN
     throughout while the data of its period is not, as when a window, a signal window
     or the warm-up of an indicator is longer than the data (such as a one- or two-row
-    history). A standalone indicator logs it once per call; a collection of indicators
-    logs one message naming the long windows and the indicators without values.
+    history). A standalone indicator logs it once per call; a collection of indicators (and
+    the factor analysis) logs one message naming the long windows and the indicators without
+    values.
 
     Args:
         cls (type): A class of Technicals indicators (a topic or the base class).

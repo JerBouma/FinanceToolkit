@@ -16,10 +16,13 @@ from financetoolkit.utilities.error_model import (
     handle_errors,
     validate_window,
 )
+from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import apply_rounding
 
 # ruff: noqa: E501
+
+logger = get_logger()
 
 
 @filter_shown_columns
@@ -1241,6 +1244,22 @@ class StatisticsEconometrics:
             rolling=rolling_function,
             **options,
         )
+
+        # A short window can leave every value NaN while the data has values, such as a sample entropy whose windows hold no two matching templates; no window length guarantees a match, so the result is checked instead.  # noqa: E501
+        if (
+            rolling
+            and not entropy.empty
+            and entropy.isna().all().all()
+            and data.notna().to_numpy().any()
+        ):
+            logger.warning(
+                "The rolling window of %s %s periods leaves the %s entropy NaN throughout: the "
+                "windows are too short for a value (the sample entropy needs two matching "
+                "templates in a window). Use a longer rolling window.",
+                rolling,
+                period,
+                method,
+            )
 
         return apply_rounding(
             entropy, rounding if rounding is not None else self._rounding

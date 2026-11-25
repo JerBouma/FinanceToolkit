@@ -5960,7 +5960,8 @@ class Performance:
         regressions use excess returns, so the Alphas are the CAPM (Jensen's) Alphas of each market.
         - Each side needs at least 20 days with returns in a period (about a trading month), otherwise its values
           are NaN: the Alpha is compounded over a year, which amplifies the Alpha of a few days to extremes. Weekly
-          and monthly periods have fewer days per side, so they give NaN; quarterly and yearly periods give values.
+          and monthly periods have fewer days per side, so they give no values (an empty result, which is logged);
+          quarterly and yearly periods give values.
         - The Portfolio of a Portfolio's Toolkit is regressed on its own daily return series, as the market
         timing models do.
         - With growth, the method calculates the growth of the ratio values using the specified `lag`.
@@ -6024,9 +6025,20 @@ class Performance:
             )
             for ticker in excess_return.columns
         }
+        bull_bear_beta = pd.concat(bull_bear_beta, axis=1)
+
+        # The rows without values are dropped, so a period too short for either side would otherwise give an empty result without a reason.  # noqa: E501
+        if not bull_bear_beta.empty and bull_bear_beta.isna().all().all():
+            logger.warning(
+                "The Bull and Bear Betas need at least %s days with returns on each side of the "
+                "market in a period, which no %s period holds, so there are no values. Use "
+                "quarterly or yearly periods.",
+                MINIMUM_BULL_BEAR_OBSERVATIONS,
+                period,
+            )
 
         return finalize_dataset(
-            dataset=pd.concat(bull_bear_beta, axis=1),
+            dataset=bull_bear_beta,
             start_date=self._start_date,
             end_date=self._end_date,
             default_rounding=self._rounding,

@@ -2105,3 +2105,14 @@ def test_the_growth_of_a_rolling_ratio_counts_the_periods_with_a_value(
     )
 
     assert growth.notna().any().any()
+
+
+@pytest.mark.parametrize("period", ["weekly", "monthly"])
+def test_bull_bear_beta_on_short_periods_says_why_it_is_empty(
+    performance_module, period, caplog
+):
+    with caplog.at_level("WARNING", logger="financetoolkit"):
+        result = performance_module.get_bull_bear_beta(period=period)
+
+    assert result.empty
+    assert caplog.text.count("need at least 20 days with returns on each side") == 1

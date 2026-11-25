@@ -73,10 +73,10 @@ def _get_backtest_window(
     window, which the caller checked is at least 2 (a window of one return has no tail). A window
     in which not a single observation falls in the alpha tail (window * alpha < 1), or one
     as long as the returns (no out-of-sample estimate is left), gives statistics that mean
-    nothing, which is logged once.
+    nothing, which is logged once, for the default window as well as a chosen one.
     """
     if window is None:
-        return _default_window(period, method)
+        window = _default_window(period, method)
 
     if window * alpha < 1:
         logger.warning(

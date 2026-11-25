@@ -32,7 +32,10 @@ def test_each_module_tool_offers_the_factor_analysis_with_metrics_and_detail():
 
     for name in ("valuation", "momentum", "models", "risk", "performance"):
         properties = tools[name].inputSchema["properties"]
-        assert "get_factor_analysis" in str(properties["indicator"]), name
+        assert (
+            "get_factor_analysis"
+            in tools[name].inputSchema["$defs"]["indicator"]["enum"]
+        ), name
         assert {"metrics", "detail", "horizons", "quantiles", "periods_apart"} <= set(
             properties
         ), name

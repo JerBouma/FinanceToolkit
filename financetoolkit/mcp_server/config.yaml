@@ -435,7 +435,9 @@ instructions: >-
   financial statements, ratios, valuation and risk models, performance, technical
   indicators, options and bonds, econometrics and macroeconomic data by country. Each
   tool groups indicators of one kind; pass the indicator by name (e.g. valuation with
-  indicator='get_price_to_earnings_ratio'). When unsure which indicator or tool fits,
+  indicator='get_price_to_earnings_ratio'); up to five indicators of one tool go in one
+  call as a list (indicator=['get_price_to_earnings_ratio', 'get_ev_to_ebitda_ratio']), each
+  answered under its name with the same arguments. When unsure which indicator or tool fits,
   call search_metrics with what you want to measure. The tool schemas describe the
   parameters in a few words; search_metrics with an indicator's exact name (e.g.
   'get_garch') gives what it calculates and every parameter it takes with its full
@@ -1042,7 +1044,7 @@ tool_groups:
 
   - tool_name:    "econometrics"
     display_name: "Econometrics Tests"
-    description:  "Statistics and econometrics of price or return series: unit root, stationarity and bubble tests, fractional differencing, cointegration, Granger causality, VAR, VECM and ARIMA forecasts, regressions (OLS, WLS, GLS, quantile, logit/probit, IV, Fama-MacBeth, panels), causal designs (difference-in-differences, event study, regression discontinuity, synthetic control, matching), diagnostics, forecast comparison and tests, rolling statistics, entropy, regimes and breaks, pairs trading, and how unusual a value or move is: get_move_significance ('the biggest fall since'), get_level_significance (percentile, highest since, change since start_date, largest drawdown) and get_streaks. Requires tickers='AAPL,MSFT', or series= to analyze the indicators of other tools instead: references separated by ';', each tool:indicator:tickers-or-countries with an optional :column, e.g. 'macroeconomics:get_inflation_rate:United States' or 'rates:get_government_bond_yield_curve:United States:10Y'; each becomes a series named after its ticker or country, which dependent_ticker and independent_tickers name. changes='difference' suits rates. Use start_date for a long enough history. get_move_significance needs start_date a year or more back, and the answer of get_level_significance depends on start_date. spread_over= measures every series minus one of them. search_metrics with an indicator's name gives its parameters, options and defaults."
+    description:  "Statistics and econometrics of price or return series: unit root, stationarity and bubble tests, fractional differencing, cointegration, Granger causality, VAR, VECM and ARIMA forecasts, regressions (OLS, WLS, GLS, quantile, logit/probit, IV, Fama-MacBeth, panels), causal designs (difference-in-differences, event study, regression discontinuity, synthetic control, matching), diagnostics, forecast comparison and tests, rolling statistics, entropy, regimes and breaks, pairs trading, and how unusual a value or move is: get_move_significance ('the biggest fall since'), get_level_significance (percentile, highest since, change since start_date, largest drawdown) and get_streaks. Requires tickers='AAPL,MSFT', or series= to analyze the indicators of other tools instead: references separated by ';', each tool:indicator:tickers-or-countries with an optional :column, e.g. 'macroeconomics:get_inflation_rate:United States' or 'rates:get_government_bond_yield_curve:United States:10Y'; each becomes a series named after its ticker or country, which dependent_ticker and independent_tickers name. changes='difference' suits rates. get_move_significance needs start_date a year or more back, and the answer of get_level_significance depends on start_date. spread_over= measures every series minus one of them. search_metrics with an indicator's name gives its parameters, options and defaults."
     module_name:  "econometrics"
     category:     "ticker"
     basket:       true

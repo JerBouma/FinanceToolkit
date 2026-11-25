@@ -83,7 +83,7 @@ def test_the_categories_count_the_indicators_of_every_tool():
         indicator
         for tool in asyncio.run(mcp_controller.mcp.list_tools())
         if "indicator" in tool.inputSchema.get("properties", {})
-        for indicator in tool.inputSchema["properties"]["indicator"].get("enum", [])
+        for indicator in tool.inputSchema["$defs"]["indicator"]["enum"]
     }
     assert len(offered) < int(total.group(2)) <= sum(indicators.values())
     assert int(total.group(1)) <= sum(metrics.values())
@@ -218,7 +218,9 @@ def test_the_method_description_lists_every_indicators_own_values():
         schema = tools[group["tool_name"]].inputSchema["properties"]
         if "method" not in schema:
             continue
-        for indicator in schema["indicator"].get("enum", []):
+        for indicator in tools[group["tool_name"]].inputSchema["$defs"]["indicator"][
+            "enum"
+        ]:
             module = (group.get("method_to_module") or {}).get(
                 indicator, group.get("module_name")
             )
@@ -521,7 +523,9 @@ def test_every_parameter_has_a_real_description():
     answers: dict[str, str] = {}
     for tool in tools:
         properties = tool.inputSchema.get("properties", {})
-        indicators = properties.get("indicator", {}).get("enum", [])
+        indicators = (
+            tool.inputSchema.get("$defs", {}).get("indicator", {}).get("enum", [])
+        )
         for name, schema in properties.items():
             if "description" in schema:
                 continue
@@ -679,7 +683,7 @@ def test_the_garch_methods_are_offered_as_one_indicator_with_a_method():
         for tool in asyncio.run(mcp_controller.mcp.list_tools())
         if tool.name == "risk"
     )
-    indicators = risk.inputSchema["properties"]["indicator"]["enum"]
+    indicators = risk.inputSchema["$defs"]["indicator"]["enum"]
 
     assert "get_garch" in indicators
     assert not [name for name in indicators if "egarch" in name or "gjr" in name]

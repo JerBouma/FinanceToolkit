@@ -169,8 +169,13 @@ def test_rows_of_a_date_and_an_item_keep_every_row_of_the_chosen_dates():
         ),
         (
             pd.period_range("2023-01-06", periods=8, freq="W-FRI"),
-            "monthly",
+            "weekly",
             "weekly already",
+        ),
+        (
+            pd.period_range("2023Q1", periods=8, freq="Q"),
+            "monthly",
+            "quarterly already",
         ),
     ],
 )
@@ -212,3 +217,16 @@ def test_an_invalid_sample_names_the_valid_values(answer, value):
 
     assert text.startswith("Invalid input for `overlap` (`get_moving_average`)")
     assert "weekly, monthly, quarterly, yearly" in text
+
+
+def test_weeks_are_sampled_to_the_month_their_friday_falls_in(answer):
+    weeks = pd.period_range("2023-01-06", periods=8, freq="W-FRI")
+    answer["result"] = pd.DataFrame(
+        {"AAPL": range(len(weeks)), "MSFT": range(len(weeks))}, index=weeks, dtype=float
+    )
+
+    result = call(sample="monthly", limit=0)
+
+    # The week to Friday 3 February is February's first week, though it starts in January.
+    assert dates(result) == ["2023-01-21/2023-01-27", "2023-02-18/2023-02-24"]
+    assert "Sampled to the last row of each month (2 of 8 rows)." in result["_notes"]

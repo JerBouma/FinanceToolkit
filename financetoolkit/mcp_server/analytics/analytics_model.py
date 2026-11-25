@@ -174,7 +174,12 @@ class UsageAnalytics:
 
     # ── Counting ──────────────────────────────────────────────────────────────
     def record_call(
-        self, tool: str, api_key: str, succeeded: bool = True, seconds: float = 0.0
+        self,
+        tool: str,
+        api_key: str,
+        succeeded: bool = True,
+        seconds: float = 0.0,
+        calls: int = 1,
     ) -> None:
         """
         Count a call of a tool, and save every few calls.
@@ -184,6 +189,8 @@ class UsageAnalytics:
             api_key (str): The key the call was made with, empty without one.
             succeeded (bool): Whether the tool returned rather than raised.
             seconds (float): How long the call took.
+            calls (int): The calls it counts as: one per indicator of a call that asks for
+                several. Defaults to 1.
         """
         try:
             user = self.user_id(api_key)
@@ -193,19 +200,19 @@ class UsageAnalytics:
                 if api_key:
                     self._adopt_unkeyed_identifier(api_key, user)
 
-                self.total_calls += 1
-                self.calls_per_tool[tool] = self.calls_per_tool.get(tool, 0) + 1
+                self.total_calls += calls
+                self.calls_per_tool[tool] = self.calls_per_tool.get(tool, 0) + calls
                 self.seconds_per_tool[tool] = (
                     self.seconds_per_tool.get(tool, 0.0) + seconds
                 )
-                self.calls_per_day[today] = self.calls_per_day.get(today, 0) + 1
-                self.calls_per_user[user] = self.calls_per_user.get(user, 0) + 1
+                self.calls_per_day[today] = self.calls_per_day.get(today, 0) + calls
+                self.calls_per_user[user] = self.calls_per_user.get(user, 0) + calls
                 self.first_seen.setdefault(user, today)
 
                 if not succeeded:
-                    self.failed_calls += 1
+                    self.failed_calls += calls
                     self.failures_per_tool[tool] = (
-                        self.failures_per_tool.get(tool, 0) + 1
+                        self.failures_per_tool.get(tool, 0) + calls
                     )
 
                 self._unsaved_calls += 1
@@ -216,7 +223,12 @@ class UsageAnalytics:
         except Exception as error:  # noqa: BLE001
             logger.debug("Could not count the call of %s: %s", tool, error)
 
-    def counted(self, tool: str, function: Callable) -> Any:
+    def counted(
+        self,
+        tool: str,
+        function: Callable,
+        calls: Callable[[dict[str, Any]], int] = lambda arguments: 1,
+    ) -> Any:
         """
         Wrap a tool so every call is counted, keeping the signature and annotations
         FastMCP builds the tool's input schema from.
@@ -224,10 +236,18 @@ class UsageAnalytics:
         Args:
             tool (str): The tool's name.
             function (Callable): The tool, synchronous or asynchronous.
+            calls (Callable[[dict[str, Any]], int]): The calls a call counts as, from its
+                arguments (one per indicator it asks for). Defaults to one.
 
         Returns:
             Any: The counting tool.
         """
+
+        def count(arguments: dict[str, Any]) -> int:
+            try:
+                return max(1, int(calls(arguments)))
+            except Exception:  # noqa: BLE001
+                return 1
 
         def key() -> str:
             try:
@@ -246,7 +266,11 @@ class UsageAnalytics:
                     return result
                 finally:
                     self.record_call(
-                        tool, key(), succeeded, time.perf_counter() - started
+                        tool,
+                        key(),
+                        succeeded,
+                        time.perf_counter() - started,
+                        count(kwargs),
                     )
 
             wrapper: Any = counting_coroutine
@@ -261,7 +285,11 @@ class UsageAnalytics:
                     return result
                 finally:
                     self.record_call(
-                        tool, key(), succeeded, time.perf_counter() - started
+                        tool,
+                        key(),
+                        succeeded,
+                        time.perf_counter() - started,
+                        count(kwargs),
                     )
 
             wrapper = counting_function

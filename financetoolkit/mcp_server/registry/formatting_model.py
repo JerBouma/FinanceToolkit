@@ -533,8 +533,9 @@ def sample_rows(
     data: pd.DataFrame | pd.Series, sample: str
 ) -> tuple[pd.DataFrame | pd.Series, str]:
     """
-    Keeps the last row with a value in each calendar week, month, quarter or year of a daily
-    or intraday answer, including the latest period that has not ended yet. The rows keep
+    Keeps the last row with a value in each calendar week, month, quarter or year of an
+    answer finer than that (daily, intraday, weekly, monthly or quarterly), including the
+    latest period that has not ended yet. The rows keep
     their own dates, so a weekly sample of a 200-day moving average is that average on the
     last trading day of every week. A table with its dates as columns is sampled by column,
     and rows of a date and an item keep every row of the chosen dates.
@@ -563,14 +564,16 @@ def sample_rows(
         if isinstance(dates, pd.PeriodIndex)
         else None
     )
-    if observed != "daily":
+    order = list(PERIOD_ORDER)
+    if observed is None or order.index(observed) >= order.index(sample):
         return data, (
             f"sample={sample!r} was not applied: the answer is "
             f"{observed or 'a single date'} already, as coarse as {sample} or coarser."
         )
 
+    # A week, month or quarter belongs to the period it ends in, as in convert_to_period.
     timestamps = (
-        dates.to_timestamp()
+        dates.to_timestamp(how="end").normalize()
         if isinstance(dates, pd.PeriodIndex)
         else dates.tz_localize(None)
     )

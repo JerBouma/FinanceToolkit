@@ -1368,7 +1368,7 @@ class VolatilityRisk:
             rolling (int, optional): The rolling window size to use for the calculation. If set,
             Volatility is calculated over a rolling window of this many periods (e.g. period='monthly'
             and rolling=6 gives the rolling 6-month Volatility) instead of one value per `period`.
-            Only available for method="close_to_close". Defaults to None.
+            Only available for method="close_to_close". At least 2. Defaults to None.
             method (str, optional): The Volatility estimator, as described above. Options are: "close_to_close"
                 (close-to-close), "parkinson" (Parkinson), "garman_klass" (Garman-Klass), "rogers_satchell"
                 (Rogers-Satchell), "yang_zhang" (Yang-Zhang), "garman_klass_yang_zhang" (Garman-Klass Yang-Zhang),
@@ -1708,7 +1708,7 @@ class VolatilityRisk:
             rolling (int, optional): The rolling window size to use for the calculation. If set,
             Excess Volatility is calculated over a rolling window of this many periods (e.g.
             period='monthly' and rolling=6 gives the rolling 6-month Excess Volatility) instead of
-            one value per `period`. Defaults to None.
+            one value per `period`. At least 2. Defaults to None.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the Excess Volatility values
@@ -1864,7 +1864,7 @@ class VolatilityRisk:
             single day only nests observations when intraday data was fetched.
             rolling (int, optional): The rolling window size to use for the calculation. If set, the Downside
             Deviation is calculated over a rolling window of this many periods across the full return history
-            instead of per `period`. Defaults to None.
+            instead of per `period`. At least 2. Defaults to None.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the Downside Deviation values over
@@ -2019,7 +2019,7 @@ class VolatilityRisk:
             single day only nests observations when intraday data was fetched.
             rolling (int, optional): The rolling window size to use for the calculation. If set, the Upside Deviation
             is calculated over a rolling window of this many periods across the full return history
-            instead of per `period`. Defaults to None.
+            instead of per `period`. At least 2. Defaults to None.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the Upside Deviation values over time.
@@ -2150,7 +2150,7 @@ class VolatilityRisk:
             single day only nests observations when intraday data was fetched.
             rolling (int, optional): The rolling window size to use for the calculation. If set, the Volatility Skewness
             is calculated over a rolling window of this many periods across the full return history
-            instead of per `period`. Defaults to None.
+            instead of per `period`. At least 2. Defaults to None.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the Volatility Skewness values over time.

@@ -10,6 +10,7 @@ import pandas as pd
 
 from financetoolkit.helpers import (
     calendar_periods,
+    check_trailing,
     require_input,
     trailing_mean,
     trailing_sum,
@@ -57,6 +58,7 @@ LONG_RUN_GROWTH_RATE = 0.025
 GRAHAM_MAXIMUM_GROWTH_RATE = 0.20
 
 
+@check_trailing
 @filter_shown_columns
 @track_sources
 class ValuationModels:
@@ -4249,6 +4251,7 @@ class ValuationModels:
         cash_flows = self._valuation_cash_flows(cash_flow_type, trailing)
 
         rows = {}
+        without_price = []
         for ticker in self._tickers:
             # Summed on the calendar periods before the NaNs are dropped, so that a missing
             # period does not stretch a trailing sum over more periods than `trailing`.
@@ -4257,6 +4260,8 @@ class ValuationModels:
                 continue
             cash_flow = float(history.iloc[-1])
             share_price = self._latest_price(ticker)
+            if np.isnan(share_price):
+                without_price.append(ticker)
             implied = intrinsic_model.get_implied_growth_rate(
                 share_price=share_price,
                 cash_flow=cash_flow,
@@ -4286,6 +4291,18 @@ class ValuationModels:
                 "Implied Growth Rate": implied,
                 "Historical Growth Rate": historical,
             }
+
+        # A date range after the prices (or without them) still has the statements of the
+        # year before it, so the result would otherwise show cash flows without a reason for
+        # the missing implied growth rate.
+        if without_price:
+            logger.warning(
+                "%s has no share price between %s and %s, so the implied growth rate is NaN and the "
+                "cash flow is the latest one before the end date. Please choose a date range with prices.",
+                ", ".join(without_price),
+                self._start_date,
+                self._end_date,
+            )
 
         return apply_rounding(
             pd.DataFrame(rows).T, rounding if rounding is not None else self._rounding

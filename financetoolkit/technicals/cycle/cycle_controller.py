@@ -8,7 +8,10 @@ import pandas as pd
 
 from financetoolkit.helpers import handle_portfolio
 from financetoolkit.technicals.cycle import cycle_model
-from financetoolkit.technicals.helpers import calculate_per_ticker
+from financetoolkit.technicals.helpers import (
+    calculate_per_ticker,
+    report_missing_values,
+)
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
 from financetoolkit.utilities.error_model import (
     InvalidArgumentError,
@@ -28,6 +31,7 @@ from financetoolkit.utilities.statistics_model import (
 # ruff: noqa: E501
 
 
+@report_missing_values
 @filter_shown_columns
 @track_sources
 class CycleTechnicals:

@@ -2072,7 +2072,7 @@ def test_a_rolling_window_longer_than_the_data_is_logged_once(
         )
 
     assert sharpe_ratio.empty or sharpe_ratio.isna().all().all()
-    assert caplog.text.count("is longer than the") == 1
+    assert caplog.text.count("is at least as long as the") == 1
 
 
 def test_an_unknown_metric_of_the_factor_analysis_raises(performance_module):
@@ -2087,3 +2087,21 @@ def test_collect_all_metrics_logs_a_repeated_message_once(caplog):
         after_the_data.collect_all_metrics()
 
     assert caplog.text.count("There are no observations between 2023-06-01") == 1
+
+
+def test_the_rolling_appraisal_ratio_needs_three_periods(performance_module):
+    # A regression on two returns leaves no residual to scale the alpha by.
+    with pytest.raises(InvalidArgumentError, match="at least 3"):
+        performance_module.get_appraisal_ratio(rolling=2)
+    assert performance_module.get_appraisal_ratio(rolling=3).notna().any().any()
+
+
+def test_the_growth_of_a_rolling_ratio_counts_the_periods_with_a_value(
+    performance_module,
+):
+    # Rolling over two of the three yearly returns leaves two ratios, whose growth exists.
+    growth = performance_module.get_sharpe_ratio(
+        period="yearly", rolling=2, growth=True
+    )
+
+    assert growth.notna().any().any()

@@ -1070,3 +1070,18 @@ def test_finalize_dataset_rejects_a_window_below_one():
                 axis="rows",
                 **{name: 0},
             )
+
+
+def test_calculate_growth_counts_the_periods_with_a_value(caplog):
+    # A rolling window leaves its first periods NaN, which give no earlier value either.
+    dataset = pd.DataFrame(
+        {"A": [np.nan, np.nan, 1.0, 2.0]},
+        index=pd.period_range("2020", periods=4, freq="Y"),
+    )
+
+    statistics_model.calculate_growth(dataset, lag=2, axis="index")
+    assert caplog.text.count("The lag of 2 periods is at least as long as the 2") == 1
+
+    caplog.clear()
+    statistics_model.calculate_growth(dataset, lag=1, axis="index")
+    assert "The lag of" not in caplog.text

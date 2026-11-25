@@ -8,7 +8,7 @@ from typing import Literal
 import numpy as np
 import pandas as pd
 
-from financetoolkit.technicals.helpers import apply_on_own_closes
+from financetoolkit.technicals.helpers import apply_on_own_closes, report_missing_values
 from financetoolkit.technicals.labeling import bet_sizing_model, labeling_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
 from financetoolkit.utilities.error_model import (
@@ -50,6 +50,7 @@ def _per_ticker(
     return pd.concat(results, axis=1).swaplevel(0, 1, axis=1)[list(measures)]
 
 
+@report_missing_values
 @filter_shown_columns
 @track_sources
 class LabelingTechnicals:

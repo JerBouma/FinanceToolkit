@@ -1715,8 +1715,8 @@ def test_a_window_of_zero_is_rejected(econometrics_module, method):
         ("get_correlation", 2),
         ("get_z_score", 2),
         ("get_standard_error", 2),
-        ("get_entropy", 2),
-        ("get_hjorth_parameters", 2),
+        ("get_entropy", 4),
+        ("get_hjorth_parameters", 4),
         ("get_lempel_ziv_complexity", 2),
         ("get_percentile", 1),
         ("get_percent_rank", 1),
@@ -1852,3 +1852,45 @@ def test_a_mistake_in_the_call_is_not_skipped_per_ticker(econometrics_module):
         econometrics_module.get_change_points(cost="bogus")
     with pytest.raises(InvalidArgumentError, match="method"):
         econometrics_module.get_berkowitz_test(garch_method="bogus")
+
+
+@pytest.mark.parametrize(
+    ("method", "arguments", "minimum"),
+    [
+        ("get_entropy", {"rolling": 2, "method": "permutation"}, 3),
+        ("get_entropy", {"rolling": 4, "method": "sample", "order": 3}, 5),
+    ],
+)
+def test_a_rolling_window_below_the_measure_minimum_raises(
+    econometrics_module, method, arguments, minimum
+):
+    with pytest.raises(InvalidArgumentError, match=f"at least {minimum}"):
+        getattr(econometrics_module, method)(**arguments)
+
+
+def test_a_series_without_values_is_named(caplog):
+    from financetoolkit import Toolkit
+
+    historical = pd.read_pickle("tests/datasets/historical_dataset.pickle")
+    historical = historical.drop(columns=["Return", "Cumulative Return"], level=0)
+    for column in historical.columns.get_level_values(0).unique():
+        historical[(column, "MSFT")] = np.nan
+    toolkit = Toolkit(
+        tickers=["AAPL", "MSFT"],
+        historical=historical,
+        convert_currency=False,
+        start_date="2019-12-31",
+        end_date="2023-01-01",
+        sleep_timer=False,
+    )
+    toolkit._daily_risk_free_rate = pd.read_pickle(
+        "tests/datasets/risk_free_rate.pickle"
+    )
+    toolkit._daily_treasury_data = pd.read_pickle("tests/datasets/treasury_data.pickle")
+
+    with caplog.at_level("WARNING", logger="financetoolkit"):
+        johansen = toolkit.econometrics.get_johansen_cointegration()
+
+    assert johansen.select_dtypes("number").isna().all().all()
+    assert "MSFT has no daily Adj Close values" in caplog.text
+    assert "also those of the series it is combined with" in caplog.text

@@ -1880,7 +1880,7 @@ def test_a_rolling_window_longer_than_the_data_is_logged_once(risk_module, caplo
         volatility = risk_module.get_volatility(period="monthly", rolling=1000)
 
     assert volatility.isna().all().all()
-    assert caplog.text.count("is longer than the") == 1
+    assert caplog.text.count("is at least as long as the") == 1
 
 
 def test_srisk_of_a_range_without_data_says_so(caplog):
@@ -1907,3 +1907,92 @@ def test_srisk_of_a_range_without_data_says_so(caplog):
 
     assert "The data holds no yearly period with daily returns" in caplog.text
     assert "None" not in caplog.text
+
+
+# Robustness round 2: backtest windows, rolling minimums and constituents without data.
+
+
+@pytest.mark.parametrize("method", ["get_var_backtest", "get_acerbi_szekely_test"])
+def test_a_backtest_window_below_two_raises(risk_module, method):
+    for window in (0, 1, 2.5):
+        with pytest.raises(InvalidArgumentError, match="window is a number"):
+            getattr(risk_module, method)(window=window)
+
+
+def test_a_backtest_window_without_a_tail_observation_is_logged(risk_module, caplog):
+    with caplog.at_level("WARNING", logger="financetoolkit"):
+        result = risk_module.get_acerbi_szekely_test(window=2)
+
+    assert caplog.text.count("holds no observation in the 0.05 tail") == 1
+    # A CVaR of 0 in a two-return window gives NaN rather than an infinite statistic.
+    assert not np.isinf(result.loc["Acerbi-Szekely Statistic"]).any()
+
+
+def test_a_backtest_window_as_long_as_the_returns_is_logged(risk_module, caplog):
+    with caplog.at_level("WARNING", logger="financetoolkit"):
+        result = risk_module.get_var_backtest(window=2000)
+
+    assert result.isna().all().all()
+    assert caplog.text.count("no out-of-sample estimate is left") == 1
+
+
+def test_the_rolling_window_counts_the_periods_with_a_return(risk_module, caplog):
+    # The data starts on 2019-12-31: four years and three yearly returns.
+    with caplog.at_level("WARNING", logger="financetoolkit"):
+        volatility = risk_module.get_volatility(period="yearly", rolling=4)
+
+    assert volatility.isna().all().all()
+    assert "the 3 yearly returns in the data" in caplog.text
+
+
+@pytest.mark.parametrize(
+    ("method", "arguments", "minimum"),
+    [
+        ("get_skewness", {"rolling": 2}, 3),
+        ("get_kurtosis", {"rolling": 3}, 4),
+        ("get_skewness_kurtosis_ratio", {"rolling": 3}, 4),
+        ("get_hurst_exponent", {"rolling": 4}, 5),
+        ("get_hurst_exponent", {"rolling": 100, "method": "rescaled_range"}, 120),
+        ("get_fractal_dimension", {"rolling": 11}, 12),
+        ("get_fractal_dimension", {"rolling": 2, "method": "katz"}, 3),
+        ("get_conditional_expected_drawdown", {"rolling": 20}, 21),
+    ],
+)
+def test_a_rolling_window_below_the_measure_minimum_raises(
+    risk_module, method, arguments, minimum
+):
+    with pytest.raises(InvalidArgumentError, match=f"at least {minimum}"):
+        getattr(risk_module, method)(**arguments)
+
+
+def test_the_rolling_minimums_give_values(risk_module):
+    assert risk_module.get_skewness(rolling=3).notna().any().any()
+    assert risk_module.get_kurtosis(rolling=4).notna().any().any()
+    assert risk_module.get_hurst_exponent(rolling=5).notna().any().any()
+    assert risk_module.get_fractal_dimension(rolling=12).notna().any().any()
+
+
+def test_a_portfolio_constituent_without_returns_is_named(caplog):
+    from financetoolkit import Toolkit
+
+    historical = pd.read_pickle("tests/datasets/historical_dataset.pickle")
+    historical = historical.drop(columns=["Return", "Cumulative Return"], level=0)
+    for column in historical.columns.get_level_values(0).unique():
+        historical[(column, "MSFT")] = np.nan
+    toolkit = Toolkit(
+        tickers=["AAPL", "MSFT"],
+        historical=historical,
+        convert_currency=False,
+        start_date="2019-12-31",
+        end_date="2023-01-01",
+        sleep_timer=False,
+    )
+    toolkit._daily_risk_free_rate = pd.read_pickle(
+        "tests/datasets/risk_free_rate.pickle"
+    )
+
+    with caplog.at_level("WARNING", logger="financetoolkit"):
+        marginal = toolkit.risk.get_marginal_value_at_risk()
+
+    assert marginal.isna().all()
+    assert "MSFT has no Return values" in caplog.text

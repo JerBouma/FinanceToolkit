@@ -2400,7 +2400,16 @@ def test_a_window_longer_than_the_data_is_logged_once(technical_module, caplog):
     technical_module._reported_windows.clear()
     with caplog.at_level("WARNING", logger="financetoolkit"):
         technical_module.collect_overlap_indicators(window=1400)
-    # Every indicator of the collection gets the window, the warning is given once.
+    # Every indicator of the collection gets the window, the collection reports it once.
+    assert caplog.text.count("collect_overlap_indicators over") == 1
+    assert "the windows of 1400 periods are longer than the data" in caplog.text
+    assert "A window of 1400 periods" not in caplog.text
+
+    # A standalone indicator reports its window once per period and window.
+    caplog.clear()
+    with caplog.at_level("WARNING", logger="financetoolkit"):
+        technical_module.get_moving_average(window=1400)
+        technical_module.get_moving_average(window=1400)
     assert caplog.text.count("A window of 1400 periods is longer than") == 1
 
 
@@ -2467,3 +2476,41 @@ def test_a_factor_analysis_without_rankings_names_a_few_metrics(
         ValueError, match=r"^\d+ metrics \(get_\w+, get_\w+, get_\w+ and others\)"
     ):
         technical_module.get_factor_analysis()
+
+
+@pytest.mark.parametrize(
+    "method", ["get_commodity_channel_index", "get_choppiness_index"]
+)
+def test_a_window_of_one_period_is_rejected_where_two_are_needed(
+    technical_module, method
+):
+    with pytest.raises(InvalidArgumentError, match="at least 2"):
+        getattr(technical_module, method)(window=1)
+
+
+def test_a_yearly_collection_reports_its_long_windows_once(technical_module, caplog):
+    with caplog.at_level("WARNING", logger="financetoolkit"):
+        technical_module.collect_all_indicators(period="yearly")
+
+    assert caplog.text.count("collect_all_indicators over") == 1
+    assert "A window of" not in caplog.text
+    assert "has no values for the" not in caplog.text
+
+
+@pytest.mark.parametrize(
+    ("method", "arguments"),
+    [
+        ("get_relative_strength_index", {}),
+        ("get_trix", {"window": 2}),
+    ],
+)
+def test_an_indicator_without_values_says_why(
+    technical_module, method, arguments, caplog
+):
+    # The window of the RSI defaults to None (14 periods) and the TRIX smooths three
+    # times, so neither has a value on four yearly prices.
+    with caplog.at_level("WARNING", logger="financetoolkit"):
+        result = getattr(technical_module, method)(period="yearly", **arguments)
+
+    assert result.isna().all().all()
+    assert caplog.text.count(f"{method} has no values for the") == 1

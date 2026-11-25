@@ -7,7 +7,7 @@ from functools import cached_property
 
 import pandas as pd
 
-from financetoolkit.helpers import LazyDict, trailing_sum
+from financetoolkit.helpers import LazyDict, check_trailing, trailing_sum
 from financetoolkit.models import helpers
 from financetoolkit.models.constraints.constraints_controller import ConstraintsModels
 from financetoolkit.models.distress.distress_controller import DistressModels
@@ -28,6 +28,7 @@ from financetoolkit.utilities.statistics_model import apply_rounding, finalize_d
 logger = get_logger()
 
 
+@check_trailing
 @filter_shown_columns
 @track_sources
 class ModelsBase:
@@ -528,6 +529,7 @@ FACTOR_COLLECTIONS["all"] = FACTOR_COLLECTIONS["scores"] + [
 ]
 
 
+@check_trailing
 @filter_shown_columns
 @track_sources
 class Models(

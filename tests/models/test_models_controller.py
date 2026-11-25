@@ -2956,3 +2956,39 @@ def test_get_capitalized_research_and_development_without_research_says_so(caplo
     assert "No Research and Development Expenses are reported for AAPL, MSFT" in (
         caplog.text
     )
+
+
+def test_a_trailing_window_below_one_is_refused(models_module, caplog):
+    for trailing in (0, -1, 2.5):
+        with pytest.raises(InvalidArgumentError, match="trailing"):
+            models_module.get_kaplan_zingales_index(trailing=trailing)
+
+    with caplog.at_level("WARNING", logger="financetoolkit"):
+        models_module.get_kaplan_zingales_index(trailing=100)
+    assert caplog.text.count("The trailing window of 100 periods is longer") == 1
+
+
+def test_a_reverse_discounted_cash_flow_after_the_prices_says_why(caplog):
+    from financetoolkit import Toolkit
+
+    toolkit = Toolkit(
+        tickers=["AAPL", "MSFT"],
+        historical=pd.read_pickle("tests/datasets/historical_dataset.pickle"),
+        balance=pd.read_pickle("tests/datasets/balance_dataset.pickle"),
+        income=pd.read_pickle("tests/datasets/income_dataset.pickle"),
+        cash=pd.read_pickle("tests/datasets/cash_dataset.pickle"),
+        convert_currency=False,
+        start_date="2023-06-01",
+        end_date="2023-12-31",
+        sleep_timer=False,
+    )
+    toolkit._daily_risk_free_rate = pd.read_pickle(
+        "tests/datasets/risk_free_rate.pickle"
+    )
+    toolkit._daily_treasury_data = pd.read_pickle("tests/datasets/treasury_data.pickle")
+
+    with caplog.at_level("WARNING", logger="financetoolkit"):
+        result = toolkit.models.get_reverse_discounted_cash_flow()
+
+    assert result["Implied Growth Rate"].isna().all()
+    assert caplog.text.count("AAPL, MSFT has no share price between") == 1

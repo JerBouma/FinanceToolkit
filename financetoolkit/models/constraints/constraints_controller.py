@@ -8,7 +8,7 @@ import pandas as pd
 import requests
 
 from financetoolkit.economics.sources import bis_model
-from financetoolkit.helpers import trailing_sum
+from financetoolkit.helpers import check_trailing, trailing_sum
 from financetoolkit.models import helpers
 from financetoolkit.models.constraints import constraints_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
@@ -34,6 +34,7 @@ SIZE_AGE_BASE_YEAR = "2004"
 PRICE_LEVEL_TOLERANCE_DAYS = 400
 
 
+@check_trailing
 @filter_shown_columns
 @track_sources
 class ConstraintsModels:

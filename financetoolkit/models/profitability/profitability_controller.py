@@ -6,7 +6,7 @@ from typing import Literal
 
 import pandas as pd
 
-from financetoolkit.helpers import trailing_mean, trailing_sum
+from financetoolkit.helpers import check_trailing, trailing_mean, trailing_sum
 from financetoolkit.models.profitability import dupont_model, growth_model
 from financetoolkit.ratios import profitability_model, valuation_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
@@ -23,6 +23,7 @@ from financetoolkit.utilities.statistics_model import (
 # ruff: noqa: E501
 
 
+@check_trailing
 @filter_shown_columns
 @track_sources
 class ProfitabilityModels:

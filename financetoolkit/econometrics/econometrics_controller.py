@@ -243,8 +243,29 @@ class EconometricsBase:
                 and "Return" in frame.columns
                 else frame[column]
             ).loc[self._start_date : self._end_date]
+            if tickers is not None:
+                data = data[tickers]
+
+            # A series without any value has no result of its own and, combined date by date
+            # with others, leaves no shared date for any of them, so it is named here.
+            without_values = data.columns[data.count() == 0]
+            if len(without_values):
+                logger.warning(
+                    "%s has no %s %s values between %s and %s, so every result that uses it is NaN%s.",
+                    ", ".join(map(str, without_values)),
+                    period,
+                    column,
+                    self._start_date,
+                    self._end_date,
+                    (
+                        ", also those of the series it is combined with"
+                        if tickers is not None and len(tickers) > 1
+                        else ""
+                    ),
+                )
+
             self._data_cache[key] = (
-                data.dropna(how="all") if tickers is None else data[tickers].dropna()
+                data.dropna(how="all") if tickers is None else data.dropna()
             )
 
         return self._data_cache[key]

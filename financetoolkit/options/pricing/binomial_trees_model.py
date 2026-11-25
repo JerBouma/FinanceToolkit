@@ -3,6 +3,8 @@
 __docformat__ = "google"
 
 
+import itertools
+
 import numpy as np
 import pandas as pd
 from scipy.special import betaincinv, betaln, log_ndtr, ndtr
@@ -33,12 +35,25 @@ def calculate_up_and_down_movements(volatility: float, time_delta: float):
     which the stock price rises or falls in one time step.
 
     Args:
-        volatility (float): the volatility of a stock.
-        time_delta (int): the time delta.
+        volatility (float): the volatility of a stock, above 0.
+        time_delta (float): the length of a time step in years, above 0.
 
     Returns:
         tuple: Up and down movements.
+
+    Raises:
+        ValueError: If the volatility or the time delta is not a finite number above 0.
     """
+    # A zero, negative or NaN input gives equal or NaN movements, from which no tree follows.
+    if not (np.isfinite(volatility) and volatility > 0):
+        raise ValueError(
+            f"volatility must be a finite number above 0, received {volatility!r}."
+        )
+    if not (np.isfinite(time_delta) and time_delta > 0):
+        raise ValueError(
+            f"time_delta must be a finite number above 0, received {time_delta!r}."
+        )
+
     up_movement = np.exp(volatility * np.sqrt(time_delta))
     down_movement = 1 / up_movement
 
@@ -333,69 +348,21 @@ def calculate_stock_prices(
 
         return pd.DataFrame.from_dict(combinations_dict, orient="index")
 
-    combinations_dict: dict = {}
-    unique_combinations = set()
+    # Every path of up and down movements, from all ups to all downs, one by one: a fixed number
+    # of 2^period_length paths, so the listing ends whatever the movements are (even NaN).
+    combinations_dict = {}
 
-    # Generate combinations of maximum period length
-    combination = [up_movement] * period_length
+    for path in itertools.product("UD", repeat=period_length):
+        values = [stock_price]
 
-    while combination.count(up_movement) > 0:
-        combination_key = "".join("U" if x == up_movement else "D" for x in combination)
+        for movement in path:
+            values.append(
+                values[-1] * (up_movement if movement == "U" else down_movement)
+            )
 
-        # Check if combination_key is unique
-        if combination_key not in unique_combinations:
-            combinations_dict[combination_key] = []
-            value = stock_price
+        combinations_dict["".join(path)] = values
 
-            # Add the current stock price to Period 0
-            combinations_dict[combination_key].append(value)
-
-            for movement in combination:
-                value = value * movement
-                combinations_dict[combination_key].append(value)
-
-            unique_combinations.add(combination_key)
-
-        # Generate next combination
-        for i in range(period_length - 1, -1, -1):
-            if combination[i] == up_movement:
-                combination[i] = down_movement
-                break
-
-            combination[i] = up_movement
-
-    combination_key = "".join("U" if x == up_movement else "D" for x in combination)
-    combinations_dict[combination_key] = []
-    value = stock_price
-
-    combinations_dict[combination_key].append(value)
-
-    for movement in combination:
-        value = value * movement
-        combinations_dict[combination_key].append(value)
-
-    unique_combinations.add(combination_key)
-
-    # Create a DataFrame from the Series
-    combinations_df = pd.DataFrame.from_dict(combinations_dict, orient="index")
-
-    if show_unique_combinations:
-        # Add a scoring system in a separate dictionary
-        scoring_system = {"U": 1, "D": -1}
-
-        scoring = pd.Series(
-            {
-                combination: sum(scoring_system[movement] for movement in combination)
-                for combination in combinations_df.index
-            }
-        )
-
-        # keep='last' picks the downs-first path, so row k is a real node at every t >= k.
-        unique_movements = scoring.drop_duplicates(keep="last")
-
-        combinations_df = combinations_df.loc[unique_movements.index]
-
-    return combinations_df
+    return pd.DataFrame.from_dict(combinations_dict, orient="index")
 
 
 def get_call_option_payoffs(

@@ -617,19 +617,18 @@ def test_trailing_dividend_yield_is_the_dividends_of_the_year_over_the_close():
     )
 
 
-def test_get_barrier_option_refuses_a_breached_barrier(options_module, caplog):
+def test_get_barrier_option_refuses_a_breached_barrier(options_module):
     # An up barrier at or below the spot and a down barrier at or above it are breached
-    # before the option starts, which is reported with an empty result.
+    # before the option starts, a mistake in the call that is raised.
     for direction, percentage, message in (
         ("up", 0.9, "above the current stock price"),
         ("up", 1, "above the current stock price"),
         ("down", 1.1, "below the current stock price"),
     ):
-        caplog.clear()
-        assert options_module.get_barrier_option(
-            barrier_direction=direction, barrier_percentage=percentage
-        ).empty
-        assert message in caplog.text
+        with pytest.raises(InvalidArgumentError, match=message):
+            options_module.get_barrier_option(
+                barrier_direction=direction, barrier_percentage=percentage
+            )
 
 
 def test_the_treasury_yield_is_converted_to_continuous_compounding(
@@ -1634,7 +1633,7 @@ def test_the_american_option_is_worth_at_least_the_european_option(options_modul
     assert (american >= european - 1e-4).all().all()
 
 
-def test_cash_dividends_replace_the_dividend_yield(options_module, caplog):
+def test_cash_dividends_replace_the_dividend_yield(options_module):
     # MSFT's next dividend of 0.68 is projected 47 days after the last date of 2022-12-30
     # (2022-11-16 plus the 91 days between its ex-dates); options expiring before it are
     # priced as without dividends, those on or after it lower.
@@ -1647,10 +1646,10 @@ def test_cash_dividends_replace_the_dividend_yield(options_module, caplog):
     assert (escrowed.iloc[:, :46] - without.iloc[:, :46]).abs().max().max() == 0
     assert (escrowed.iloc[:, -5:] < without.iloc[:, -5:]).all().all()
 
-    assert options_module.get_black_scholes_model(
-        dividends="escrowed", dividend_yield=0.01
-    ).empty
-    assert "only used with" in caplog.text
+    with pytest.raises(InvalidArgumentError, match="only used with"):
+        options_module.get_black_scholes_model(
+            dividends="escrowed", dividend_yield=0.01
+        )
 
 
 def test_get_implied_volatility_american(recorder, option_market):
@@ -1790,8 +1789,8 @@ def test_get_forward_start_option(recorder, options_module):
     )
 
 
-def test_compound_style_options_refuse_invalid_choices(options_module, caplog):
-    # Each invalid choice is reported with an empty result.
+def test_compound_style_options_refuse_invalid_choices(options_module):
+    # Each invalid choice is a mistake in the call, raised with the valid values.
     for call, message in (
         (
             lambda: options_module.get_chooser_option(choice_period=1.5),
@@ -1810,15 +1809,14 @@ def test_compound_style_options_refuse_invalid_choices(options_module, caplog):
             "periods",
         ),
     ):
-        caplog.clear()
-        assert call().empty
-        assert message in caplog.text
+        with pytest.raises(InvalidArgumentError, match=message):
+            call()
 
 
-def test_path_dependent_options_refuse_invalid_choices(options_module, caplog):
+def test_path_dependent_options_refuse_invalid_choices(options_module):
     with pytest.raises(InvalidArgumentError, match="method must be one of"):
         options_module.get_asian_option(method="levy")
-    # Each invalid combination is reported with an empty result.
+    # Each invalid combination is a mistake in the call, raised with what to pass instead.
     for call, message in (
         (
             lambda: options_module.get_barrier_option(
@@ -1850,10 +1848,25 @@ def test_path_dependent_options_refuse_invalid_choices(options_module, caplog):
             lambda: options_module.get_touch_option(barrier_percentage=1),
             "touched already",
         ),
+        (
+            lambda: options_module.get_barrier_option(monitoring="hourly"),
+            "monitoring must be one of",
+        ),
+        (
+            lambda: options_module.get_touch_option(monitoring="hourly"),
+            "monitoring must be one of",
+        ),
+        (
+            lambda: options_module.get_barrier_option(barrier_percentage=-0.5),
+            "barrier_percentage",
+        ),
+        (
+            lambda: options_module.get_touch_option(barrier_percentage=0),
+            "barrier_percentage",
+        ),
     ):
-        caplog.clear()
-        assert call().empty
-        assert message in caplog.text
+        with pytest.raises(InvalidArgumentError, match=message):
+            call()
 
 
 def test_monte_carlo_asian_option_is_reproducible_and_close_to_curran(options_module):
@@ -1965,7 +1978,7 @@ def test_get_variance_swap(recorder, option_market):
 
 
 def test_the_variance_swap_is_close_to_the_vix_variance_and_values_a_traded_swap(
-    option_market, caplog
+    option_market,
 ):
     module, _ = option_market
     swaps = module.get_variance_swap(rounding=None)
@@ -1989,8 +2002,8 @@ def test_the_variance_swap_is_close_to_the_vix_variance_and_values_a_traded_swap
     # The table is rounded to four decimals.
     assert traded["Variance Swap Value"] == pytest.approx(expected, abs=2e-4)
 
-    assert module.get_variance_swap(trade_date="2022-12-01").empty
-    assert "needs its strike" in caplog.text
+    with pytest.raises(InvalidArgumentError, match="needs its strike"):
+        module.get_variance_swap(trade_date="2022-12-01")
 
 
 def test_get_delta_hedging_backtest(recorder, options_module):
@@ -2204,3 +2217,146 @@ def test_get_monte_carlo_option_price_american_and_variance_reduction(
             variance_reduction="antithetic",
         )
     )
+
+
+@pytest.fixture
+def options_with_constant_prices(test_toolkit):
+    # MSFT without any price moves, so its volatility is 0, next to AAPL with its own data.
+    module = test_toolkit.options
+    volatility = module._volatility.copy()
+    volatility["MSFT"] = 0.0
+    module.__dict__["_volatility"] = volatility
+    return module
+
+
+@pytest.mark.parametrize(
+    ("method", "arguments"),
+    [
+        ("get_american_option", {}),
+        ("get_barrier_option", {}),
+        ("get_binomial_model", {"time_steps": 5}),
+        ("get_cev_model", {}),
+        ("get_chooser_option", {}),
+        ("get_delta_hedging_simulation", {"simulations": 100}),
+        ("get_exchange_option", {"second_ticker": "AAPL"}),
+        ("get_forward_start_option", {}),
+        ("get_lookback_option", {}),
+        ("get_spread_option", {"second_ticker": "AAPL"}),
+        ("get_stock_price_simulation", {"time_steps": 5}),
+        ("get_touch_option", {}),
+    ],
+)
+def test_a_ticker_without_volatility_leaves_out_only_that_ticker(
+    options_with_constant_prices, method, arguments, caplog
+):
+    result = getattr(options_with_constant_prices, method)(**arguments)
+
+    tickers = set(result.index.get_level_values(0))
+    if method in ("get_exchange_option", "get_spread_option"):
+        # AAPL is the second asset, so MSFT is the only ticker priced against it.
+        assert result.empty
+    else:
+        assert tickers == {"AAPL"}
+    assert "for MSFT" in caplog.text
+
+
+def test_the_stock_price_simulation_refuses_a_time_to_expiration_that_is_not_positive(
+    options_module,
+):
+    # A negative time gave NaN movements, on which listing every path never ended.
+    for time_to_expiration in (-1, 0, float("nan")):
+        with pytest.raises(InvalidArgumentError, match="time_to_expiration"):
+            options_module.get_stock_price_simulation(
+                time_to_expiration=time_to_expiration
+            )
+    with pytest.raises(InvalidArgumentError, match="time_steps"):
+        options_module.get_binomial_model(time_steps=0)
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        {"strike_price_range": 1.5},
+        {"strike_price_range": -0.1},
+        {"strike_step_size": 0},
+        {"strike_step_size": -5},
+        {"strike_step_size": 0.001},
+        {"expiration_time_range": 1},
+        {"expiration_time_range": 0},
+    ],
+)
+def test_the_greeks_refuse_an_invalid_grid(options_module, arguments):
+    # Each raised a TypeError from combining the empty greeks, after logging once per greek.
+    with pytest.raises(InvalidArgumentError):
+        options_module.collect_first_order_greeks(**arguments)
+    with pytest.raises(InvalidArgumentError):
+        options_module.collect_all_greeks(**arguments)
+    with pytest.raises(InvalidArgumentError):
+        options_module.get_black_scholes_model(**arguments)
+
+
+def test_the_greeks_are_empty_with_one_warning_when_none_can_be_calculated(
+    test_toolkit, monkeypatch, caplog
+):
+    module = test_toolkit.options
+    for greek in ("get_delta", "get_dual_delta", "get_vega", "get_theta", "get_rho"):
+        monkeypatch.setattr(module, greek, lambda **_: pd.DataFrame())
+    for greek in ("get_epsilon", "get_lambda"):
+        monkeypatch.setattr(module, greek, lambda **_: pd.DataFrame())
+
+    assert module.collect_all_greeks().empty
+    assert caplog.text.count("None of the greeks could be calculated") == 1
+
+
+@pytest.mark.parametrize(
+    ("method", "arguments", "name"),
+    [
+        ("get_monte_carlo_option_price", {"simulations": 0}, "simulations"),
+        ("get_monte_carlo_option_price", {"time_steps": 0}, "time_steps"),
+        ("get_asian_option", {"simulations": 0}, "simulations"),
+        ("get_asian_option", {"fixings": 0}, "fixings"),
+        ("get_cev_model", {"beta": 1.5}, "beta"),
+        ("get_chooser_option", {"choice_period": -0.1}, "choice_period"),
+        ("get_delta_hedging_simulation", {"moneyness": 0}, "moneyness"),
+        ("get_delta_hedging_simulation", {"simulations": 0}, "simulations"),
+        ("get_delta_hedging_backtest", {"days": 0}, "days"),
+        ("get_exchange_option", {"exchange_ratio": 0}, "exchange_ratio"),
+        (
+            "get_heston_nandi_model",
+            {"expiration_time_range": 1},
+            "expiration_time_range",
+        ),
+        ("get_put_call_ratio", {"number_of_expirations": 0}, "number_of_expirations"),
+        ("get_model_free_implied_volatility", {"days": 0}, "days"),
+        ("get_skew_index", {"days": 0}, "days"),
+        ("get_risk_neutral_density", {"number_of_strikes": 2}, "number_of_strikes"),
+    ],
+)
+def test_the_options_refuse_invalid_arguments(options_module, method, arguments, name):
+    with pytest.raises(InvalidArgumentError, match=name):
+        getattr(options_module, method)(**arguments)
+
+
+def test_the_put_call_parity_says_why_its_z_scores_are_empty(options_module, caplog):
+    result = options_module.get_put_call_parity(standardize=True)
+
+    assert result.isna().all().all()
+    assert "no Z-score to calculate" in caplog.text
+
+
+def test_bjerksund_stensland_warns_about_a_negative_cost_of_carry(
+    options_module, caplog
+):
+    options_module.get_american_option(
+        method="bjerksund_stensland", risk_free_rate=-0.01, expiration_time_range=3
+    )
+    assert caplog.text.count('Use method="qd_plus"') == 1
+
+    caplog.clear()
+    options_module.get_american_option(
+        method="bjerksund_stensland",
+        risk_free_rate=0.05,
+        dividend_yield=0.01,
+        expiration_time_range=3,
+    )
+    assert "qd_plus" not in caplog.text

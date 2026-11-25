@@ -6,11 +6,15 @@ import io
 
 import numpy as np
 import pandas as pd
+import requests
 
 from financetoolkit import helpers
 from financetoolkit.cache import policy_model
 from financetoolkit.cache.cache_controller import get_active_cache
+from financetoolkit.utilities import logger_model
 from financetoolkit.utilities.requests_model import get_request
+
+logger = logger_model.get_logger()
 
 BASE_URL = "https://data-api.ecb.europa.eu/service/data/"
 EXTENSIONS = "?format=csvdata"
@@ -35,7 +39,8 @@ def collect_ecb_data(
             the PeriodIndex, e.g. 'D' for daily or 'M' for monthly. Defaults to 'D'.
 
     Returns:
-       pd.DataFrame: A DataFrame containing the data from the ECB API.
+       pd.DataFrame: A DataFrame containing the data from the ECB API, empty (with an error
+       logged) when the ECB cannot be reached.
     """
     cache = get_active_cache()
     cache_entity = f"{dataset}/{ecb_data_string}"
@@ -53,7 +58,17 @@ def collect_ecb_data(
             return cached_data
 
     url = f"{BASE_URL}{dataset}/{ecb_data_string}{EXTENSIONS}"
-    response = get_request(url)
+    try:
+        response = get_request(url)
+    except requests.exceptions.RequestException as error:
+        logger.error(
+            "Could not reach the European Central Bank for the %s series %s (%s). No data is "
+            "returned for it.",
+            dataset,
+            ecb_data_string,
+            error,
+        )
+        return pd.Series(dtype=float)
     ecb_data = pd.read_csv(io.StringIO(response.text))
 
     ecb_data = ecb_data.set_index("TIME_PERIOD")

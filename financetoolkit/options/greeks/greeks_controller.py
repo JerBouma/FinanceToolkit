@@ -6,6 +6,7 @@ import pandas as pd
 
 from financetoolkit.options import helpers
 from financetoolkit.options.greeks import greeks_model
+from financetoolkit.utilities import logger_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
 from financetoolkit.utilities.error_model import handle_errors
 from financetoolkit.utilities.sources_model import track_sources
@@ -15,6 +16,8 @@ from financetoolkit.utilities.statistics_model import (
 )
 
 # ruff: noqa: E501
+
+logger = logger_model.get_logger()
 
 
 @filter_shown_columns
@@ -105,12 +108,12 @@ class GreeksOptions:
             start from; a date without prices (a weekend or a holiday) uses the last trading day before it, and a
             ticker without a price on that day is left out with a warning. Defaults to None, which uses the
             last date of the historical data.
-            strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
+            strike_price_range (float): The percentage range to use for the strike prices, between 0 and 1. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
-            strike_step_size (float): The step size to use for the strike prices. Defaults to 5 which means that the
+            strike_step_size (float): The step size to use for the strike prices, above 0. Defaults to 5 which means that the
             strike prices will be 75, 80, 85, ..., 120 and 125 if the current stock price is 100.
             expiration_time_range (int): The number of days to use for the time to expiration: the columns are the
-            expirations 1 up to expiration_time_range - 1 days after the start date. Defaults to 30, which gives
+            expirations 1 up to expiration_time_range - 1 days after the start date, so at least 2. Defaults to 30, which gives
             expirations of 1 to 29 days.
             risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None, which
             uses the Toolkit's risk-free rate on the pricing date: the 10-year Treasury yield unless the Toolkit's
@@ -193,6 +196,10 @@ class GreeksOptions:
             rounding=rounding,
             standardize=standardize,
         )
+
+        if first_order_greeks.empty:
+            # The first order greeks have logged why none could be calculated; the others share the reason.
+            return first_order_greeks
 
         second_order_greeks = self.collect_second_order_greeks(
             start_date=start_date,
@@ -277,12 +284,12 @@ class GreeksOptions:
             start from; a date without prices (a weekend or a holiday) uses the last trading day before it, and a
             ticker without a price on that day is left out with a warning. Defaults to None, which uses the
             last date of the historical data.
-            strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
+            strike_price_range (float): The percentage range to use for the strike prices, between 0 and 1. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
-            strike_step_size (float): The step size to use for the strike prices. Defaults to 5 which means that the
+            strike_step_size (float): The step size to use for the strike prices, above 0. Defaults to 5 which means that the
             strike prices will be 75, 80, 85, ..., 120 and 125 if the current stock price is 100.
             expiration_time_range (int): The number of days to use for the time to expiration: the columns are the
-            expirations 1 up to expiration_time_range - 1 days after the start date. Defaults to 30, which gives
+            expirations 1 up to expiration_time_range - 1 days after the start date, so at least 2. Defaults to 30, which gives
             expirations of 1 to 29 days.
             risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None, which
             uses the Toolkit's risk-free rate on the pricing date: the 10-year Treasury yield unless the Toolkit's
@@ -429,6 +436,11 @@ class GreeksOptions:
             standardize=standardize,
         )
 
+        if all(greek.empty for greek in greeks.values()):
+            # Each greek has logged why it is empty, which is the same reason for all of them.
+            logger.warning("None of the greeks could be calculated.")
+            return pd.DataFrame()
+
         greeks_df = (
             pd.concat(greeks, axis=1)
             .swaplevel(axis=1)
@@ -498,12 +510,12 @@ class GreeksOptions:
             start from; a date without prices (a weekend or a holiday) uses the last trading day before it, and a
             ticker without a price on that day is left out with a warning. Defaults to None, which uses the
             last date of the historical data.
-            strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
+            strike_price_range (float): The percentage range to use for the strike prices, between 0 and 1. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
-            strike_step_size (float): The step size to use for the strike prices. Defaults to 5 which means that the
+            strike_step_size (float): The step size to use for the strike prices, above 0. Defaults to 5 which means that the
             strike prices will be 75, 80, 85, ..., 120 and 125 if the current stock price is 100.
             expiration_time_range (int): The number of days to use for the time to expiration: the columns are the
-            expirations 1 up to expiration_time_range - 1 days after the start date. Defaults to 30, which gives
+            expirations 1 up to expiration_time_range - 1 days after the start date, so at least 2. Defaults to 30, which gives
             expirations of 1 to 29 days.
             risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None, which
             uses the Toolkit's risk-free rate on the pricing date: the 10-year Treasury yield unless the Toolkit's
@@ -582,10 +594,9 @@ class GreeksOptions:
             values_per_strike=expiration_time_range,
         )
 
-        # This creates a list of time to expiration values from 0 to time_range, with a step size of 1
-        time_to_expiration_list = [
-            time / 365 for time in range(0, expiration_time_range)
-        ]
+        time_to_expiration_list = helpers.define_times_to_expiration(
+            expiration_time_range
+        )
 
         delta: dict[str, dict[float, dict[float, float]]] = {}
         dividend_yield_value: dict[str, float] = {}
@@ -691,12 +702,12 @@ class GreeksOptions:
             start from; a date without prices (a weekend or a holiday) uses the last trading day before it, and a
             ticker without a price on that day is left out with a warning. Defaults to None, which uses the
             last date of the historical data.
-            strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
+            strike_price_range (float): The percentage range to use for the strike prices, between 0 and 1. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
-            strike_step_size (float): The step size to use for the strike prices. Defaults to 5 which means that the
+            strike_step_size (float): The step size to use for the strike prices, above 0. Defaults to 5 which means that the
             strike prices will be 75, 80, 85, ..., 120 and 125 if the current stock price is 100.
             expiration_time_range (int): The number of days to use for the time to expiration: the columns are the
-            expirations 1 up to expiration_time_range - 1 days after the start date. Defaults to 30, which gives
+            expirations 1 up to expiration_time_range - 1 days after the start date, so at least 2. Defaults to 30, which gives
             expirations of 1 to 29 days.
             risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None, which
             uses the Toolkit's risk-free rate on the pricing date: the 10-year Treasury yield unless the Toolkit's
@@ -780,10 +791,9 @@ class GreeksOptions:
             values_per_strike=expiration_time_range,
         )
 
-        # This creates a list of time to expiration values from 0 to time_range, with a step size of 1
-        time_to_expiration_list = [
-            time / 365 for time in range(0, expiration_time_range)
-        ]
+        time_to_expiration_list = helpers.define_times_to_expiration(
+            expiration_time_range
+        )
 
         dual_delta: dict[str, dict[float, dict[float, float]]] = {}
         dividend_yield_value: dict[str, float] = {}
@@ -899,12 +909,12 @@ class GreeksOptions:
             start from; a date without prices (a weekend or a holiday) uses the last trading day before it, and a
             ticker without a price on that day is left out with a warning. Defaults to None, which uses the
             last date of the historical data.
-            strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
+            strike_price_range (float): The percentage range to use for the strike prices, between 0 and 1. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
-            strike_step_size (float): The step size to use for the strike prices. Defaults to 5 which means that the
+            strike_step_size (float): The step size to use for the strike prices, above 0. Defaults to 5 which means that the
             strike prices will be 75, 80, 85, ..., 120 and 125 if the current stock price is 100.
             expiration_time_range (int): The number of days to use for the time to expiration: the columns are the
-            expirations 1 up to expiration_time_range - 1 days after the start date. Defaults to 30, which gives
+            expirations 1 up to expiration_time_range - 1 days after the start date, so at least 2. Defaults to 30, which gives
             expirations of 1 to 29 days.
             risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None, which
             uses the Toolkit's risk-free rate on the pricing date: the 10-year Treasury yield unless the Toolkit's
@@ -981,10 +991,9 @@ class GreeksOptions:
             values_per_strike=expiration_time_range,
         )
 
-        # This creates a list of time to expiration values from 0 to time_range, with a step size of 1
-        time_to_expiration_list = [
-            time / 365 for time in range(0, expiration_time_range)
-        ]
+        time_to_expiration_list = helpers.define_times_to_expiration(
+            expiration_time_range
+        )
 
         vega: dict[str, dict[float, dict[float, float]]] = {}
         dividend_yield_value: dict[str, float] = {}
@@ -1101,12 +1110,12 @@ class GreeksOptions:
             start from; a date without prices (a weekend or a holiday) uses the last trading day before it, and a
             ticker without a price on that day is left out with a warning. Defaults to None, which uses the
             last date of the historical data.
-            strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
+            strike_price_range (float): The percentage range to use for the strike prices, between 0 and 1. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
-            strike_step_size (float): The step size to use for the strike prices. Defaults to 5 which means that the
+            strike_step_size (float): The step size to use for the strike prices, above 0. Defaults to 5 which means that the
             strike prices will be 75, 80, 85, ..., 120 and 125 if the current stock price is 100.
             expiration_time_range (int): The number of days to use for the time to expiration: the columns are the
-            expirations 1 up to expiration_time_range - 1 days after the start date. Defaults to 30, which gives
+            expirations 1 up to expiration_time_range - 1 days after the start date, so at least 2. Defaults to 30, which gives
             expirations of 1 to 29 days.
             risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None, which
             uses the Toolkit's risk-free rate on the pricing date: the 10-year Treasury yield unless the Toolkit's
@@ -1182,10 +1191,9 @@ class GreeksOptions:
             values_per_strike=expiration_time_range,
         )
 
-        # This creates a list of time to expiration values from 0 to time_range, with a step size of 1
-        time_to_expiration_list = [
-            time / 365 for time in range(0, expiration_time_range)
-        ]
+        time_to_expiration_list = helpers.define_times_to_expiration(
+            expiration_time_range
+        )
 
         theta: dict[str, dict[float, dict[float, float]]] = {}
         dividend_yield_value: dict[str, float] = {}
@@ -1297,12 +1305,12 @@ class GreeksOptions:
             start from; a date without prices (a weekend or a holiday) uses the last trading day before it, and a
             ticker without a price on that day is left out with a warning. Defaults to None, which uses the
             last date of the historical data.
-            strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
+            strike_price_range (float): The percentage range to use for the strike prices, between 0 and 1. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
-            strike_step_size (float): The step size to use for the strike prices. Defaults to 5 which means that the
+            strike_step_size (float): The step size to use for the strike prices, above 0. Defaults to 5 which means that the
             strike prices will be 75, 80, 85, ..., 120 and 125 if the current stock price is 100.
             expiration_time_range (int): The number of days to use for the time to expiration: the columns are the
-            expirations 1 up to expiration_time_range - 1 days after the start date. Defaults to 30, which gives
+            expirations 1 up to expiration_time_range - 1 days after the start date, so at least 2. Defaults to 30, which gives
             expirations of 1 to 29 days.
             risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None, which
             uses the Toolkit's risk-free rate on the pricing date: the 10-year Treasury yield unless the Toolkit's
@@ -1376,10 +1384,9 @@ class GreeksOptions:
             values_per_strike=expiration_time_range,
         )
 
-        # This creates a list of time to expiration values from 0 to time_range, with a step size of 1
-        time_to_expiration_list = [
-            time / 365 for time in range(0, expiration_time_range)
-        ]
+        time_to_expiration_list = helpers.define_times_to_expiration(
+            expiration_time_range
+        )
 
         rho: dict[str, dict[float, dict[float, float]]] = {}
         dividend_yield_value: dict[str, float] = {}
@@ -1487,12 +1494,12 @@ class GreeksOptions:
             start from; a date without prices (a weekend or a holiday) uses the last trading day before it, and a
             ticker without a price on that day is left out with a warning. Defaults to None, which uses the
             last date of the historical data.
-            strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
+            strike_price_range (float): The percentage range to use for the strike prices, between 0 and 1. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
-            strike_step_size (float): The step size to use for the strike prices. Defaults to 5 which means that the
+            strike_step_size (float): The step size to use for the strike prices, above 0. Defaults to 5 which means that the
             strike prices will be 75, 80, 85, ..., 120 and 125 if the current stock price is 100.
             expiration_time_range (int): The number of days to use for the time to expiration: the columns are the
-            expirations 1 up to expiration_time_range - 1 days after the start date. Defaults to 30, which gives
+            expirations 1 up to expiration_time_range - 1 days after the start date, so at least 2. Defaults to 30, which gives
             expirations of 1 to 29 days.
             risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None, which
             uses the Toolkit's risk-free rate on the pricing date: the 10-year Treasury yield unless the Toolkit's
@@ -1567,10 +1574,9 @@ class GreeksOptions:
             values_per_strike=expiration_time_range,
         )
 
-        # This creates a list of time to expiration values from 0 to time_range, with a step size of 1
-        time_to_expiration_list = [
-            time / 365 for time in range(0, expiration_time_range)
-        ]
+        time_to_expiration_list = helpers.define_times_to_expiration(
+            expiration_time_range
+        )
 
         epsilon: dict[str, dict[float, dict[float, float]]] = {}
         dividend_yield_value: dict[str, float] = {}
@@ -1680,12 +1686,12 @@ class GreeksOptions:
             start from; a date without prices (a weekend or a holiday) uses the last trading day before it, and a
             ticker without a price on that day is left out with a warning. Defaults to None, which uses the
             last date of the historical data.
-            strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
+            strike_price_range (float): The percentage range to use for the strike prices, between 0 and 1. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
-            strike_step_size (float): The step size to use for the strike prices. Defaults to 5 which means that the
+            strike_step_size (float): The step size to use for the strike prices, above 0. Defaults to 5 which means that the
             strike prices will be 75, 80, 85, ..., 120 and 125 if the current stock price is 100.
             expiration_time_range (int): The number of days to use for the time to expiration: the columns are the
-            expirations 1 up to expiration_time_range - 1 days after the start date. Defaults to 30, which gives
+            expirations 1 up to expiration_time_range - 1 days after the start date, so at least 2. Defaults to 30, which gives
             expirations of 1 to 29 days.
             risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None, which
             uses the Toolkit's risk-free rate on the pricing date: the 10-year Treasury yield unless the Toolkit's
@@ -1764,10 +1770,9 @@ class GreeksOptions:
             values_per_strike=expiration_time_range,
         )
 
-        # This creates a list of time to expiration values from 0 to time_range, with a step size of 1
-        time_to_expiration_list = [
-            time / 365 for time in range(0, expiration_time_range)
-        ]
+        time_to_expiration_list = helpers.define_times_to_expiration(
+            expiration_time_range
+        )
 
         lambda_greek: dict[str, dict[float, dict[float, float]]] = {}
         dividend_yield_value: dict[str, float] = {}
@@ -1876,12 +1881,12 @@ class GreeksOptions:
             start from; a date without prices (a weekend or a holiday) uses the last trading day before it, and a
             ticker without a price on that day is left out with a warning. Defaults to None, which uses the
             last date of the historical data.
-            strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
+            strike_price_range (float): The percentage range to use for the strike prices, between 0 and 1. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
-            strike_step_size (float): The step size to use for the strike prices. Defaults to 5 which means that the
+            strike_step_size (float): The step size to use for the strike prices, above 0. Defaults to 5 which means that the
             strike prices will be 75, 80, 85, ..., 120 and 125 if the current stock price is 100.
             expiration_time_range (int): The number of days to use for the time to expiration: the columns are the
-            expirations 1 up to expiration_time_range - 1 days after the start date. Defaults to 30, which gives
+            expirations 1 up to expiration_time_range - 1 days after the start date, so at least 2. Defaults to 30, which gives
             expirations of 1 to 29 days.
             risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None, which
             uses the Toolkit's risk-free rate on the pricing date: the 10-year Treasury yield unless the Toolkit's
@@ -2034,6 +2039,11 @@ class GreeksOptions:
             standardize=standardize,
         )
 
+        if all(greek.empty for greek in greeks.values()):
+            # Each greek has logged why it is empty, which is the same reason for all of them.
+            logger.warning("None of the greeks could be calculated.")
+            return pd.DataFrame()
+
         greeks_df = (
             pd.concat(greeks, axis=1)
             .swaplevel(axis=1)
@@ -2098,12 +2108,12 @@ class GreeksOptions:
             start from; a date without prices (a weekend or a holiday) uses the last trading day before it, and a
             ticker without a price on that day is left out with a warning. Defaults to None, which uses the
             last date of the historical data.
-            strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
+            strike_price_range (float): The percentage range to use for the strike prices, between 0 and 1. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
-            strike_step_size (float): The step size to use for the strike prices. Defaults to 5 which means that the
+            strike_step_size (float): The step size to use for the strike prices, above 0. Defaults to 5 which means that the
             strike prices will be 75, 80, 85, ..., 120 and 125 if the current stock price is 100.
             expiration_time_range (int): The number of days to use for the time to expiration: the columns are the
-            expirations 1 up to expiration_time_range - 1 days after the start date. Defaults to 30, which gives
+            expirations 1 up to expiration_time_range - 1 days after the start date, so at least 2. Defaults to 30, which gives
             expirations of 1 to 29 days.
             risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None, which
             uses the Toolkit's risk-free rate on the pricing date: the 10-year Treasury yield unless the Toolkit's
@@ -2175,10 +2185,9 @@ class GreeksOptions:
             values_per_strike=expiration_time_range,
         )
 
-        # This creates a list of time to expiration values from 0 to time_range, with a step size of 1
-        time_to_expiration_list = [
-            time / 365 for time in range(0, expiration_time_range)
-        ]
+        time_to_expiration_list = helpers.define_times_to_expiration(
+            expiration_time_range
+        )
 
         gamma: dict[str, dict[float, dict[float, float]]] = {}
         dividend_yield_value: dict[str, float] = {}
@@ -2280,12 +2289,12 @@ class GreeksOptions:
             start from; a date without prices (a weekend or a holiday) uses the last trading day before it, and a
             ticker without a price on that day is left out with a warning. Defaults to None, which uses the
             last date of the historical data.
-            strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
+            strike_price_range (float): The percentage range to use for the strike prices, between 0 and 1. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
-            strike_step_size (float): The step size to use for the strike prices. Defaults to 5 which means that the
+            strike_step_size (float): The step size to use for the strike prices, above 0. Defaults to 5 which means that the
             strike prices will be 75, 80, 85, ..., 120 and 125 if the current stock price is 100.
             expiration_time_range (int): The number of days to use for the time to expiration: the columns are the
-            expirations 1 up to expiration_time_range - 1 days after the start date. Defaults to 30, which gives
+            expirations 1 up to expiration_time_range - 1 days after the start date, so at least 2. Defaults to 30, which gives
             expirations of 1 to 29 days.
             risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None, which
             uses the Toolkit's risk-free rate on the pricing date: the 10-year Treasury yield unless the Toolkit's
@@ -2357,10 +2366,9 @@ class GreeksOptions:
             values_per_strike=expiration_time_range,
         )
 
-        # This creates a list of time to expiration values from 0 to time_range, with a step size of 1
-        time_to_expiration_list = [
-            time / 365 for time in range(0, expiration_time_range)
-        ]
+        time_to_expiration_list = helpers.define_times_to_expiration(
+            expiration_time_range
+        )
 
         dual_gamma: dict[str, dict[float, dict[float, float]]] = {}
         dividend_yield_value: dict[str, float] = {}
@@ -2466,12 +2474,12 @@ class GreeksOptions:
             start from; a date without prices (a weekend or a holiday) uses the last trading day before it, and a
             ticker without a price on that day is left out with a warning. Defaults to None, which uses the
             last date of the historical data.
-            strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
+            strike_price_range (float): The percentage range to use for the strike prices, between 0 and 1. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
-            strike_step_size (float): The step size to use for the strike prices. Defaults to 5 which means that the
+            strike_step_size (float): The step size to use for the strike prices, above 0. Defaults to 5 which means that the
             strike prices will be 75, 80, 85, ..., 120 and 125 if the current stock price is 100.
             expiration_time_range (int): The number of days to use for the time to expiration: the columns are the
-            expirations 1 up to expiration_time_range - 1 days after the start date. Defaults to 30, which gives
+            expirations 1 up to expiration_time_range - 1 days after the start date, so at least 2. Defaults to 30, which gives
             expirations of 1 to 29 days.
             risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None, which
             uses the Toolkit's risk-free rate on the pricing date: the 10-year Treasury yield unless the Toolkit's
@@ -2550,10 +2558,9 @@ class GreeksOptions:
             values_per_strike=expiration_time_range,
         )
 
-        # This creates a list of time to expiration values from 0 to time_range, with a step size of 1
-        time_to_expiration_list = [
-            time / 365 for time in range(0, expiration_time_range)
-        ]
+        time_to_expiration_list = helpers.define_times_to_expiration(
+            expiration_time_range
+        )
 
         vanna: dict[str, dict[float, dict[float, float]]] = {}
         dividend_yield_value: dict[str, float] = {}
@@ -2663,12 +2670,12 @@ class GreeksOptions:
             start from; a date without prices (a weekend or a holiday) uses the last trading day before it, and a
             ticker without a price on that day is left out with a warning. Defaults to None, which uses the
             last date of the historical data.
-            strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
+            strike_price_range (float): The percentage range to use for the strike prices, between 0 and 1. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
-            strike_step_size (float): The step size to use for the strike prices. Defaults to 5 which means that the
+            strike_step_size (float): The step size to use for the strike prices, above 0. Defaults to 5 which means that the
             strike prices will be 75, 80, 85, ..., 120 and 125 if the current stock price is 100.
             expiration_time_range (int): The number of days to use for the time to expiration: the columns are the
-            expirations 1 up to expiration_time_range - 1 days after the start date. Defaults to 30, which gives
+            expirations 1 up to expiration_time_range - 1 days after the start date, so at least 2. Defaults to 30, which gives
             expirations of 1 to 29 days.
             risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None, which
             uses the Toolkit's risk-free rate on the pricing date: the 10-year Treasury yield unless the Toolkit's
@@ -2753,10 +2760,9 @@ class GreeksOptions:
             values_per_strike=expiration_time_range,
         )
 
-        # This creates a list of time to expiration values from 0 to time_range, with a step size of 1
-        time_to_expiration_list = [
-            time / 365 for time in range(0, expiration_time_range)
-        ]
+        time_to_expiration_list = helpers.define_times_to_expiration(
+            expiration_time_range
+        )
 
         charm: dict[str, dict[float, dict[float, float]]] = {}
         dividend_yield_value: dict[str, float] = {}
@@ -2862,12 +2868,12 @@ class GreeksOptions:
             start from; a date without prices (a weekend or a holiday) uses the last trading day before it, and a
             ticker without a price on that day is left out with a warning. Defaults to None, which uses the
             last date of the historical data.
-            strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
+            strike_price_range (float): The percentage range to use for the strike prices, between 0 and 1. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
-            strike_step_size (float): The step size to use for the strike prices. Defaults to 5 which means that the
+            strike_step_size (float): The step size to use for the strike prices, above 0. Defaults to 5 which means that the
             strike prices will be 75, 80, 85, ..., 120 and 125 if the current stock price is 100.
             expiration_time_range (int): The number of days to use for the time to expiration: the columns are the
-            expirations 1 up to expiration_time_range - 1 days after the start date. Defaults to 30, which gives
+            expirations 1 up to expiration_time_range - 1 days after the start date, so at least 2. Defaults to 30, which gives
             expirations of 1 to 29 days.
             risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None, which
             uses the Toolkit's risk-free rate on the pricing date: the 10-year Treasury yield unless the Toolkit's
@@ -2949,10 +2955,9 @@ class GreeksOptions:
             values_per_strike=expiration_time_range,
         )
 
-        # This creates a list of time to expiration values from 0 to time_range, with a step size of 1
-        time_to_expiration_list = [
-            time / 365 for time in range(0, expiration_time_range)
-        ]
+        time_to_expiration_list = helpers.define_times_to_expiration(
+            expiration_time_range
+        )
 
         vomma: dict[str, dict[float, dict[float, float]]] = {}
         dividend_yield_value: dict[str, float] = {}
@@ -3060,12 +3065,12 @@ class GreeksOptions:
             start from; a date without prices (a weekend or a holiday) uses the last trading day before it, and a
             ticker without a price on that day is left out with a warning. Defaults to None, which uses the
             last date of the historical data.
-            strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
+            strike_price_range (float): The percentage range to use for the strike prices, between 0 and 1. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
-            strike_step_size (float): The step size to use for the strike prices. Defaults to 5 which means that the
+            strike_step_size (float): The step size to use for the strike prices, above 0. Defaults to 5 which means that the
             strike prices will be 75, 80, 85, ..., 120 and 125 if the current stock price is 100.
             expiration_time_range (int): The number of days to use for the time to expiration: the columns are the
-            expirations 1 up to expiration_time_range - 1 days after the start date. Defaults to 30, which gives
+            expirations 1 up to expiration_time_range - 1 days after the start date, so at least 2. Defaults to 30, which gives
             expirations of 1 to 29 days.
             risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None, which
             uses the Toolkit's risk-free rate on the pricing date: the 10-year Treasury yield unless the Toolkit's
@@ -3143,10 +3148,9 @@ class GreeksOptions:
             values_per_strike=expiration_time_range,
         )
 
-        # This creates a list of time to expiration values from 0 to time_range, with a step size of 1
-        time_to_expiration_list = [
-            time / 365 for time in range(0, expiration_time_range)
-        ]
+        time_to_expiration_list = helpers.define_times_to_expiration(
+            expiration_time_range
+        )
 
         vera: dict[str, dict[float, dict[float, float]]] = {}
         dividend_yield_value: dict[str, float] = {}
@@ -3257,12 +3261,12 @@ class GreeksOptions:
             start from; a date without prices (a weekend or a holiday) uses the last trading day before it, and a
             ticker without a price on that day is left out with a warning. Defaults to None, which uses the
             last date of the historical data.
-            strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
+            strike_price_range (float): The percentage range to use for the strike prices, between 0 and 1. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
-            strike_step_size (float): The step size to use for the strike prices. Defaults to 5 which means that the
+            strike_step_size (float): The step size to use for the strike prices, above 0. Defaults to 5 which means that the
             strike prices will be 75, 80, 85, ..., 120 and 125 if the current stock price is 100.
             expiration_time_range (int): The number of days to use for the time to expiration: the columns are the
-            expirations 1 up to expiration_time_range - 1 days after the start date. Defaults to 30, which gives
+            expirations 1 up to expiration_time_range - 1 days after the start date, so at least 2. Defaults to 30, which gives
             expirations of 1 to 29 days.
             risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None, which
             uses the Toolkit's risk-free rate on the pricing date: the 10-year Treasury yield unless the Toolkit's
@@ -3338,10 +3342,9 @@ class GreeksOptions:
             values_per_strike=expiration_time_range,
         )
 
-        # This creates a list of time to expiration values from 0 to time_range, with a step size of 1
-        time_to_expiration_list = [
-            time / 365 for time in range(0, expiration_time_range)
-        ]
+        time_to_expiration_list = helpers.define_times_to_expiration(
+            expiration_time_range
+        )
 
         veta: dict[str, dict[float, dict[float, float]]] = {}
         dividend_yield_value: dict[str, float] = {}
@@ -3443,12 +3446,12 @@ class GreeksOptions:
             start from; a date without prices (a weekend or a holiday) uses the last trading day before it, and a
             ticker without a price on that day is left out with a warning. Defaults to None, which uses the
             last date of the historical data.
-            strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
+            strike_price_range (float): The percentage range to use for the strike prices, between 0 and 1. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
-            strike_step_size (float): The step size to use for the strike prices. Defaults to 5 which means that the
+            strike_step_size (float): The step size to use for the strike prices, above 0. Defaults to 5 which means that the
             strike prices will be 75, 80, 85, ..., 120 and 125 if the current stock price is 100.
             expiration_time_range (int): The number of days to use for the time to expiration: the columns are the
-            expirations 1 up to expiration_time_range - 1 days after the start date. Defaults to 30, which gives
+            expirations 1 up to expiration_time_range - 1 days after the start date, so at least 2. Defaults to 30, which gives
             expirations of 1 to 29 days.
             risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None, which
             uses the Toolkit's risk-free rate on the pricing date: the 10-year Treasury yield unless the Toolkit's
@@ -3532,10 +3535,9 @@ class GreeksOptions:
             values_per_strike=expiration_time_range,
         )
 
-        # This creates a list of time to expiration values from 0 to time_range, with a step size of 1
-        time_to_expiration_list = [
-            time / 365 for time in range(0, expiration_time_range)
-        ]
+        time_to_expiration_list = helpers.define_times_to_expiration(
+            expiration_time_range
+        )
 
         partial_derivative: dict[str, dict[float, dict[float, float]]] = {}
         dividend_yield_value: dict[str, float] = {}
@@ -3631,12 +3633,12 @@ class GreeksOptions:
             start from; a date without prices (a weekend or a holiday) uses the last trading day before it, and a
             ticker without a price on that day is left out with a warning. Defaults to None, which uses the
             last date of the historical data.
-            strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
+            strike_price_range (float): The percentage range to use for the strike prices, between 0 and 1. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
-            strike_step_size (float): The step size to use for the strike prices. Defaults to 5 which means that the
+            strike_step_size (float): The step size to use for the strike prices, above 0. Defaults to 5 which means that the
             strike prices will be 75, 80, 85, ..., 120 and 125 if the current stock price is 100.
             expiration_time_range (int): The number of days to use for the time to expiration: the columns are the
-            expirations 1 up to expiration_time_range - 1 days after the start date. Defaults to 30, which gives
+            expirations 1 up to expiration_time_range - 1 days after the start date, so at least 2. Defaults to 30, which gives
             expirations of 1 to 29 days.
             risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None, which
             uses the Toolkit's risk-free rate on the pricing date: the 10-year Treasury yield unless the Toolkit's
@@ -3756,6 +3758,11 @@ class GreeksOptions:
             standardize=standardize,
         )
 
+        if all(greek.empty for greek in greeks.values()):
+            # Each greek has logged why it is empty, which is the same reason for all of them.
+            logger.warning("None of the greeks could be calculated.")
+            return pd.DataFrame()
+
         greeks_df = (
             pd.concat(greeks, axis=1)
             .swaplevel(axis=1)
@@ -3813,12 +3820,12 @@ class GreeksOptions:
             start from; a date without prices (a weekend or a holiday) uses the last trading day before it, and a
             ticker without a price on that day is left out with a warning. Defaults to None, which uses the
             last date of the historical data.
-            strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
+            strike_price_range (float): The percentage range to use for the strike prices, between 0 and 1. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
-            strike_step_size (float): The step size to use for the strike prices. Defaults to 5 which means that the
+            strike_step_size (float): The step size to use for the strike prices, above 0. Defaults to 5 which means that the
             strike prices will be 75, 80, 85, ..., 120 and 125 if the current stock price is 100.
             expiration_time_range (int): The number of days to use for the time to expiration: the columns are the
-            expirations 1 up to expiration_time_range - 1 days after the start date. Defaults to 30, which gives
+            expirations 1 up to expiration_time_range - 1 days after the start date, so at least 2. Defaults to 30, which gives
             expirations of 1 to 29 days.
             risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None, which
             uses the Toolkit's risk-free rate on the pricing date: the 10-year Treasury yield unless the Toolkit's
@@ -3887,10 +3894,9 @@ class GreeksOptions:
             values_per_strike=expiration_time_range,
         )
 
-        # This creates a list of time to expiration values from 0 to time_range, with a step size of 1
-        time_to_expiration_list = [
-            time / 365 for time in range(0, expiration_time_range)
-        ]
+        time_to_expiration_list = helpers.define_times_to_expiration(
+            expiration_time_range
+        )
 
         speed: dict[str, dict[float, dict[float, float]]] = {}
         dividend_yield_value: dict[str, float] = {}
@@ -3996,12 +4002,12 @@ class GreeksOptions:
             start from; a date without prices (a weekend or a holiday) uses the last trading day before it, and a
             ticker without a price on that day is left out with a warning. Defaults to None, which uses the
             last date of the historical data.
-            strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
+            strike_price_range (float): The percentage range to use for the strike prices, between 0 and 1. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
-            strike_step_size (float): The step size to use for the strike prices. Defaults to 5 which means that the
+            strike_step_size (float): The step size to use for the strike prices, above 0. Defaults to 5 which means that the
             strike prices will be 75, 80, 85, ..., 120 and 125 if the current stock price is 100.
             expiration_time_range (int): The number of days to use for the time to expiration: the columns are the
-            expirations 1 up to expiration_time_range - 1 days after the start date. Defaults to 30, which gives
+            expirations 1 up to expiration_time_range - 1 days after the start date, so at least 2. Defaults to 30, which gives
             expirations of 1 to 29 days.
             risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None, which
             uses the Toolkit's risk-free rate on the pricing date: the 10-year Treasury yield unless the Toolkit's
@@ -4075,10 +4081,9 @@ class GreeksOptions:
             values_per_strike=expiration_time_range,
         )
 
-        # This creates a list of time to expiration values from 0 to time_range, with a step size of 1
-        time_to_expiration_list = [
-            time / 365 for time in range(0, expiration_time_range)
-        ]
+        time_to_expiration_list = helpers.define_times_to_expiration(
+            expiration_time_range
+        )
 
         zomma: dict[str, dict[float, dict[float, float]]] = {}
         dividend_yield_value: dict[str, float] = {}
@@ -4189,12 +4194,12 @@ class GreeksOptions:
             start from; a date without prices (a weekend or a holiday) uses the last trading day before it, and a
             ticker without a price on that day is left out with a warning. Defaults to None, which uses the
             last date of the historical data.
-            strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
+            strike_price_range (float): The percentage range to use for the strike prices, between 0 and 1. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
-            strike_step_size (float): The step size to use for the strike prices. Defaults to 5 which means that the
+            strike_step_size (float): The step size to use for the strike prices, above 0. Defaults to 5 which means that the
             strike prices will be 75, 80, 85, ..., 120 and 125 if the current stock price is 100.
             expiration_time_range (int): The number of days to use for the time to expiration: the columns are the
-            expirations 1 up to expiration_time_range - 1 days after the start date. Defaults to 30, which gives
+            expirations 1 up to expiration_time_range - 1 days after the start date, so at least 2. Defaults to 30, which gives
             expirations of 1 to 29 days.
             risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None, which
             uses the Toolkit's risk-free rate on the pricing date: the 10-year Treasury yield unless the Toolkit's
@@ -4265,10 +4270,9 @@ class GreeksOptions:
             values_per_strike=expiration_time_range,
         )
 
-        # This creates a list of time to expiration values from 0 to time_range, with a step size of 1
-        time_to_expiration_list = [
-            time / 365 for time in range(0, expiration_time_range)
-        ]
+        time_to_expiration_list = helpers.define_times_to_expiration(
+            expiration_time_range
+        )
 
         color: dict[str, dict[float, dict[float, float]]] = {}
         dividend_yield_value: dict[str, float] = {}
@@ -4375,12 +4379,12 @@ class GreeksOptions:
             start from; a date without prices (a weekend or a holiday) uses the last trading day before it, and a
             ticker without a price on that day is left out with a warning. Defaults to None, which uses the
             last date of the historical data.
-            strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
+            strike_price_range (float): The percentage range to use for the strike prices, between 0 and 1. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
-            strike_step_size (float): The step size to use for the strike prices. Defaults to 5 which means that the
+            strike_step_size (float): The step size to use for the strike prices, above 0. Defaults to 5 which means that the
             strike prices will be 75, 80, 85, ..., 120 and 125 if the current stock price is 100.
             expiration_time_range (int): The number of days to use for the time to expiration: the columns are the
-            expirations 1 up to expiration_time_range - 1 days after the start date. Defaults to 30, which gives
+            expirations 1 up to expiration_time_range - 1 days after the start date, so at least 2. Defaults to 30, which gives
             expirations of 1 to 29 days.
             risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None, which
             uses the Toolkit's risk-free rate on the pricing date: the 10-year Treasury yield unless the Toolkit's
@@ -4451,10 +4455,9 @@ class GreeksOptions:
             values_per_strike=expiration_time_range,
         )
 
-        # This creates a list of time to expiration values from 0 to time_range, with a step size of 1
-        time_to_expiration_list = [
-            time / 365 for time in range(0, expiration_time_range)
-        ]
+        time_to_expiration_list = helpers.define_times_to_expiration(
+            expiration_time_range
+        )
 
         ultima: dict[str, dict[float, dict[float, float]]] = {}
         dividend_yield_value: dict[str, float] = {}

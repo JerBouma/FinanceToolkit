@@ -88,11 +88,14 @@ class SwapsFixedIncome(MarketsFixedIncome):
         term_structures = eiopa_model.get_risk_free_rate_term_structures(
             "spot_no_va", start_date, end_date
         )
-        countries = (
-            list(dict.fromkeys(term_structures.columns.get_level_values(0)))
-            if not term_structures.empty
-            else []
-        )
+        if term_structures.empty:
+            # The source has logged why (it could not be reached, or published nothing).
+            raise ValueError(
+                f"EIOPA returned no risk-free rate term structures between {start_date} and "
+                f"{end_date}, so there is no curve to price on; curve='government' uses the "
+                "government bond yield curve instead."
+            )
+        countries = list(dict.fromkeys(term_structures.columns.get_level_values(0)))
         check_option("country", country, countries)
         term_structure = term_structures[country].dropna(how="all")
         # Only the months that ended by the day, so the curve is not ahead of it.
@@ -808,6 +811,12 @@ class SwapsFixedIncome(MarketsFixedIncome):
             ),
             end_date,
         )
+        if exchange_rates.empty:
+            # The source has logged why (it could not be reached, or published nothing).
+            raise ValueError(
+                f"The BIS returned no exchange rates in the 30 days before {end_date}, so there "
+                "is no spot rate to start the forwards from."
+            )
         exchange_rates = exchange_rates.loc[: pd.Period(end_date, "D")]
 
         def spot_per_dollar(country: str) -> float:

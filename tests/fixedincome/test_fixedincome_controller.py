@@ -9,6 +9,7 @@ from financetoolkit.fixedincome import fixedincome_controller
 from financetoolkit.fixedincome.sources import fred_model as fixedincome_fred_model
 from financetoolkit.fixedincome.sources import ecb_model as fixedincome_ecb_model
 from financetoolkit.fixedincome.helpers import maturity_in_years
+from financetoolkit.utilities.error_model import InvalidArgumentError
 
 
 def test_fixedincome_controller_initialization(recorder):
@@ -228,3 +229,41 @@ def test_moodys_yields_average_the_months_of_complete_years(monkeypatch):
     assert yearly.loc[pd.Period("2024", "Y"), "Aaa"] == pytest.approx(0.05)
     # 2025 is not complete yet.
     assert yearly.loc[pd.Period("2025", "Y")].isna().all()
+
+
+@pytest.mark.parametrize(
+    ("method", "arguments"),
+    [
+        ("get_loan_payment", {"principal": 0}),
+        ("get_loan_payment", {"years": -5}),
+        ("get_affordable_loan", {"payment": 0}),
+        ("get_affordable_loan", {"payments_per_year": 0}),
+        ("get_amortization_schedule", {"years": 0}),
+    ],
+)
+def test_loan_terms_must_be_above_zero(weekly_mortgage_rates, method, arguments):
+    with pytest.raises(InvalidArgumentError, match="must be above 0"):
+        getattr(weekly_mortgage_rates, method)(**arguments)
+
+
+def test_unreachable_central_banks_are_reported(monkeypatch, caplog):
+    import requests
+
+    from financetoolkit.fixedincome import helpers as fixedincome_helpers
+    from financetoolkit.fixedincome.sources import fed_model
+
+    def unreachable(url, **kwargs):  # noqa: ARG001
+        raise requests.exceptions.ConnectionError("Failed to resolve the host")
+
+    monkeypatch.setattr(fixedincome_helpers, "get_request", unreachable)
+    monkeypatch.setattr(fed_model, "get_request", unreachable)
+    fixedincome = fixedincome_controller.FixedIncome(
+        start_date="2024-01-01", end_date="2024-12-31", use_cached_data=False
+    )
+
+    with caplog.at_level("ERROR"):
+        assert fixedincome.get_european_central_bank_rates().empty
+        assert fixedincome.get_euribor_rates().empty
+        assert fixedincome.get_federal_reserve_rates().empty
+    assert "Could not reach the European Central Bank" in caplog.text
+    assert "Could not reach the Federal Reserve Bank of New York" in caplog.text

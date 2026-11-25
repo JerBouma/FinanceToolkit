@@ -5,10 +5,14 @@ __docformat__ = "google"
 import io
 
 import pandas as pd
+import requests
 
 from financetoolkit.cache import policy_model
 from financetoolkit.cache.cache_controller import get_active_cache
+from financetoolkit.utilities import logger_model
 from financetoolkit.utilities.requests_model import get_request
+
+logger = logger_model.get_logger()
 
 BASE_URL = "https://markets.newyorkfed.org/read"
 EXTENSIONS_1 = "?startDt=2000-12-01&eventCodes="
@@ -47,7 +51,7 @@ def collect_fed_data(fed_code: str) -> pd.DataFrame:
 
     Returns:
        pd.DataFrame: A DataFrame containing the data from the Federal
-       Reserve Bank of New York.
+       Reserve Bank of New York, empty (with an error logged) when it cannot be reached.
     """
     cache = get_active_cache()
 
@@ -60,7 +64,16 @@ def collect_fed_data(fed_code: str) -> pd.DataFrame:
             return cached_data
 
     url = f"{BASE_URL}{EXTENSIONS_1}{fed_code}{EXTENSIONS_2}"
-    response = get_request(url)
+    try:
+        response = get_request(url)
+    except requests.exceptions.RequestException as error:
+        logger.error(
+            "Could not reach the Federal Reserve Bank of New York for the %s rate (%s). No "
+            "data is returned for it.",
+            fed_code,
+            error,
+        )
+        return pd.DataFrame()
     fed_data = pd.read_csv(io.StringIO(response.text))
 
     fed_data = fed_data.set_index("Effective Date")

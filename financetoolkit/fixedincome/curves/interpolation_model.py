@@ -236,6 +236,11 @@ def _read(
     check_option("interpolation", interpolation, INTERPOLATIONS)
     maturities = np.asarray(maturities, dtype=float)
     zero_rates = np.asarray(zero_rates, dtype=float)
+    if maturities.size == 0 or maturities.shape != zero_rates.shape:
+        raise ValueError(
+            f"The curve needs a zero rate for each maturity, got {maturities.size} "
+            f"maturities and {zero_rates.size} zero rates."
+        )
     order = np.argsort(maturities)
     maturities, zero_rates = maturities[order], zero_rates[order]
     years = np.atleast_1d(np.asarray(years, dtype=float))
@@ -306,8 +311,8 @@ def get_discount_factors(
 
     Args:
         maturities (np.ndarray | list): The maturities of the curve in years, above 0.
-        zero_rates (np.ndarray | list): The continuously compounded zero rates (decimals)
-            at the maturities.
+        zero_rates (np.ndarray | list): The continuously compounded zero rates (decimals),
+            one for each maturity.
         years (np.ndarray | list | float): The times to discount from, in years.
         interpolation (str, optional): How the curve is read between its maturities. Options
             are: "linear_zero" (linear zero rates), "log_linear" (linear log discount
@@ -320,7 +325,8 @@ def get_discount_factors(
         np.ndarray: The discount factor at each time.
 
     Raises:
-        ValueError: If the interpolation does not exist or a time is negative.
+        ValueError: If the interpolation does not exist, a time is negative, or there is not
+            one zero rate for each maturity.
     """
     log_discount, _ = _read(maturities, zero_rates, years, interpolation)
 
@@ -361,8 +367,8 @@ def get_instantaneous_forward_rates(
 
     Args:
         maturities (np.ndarray | list): The maturities of the curve in years, above 0.
-        zero_rates (np.ndarray | list): The continuously compounded zero rates (decimals)
-            at the maturities.
+        zero_rates (np.ndarray | list): The continuously compounded zero rates (decimals),
+            one for each maturity.
         years (np.ndarray | list | float): The times of the forward rates, in years.
         interpolation (str, optional): How the curve is read between its maturities, see
             `get_discount_factors`. Options are: "linear_zero" (linear zero rates),
@@ -375,7 +381,8 @@ def get_instantaneous_forward_rates(
         np.ndarray: The instantaneous forward rate (continuously compounded) at each time.
 
     Raises:
-        ValueError: If the interpolation does not exist or a time is negative.
+        ValueError: If the interpolation does not exist, a time is negative, or there is not
+            one zero rate for each maturity.
     """
     _, forwards = _read(maturities, zero_rates, years, interpolation)
 
@@ -421,9 +428,10 @@ def bootstrap_zero_curve(
     Args:
         maturities (np.ndarray | list): The maturities in years; at least one of a year or
             less.
-        par_yields (np.ndarray | list): The par yields (decimals), bond-equivalent with
-            `frequency` coupons a year beyond a year and in the bill convention up to it.
-        frequency (int, optional): The coupons per year. Defaults to 2.
+        par_yields (np.ndarray | list): The par yields (decimals), one for each maturity,
+            bond-equivalent with `frequency` coupons a year beyond a year and in the bill
+            convention up to it.
+        frequency (int, optional): The coupons per year, at least 1. Defaults to 2.
         bill_convention (str | None, optional): How the bill yields are quoted, see
             `curve_model.bill_yields_to_annual`. Options are: "bond-equivalent" (the US
             Treasury), "act/365" (Canada), "act/360" (Sweden), None (yields compounded
@@ -440,12 +448,22 @@ def bootstrap_zero_curve(
         continuously compounded zero rates.
 
     Raises:
-        ValueError: If the interpolation does not exist, no maturity is a year or less, or
-            the bootstrap does not converge.
+        ValueError: If the interpolation does not exist, there is not one par yield for each
+            maturity, the frequency is below 1, no maturity is a year or less, or the bootstrap
+            does not converge.
     """
     check_option("interpolation", interpolation, INTERPOLATIONS)
     maturities = np.asarray(maturities, dtype=float)
     par_yields = np.asarray(par_yields, dtype=float)
+    if maturities.size == 0 or maturities.shape != par_yields.shape:
+        raise ValueError(
+            f"The curve needs a par yield for each maturity, got {maturities.size} "
+            f"maturities and {par_yields.size} par yields."
+        )
+    if not frequency >= 1:
+        raise ValueError(
+            f"The frequency must be at least 1 coupon a year, got {frequency}."
+        )
     order = np.argsort(maturities)
     maturities, par_yields = maturities[order], par_yields[order]
 

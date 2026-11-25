@@ -463,7 +463,7 @@ def test_an_unreadable_span_serves_the_cached_history(tmp_path):
         collect_ranged_data(fetch=unreadable, end_date="2026-10-05", **arguments)
 
 
-def test_a_failed_fred_request_does_not_show_the_api_key(monkeypatch):
+def test_a_failed_fred_request_does_not_show_the_api_key(monkeypatch, caplog):
     from financetoolkit.fixedincome.sources import fred_model
 
     def refused(url, **kwargs):  # noqa: ARG001
@@ -474,11 +474,12 @@ def test_a_failed_fred_request_does_not_show_the_api_key(monkeypatch):
 
     monkeypatch.setattr(fred_model, "get_request", refused)
 
-    with pytest.raises(RuntimeError) as error:
-        fred_model._request_series("GS10", "2026-01-01", "2026-02-01", "SECRETKEY123")
-
-    assert "SECRETKEY123" not in str(error.value)
-    assert error.value.__cause__ is None
+    # An unreachable FRED is reported and answered with no data, as the other sources are.
+    assert fred_model._request_series(
+        "GS10", "2026-01-01", "2026-02-01", "SECRETKEY123"
+    ).empty
+    assert "Could not reach FRED for the series GS10" in caplog.text
+    assert "SECRETKEY123" not in caplog.text
 
 
 def test_the_term_premium_keeps_the_requested_maturities_at_month_end(monkeypatch):

@@ -720,3 +720,33 @@ def test_cir_options_need_a_volatility():
             short_rate_model.get_zero_coupon_bond_option(
                 1, 5, 0.85, 0.1, 0.0, model=model, **inputs
             )
+
+
+@pytest.mark.parametrize(
+    ("arguments", "message"),
+    [
+        ({"model": "vasicekk"}, "model"),
+        ({"steps_per_year": 0}, "steps_per_year"),
+        ({"simulations": 0}, "simulations"),
+    ],
+)
+def test_simulate_short_rate_refuses_impossible_arguments(arguments, message):
+    settings = {
+        "model": "vasicek",
+        "speed": 0.3,
+        "mean": 0.04,
+        "volatility": 0.01,
+        "rate": 0.03,
+        "years": 1.0,
+        "simulations": 10,
+    }
+
+    with pytest.raises(ValueError, match=message):
+        short_rate_model.simulate_short_rate(**{**settings, **arguments})
+
+
+def test_calibrating_a_flat_history_says_why():
+    rates = pd.Series(0.03, index=pd.period_range("2024-01-01", periods=300, freq="D"))
+
+    with pytest.raises(ValueError, match="does not move"):
+        short_rate_model.calibrate_short_rate_model(rates)

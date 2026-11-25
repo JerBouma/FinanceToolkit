@@ -305,7 +305,9 @@ def collect_financial_statements(
                 date_axis=1,
             )
 
-    results = helpers.run_in_parallel(worker, [(ticker,) for ticker in ticker_list])
+    # A fault every ticker meets, such as a broken yfinance cache database, is reported once for the call rather than per ticker.  # noqa: E501
+    with logger_model.log_each_message_once():
+        results = helpers.run_in_parallel(worker, [(ticker,) for ticker in ticker_list])
 
     for ticker, statements, provider, adjustments, has_data in results:
         for source, statement_data in statements.items():

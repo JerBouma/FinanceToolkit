@@ -233,6 +233,7 @@ def collect_cached_data(
     expect_empty: bool = False,
     fallback: str | None = None,
     quiet: bool = False,
+    failures: dict[str, str] | None = None,
 ) -> pd.DataFrame:
     """
     Retrieves a dataset through the cache, serving the last stored copy when the source
@@ -261,6 +262,11 @@ def collect_cached_data(
         quiet (bool): Whether a source that cannot be reached, with nothing cached, is
             logged at debug level only, for a caller that retrieves many parts (such as one
             file per year) and reports the missing ones in a single line. Defaults to False.
+        failures (dict[str, str] | None): Where a failed request with nothing cached is
+            recorded instead of logged, as the reason per entity (such as "EEX answered HTTP
+            403"), for a caller that reports the missing parts with their reasons in a single
+            line. A request not sent because the source could not be reached earlier in the
+            call is not recorded: the caller checks is_unreachable. Defaults to None.
 
     Returns:
         pd.DataFrame: The data, or an empty DataFrame when the source cannot be reached
@@ -305,6 +311,17 @@ def collect_cached_data(
                 error,
                 fallback,
             )
+            return pd.DataFrame()
+
+        if failures is not None:
+            if not isinstance(request_error, SourceUnreachableError):
+                response = getattr(request_error, "response", None)
+                # The status says why; the error itself names the URL, which differs per entity.  # noqa: E501
+                failures[entity] = (
+                    f"{source} answered HTTP {response.status_code}"
+                    if response is not None
+                    else f"{source} could not be reached ({error})"
+                )
             return pd.DataFrame()
 
         (

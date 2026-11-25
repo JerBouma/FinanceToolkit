@@ -6029,12 +6029,18 @@ class Performance:
 
         # The rows without values are dropped, so a period too short for either side would otherwise give an empty result without a reason.  # noqa: E501
         if not bull_bear_beta.empty and bull_bear_beta.isna().all().all():
+            # Quarterly and yearly periods are already the longest, so only a longer date range adds days to them.  # noqa: E501
+            advice = (
+                "Use a longer date range."
+                if period in ("quarterly", "yearly")
+                else "Use quarterly or yearly periods."
+            )
             logger.warning(
                 "The Bull and Bear Betas need at least %s days with returns on each side of the "
-                "market in a period, which no %s period holds, so there are no values. Use "
-                "quarterly or yearly periods.",
+                "market in a period, which no %s period holds, so there are no values. %s",
                 MINIMUM_BULL_BEAR_OBSERVATIONS,
                 period,
+                advice,
             )
 
         return finalize_dataset(

@@ -39,8 +39,8 @@ def check_rolling(
     minimum, the smallest window the measure has a value for (two for a spread, ratio or
     regression, more for the higher moments and the fractal measures). A window at least as
     long as the periods with a return is allowed but gives at most one value (NaN throughout
-    when longer), which is logged once, naming the tickers whose own returns are fewer when
-    the others have enough.
+    when longer), which is logged once, naming the tickers (and the Benchmark) whose own returns are fewer
+    when the other tickers have enough.
 
     Args:
         rolling (int | None): The rolling window, None for none.
@@ -66,25 +66,27 @@ def check_rolling(
     if period_data is None:
         return
 
+    # The Benchmark is named with the tickers when its own returns are fewer (a benchmark listed later than they are), since the betas and other measures against it are then empty too.  # noqa: E501
     returns = period_data.get("Return", period_data)
     if isinstance(returns, pd.DataFrame) and returns.columns.nlevels == 1:
-        tickers = returns.drop(columns="Benchmark", errors="ignore")
-        counts = (tickers if not tickers.empty else returns).notna().sum()
+        counts = returns.notna().sum()
+        tickers = counts.drop("Benchmark", errors="ignore")
+        ticker_counts = tickers if not tickers.empty else counts
     else:
-        counts = pd.Series({period: len(returns.dropna(how="all"))})
+        counts = ticker_counts = pd.Series({period: len(returns.dropna(how="all"))})
 
     short = counts[counts <= rolling]
     if short.empty:
         return
 
-    if len(short) == len(counts):
+    if (ticker_counts <= rolling).all():
         logger.warning(
             "The rolling window of %s %s periods is at least as long as the %s %s returns in the "
             "data, so it gives at most one value (NaN throughout when longer). Use a shorter "
             "rolling window or a longer date range.",
             rolling,
             period,
-            int(counts.max()),
+            int(ticker_counts.max()),
             period,
         )
     else:

@@ -2053,3 +2053,23 @@ def test_a_rolling_window_names_the_tickers_with_fewer_returns(caplog):
     assert volatility["AAPL"].notna().any()
     assert caplog.text.count("the quarterly returns of MSFT (") == 1
     assert "AAPL (" not in caplog.text
+
+
+def test_a_benchmark_shorter_than_the_rolling_window_is_named(caplog):
+    from financetoolkit.risk.helpers import check_rolling
+
+    years = pd.period_range("2019", "2023", freq="Y")
+    returns = pd.DataFrame(
+        {
+            "AAPL": [np.nan, 0.1, 0.2, 0.3, 0.4],
+            "MSFT": [np.nan, 0.1, 0.2, 0.3, 0.4],
+            "Benchmark": np.nan,
+        },
+        index=years,
+    )
+
+    with caplog.at_level("WARNING", logger="financetoolkit"):
+        check_rolling(2, {"yearly": pd.concat({"Return": returns}, axis=1)}, "yearly")
+
+    assert "the yearly returns of Benchmark (0)" in caplog.text
+    assert "AAPL (" not in caplog.text

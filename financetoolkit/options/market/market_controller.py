@@ -1710,9 +1710,6 @@ class MarketOptions:
             if "Dividends" in self._daily_historical.columns.get_level_values(0)
             else None
         )
-        if volatility is None:
-            # Priced at each ticker's own volatility, which needs enough daily returns.
-            self._report_short_history()
         rows = {}
         for ticker in self._tickers:
             history = self._prices[ticker].dropna()
@@ -1736,7 +1733,18 @@ class MarketOptions:
 
             path = history.iloc[start : start + days + 1]
             date = path.index[0]
-            sigma, rate, dividend_yield = self._hedge_inputs(ticker, date, volatility)
+            try:
+                sigma, rate, dividend_yield = self._hedge_inputs(
+                    ticker, date, volatility
+                )
+            except IndexError:
+                # Too few prices before the start date for a volatility leaves this ticker out only.  # noqa: E501
+                logger.warning(
+                    "No delta hedging backtest for %s: it has too few prices for a "
+                    "volatility on the start date.",
+                    ticker,
+                )
+                continue
             paid = None
             if dividends is not None:
                 paid = (
@@ -1934,9 +1942,6 @@ class MarketOptions:
         except ValueError as error:
             raise InvalidArgumentError(str(error)) from None
 
-        if volatility is None:
-            # Priced at each ticker's own volatility, which needs enough daily returns.
-            self._report_short_history()
         rows = {}
         for ticker in self._tickers:
             try:

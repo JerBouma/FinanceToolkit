@@ -2440,10 +2440,11 @@ def test_a_history_too_short_for_a_volatility_is_said_once_per_call(
     module.get_delta()
     assert caplog.text.count("too few for a volatility") == 1
 
-    # Once for the call, also where the volatility is read per ticker.
+    # The delta hedging names each ticker it leaves out itself, so not again for the call.
     caplog.clear()
     module.get_delta_hedging_simulation(simulations=10)
-    assert caplog.text.count("too few for a volatility") == 1
+    assert "too few for a volatility" not in caplog.text
+    assert "No delta hedging simulation for AAPL: it has too few prices" in caplog.text
 
 
 def test_a_ticker_without_a_price_is_said_once_for_all_greeks(test_toolkit, caplog):
@@ -2491,3 +2492,36 @@ def test_delta_hedging_at_zero_volatility_sells_the_discounted_intrinsic_value(
         InvalidArgumentError, match="implied_volatility must be 0 or above"
     ):
         options_module.get_delta_hedging_simulation(implied_volatility=-0.1)
+
+
+def test_a_ticker_without_any_price_is_not_named_for_a_short_history(
+    test_toolkit, caplog
+):
+    module = test_toolkit.options
+    historical = module._daily_historical.astype(float)
+    historical.loc[:, (slice(None), "MSFT")] = np.nan
+    module.__dict__["_daily_historical"] = historical
+
+    with caplog.at_level("WARNING", logger="financetoolkit"):
+        module.get_black_scholes_model()
+
+    # MSFT has no price at all, which its own message says, rather than too few returns.
+    assert "MSFT has fewer than" not in caplog.text
+    assert "too few for a volatility" not in caplog.text
+
+
+def test_the_delta_hedging_backtest_leaves_out_a_ticker_without_a_volatility(
+    test_toolkit, caplog
+):
+    module = test_toolkit.options
+    historical = module._daily_historical.astype(float)
+    # Thirty prices cover a hedge of 20 days, but not the 21 returns a volatility needs.
+    historical.loc[historical.index[:-30], (slice(None), "MSFT")] = np.nan
+    module.__dict__["_daily_historical"] = historical
+
+    with caplog.at_level("WARNING", logger="financetoolkit"):
+        result = module.get_delta_hedging_backtest(days=20)
+
+    assert list(result.index) == ["AAPL"]
+    assert caplog.text.count("No delta hedging backtest for MSFT") == 1
+    assert "too few for a volatility" not in caplog.text

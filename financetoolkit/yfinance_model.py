@@ -38,6 +38,40 @@ COMPANY_INFORMATION_CACHE: dict[str, dict[str, str]] = {}
 CACHE_DATABASE_ERRORS = (peewee.OperationalError, sqlite3.OperationalError)
 
 
+def is_cache_database_locked(error: Exception) -> bool:
+    """
+    Whether an error of yfinance's cache database is a lock held by another thread, which a
+    second attempt can get past, rather than a lasting fault such as a missing table, a
+    read-only file or a disk error.
+
+    Args:
+        error (Exception): The OperationalError raised by the cache database.
+
+    Returns:
+        bool: Whether the database was locked or busy.
+    """
+    text = str(error).lower()
+    return "locked" in text or "busy" in text
+
+
+def report_cache_database_error(error: Exception) -> None:
+    """
+    Report a cache database error of yfinance that is not a passing lock, since a missing table,
+    a read-only file or a disk error fails every download until it is fixed and says nothing
+    about the ticker. The message is the same for every ticker, so a caller running inside
+    logger_model.log_each_message_once writes it once.
+
+    Args:
+        error (Exception): The OperationalError raised by the cache database.
+    """
+    if not is_cache_database_locked(error):
+        logger.warning(
+            "yfinance's cache database could not be used (%s), so the data from Yahoo Finance "
+            "could not be retrieved.",
+            error,
+        )
+
+
 def get_financial_statement(
     ticker: str,
     statement: str,
@@ -95,9 +129,13 @@ def get_financial_statement(
                 "Please choose either 'balance', 'income', or "
                 "cashflow' for the statement parameter."
             )
-    except (OSError, IndexError, AttributeError, *CACHE_DATABASE_ERRORS):
+    except (OSError, IndexError, AttributeError):
         # OSError covers the network errors of both urllib and curl_cffi, which yfinance
         # uses in recent versions, such as a timeout or a refused connection.
+        error_model.report_request_failure()
+        return pd.DataFrame()
+    except CACHE_DATABASE_ERRORS as error:
+        report_cache_database_error(error)
         error_model.report_request_failure()
         return pd.DataFrame()
     except yf.exceptions.YFRateLimitError:
@@ -303,8 +341,11 @@ def get_company_information(ticker: str) -> dict[str, str]:
         TypeError,
         ValueError,
         yf.exceptions.YFException,
-        *CACHE_DATABASE_ERRORS,
     ):
+        error_model.report_request_failure()
+        return {"financialCurrency": "", "lastFiscalYearEnd": ""}
+    except CACHE_DATABASE_ERRORS as error:
+        report_cache_database_error(error)
         error_model.report_request_failure()
         return {"financialCurrency": "", "lastFiscalYearEnd": ""}
 
@@ -429,9 +470,9 @@ def get_historical_data(
                         to_yahoo_finance_symbol(ticker)
                     ).history(**history_parameters, repair=False)
                 break
-            except CACHE_DATABASE_ERRORS:
-                # A cache database locked by another thread's download is retried once; a second lock counts as a failed download.  # noqa: E501
-                if attempt == 1:
+            except CACHE_DATABASE_ERRORS as error:
+                # A cache database locked by another thread's download is retried once; a second lock, or any other database error (which a retry would hit again), counts as a failed download.  # noqa: E501
+                if attempt == 1 or not is_cache_database_locked(error):
                     raise
 
         if (
@@ -481,7 +522,11 @@ def get_historical_data(
                 :, "Close"
             ].to_numpy()
 
-    except (OSError, IndexError, *CACHE_DATABASE_ERRORS):
+    except (OSError, IndexError):
+        error_model.report_request_failure()
+        return pd.DataFrame()
+    except CACHE_DATABASE_ERRORS as error:
+        report_cache_database_error(error)
         error_model.report_request_failure()
         return pd.DataFrame()
     except yf.exceptions.YFRateLimitError:

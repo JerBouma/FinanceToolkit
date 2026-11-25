@@ -123,6 +123,8 @@ def _request_series(
     """
 
     def report(reason: str) -> pd.DataFrame:
+        # FRED's own messages end in a full stop, which the sentences around the reason add.
+        reason = reason.rstrip(". ")
         if failures is None:
             logger.error(
                 "No data is returned for the FRED series %s: %s.", series_id, reason
@@ -271,11 +273,12 @@ def get_fred_data(
         for series_id, reason in failures.items():
             series_per_reason.setdefault(reason, []).append(series_id)
         logger.error(
-            "No data is returned for the FRED series %s, so they are left out.",
+            "No data is returned for the FRED series %s, so %s left out.",
             "; ".join(
                 f"{', '.join(failed)} ({reason})"
                 for reason, failed in series_per_reason.items()
             ),
+            "it is" if len(failures) == 1 else "they are",
         )
 
     frames = [frame for frame in frames if not frame.empty]

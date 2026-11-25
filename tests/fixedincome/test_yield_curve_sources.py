@@ -706,3 +706,47 @@ def test_an_invalid_fred_key_reports_freds_own_message(monkeypatch, caplog):
     )
     assert "could not be reached" not in caplog.text
     assert "BADKEY123" not in caplog.text
+
+
+def test_one_rejected_fred_series_is_reported_in_the_singular_without_a_double_period(
+    monkeypatch, caplog
+):
+    from financetoolkit.fixedincome.sources import fred_model
+
+    def second_rejected(url, **kwargs):  # noqa: ARG001
+        if "GS2" in url:
+            raise requests.exceptions.HTTPError(
+                "400 Client Error: Bad Request for url",
+                response=FredRejection(400, "Bad Request.  The series does not exist."),
+            )
+        return FredBody('{"observations": [{"date": "2026-01-02", "value": "5.0"}]}')
+
+    monkeypatch.setattr(fred_model, "get_request", second_rejected)
+
+    with caplog.at_level("ERROR", logger="financetoolkit"):
+        data = fred_model.get_fred_data(
+            ["GS10", "GS2"], "2026-01-01", "2026-02-01", "key"
+        )
+
+    assert list(data.columns) == ["GS10"]
+    assert (
+        "GS2 (FRED answered HTTP 400: Bad Request.  The series does not exist), so it is left out."
+        in caplog.text
+    )  # noqa: E501
+    assert ".." not in caplog.text
+
+    # FRED's own message on the first series, when FRED is down, ends in one full stop too.
+    caplog.clear()
+
+    def down(url, **kwargs):  # noqa: ARG001
+        raise requests.exceptions.HTTPError(
+            "503 Server Error", response=FredRejection(503, "Service unavailable.")
+        )
+
+    monkeypatch.setattr(fred_model, "get_request", down)
+
+    with caplog.at_level("ERROR", logger="financetoolkit"):
+        assert fred_model.get_fred_data("GS10", "2026-01-01", "2026-02-01", "key").empty
+
+    assert "FRED answered HTTP 503: Service unavailable." in caplog.text
+    assert ".." not in caplog.text

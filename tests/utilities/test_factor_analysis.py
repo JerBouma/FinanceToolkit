@@ -10,6 +10,7 @@ from financetoolkit.ratios import ratios_controller
 from financetoolkit.ratios.ratios_controller import Ratios
 from financetoolkit.technicals.technicals_controller import Technicals
 from financetoolkit.utilities import factor_model
+from financetoolkit.utilities.error_model import InvalidArgumentError
 
 TICKERS = [f"T{number}" for number in range(10)]
 
@@ -210,12 +211,15 @@ def test_a_parameter_no_metric_takes_raises_before_calculating(monkeypatch):
     assert ratios.calls == []
 
 
-def test_fewer_than_three_tickers_or_an_unknown_metric_return_no_result():
+def test_fewer_than_three_tickers_return_no_result_and_an_unknown_metric_raises():
     ratios = FakeRatios()
     ratios._tickers = TICKERS[:2]
 
     assert ratios.get_factor_analysis("get_price_to_earnings_ratio").empty
-    assert FakeRatios().get_factor_analysis("get_unknown_ratio").empty
+
+    # A metric the module does not have is a mistake in the call, not missing data.
+    with pytest.raises(InvalidArgumentError, match="get_unknown_ratio"):
+        FakeRatios().get_factor_analysis("get_unknown_ratio")
 
 
 def test_fewer_tickers_than_quantiles_say_so(monkeypatch):

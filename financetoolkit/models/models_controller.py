@@ -20,7 +20,7 @@ from financetoolkit.models.valuation.valuation_controller import ValuationModels
 from financetoolkit.ratios import profitability_model, valuation_model
 from financetoolkit.utilities import factor_model
 from financetoolkit.utilities.dataframe_model import concat_frames, filter_shown_columns
-from financetoolkit.utilities.error_model import handle_errors
+from financetoolkit.utilities.error_model import check_option, handle_errors
 from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import apply_rounding, finalize_dataset
@@ -451,7 +451,9 @@ class ModelsBase:
         """
         Combine score components, drop the periods without a comparison and round. When the
         statements hold no more periods than the comparison needs, the result is empty, and
-        a warning says how many periods `start_date` must cover.
+        a warning says how many periods `start_date` must cover. With a name, a result that
+        is empty because none of its windows is complete (a window longer than the history)
+        is also reported.
         """
         # Ticker and metric (rows) by period (columns), the metrics in the order of `results`.
         order = {metric: position for position, metric in enumerate(results)}
@@ -463,16 +465,27 @@ class ModelsBase:
             )
             .reindex(self._tickers, level=0)
         )
-        if name and len(combined.columns) <= first_columns:
+        unit = "quarters" if self._quarterly else "years"
+        available = len(combined.columns)
+        if name and available <= first_columns:
             logger.warning(
                 "%s needs at least %s %s of statements and %s were available, so it could "
                 "not be calculated. Set an earlier start_date to obtain it.",
                 name,
                 first_columns + 1,
-                "quarters" if self._quarterly else "years",
-                len(combined.columns),
+                unit,
+                available,
             )
         combined = combined[combined.columns[first_columns:]].dropna(axis=1, how="all")
+        if name and available > first_columns and combined.empty:
+            logger.warning(
+                "%s could not be calculated from the %s %s of statements available, as none "
+                "of its windows is complete. Set an earlier start_date (or a smaller window) "
+                "to obtain it.",
+                name,
+                available,
+                unit,
+            )
         combined = apply_rounding(
             combined, rounding if rounding is not None else self._rounding
         )
@@ -724,9 +737,24 @@ class Models(
         | ('get_piotroski_score', '12 Months') |   -0.1353 |                  0.3685 |                -0.3672 |       -3.6724 |    0.0004 |        0.3723 |       -0.1763 |             0.31 |            100 |            -0.1482 |             0.0279 | -0.3828 |              0.0787 |                 0.93   |
         | ('get_altman_z_score', '12 Months')  |    0.1179 |                  0.3915 |                 0.3011 |        3.0112 |    0.0033 |       -0.657  |       -0.2792 |             0.66 |            100 |             0.1564 |            -0.1619 |  1.2913 |              0.0258 |                 0.9939 |
         """
+        selected_metrics = factor_model.select_metrics(metrics, FACTOR_COLLECTIONS)
+
+        # A name that is no metric of this module is a mistake in the call, not missing data.
+        metric_names = [
+            name
+            for name in dir(self)
+            if name.startswith("get_") and name != "get_factor_analysis"
+        ]
+        for metric in selected_metrics:
+            check_option(
+                "metrics",
+                metric if isinstance(metric, str) else metric[0],
+                [*FACTOR_COLLECTIONS, *metric_names],
+            )
+
         factors = factor_model.get_daily_factors(
             self,
-            factor_model.select_metrics(metrics, FACTOR_COLLECTIONS),
+            selected_metrics,
             kwargs,
             {},
             self._tickers,

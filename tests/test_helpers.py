@@ -879,3 +879,71 @@ def test_handle_portfolio_keeps_the_portfolios_own_values():
     assert by_rows(MockSelf()).loc["Portfolio"].iloc[0] == 0.01
     # Without values of its own (e.g. the ratios of financial statements) it is the weighted average.
     assert without_values(MockSelf())["Portfolio"].tolist() == pytest.approx([0.3, 0.4])
+
+
+def test_fill_diluted_shares_uses_the_basic_shares_where_the_diluted_are_missing(
+    caplog,
+):
+    columns = pd.period_range("2021", periods=3, freq="Y")
+    statement = pd.DataFrame(
+        [
+            [10.0, 20.0, 30.0],
+            [9.0, 19.0, 29.0],
+            [11.0, np.nan, 31.0],
+            [1.0, 2.0, 3.0],
+            [5.0, 6.0, 7.0],
+        ],
+        index=pd.MultiIndex.from_tuples(
+            [
+                ("AAPL", "Revenue"),
+                ("AAPL", "Weighted Average Shares"),
+                ("AAPL", "Weighted Average Shares Diluted"),
+                ("MSFT", "Revenue"),
+                ("MSFT", "Weighted Average Shares"),
+            ]
+        ),
+        columns=columns,
+    )
+
+    filled = helpers.fill_diluted_shares(statement)
+
+    assert filled.loc[("AAPL", "Weighted Average Shares Diluted")].tolist() == [
+        11.0,
+        19.0,
+        31.0,
+    ]
+    assert filled.loc[("MSFT", "Weighted Average Shares Diluted")].tolist() == [
+        5.0,
+        6.0,
+        7.0,
+    ]
+    # The rows of a ticker stay together, and the statement itself is left as it is.
+    assert list(filled.index.get_level_values(0)) == ["AAPL"] * 3 + ["MSFT"] * 3
+    assert ("MSFT", "Weighted Average Shares Diluted") not in statement.index
+    assert "for AAPL, MSFT" in caplog.text
+
+    # Nothing missing: the same statement, without a log.
+    caplog.clear()
+    assert helpers.fill_diluted_shares(filled) is filled
+    assert caplog.text == ""
+
+
+def test_require_input_raises_for_an_empty_input():
+    helpers.require_input(pd.DataFrame({"A": [1.0]}), "market cap")
+
+    with pytest.raises(ValueError, match="The market cap is not available"):
+        helpers.require_input(pd.Series(dtype=object), "market cap")
+
+
+def test_fill_diluted_shares_keeps_the_statement_numeric():
+    statement = pd.DataFrame(
+        [[10.0, 20.0], [9.0, 19.0]],
+        index=pd.MultiIndex.from_tuples(
+            [("AAPL", "Revenue"), ("AAPL", "Weighted Average Shares")]
+        ),
+        columns=pd.period_range("2022", periods=2, freq="Y"),
+    )
+
+    filled = helpers.fill_diluted_shares(statement)
+
+    assert (filled.dtypes == "float64").all()

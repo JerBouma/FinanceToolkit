@@ -185,6 +185,10 @@ class ProfitabilityModels:
                 net_income, revenue, average_total_assets, average_total_equity
             )
 
+        # A period without revenue (or equity) has no margin (or multiplier): NaN like any
+        # other undefined ratio rather than infinite.
+        dupont_analysis = drop_non_finite(dupont_analysis)
+
         if growth:
             dupont_analysis = calculate_growth(
                 dataset=dupont_analysis,

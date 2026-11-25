@@ -2,6 +2,7 @@
 
 # ruff: noqa: PLR2004
 
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -333,3 +334,29 @@ def test_accruals_criteria_with_statements_of_different_periods():
     )
 
     assert criteria.loc["A"].tolist() == [True, False, False]
+
+
+def test_get_piotroski_score_keeps_a_criterion_that_cannot_be_evaluated_missing():
+    complete = pd.Series([1, 0, 1], index=["2021", "2022", "2023"])
+    incomplete = pd.Series([1, np.nan, 0], index=["2021", "2022", "2023"])
+    criteria = {
+        name: complete
+        for name in (
+            "return_on_assets_criteria",
+            "operating_cashflow_criteria",
+            "change_in_return_on_asset_criteria",
+            "accruals_criteria",
+            "change_in_leverage_criteria",
+            "change_in_current_ratio_criteria",
+            "number_of_shares_criteria",
+            "gross_margin_criteria",
+        )
+    }
+
+    result = piotroski_model.get_piotroski_score(
+        **criteria, asset_turnover_ratio_criteria=incomplete
+    )
+
+    assert result.tolist()[0] == 9
+    assert np.isnan(result["2022"])
+    assert result["2023"] == 8

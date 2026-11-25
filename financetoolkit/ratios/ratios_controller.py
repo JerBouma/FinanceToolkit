@@ -15,6 +15,7 @@ from financetoolkit.fmp_model import get_analyst_estimates as _get_analyst_estim
 from financetoolkit.helpers import (
     get_goodwill_and_intangible_assets,
     handle_portfolio,
+    require_input,
     trailing_mean,
     trailing_sum,
 )
@@ -28,7 +29,11 @@ from financetoolkit.ratios import (
 from financetoolkit.ratios.helpers import map_period_data_to_daily_data
 from financetoolkit.utilities import factor_model, logger_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
-from financetoolkit.utilities.error_model import handle_errors
+from financetoolkit.utilities.error_model import (
+    check_option,
+    handle_errors,
+    validate_window,
+)
 from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import (
     apply_rounding,
@@ -416,8 +421,9 @@ class Ratios:
 
     def _load_statements(self) -> None:
         """
-        Retrieves the three statements before a collection, so that it fails once, naming
-        the reason, when none of them can be retrieved rather than once for every ratio.
+        Retrieves the three statements before a collection or a ratio built on other ratios,
+        so that it fails once, naming the reason, when none of them can be retrieved rather
+        than once for every ratio it calculates.
         """
         _ = (
             self._balance_sheet_statement,
@@ -1358,8 +1364,16 @@ class Ratios:
         finally:
             self._rounding = toolkit_rounding
 
+        # A ratio that could not be calculated (an empty Series, logged where it failed)
+        # is left out, so the others are still collected.
         self._efficiency_ratios = (
-            pd.concat(efficiency_ratios_dict)
+            pd.concat(
+                {
+                    name: ratio
+                    for name, ratio in efficiency_ratios_dict.items()
+                    if not ratio.empty
+                }
+            )
             .swaplevel(0, 1)
             .sort_index(level=0, sort_remaining=False)
             .dropna(axis="columns", how="all")
@@ -4821,8 +4835,16 @@ class Ratios:
         finally:
             self._rounding = toolkit_rounding
 
+        # A ratio that could not be calculated (an empty Series, logged where it failed)
+        # is left out, so the others are still collected.
         self._liquidity_ratios = (
-            pd.concat(liquidity_ratios_dict)
+            pd.concat(
+                {
+                    name: ratio
+                    for name, ratio in liquidity_ratios_dict.items()
+                    if not ratio.empty
+                }
+            )
             .swaplevel(0, 1)
             .sort_index(level=0, sort_remaining=False)
             .dropna(axis="columns", how="all")
@@ -6026,8 +6048,16 @@ class Ratios:
         finally:
             self._rounding = toolkit_rounding
 
+        # A ratio that could not be calculated (an empty Series, logged where it failed)
+        # is left out, so the others are still collected.
         self._profitability_ratios = (
-            pd.concat(profitability_ratios_dict)
+            pd.concat(
+                {
+                    name: ratio
+                    for name, ratio in profitability_ratios_dict.items()
+                    if not ratio.empty
+                }
+            )
             .swaplevel(0, 1)
             .sort_index(level=0, sort_remaining=False)
             .dropna(axis="columns", how="all")
@@ -8893,9 +8923,16 @@ class Ratios:
         | HD   |  0.0092 | 0.0028 |  0.0121 | -0.0488 | 0.0216 |
         | V    | -0.0461 | 0.031  | -0.0157 |  0.067  | 0.0167 |
         """
+        self._load_statements()
+
+        cash_tax_rate = self.get_cash_tax_rate(trailing=trailing)
+        effective_tax_rate = self.get_effective_tax_rate(trailing=trailing)
+
+        require_input(cash_tax_rate, "cash tax rate")
+        require_input(effective_tax_rate, "effective tax rate")
+
         tax_rate_divergence = profitability_model.get_tax_rate_divergence(
-            self.get_cash_tax_rate(trailing=trailing),
-            self.get_effective_tax_rate(trailing=trailing),
+            cash_tax_rate, effective_tax_rate
         )
 
         return finalize_dataset(
@@ -9922,8 +9959,16 @@ class Ratios:
         finally:
             self._rounding = toolkit_rounding
 
+        # A ratio that could not be calculated (an empty Series, logged where it failed)
+        # is left out, so the others are still collected.
         self._solvency_ratios = (
-            pd.concat(solvency_ratios_dict)
+            pd.concat(
+                {
+                    name: ratio
+                    for name, ratio in solvency_ratios_dict.items()
+                    if not ratio.empty
+                }
+            )
             .swaplevel(0, 1)
             .sort_index(level=0, sort_remaining=False)
             .dropna(axis="columns", how="all")
@@ -11798,7 +11843,10 @@ class Ratios:
         | GM   | 1.2826 | 2.3648 | 2.4941 | 2.1731 | 1.6465 |
         | TSLA | 0.0074 | 0.0134 | 0.0111 | 0.0096 | 0.0053 |
         """
+        self._load_statements()
+
         market_cap = self.get_market_cap(diluted=diluted, show_daily=show_daily)
+        require_input(market_cap, "market cap")
 
         # The debt on the date of the market value, the end of each period.
         total_debt = self._balance_sheet_statement.loc[:, "Total Debt", :]
@@ -12014,25 +12062,28 @@ class Ratios:
         | PNC | 23.2146 | 18.9635 | 12.2926 | 15.6136 | 21.3506 |
         | USB | 24.6916 | 18.398  | 14.8123 | 16.5983 | 21.5389 |
         """
-        if trailing:
-            preferred_dividend_coverage_ratio = (
-                solvency_model.get_preferred_dividend_coverage_ratio(
-                    trailing_sum(
-                        self._income_statement.loc[:, "Net Income", :], trailing
-                    ),
-                    trailing_sum(
-                        self._cash_flow_statement.loc[:, "Preferred Dividends Paid", :],
-                        trailing,
-                    ),
-                )
+        preferred_dividends = trailing_sum(
+            self._cash_flow_statement.loc[:, "Preferred Dividends Paid", :], trailing
+        )
+
+        # Without preferred dividends there is nothing to cover and the ratio is NaN. Most
+        # companies have no preferred stock, so this is information rather than a warning.
+        without_preferred_dividends = preferred_dividends.index[
+            (preferred_dividends.fillna(0) == 0).all(axis=1)
+        ]
+        if len(without_preferred_dividends):
+            logger.info(
+                "%s paid no preferred dividends, so their preferred dividend coverage ratio "
+                "does not apply and is NaN.",
+                ", ".join(map(str, without_preferred_dividends)),
             )
-        else:
-            preferred_dividend_coverage_ratio = (
-                solvency_model.get_preferred_dividend_coverage_ratio(
-                    self._income_statement.loc[:, "Net Income", :],
-                    self._cash_flow_statement.loc[:, "Preferred Dividends Paid", :],
-                )
+
+        preferred_dividend_coverage_ratio = (
+            solvency_model.get_preferred_dividend_coverage_ratio(
+                trailing_sum(self._income_statement.loc[:, "Net Income", :], trailing),
+                preferred_dividends,
             )
+        )
 
         return finalize_dataset(
             dataset=preferred_dividend_coverage_ratio,
@@ -13243,14 +13294,17 @@ class Ratios:
             )
 
             dividend_yield = self.get_dividend_yield(trailing=trailing)
-            dividend_yield_columns = [
-                column
-                for column in dividend_yield.columns
-                if column in valuation_ratios_dict["Dividend Payout Ratio"].columns
-            ]
-            valuation_ratios_dict["Dividend Yield"] = dividend_yield.loc[
-                :, dividend_yield_columns
-            ]
+            dividend_payout_ratio = valuation_ratios_dict["Dividend Payout Ratio"]
+            if not dividend_yield.empty and not dividend_payout_ratio.empty:
+                dividend_yield = dividend_yield.loc[
+                    :,
+                    [
+                        column
+                        for column in dividend_yield.columns
+                        if column in dividend_payout_ratio.columns
+                    ],
+                ]
+            valuation_ratios_dict["Dividend Yield"] = dividend_yield
 
             valuation_ratios_dict["Weighted Dividend Yield"] = (
                 self.get_weighted_dividend_yield(diluted=diluted, trailing=trailing)
@@ -13330,8 +13384,16 @@ class Ratios:
         finally:
             self._rounding = toolkit_rounding
 
+        # A ratio that could not be calculated (an empty Series, logged where it failed)
+        # is left out, so the others are still collected.
         self._valuation_ratios = (
-            pd.concat(valuation_ratios_dict)
+            pd.concat(
+                {
+                    name: ratio
+                    for name, ratio in valuation_ratios_dict.items()
+                    if not ratio.empty
+                }
+            )
             .swaplevel(0, 1)
             .sort_index(level=0, sort_remaining=False)
             .dropna(axis="columns", how="all")
@@ -13864,7 +13926,7 @@ class Ratios:
           Market Outlook. The Journal of Portfolio Management, 24(2), 11-26.
 
         Args:
-            years (int, optional): The number of years of earnings to average. Defaults to 10.
+            years (int, optional): The number of years of earnings to average, at least 1. Defaults to 10.
             inflation_adjusted (bool, optional): Whether to express the earnings of every year
                 in the prices of the period of the ratio with the consumer price index.
                 Defaults to True.
@@ -13920,8 +13982,7 @@ class Ratios:
         | JNJ  | 29.766  | 28.1009 | 21.813  | 20.1288 | 26.7847 |
         | KO   | 31.7418 | 32.6074 | 29.2816 | 29.6145 | 31.2952 |
         """
-        if years < 1:
-            raise ValueError("The number of years must be at least 1.")
+        validate_window("years", years, 1)
 
         # The earnings per share of the price earnings ratio: a year of earnings, the trailing
         # twelve months with quarterly data.
@@ -14100,6 +14161,8 @@ class Ratios:
         """
         # On quarterly data both the earnings and the growth cover a year: trailing twelve
         # month figures compared with those of four quarters earlier.
+        self._load_statements()
+
         trailing_metric = 4 if self._quarterly else 1
 
         if use_ebitda_growth_rate:
@@ -14124,6 +14187,9 @@ class Ratios:
         price_earnings = self.get_price_to_earnings_ratio(
             include_dividends=include_dividends, diluted=diluted, rounding=15
         )
+
+        require_input(growth_rate, "earnings growth rate")
+        require_input(price_earnings, "price-to-earnings ratio")
 
         price_to_earnings_growth_ratio = (
             valuation_model.get_price_to_earnings_growth_ratio(
@@ -14234,6 +14300,8 @@ class Ratios:
         """
         # The growth and the P/E of the PEG ratio: on quarterly data trailing twelve month
         # earnings compared with those of four quarters earlier.
+        self._load_statements()
+
         trailing_metric = 4 if self._quarterly else 1
 
         growth_rate = self.get_earnings_per_share(
@@ -14251,7 +14319,13 @@ class Ratios:
         )
         # The dividend yield covers the same year as the P/E: a year of dividends (the
         # trailing four quarters on quarterly data) against the close at the end of the period.
-        dividend_yield = self.get_dividend_yield(rounding=15).reindex(
+        dividend_yield = self.get_dividend_yield(rounding=15)
+
+        require_input(growth_rate, "earnings growth rate")
+        require_input(price_earnings, "price-to-earnings ratio")
+        require_input(dividend_yield, "dividend yield")
+
+        dividend_yield = dividend_yield.reindex(
             index=price_earnings.index, columns=price_earnings.columns
         )
 
@@ -16139,9 +16213,12 @@ class Ratios:
         """
         # Price-based ratios compare the price with a year of flows, so quarterly data
         # defaults to the trailing twelve months.
+        self._load_statements()
+
         trailing = self._get_valuation_trailing(trailing)
 
         market_cap = self.get_market_cap(diluted=diluted, show_daily=show_daily)
+        require_input(market_cap, "market cap")
 
         # The flows are summed over the trailing periods first and only then spread over the
         # days, so a trailing window always covers periods and never days.
@@ -16261,9 +16338,12 @@ class Ratios:
         """
         # Price-based ratios compare the price with a year of flows, so quarterly data
         # defaults to the trailing twelve months.
+        self._load_statements()
+
         trailing = self._get_valuation_trailing(trailing)
 
         market_cap = self.get_market_cap(diluted=diluted, show_daily=show_daily)
+        require_input(market_cap, "market cap")
 
         # The flows are summed over the trailing periods first and only then spread over the
         # days, so a trailing window always covers periods and never days.
@@ -16390,9 +16470,12 @@ class Ratios:
         """
         # Price-based ratios compare the price with a year of flows, so quarterly data
         # defaults to the trailing twelve months.
+        self._load_statements()
+
         trailing = self._get_valuation_trailing(trailing)
 
         market_cap = self.get_market_cap(diluted=diluted, show_daily=show_daily)
+        require_input(market_cap, "market cap")
 
         # The flows are summed over the trailing periods first and only then spread over the
         # days, so a trailing window always covers periods and never days.
@@ -16658,6 +16741,8 @@ class Ratios:
         | 2026-11-05 |  1.0009 |
         | 2026-11-06 |  1.0132 |
         """
+        self._load_statements()
+
         currency = self._get_basket_currency()
 
         if currency not in (None, "USD"):
@@ -16674,6 +16759,8 @@ class Ratios:
 
         # Millions of US dollars, as the GDP is published, to US dollars.
         gross_domestic_product = self._gross_domestic_product_function() * 1_000_000
+
+        require_input(gross_domestic_product, "Gross Domestic Product")
 
         if country not in gross_domestic_product.columns:
             raise ValueError(
@@ -16798,6 +16885,8 @@ class Ratios:
         # Enterprise value is a point-in-time value, so the balance sheet items are taken at the
         # end of each period, like the share price in the market cap. Cash and marketable
         # securities (short-term investments) are deducted together (Damodaran).
+        self._load_statements()
+
         balance_items = {
             "total_debt": self._balance_sheet_statement.loc[:, "Total Debt", :],
             "minority_interest": self._balance_sheet_statement.loc[
@@ -16810,6 +16899,7 @@ class Ratios:
         }
 
         market_cap = self.get_market_cap(diluted=diluted, show_daily=show_daily)
+        require_input(market_cap, "market cap")
 
         if show_daily:
             balance_items = {
@@ -16922,11 +17012,14 @@ class Ratios:
         """
         # Price-based ratios compare the price with a year of flows, so quarterly data
         # defaults to the trailing twelve months.
+        self._load_statements()
+
         trailing = self._get_valuation_trailing(trailing)
 
         enterprise_value = self.get_enterprise_value(
             diluted=diluted, show_daily=show_daily
         )
+        require_input(enterprise_value, "enterprise value")
 
         # The flows are summed over the trailing periods first and only then spread over the
         # days, so a trailing window always covers periods and never days.
@@ -17047,11 +17140,14 @@ class Ratios:
         """
         # Price-based ratios compare the price with a year of flows, so quarterly data
         # defaults to the trailing twelve months.
+        self._load_statements()
+
         trailing = self._get_valuation_trailing(trailing)
 
         enterprise_value = self.get_enterprise_value(
             diluted=diluted, show_daily=show_daily
         )
+        require_input(enterprise_value, "enterprise value")
 
         # The flows are summed over the trailing periods first and only then spread over the
         # days, so a trailing window always covers periods and never days.
@@ -17176,11 +17272,14 @@ class Ratios:
         """
         # Price-based ratios compare the price with a year of flows, so quarterly data
         # defaults to the trailing twelve months.
+        self._load_statements()
+
         trailing = self._get_valuation_trailing(trailing)
 
         enterprise_value = self.get_enterprise_value(
             diluted=diluted, show_daily=show_daily
         )
+        require_input(enterprise_value, "enterprise value")
 
         # The flows are summed over the trailing periods first and only then spread over the
         # days, so a trailing window always covers periods and never days.
@@ -17523,16 +17622,15 @@ class Ratios:
         | NKE  |  0.6962 | 0.6032 | 0.6195 |  0.2855 | nan      |
         | V    |  0.7727 | 0.7859 | 0.7828 |  0.7864 |   0.7666 |
         """
-        if trailing:
-            dividend_payout_ratio = self.get_dividend_payout_ratio(trailing=trailing)
-            retention_ratio = valuation_model.get_retention_ratio(
-                dividend_payout_ratio=dividend_payout_ratio,
-            )
-        else:
-            dividend_payout_ratio = self.get_dividend_payout_ratio()
-            retention_ratio = valuation_model.get_retention_ratio(
-                dividend_payout_ratio=dividend_payout_ratio,
-            )
+        self._load_statements()
+
+        dividend_payout_ratio = self.get_dividend_payout_ratio(trailing=trailing)
+
+        require_input(dividend_payout_ratio, "dividend payout ratio")
+
+        retention_ratio = valuation_model.get_retention_ratio(
+            dividend_payout_ratio=dividend_payout_ratio,
+        )
 
         return finalize_dataset(
             dataset=retention_ratio,
@@ -17983,11 +18081,14 @@ class Ratios:
         """
         # Price-based ratios compare the price with a year of flows, so quarterly data
         # defaults to the trailing twelve months.
+        self._load_statements()
+
         trailing = self._get_valuation_trailing(trailing)
 
         enterprise_value = self.get_enterprise_value(
             diluted=diluted, show_daily=show_daily
         )
+        require_input(enterprise_value, "enterprise value")
 
         # The flows are summed over the trailing periods first and only then spread over the
         # days, so a trailing window always covers periods and never days.
@@ -18100,11 +18201,14 @@ class Ratios:
         """
         # Price-based ratios compare the price with a year of flows, so quarterly data
         # defaults to the trailing twelve months.
+        self._load_statements()
+
         trailing = self._get_valuation_trailing(trailing)
 
         enterprise_value = self.get_enterprise_value(
             diluted=diluted, show_daily=show_daily
         )
+        require_input(enterprise_value, "enterprise value")
 
         # The flows are summed over the trailing periods first and only then spread over the
         # days, so a trailing window always covers periods and never days.
@@ -18228,9 +18332,12 @@ class Ratios:
         """
         # A yield compares the market cap with a year of buybacks, so quarterly data defaults to
         # the trailing twelve months.
+        self._load_statements()
+
         trailing = self._get_valuation_trailing(trailing)
 
         market_cap = self.get_market_cap(diluted=diluted)
+        require_input(market_cap, "market cap")
 
         buyback_yield = valuation_model.get_buyback_yield(
             trailing_sum(
@@ -18339,6 +18446,8 @@ class Ratios:
         | LOW | 0.092  | 0.1219 | 0.0677 | 0.045  |
         """
         # Both yields default to the trailing twelve months on quarterly data.
+        self._load_statements()
+
         trailing = self._get_valuation_trailing(trailing)
 
         # Unrounded, so that the sum is not off by the rounding of both parts.
@@ -18346,6 +18455,9 @@ class Ratios:
         buyback_yield = self.get_buyback_yield(
             diluted=diluted, trailing=trailing, rounding=15
         )
+
+        require_input(dividend_yield, "dividend yield")
+        require_input(buyback_yield, "buyback yield")
 
         dividend_yield_columns = [
             column
@@ -18677,9 +18789,12 @@ class Ratios:
         | F    |  1.2546 |  1.0247 |  1.0422 |  0.97   |  1.0985 |
         | KO   |  5.1209 |  5.6096 |  5.0137 |  5.2427 |  4.9835 |
         """
+        self._load_statements()
+
         enterprise_value = self.get_enterprise_value(
             diluted=diluted, show_daily=show_daily
         )
+        require_input(enterprise_value, "enterprise value")
 
         # The balance sheet on the date of the market value, the end of each period.
         balance_items = {
@@ -18804,7 +18919,10 @@ class Ratios:
         | JPM | 2.3656 | 1.9517 | 2.1204 | 2.6528 | 3.2247 |
         | WFC | 1.467  | 1.2662 | 1.3809 | 1.9093 | 2.251  |
         """
+        self._load_statements()
+
         market_cap = self.get_market_cap(diluted=diluted, show_daily=show_daily)
+        require_input(market_cap, "market cap")
 
         # The balance sheet on the date of the market value, the end of each period.
         balance_items = {
@@ -19091,6 +19209,18 @@ class Ratios:
             total_return_price,
             shift_periods(total_return_price, window),
         )
+
+        # Every value compares with the market cap a window earlier, so a history no longer
+        # than the window leaves all of them NaN, which is reported rather than left silent.
+        if composite_equity_issuance.isna().all(axis=None):
+            logger.warning(
+                "The composite equity issuance compares the market cap with that of %s "
+                "periods earlier, and %s periods of statements and prices were available, so "
+                "it could not be calculated. Set an earlier start_date or a shorter trailing "
+                "window to obtain it.",
+                window,
+                len(shares.columns),
+            )
 
         return finalize_dataset(
             dataset=composite_equity_issuance,
@@ -19430,9 +19560,24 @@ class Ratios:
         | ('get_price_to_book_ratio', '12 Months')     |    0.123  |                  0.3142 |                 0.3916 |        4.0697 |    0.0001 |       -0.25   |       -0.4529 |           0.6759 |            108 |             0.1688 |            -0.0322 | 0.2882 |              0.0301 |                 0.989  |
         | ('get_return_on_equity', '12 Months')        |    0.0356 |                  0.3525 |                 0.1009 |        1.0093 |    0.3153 |        0.3158 |       -0.1381 |           0.49   |            100 |             0.0194 |            -0.0313 | 0.1369 |              0.0494 |                 0.9665 |
         """
+        selected_metrics = factor_model.select_metrics(metrics, FACTOR_COLLECTIONS)
+
+        # A name that is no metric of this module is a mistake in the call, not missing data.
+        metric_names = [
+            name
+            for name in dir(self)
+            if name.startswith("get_") and name != "get_factor_analysis"
+        ]
+        for metric in selected_metrics:
+            check_option(
+                "metrics",
+                metric if isinstance(metric, str) else metric[0],
+                [*FACTOR_COLLECTIONS, *metric_names],
+            )
+
         factors = factor_model.get_daily_factors(
             self,
-            factor_model.select_metrics(metrics, FACTOR_COLLECTIONS),
+            selected_metrics,
             kwargs,
             {"show_daily": True},
             self._tickers,

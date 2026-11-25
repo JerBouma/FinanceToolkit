@@ -495,7 +495,7 @@ class ConstraintsModels:
                 long_term_debt=self._rows(balance, "Long Term Debt"),
                 total_assets=total_assets,
             ),
-            "Log of Total Assets": constraints_model.get_log_of_total_assets(
+            "Log of Total Assets": constraints_model.get_log_of_total_assets_in_millions(
                 total_assets=total_assets
             ),
             "Industry Sales Growth": constraints_model.get_industry_sales_growth(

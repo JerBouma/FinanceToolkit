@@ -7,24 +7,6 @@ import pytest
 from financetoolkit.models.distress import fulmer_model
 
 
-def test_get_retained_earnings_to_total_assets_ratio(recorder):
-    recorder.capture(
-        fulmer_model.get_retained_earnings_to_total_assets_ratio(
-            retained_earnings=pd.Series([100, 110, 120, 130, 80]),
-            total_assets=pd.Series([500, 400, 300, 200, 100]),
-        )
-    )
-
-
-def test_get_sales_to_total_assets_ratio(recorder):
-    recorder.capture(
-        fulmer_model.get_sales_to_total_assets_ratio(
-            sales=pd.Series([100, 110, 120, 130, 80]),
-            total_assets=pd.Series([500, 400, 300, 200, 100]),
-        )
-    )
-
-
 def test_get_ebt_to_equity_ratio(recorder):
     recorder.capture(
         fulmer_model.get_ebt_to_equity_ratio(

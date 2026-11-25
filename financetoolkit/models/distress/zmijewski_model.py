@@ -8,66 +8,6 @@ from scipy.stats import norm
 from financetoolkit.utilities.statistics_model import drop_non_finite
 
 
-def get_net_income_to_total_assets_ratio(
-    net_income: float | pd.Series | pd.DataFrame,
-    total_assets: float | pd.Series | pd.DataFrame,
-) -> float | pd.Series | pd.DataFrame:
-    """
-    The Net Income to Total Assets Ratio measures a company's profitability relative to the
-    size of its balance sheet.
-
-    It is the profitability component of the Zmijewski Score.
-
-    The formula is as follows:
-
-        - Net Income to Total Assets Ratio = Net Income / Total Assets
-
-    Args:
-        net_income (float | pd.Series | pd.DataFrame): The net income (or loss) of a company for the
-        period.
-        total_assets (float | pd.Series | pd.DataFrame): The sum of a company's current and non-current
-        assets.
-
-    Returns:
-        float | pd.Series | pd.DataFrame: The Net Income to Total Assets Ratio.
-
-    Notes:
-    - A lower (or negative) ratio indicates weaker profitability, which raises the Zmijewski Score and,
-    in turn, the estimated probability of financial distress.
-    """
-    return drop_non_finite(net_income / total_assets)
-
-
-def get_total_liabilities_to_total_assets_ratio(
-    total_liabilities: float | pd.Series | pd.DataFrame,
-    total_assets: float | pd.Series | pd.DataFrame,
-) -> float | pd.Series | pd.DataFrame:
-    """
-    The Total Liabilities to Total Assets Ratio measures the proportion of a company's
-    assets that are financed through debt rather than equity.
-
-    It is the leverage component of the Zmijewski Score.
-
-    The formula is as follows:
-
-        - Total Liabilities to Total Assets Ratio = Total Liabilities / Total Assets
-
-    Args:
-        total_liabilities (float | pd.Series | pd.DataFrame): The sum of a company's current and
-        non-current liabilities.
-        total_assets (float | pd.Series | pd.DataFrame): The sum of a company's current and non-current
-        assets.
-
-    Returns:
-        float | pd.Series | pd.DataFrame: The Total Liabilities to Total Assets Ratio.
-
-    Notes:
-    - A higher ratio indicates higher leverage, which raises the Zmijewski Score and, in turn, the
-    estimated probability of financial distress.
-    """
-    return drop_non_finite(total_liabilities / total_assets)
-
-
 def get_current_assets_to_current_liabilities_ratio(
     current_assets: float | pd.Series | pd.DataFrame,
     current_liabilities: float | pd.Series | pd.DataFrame,

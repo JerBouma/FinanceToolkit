@@ -1036,7 +1036,7 @@ class MarketsFixedIncome(CurvesFixedIncome):
 
         accrued = np.array(
             [
-                bond_data_model.get_accrued_interest(
+                bond_data_model.get_treasury_accrued_interest(
                     coupon, price_date, maturity.date()
                 )
                 for coupon, maturity in zip(
@@ -1266,7 +1266,7 @@ class MarketsFixedIncome(CurvesFixedIncome):
                     [price_date] if price_date == start else [],
                 ).iloc[0]
             )
-            accrued = frn_model.get_accrued_interest(
+            accrued = frn_model.get_floating_rate_note_accrued_interest(
                 frn_model.get_daily_index_rates(
                     index_rates, start, price_date, [start]
                 ),
@@ -1639,7 +1639,9 @@ class MarketsFixedIncome(CurvesFixedIncome):
         adjusted = [
             inflation_bond_model.get_inflation_adjusted_price(
                 price,
-                bond_data_model.get_accrued_interest(coupon, price_date, maturity),
+                bond_data_model.get_treasury_accrued_interest(
+                    coupon, price_date, maturity
+                ),
                 ratio,
             )
             for price, coupon, maturity, ratio in zip(
@@ -1753,8 +1755,8 @@ class MarketsFixedIncome(CurvesFixedIncome):
         ]
 
         return (
-            bond_data_model.get_accrued_interest(coupon, price_date, maturity),
-            bond_data_model.get_accrued_interest(coupon, end, maturity),
+            bond_data_model.get_treasury_accrued_interest(coupon, price_date, maturity),
+            bond_data_model.get_treasury_accrued_interest(coupon, end, maturity),
             coupons,
         )
 

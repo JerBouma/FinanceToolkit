@@ -499,7 +499,7 @@ class DistressModels:
         )
 
         ohlson_o_score["Working Capital to Total Assets"] = (
-            ohlson_model.get_working_capital_to_total_assets_ratio(
+            altman_model.get_working_capital_to_total_assets_ratio(
                 working_capital=working_capital,
                 total_assets=total_assets,
             )
@@ -695,14 +695,14 @@ class DistressModels:
         )
 
         zmijewski_score["Net Income to Total Assets"] = (
-            zmijewski_model.get_net_income_to_total_assets_ratio(
+            ohlson_model.get_net_income_to_total_assets_ratio(
                 net_income=net_income,
                 total_assets=total_assets,
             )
         )
 
         zmijewski_score["Total Liabilities to Total Assets"] = (
-            zmijewski_model.get_total_liabilities_to_total_assets_ratio(
+            ohlson_model.get_total_liabilities_to_total_assets_ratio(
                 total_liabilities=total_liabilities,
                 total_assets=total_assets,
             )
@@ -858,14 +858,14 @@ class DistressModels:
         )
 
         springate_score["Working Capital to Total Assets"] = (
-            springate_model.get_working_capital_to_total_assets_ratio(
+            altman_model.get_working_capital_to_total_assets_ratio(
                 working_capital=working_capital,
                 total_assets=total_assets,
             )
         )
 
         springate_score["EBIT to Total Assets"] = (
-            springate_model.get_ebit_to_total_assets_ratio(
+            grover_model.get_ebit_to_total_assets_ratio(
                 ebit=self._earnings_before_interest_and_taxes(trailing),
                 total_assets=total_assets,
             )
@@ -879,7 +879,7 @@ class DistressModels:
         )
 
         springate_score["Sales to Total Assets"] = (
-            springate_model.get_sales_to_total_assets_ratio(
+            altman_model.get_sales_to_total_assets_ratio(
                 sales=revenue,
                 total_assets=total_assets,
             )
@@ -1018,7 +1018,7 @@ class DistressModels:
         )
 
         grover_score["Working Capital to Total Assets"] = (
-            grover_model.get_working_capital_to_total_assets_ratio(
+            altman_model.get_working_capital_to_total_assets_ratio(
                 working_capital=working_capital,
                 total_assets=total_assets,
             )
@@ -1196,14 +1196,14 @@ class DistressModels:
         )
 
         fulmer_h_score["Retained Earnings to Total Assets"] = (
-            fulmer_model.get_retained_earnings_to_total_assets_ratio(
+            altman_model.get_retained_earnings_to_total_assets_ratio(
                 retained_earnings=retained_earnings,
                 total_assets=total_assets,
             )
         )
 
         fulmer_h_score["Sales to Total Assets"] = (
-            fulmer_model.get_sales_to_total_assets_ratio(
+            altman_model.get_sales_to_total_assets_ratio(
                 sales=revenue,
                 total_assets=total_assets,
             )
@@ -1412,7 +1412,7 @@ class DistressModels:
         )
 
         taffler_score["Current Liabilities to Total Assets"] = (
-            taffler_model.get_current_liabilities_to_total_assets_ratio(
+            fulmer_model.get_current_liabilities_to_total_assets_ratio(
                 current_liabilities=current_liabilities,
                 total_assets=balance_item("Total Assets"),
             )

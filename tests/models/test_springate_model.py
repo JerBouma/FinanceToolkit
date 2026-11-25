@@ -5,38 +5,11 @@ import pytest
 from financetoolkit.models.distress import springate_model
 
 
-def test_get_working_capital_to_total_assets_ratio(recorder):
-    recorder.capture(
-        springate_model.get_working_capital_to_total_assets_ratio(
-            working_capital=pd.Series([100, 110, 120, 130, 80]),
-            total_assets=pd.Series([500, 400, 300, 200, 100]),
-        )
-    )
-
-
-def test_get_ebit_to_total_assets_ratio(recorder):
-    recorder.capture(
-        springate_model.get_ebit_to_total_assets_ratio(
-            ebit=pd.Series([100, 110, 120, 130, 80]),
-            total_assets=pd.Series([500, 400, 300, 200, 100]),
-        )
-    )
-
-
 def test_get_ebt_to_current_liabilities_ratio(recorder):
     recorder.capture(
         springate_model.get_ebt_to_current_liabilities_ratio(
             ebt=pd.Series([100, 110, 120, 130, 80]),
             current_liabilities=pd.Series([500, 400, 300, 200, 100]),
-        )
-    )
-
-
-def test_get_sales_to_total_assets_ratio(recorder):
-    recorder.capture(
-        springate_model.get_sales_to_total_assets_ratio(
-            sales=pd.Series([100, 110, 120, 130, 80]),
-            total_assets=pd.Series([500, 400, 300, 200, 100]),
         )
     )
 

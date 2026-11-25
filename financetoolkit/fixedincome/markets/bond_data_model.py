@@ -248,7 +248,9 @@ def get_coupon_dates(
     ]
 
 
-def get_accrued_interest(coupon: float, settlement: date, maturity: date) -> float:
+def get_treasury_accrued_interest(
+    coupon: float, settlement: date, maturity: date
+) -> float:
     """
     The interest accrued per 100 of par on a semi-annual Treasury note or bond on its actual
     coupon dates, actual/actual: the half coupon times the elapsed share of the days of the

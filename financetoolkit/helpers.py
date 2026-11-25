@@ -4,9 +4,11 @@ __docformat__ = "google"
 
 import contextlib
 import contextvars
+import importlib
 import inspect
 import numbers
 import os
+import sys
 from collections.abc import Callable, Iterable
 from concurrent.futures import ThreadPoolExecutor
 from decimal import ROUND_HALF_UP, Decimal
@@ -26,6 +28,40 @@ from financetoolkit.utilities.statistics_model import (
 )
 
 logger = logger_model.get_logger()
+
+
+def import_functions_when_used(
+    package: str, modules: dict[str, list[str]]
+) -> tuple[Callable[[str], Any], Callable[[], list[str]]]:
+    """
+    Make the functions of a package's model modules importable from the package itself
+    (`from financetoolkit.models import get_altman_z_score`), importing each module only
+    when one of its functions is first used (PEP 562). The package's `__init__.py` assigns
+    the returned functions to its `__getattr__` and `__dir__`.
+
+    Args:
+        package (str): The name of the package, its `__name__`.
+        modules (dict[str, list[str]]): The full name of each model module with the
+            names of the functions it provides.
+
+    Returns:
+        tuple[Callable[[str], Any], Callable[[], list[str]]]: The package's `__getattr__`,
+        which imports and returns a function by name, and its `__dir__`.
+    """
+    module_of = {name: module for module, names in modules.items() for name in names}
+
+    def __getattr__(name: str) -> Any:  # noqa: N807
+        if name not in module_of:
+            raise AttributeError(f"module {package!r} has no attribute {name!r}")
+        value = getattr(importlib.import_module(module_of[name]), name)
+        # Stored on the package, so later lookups don't come back here.
+        setattr(sys.modules[package], name, value)
+        return value
+
+    def __dir__() -> list[str]:  # noqa: N807
+        return sorted(set(vars(sys.modules[package])) | set(module_of))
+
+    return __getattr__, __dir__
 
 
 # Set FINANCETOOLKIT_MAX_WORKERS to raise or lower the number of API calls made at the same time; the default is a deliberate middle ground between fetching a large universe quickly and not tripping the data providers' rate limits (which the retry logic in fmp_model.get_financial_data absorbs when they are hit anyway).  # noqa: E501

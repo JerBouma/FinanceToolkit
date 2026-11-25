@@ -1,11 +1,15 @@
 ,,Periods = 5
 AAPL,Terminal Value,1488288416381.165
 AAPL,Cash Flow Projection,116728503245.5816
+AAPL,Present Value of Cash Flows,398593019824.6542
+AAPL,Present Value of Terminal Value,924110012593.0076
 AAPL,Enterprise Value,1322703032417.6619
 AAPL,Equity Value,1273170032417.6619
 AAPL,Intrinsic Value,80.5164
 MSFT,Terminal Value,1032025232977.3112
 MSFT,Cash Flow Projection,80943155527.6322
+MSFT,Present Value of Cash Flows,260777898586.5774
+MSFT,Present Value of Terminal Value,640806473090.7047
 MSFT,Enterprise Value,901584371677.2822
 MSFT,Equity Value,952875371677.2822
 MSFT,Intrinsic Value,127.5261

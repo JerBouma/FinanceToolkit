@@ -1,4 +1,5 @@
 """Models Controller Tests""" ""
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -1371,6 +1372,8 @@ def test_quarterly_valuations_skip_trailing_sums_with_a_missing_quarter():
     )
     assert reverse.loc["A", "Cash Flow"] == pytest.approx(20 * g[-4:].sum())
     assert reverse.loc["A", "Historical Growth Rate"] == pytest.approx(GROWTH**4 - 1)
+    # The period names the first and latest trailing sum the growth is measured over.
+    assert reverse.loc["A", "Historical Growth Period"] == "2019Q4-2023Q4"
 
     # The margins a year apart are taken at calendar positions counted back from the
     # latest quarter; the year that includes the missing revenue is left out instead of
@@ -2992,3 +2995,43 @@ def test_a_reverse_discounted_cash_flow_after_the_prices_says_why(caplog):
 
     assert result["Implied Growth Rate"].isna().all()
     assert caplog.text.count("AAPL, MSFT has no share price between") == 1
+
+
+def test_reverse_discounted_cash_flow_names_the_years_of_the_historical_growth():
+    items = growing_company()
+    items["Free Cash Flow"]["B"] = list(items["Free Cash Flow"]["A"])
+    # B's first cash flow is negative, so it has no historical growth and no period.
+    items["Free Cash Flow"]["B"][0] = -1.0
+    for values in items.values():
+        values.setdefault("B", list(values["A"]))
+    reverse = synthetic_models(items, quarterly=False).get_reverse_discounted_cash_flow(
+        weighted_average_cost_of_capital=0.09, cash_flow_type="Free Cash Flow"
+    )
+    assert reverse.loc["A", "Historical Growth Period"] == "2010-2029"
+    assert np.isnan(reverse.loc["B", "Historical Growth Rate"])
+    assert pd.isna(reverse.loc["B", "Historical Growth Period"])
+    # The numbers keep their float dtype next to the period labels.
+    assert reverse["Historical Growth Rate"].dtype == float
+    assert reverse["Share Price"].dtype == float
+
+
+def test_intrinsic_valuation_present_values_add_up_to_the_enterprise_value():
+    valuation = synthetic_models(growing_company()).get_intrinsic_valuation(
+        growth_rate=0.08,
+        perpetual_growth_rate=0.025,
+        weighted_average_cost_of_capital=0.1,
+        cash_flow_type="Free Cash Flow",
+        rounding=None,
+    )
+    a = valuation.loc["A"].iloc[:, -1]
+    assert a["Present Value of Cash Flows"] + a[
+        "Present Value of Terminal Value"
+    ] == pytest.approx(a["Enterprise Value"], rel=1e-12)
+    assert a["Present Value of Terminal Value"] == pytest.approx(
+        a["Terminal Value"] / 1.1**5, rel=1e-12
+    )
+    assert list(valuation.loc["A"].index[2:5]) == [
+        "Present Value of Cash Flows",
+        "Present Value of Terminal Value",
+        "Enterprise Value",
+    ]

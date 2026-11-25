@@ -4,8 +4,8 @@ import numbers
 
 import numpy as np
 import pandas as pd
-import yfinance as yf
 
+from financetoolkit import yfinance_model
 from financetoolkit.cache import policy_model
 from financetoolkit.cache.cache_controller import get_active_cache
 from financetoolkit.options.helpers import (
@@ -18,7 +18,6 @@ from financetoolkit.options.helpers import (
 )
 from financetoolkit.utilities.error_model import check_option
 from financetoolkit.utilities.logger_model import get_logger
-from financetoolkit.utilities.sources_model import record_source
 
 logger = get_logger()
 
@@ -44,13 +43,7 @@ def get_option_expiry_dates(ticker: str) -> list[str]:
         if cached_dates is not None:
             return cached_dates
 
-    try:
-        expiry_dates = list(yf.Ticker(ticker).options)
-        if expiry_dates:
-            record_source(policy_model.YAHOO_FINANCE)
-    except Exception as error:  # noqa: BLE001 - Yahoo Finance fails in many ways
-        logger.info("Yahoo Finance has no options of %s (%s).", ticker, error)
-        expiry_dates = []
+    expiry_dates = yfinance_model.get_option_expiry_dates(ticker)
 
     if cache is not None and expiry_dates:
         cache.set(
@@ -105,25 +98,9 @@ def get_option_chains(
                 result_dict[ticker] = cached_chain
                 continue
 
-        underlying_price = np.nan
-        try:
-            option_chain = yf.Ticker(ticker).option_chain(expiration_date)
-            options_df = option_chain.puts if put_option else option_chain.calls
-            record_source(policy_model.YAHOO_FINANCE)
-            # The price of the underlying quoted with the chain, so metrics that combine
-            # the two use prices of the same moment rather than the last historical close.
-            underlying_price = (option_chain.underlying or {}).get(
-                "regularMarketPrice", np.nan
-            )
-        except Exception as error:  # noqa: BLE001 - Yahoo Finance fails in many ways
-            # A warning, so the answer says which ticker is left out and why.
-            logger.warning(
-                "No options data is available for %s expiring on %s, so it is left out (%s).",
-                ticker,
-                expiration_date,
-                error,
-            )
-            options_df = pd.DataFrame()
+        options_df, underlying_price = yfinance_model.get_option_chain(
+            ticker, expiration_date, put_option
+        )
 
         if options_df.empty:
             continue

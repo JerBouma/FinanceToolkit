@@ -3,7 +3,6 @@
 __docformat__ = "google"
 
 import io
-import logging
 import time
 import zipfile
 from collections.abc import Callable, Generator, Iterable
@@ -592,24 +591,6 @@ def require_columns(data: pd.DataFrame, columns: set[str], description: str) -> 
             "column(s), which means the source changed its format and the data cannot be "
             "interpreted."
         )
-
-
-@contextmanager
-def quiet_yfinance() -> Generator[None]:
-    """
-    Silences yfinance's own log while a caller retrieves several tickers: it logs every
-    ticker without prices ("possibly delisted"), which the caller reports in one line.
-
-    Yields:
-        None: The block runs with the yfinance logger muted.
-    """
-    yfinance_logger = logging.getLogger("yfinance")
-    level = yfinance_logger.level
-    yfinance_logger.setLevel(logging.CRITICAL + 1)
-    try:
-        yield
-    finally:
-        yfinance_logger.setLevel(level)
 
 
 def open_zip_archive(response: requests.Response, description: str) -> zipfile.ZipFile:

@@ -21,14 +21,13 @@ import pandas as pd
 import requests
 from urllib3.exceptions import MaxRetryError
 
-from financetoolkit import currencies_model, helpers
+from financetoolkit import currencies_model, helpers, yfinance_model
 from financetoolkit.cache import policy_model
 from financetoolkit.cache.cache_controller import get_active_cache
 from financetoolkit.cache.request_model import redact_credentials
 from financetoolkit.utilities import error_model, logger_model
 from financetoolkit.utilities.dataframe_model import to_dataframe
 from financetoolkit.utilities.requests_model import get_request
-from financetoolkit.utilities.sources_model import record_source
 
 logger = logger_model.get_logger()
 
@@ -738,32 +737,12 @@ def _complete_older_dividends(
         ones and True, or the given ones and False (with a warning) when Yahoo Finance has
         none, so the caller knows the earlier payments are missing.
     """
-    # Imported when first used, as only a Free plan with a long dividend history needs it.
-    import yfinance as yf  # noqa: PLC0415
-
-    from financetoolkit.currencies_model import (  # noqa: PLC0415
-        to_yahoo_finance_symbol,
-    )
-
     first_payment = dividends.index.min()
 
-    # The older payments are an optional addition, so any failure counts as no history. When
-    # Yahoo Finance answers with an error (a rate limit, for example), yfinance logs it and
-    # returns None instead of raising.
-    try:
-        older = yf.Ticker(to_yahoo_finance_symbol(ticker)).dividends
-    except Exception as error:  # noqa: BLE001
-        logger.info(
-            "Yahoo Finance dividends of %s could not be retrieved: %s", ticker, error
-        )
-        older = None
-
-    if not isinstance(older, pd.Series):
-        older = pd.Series(dtype=float)
+    # The older payments are an optional addition, so any failure counts as no history.
+    older = yfinance_model.get_dividends(ticker)
 
     if not older.empty:
-        record_source(policy_model.YAHOO_FINANCE)
-        older.index = pd.DatetimeIndex(older.index).tz_localize(None).to_period("D")
         older = older[older.index < first_payment]
 
     if older.empty:

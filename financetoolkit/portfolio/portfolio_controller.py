@@ -7,6 +7,7 @@ from importlib import resources
 import numpy as np
 import pandas as pd
 
+from financetoolkit import yfinance_model
 from financetoolkit.helpers import get_non_trading_days
 from financetoolkit.historical_model import convert_daily_to_other_period
 from financetoolkit.portfolio import (
@@ -19,7 +20,7 @@ from financetoolkit.portfolio import (
 from financetoolkit.portfolio.construction.attribution import attribution_model
 from financetoolkit.portfolio.definition_model import PortfolioDefinition
 from financetoolkit.toolkit_controller import Toolkit
-from financetoolkit.utilities import logger_model, requests_model, validation_model
+from financetoolkit.utilities import logger_model, validation_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
 from financetoolkit.utilities.error_model import check_option, check_period
 from financetoolkit.utilities.sources_model import track_sources
@@ -1297,7 +1298,7 @@ class Portfolio:
             .str.upper()
         )
         converted_tickers = {
-            ticker: requests_model.convert_isin_to_ticker(ticker)
+            ticker: yfinance_model.convert_isin_to_ticker(ticker)
             for ticker in tickers.unique()
         }
         tickers = tickers.map(

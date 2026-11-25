@@ -7,10 +7,9 @@ import warnings
 import numpy as np
 import pandas as pd
 
-from financetoolkit import helpers, historical_model
+from financetoolkit import helpers, historical_model, yfinance_model
 from financetoolkit.economics.helpers import (
     buffered_start_date,
-    quiet_yfinance,
     resample_to_period,
     validate_period,
 )
@@ -603,7 +602,7 @@ class HistoryEconomics(PricesEconomics):
         tickers = [ASSET_CLASS_PROXIES[name] for name in requested]
         start_date = buffered_start_date(self._start_date, period)
         # yfinance logs every ticker without prices; they are reported in one line below.
-        with quiet_yfinance():
+        with yfinance_model.quiet_yfinance():
             historical_data, _ = historical_model.get_historical_data(
                 tickers,
                 api_key=self._api_key or None,

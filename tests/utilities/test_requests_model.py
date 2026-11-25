@@ -111,69 +111,6 @@ def test_get_request_raises_on_persistent_failure():
             pass
 
 
-def test_convert_isin_to_ticker_valid_isin():
-    """Test converting valid ISIN to ticker."""
-    mock_response = MagicMock()
-    mock_response.json.return_value = {"quotes": [{"symbol": "AAPL"}]}
-    mock_response.raise_for_status = MagicMock()
-
-    with patch.object(requests_model.SESSION, "get", return_value=mock_response):
-        with patch("financetoolkit.utilities.requests_model.logger") as mock_logger:
-            result = requests_model.convert_isin_to_ticker("US0378331005")
-
-            assert result == "AAPL"
-            mock_logger.info.assert_called_once()
-
-
-def test_convert_isin_to_ticker_invalid_format():
-    """Test converting invalid ISIN format."""
-    result = requests_model.convert_isin_to_ticker("INVALID")
-
-    assert result == "INVALID"
-
-
-def test_convert_isin_to_ticker_no_quotes():
-    """Test converting ISIN when no quotes found."""
-    mock_response = MagicMock()
-    mock_response.json.return_value = {"quotes": []}
-    mock_response.raise_for_status = MagicMock()
-
-    with patch.object(requests_model.SESSION, "get", return_value=mock_response):
-        with patch("financetoolkit.utilities.requests_model.logger") as mock_logger:
-            result = requests_model.convert_isin_to_ticker("US0378331005")
-
-            assert result == "US0378331005"
-            mock_logger.warning.assert_called_once()
-
-
-def test_convert_isin_to_ticker_request_exception():
-    """Test converting ISIN when request fails."""
-    with patch.object(
-        requests_model.SESSION,
-        "get",
-        side_effect=requests.exceptions.RequestException("Network error"),
-    ):
-        with patch("financetoolkit.utilities.requests_model.logger") as mock_logger:
-            result = requests_model.convert_isin_to_ticker("US0378331005")
-
-            assert result == "US0378331005"
-            mock_logger.warning.assert_called_once()
-
-
-def test_convert_isin_to_ticker_json_parse_error():
-    """Test converting ISIN when JSON parsing fails."""
-    mock_response = MagicMock()
-    mock_response.json.side_effect = ValueError("Invalid JSON")
-    mock_response.raise_for_status = MagicMock()
-
-    with patch.object(requests_model.SESSION, "get", return_value=mock_response):
-        with patch("financetoolkit.utilities.requests_model.logger") as mock_logger:
-            result = requests_model.convert_isin_to_ticker("US0378331005")
-
-            assert result == "US0378331005"
-            mock_logger.warning.assert_called_once()
-
-
 def test_shared_session_connection_pooling():
     """Test that the shared Session mounts enlarged connection pools for both schemes."""
     for scheme in ["https://", "http://"]:

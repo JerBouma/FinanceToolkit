@@ -4,11 +4,12 @@ __docformat__ = "google"
 
 import pandas as pd
 
+from financetoolkit import yfinance_model
 from financetoolkit.economics.helpers import (
     buffered_start_date,
     get_exchange_business_days,
 )
-from financetoolkit.economics.sources import futures_model, yfinance_model
+from financetoolkit.economics.sources import futures_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
 from financetoolkit.utilities.error_model import handle_errors
 from financetoolkit.utilities.sources_model import track_sources

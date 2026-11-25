@@ -7,9 +7,17 @@ import pandas as pd
 import requests
 
 from financetoolkit.cache import policy_model
-from financetoolkit.economics.helpers import collect_cached_data, require_columns
+from financetoolkit.economics.helpers import (
+    collect_cached_data,
+    is_unreachable,
+    require_columns,
+    stop_at_unreachable_sources,
+)
 from financetoolkit.utilities.excel_model import read_excel
+from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.requests_model import get_request
+
+logger = get_logger()
 
 # The EEX holds the primary auctions of EU emission allowances (EUAs) for the European
 # Union, Germany and Poland, almost every trading day, and publishes their results in one
@@ -74,6 +82,8 @@ def _get_year(year: int) -> pd.DataFrame:
         entity=str(year),
         fetch=fetch,
         description=description,
+        # get_carbon_price reports the years the EEX could not be reached for in one line.
+        quiet=True,
     )
 
 
@@ -82,7 +92,9 @@ def get_carbon_price(start_date: str, end_date: str) -> pd.DataFrame:
     Retrieves the clearing price of the primary auctions of EU emission allowances, the price of emitting one tonne of
     CO2 under the EU Emissions Trading System, daily from 2020.
 
-    Only the years between the start and end date are retrieved.
+    Only the years between the start and end date are retrieved, one workbook per year. Once
+    the EEX cannot be reached, the later years are not requested (they would fail alike, each
+    after its own retries), and the years without prices are reported in one line.
 
     Args:
         start_date (str): The start date (YYYY-MM-DD).
@@ -94,7 +106,21 @@ def get_carbon_price(start_date: str, end_date: str) -> pd.DataFrame:
     """
     first = max(pd.Timestamp(start_date).year, FIRST_YEAR)
     last = min(pd.Timestamp(end_date).year, pd.Timestamp.now().year)
-    years = [_get_year(year) for year in range(first, last + 1)]
-    years = [prices for prices in years if not prices.empty]
 
-    return pd.concat(years).sort_index() if years else pd.DataFrame()
+    with stop_at_unreachable_sources():
+        years = {year: _get_year(year) for year in range(first, last + 1)}
+        unreachable = is_unreachable(policy_model.EEX)
+
+    if unreachable and (
+        missing := [str(year) for year, prices in years.items() if prices.empty]
+    ):
+        logger.error(
+            "Could not reach the EEX for the emission allowance auctions of %s, so no carbon "
+            "price is returned for %s.",
+            ", ".join(missing),
+            "that year" if len(missing) == 1 else "those years",
+        )
+
+    frames = [prices for prices in years.values() if not prices.empty]
+
+    return pd.concat(frames).sort_index() if frames else pd.DataFrame()

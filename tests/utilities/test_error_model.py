@@ -630,6 +630,9 @@ def test_check_period_and_validate_alpha_name_what_to_pass():
         error_model.InvalidArgumentError, match="period must be one of 'weekly'"
     ):
         error_model.check_period("daily", ["weekly", "monthly"])
+    # A list is not a period either, also where the periods are a dictionary.
+    with pytest.raises(error_model.InvalidArgumentError, match="period must be one of"):
+        error_model.check_period(["weekly"], {"weekly": 52, "monthly": 12})
 
     for alpha in (0, 1, 1.5, -0.1):
         with pytest.raises(

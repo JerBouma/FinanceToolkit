@@ -143,6 +143,22 @@ def stop_at_unreachable_sources() -> Generator[None]:
         _UNREACHABLE_SOURCES.reset(token)
 
 
+def is_unreachable(source: str) -> bool:
+    """
+    Whether a source could not be reached earlier in the current stop_at_unreachable_sources
+    block, for a caller that reports the parts it could not retrieve in one line.
+
+    Args:
+        source (str): The source, as the cache names it (see policy_model).
+
+    Returns:
+        bool: True when the source could not be reached in this block, False otherwise and
+        outside such a block.
+    """
+    unreachable = _UNREACHABLE_SOURCES.get()
+    return unreachable is not None and source in unreachable
+
+
 def _fetch_with_retry(
     fetch: Callable[..., pd.DataFrame], *args: str, source: str = "The source"
 ) -> pd.DataFrame:
@@ -708,19 +724,19 @@ def to_us_series(observations: dict, source: str, description: str) -> pd.DataFr
 
 def check_period_type(period: object) -> None:
     """
-    Checks that a period is given as text, so that a wrong type is reported as such
-    rather than as an AttributeError from deep inside the retrieval.
+    Checks that a period is given as text, so that a wrong type (such as a list) is reported
+    as a mistake in the call rather than as an error from deep inside the retrieval.
 
     Args:
         period (object): The period as passed by the caller.
 
     Raises:
-        TypeError: When the period is not None and not a string.
+        InvalidArgumentError: When the period is not None and not a string.
     """
     if period is not None and not isinstance(period, str):
-        raise TypeError(
+        raise InvalidArgumentError(
             f"The period must be text such as 'monthly' or 'daily', not a {type(period).__name__} "
-            f"({period!r})."
+            f"({period!r}). Please pass one period as text."
         )
 
 

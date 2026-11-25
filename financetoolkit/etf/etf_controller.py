@@ -15,6 +15,7 @@ from financetoolkit.utilities.error_model import (
     InvalidArgumentError,
     check_option,
     check_period,
+    count_request_failures,
     handle_errors,
     validate_window,
 )
@@ -139,6 +140,10 @@ class ETF:
         self._sector_function = sector_function
         self._holding_currency_function = holding_currency_function
         self._benchmark_ticker = benchmark_ticker
+        # The funds without weightings (per "country" or "sector") after a call in which a
+        # request failed, so a later call served from memory does not read them as funds
+        # that have no weightings.
+        self._unanswered_funds: dict[str, set[str]] = {}
 
     def _listing_currencies(self) -> pd.Series:
         """The currency every ticker is listed in, empty when it cannot be retrieved."""
@@ -357,24 +362,32 @@ class ETF:
             fund: weights.get(fund, pd.Series(dtype=float)) for fund in self._funds()
         }
 
-    def _sorted_weightings(
-        self, weightings: pd.DataFrame | None, name: str
-    ) -> pd.DataFrame | None:
+    def _sorted_weightings(self, name: str, overwrite: bool) -> pd.DataFrame | None:
         """
-        The weightings with the largest weights of the first fund first, naming the funds
-        without any, as an empty answer for a fund otherwise says nothing about why.
+        The country or sector weightings with the largest weights of the first fund first,
+        naming the funds without any, as an empty answer for a fund otherwise says nothing
+        about why. A fund whose request failed is not named here: the collector reported it.
         """
+        with count_request_failures() as failed_requests:
+            weightings = self._fund_data_function(
+                f"{name}_weightings", overwrite=overwrite
+            )
         if weightings is None:
             return weightings
-        if without := [
-            fund for fund in self._funds() if fund not in weightings.columns
-        ]:
-            logger.warning(
-                "Financial Modeling Prep has no %s weightings for %s; it publishes them for "
-                "ETFs and funds only.",
-                name,
-                ", ".join(without),
-            )
+        without = [fund for fund in self._funds() if fund not in weightings.columns]
+        if failed_requests():
+            self._unanswered_funds[name] = set(without)
+        else:
+            if overwrite:
+                self._unanswered_funds.pop(name, None)
+            unanswered = self._unanswered_funds.get(name, set())
+            if no_weightings := [fund for fund in without if fund not in unanswered]:
+                logger.warning(
+                    "Financial Modeling Prep has no %s weightings for %s; it publishes "
+                    "them for ETFs and funds only.",
+                    name,
+                    ", ".join(no_weightings),
+                )
         if weightings.empty:
             return weightings
         # A fund lists only the sectors or countries it holds, so one another fund holds has
@@ -601,10 +614,7 @@ class ETF:
         | Canada         | 0.0096 | 0.0007 |
         | Singapore      | 0.0074 | 0.0025 |
         """
-        return self._sorted_weightings(
-            self._fund_data_function("country_weightings", overwrite=overwrite),
-            "country",
-        )
+        return self._sorted_weightings("country", overwrite)
 
     def get_sector_weightings(
         self, overwrite: bool = False, show_columns: str | list[str] | None = None
@@ -664,9 +674,7 @@ class ETF:
         | Financial Services     | 0.001949 | 0.123878 |
         | Real Estate            | 0        | 0.022741 |
         """
-        return self._sorted_weightings(
-            self._fund_data_function("sector_weightings", overwrite=overwrite), "sector"
-        )
+        return self._sorted_weightings("sector", overwrite)
 
     @handle_errors
     def get_profile(

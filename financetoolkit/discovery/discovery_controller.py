@@ -174,21 +174,24 @@ def _collect_snapshot(
             exchange or sector is not one of the options.
     """
     snapshot_date = _snapshot_date(date, name, value, exchange)
-    failures_before = error_model.get_request_failures()
-    data = collect(snapshot_date)
 
-    if date or value or snapshot_date is None:
-        return data
-
-    latest = snapshot_date
-    for _ in range(SNAPSHOT_LOOKBACK_DAYS):
-        # A failed request (logged where it failed) is not a day without a snapshot.
-        if not data.empty or error_model.get_request_failures() != failures_before:
-            return data
-        snapshot_date = str(np.busday_offset(snapshot_date, -1, roll="backward"))
+    # Only this call's failed requests count: on the MCP server, a concurrent request that
+    # failed must not stop this call from stepping back.
+    with error_model.count_request_failures() as failed_requests:
         data = collect(snapshot_date)
 
-    if data.empty and error_model.get_request_failures() == failures_before:
+        if date or value or snapshot_date is None:
+            return data
+
+        latest = snapshot_date
+        for _ in range(SNAPSHOT_LOOKBACK_DAYS):
+            # A failed request (logged where it failed) is not a day without a snapshot.
+            if not data.empty or failed_requests():
+                return data
+            snapshot_date = str(np.busday_offset(snapshot_date, -1, roll="backward"))
+            data = collect(snapshot_date)
+
+    if data.empty and not failed_requests():
         logger.warning(
             "Financial Modeling Prep has no %s snapshot of %s for the business days from "
             "%s to %s, such as on market holidays. Please pass another date.",

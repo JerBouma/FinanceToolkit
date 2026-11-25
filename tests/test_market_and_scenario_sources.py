@@ -718,3 +718,27 @@ def test_federal_reserve_scenario_files_named_after_their_table(monkeypatch):
         url.endswith("2025-Table_3A_Supervisory_Severely_Adverse_Domestic.csv")
         for url in requested
     )
+
+
+def test_an_unreachable_eex_is_asked_once_and_reported_in_one_line(monkeypatch, caplog):
+    from financetoolkit.economics import helpers as economics_helpers
+    from financetoolkit.economics.sources import eex_model
+
+    requested = []
+
+    def refused(url, timeout):  # noqa: ARG001
+        requested.append(url)
+        raise requests.exceptions.ConnectionError("Connection refused")
+
+    monkeypatch.setattr(eex_model, "get_request", refused)
+    monkeypatch.setattr(economics_helpers, "RETRY_DELAY_SECONDS", 0)
+
+    with caplog.at_level("ERROR"):
+        prices = eex_model.get_carbon_price("2021-01-01", "2023-12-31")
+
+    assert prices.empty
+    # The first year with its retries; the later years would fail alike.
+    assert all("2021" in url for url in requested)
+    errors = [record for record in caplog.records if record.levelname == "ERROR"]
+    assert len(errors) == 1
+    assert "auctions of 2021, 2022, 2023" in errors[0].message

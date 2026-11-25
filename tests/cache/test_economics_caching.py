@@ -39,7 +39,7 @@ def test_fred_second_run_makes_no_request(cache, monkeypatch):
     requests: list[tuple[str, str, str]] = []
 
     def fake_request(
-        series_id, start_date, end_date, api_key, failures=None
+        series_id, start_date, end_date, api_key, failures=None, unreachable=None
     ):  # noqa: ARG001
         requests.append((series_id, start_date, end_date))
         index = pd.period_range(start=start_date, end=end_date, freq="D")
@@ -61,7 +61,7 @@ def test_fred_widening_the_range_only_requests_the_gap(cache, monkeypatch):
     requests: list[tuple[str, str, str]] = []
 
     def fake_request(
-        series_id, start_date, end_date, api_key, failures=None
+        series_id, start_date, end_date, api_key, failures=None, unreachable=None
     ):  # noqa: ARG001
         requests.append((series_id, start_date, end_date))
         index = pd.period_range(start=start_date, end=end_date, freq="D")
@@ -85,7 +85,7 @@ def test_fred_api_key_is_not_part_of_the_cache_key(cache, monkeypatch):
     calls: list[str] = []
 
     def fake_request(
-        series_id, start_date, end_date, api_key, failures=None
+        series_id, start_date, end_date, api_key, failures=None, unreachable=None
     ):  # noqa: ARG001
         calls.append(api_key)
         index = pd.period_range(start=start_date, end=end_date, freq="D")
@@ -106,7 +106,7 @@ def test_fred_without_a_cache_requests_every_time(monkeypatch):
     calls: list[str] = []
 
     def fake_request(
-        series_id, start_date, end_date, api_key, failures=None
+        series_id, start_date, end_date, api_key, failures=None, unreachable=None
     ):  # noqa: ARG001
         calls.append(series_id)
 

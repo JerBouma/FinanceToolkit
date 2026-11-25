@@ -4500,6 +4500,9 @@ class PricingOptions:
         )
 
         strategy_payoff: dict[str, pd.Series] = {}
+        if legs is None:
+            # The default straddle is priced at each ticker's volatility.
+            self._report_short_history()
 
         for ticker, price_range in stock_price_range_per_ticker.items():
             price_range_series = pd.Series(price_range, index=price_range, name=ticker)
@@ -4541,7 +4544,7 @@ class PricingOptions:
                         stock_price=stock_price,
                         strike_price=stock_price,
                         risk_free_rate=float(self._risk_free_rate.loc[date]),
-                        volatility=float(self._volatility.loc[date, ticker]),
+                        volatility=float(self._trailing_volatility.loc[date, ticker]),
                         time_to_expiration=30 / 365,
                         dividend_yield=self._dividend_yield_on(ticker, date),
                         put_option=put_option,

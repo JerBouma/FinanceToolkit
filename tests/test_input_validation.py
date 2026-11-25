@@ -50,11 +50,15 @@ def test_controllers_refuse_dates_that_do_not_exist():
         FixedIncome(end_date="2026-13-01")
 
 
-def test_a_period_of_the_wrong_type_is_a_clear_type_error():
-    with pytest.raises(TypeError, match="period must be text"):
+def test_a_period_of_the_wrong_type_is_an_invalid_argument():
+    from financetoolkit.utilities.error_model import InvalidArgumentError
+
+    with pytest.raises(InvalidArgumentError, match="period must be text"):
         helpers.validate_period(12, ["monthly"], "inflation rate")
-    with pytest.raises(TypeError, match="period must be text"):
+    with pytest.raises(InvalidArgumentError, match="period must be text"):
         Economics(gmdb_source=False).get_unemployment_rate(period=3)
+    with pytest.raises(InvalidArgumentError, match="period must be text"):
+        Economics(gmdb_source=False).get_long_term_interest_rate(period=["monthly"])
 
 
 def test_countries_of_the_wrong_type_are_a_clear_type_error():

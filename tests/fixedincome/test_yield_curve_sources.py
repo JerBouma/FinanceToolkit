@@ -617,3 +617,92 @@ def test_a_missing_ice_bofa_series_keeps_the_others_named(monkeypatch, caplog):
     ]
     assert effective_yield.iloc[0, 0] == pytest.approx(0.05)
     assert caplog.text.count("BAMLC3A0C57YEY") == 1
+
+
+class FredRejection:
+    """A FRED answer with an error status and FRED's own message in a JSON body."""
+
+    def __init__(self, status_code, message):
+        self.status_code = status_code
+        self.message = message
+
+    def json(self):
+        return {"error_code": self.status_code, "error_message": self.message}
+
+
+def test_a_rejected_fred_series_does_not_stop_the_others(monkeypatch, caplog):
+    from financetoolkit.fixedincome.sources import fred_model
+
+    requested = []
+
+    def first_discontinued(url, **kwargs):  # noqa: ARG001
+        requested.append(url)
+        if "BAMLC1A0C13YEY" in url:
+            raise requests.exceptions.HTTPError(
+                "400 Client Error: Bad Request for url",
+                response=FredRejection(400, "Bad Request.  The series does not exist."),
+            )
+        return FredBody('{"observations": [{"date": "2026-01-02", "value": "5.0"}]}')
+
+    monkeypatch.setattr(fred_model, "get_request", first_discontinued)
+
+    effective_yield = fred_model.get_maturity_effective_yield(
+        "2026-01-01", "2026-02-01", "key"
+    )
+
+    # A series FRED rejects is that series' problem: the other five are still asked for.
+    assert len(requested) == 6  # noqa: PLR2004
+    assert len(effective_yield.columns) == 5  # noqa: PLR2004
+    assert "not requested" not in caplog.text
+    assert "The series does not exist" in caplog.text
+    assert "BAMLC1A0C13YEY" in caplog.text
+
+
+def test_a_fred_server_error_on_the_first_series_stops_the_others(monkeypatch, caplog):
+    from financetoolkit.fixedincome.sources import fred_model
+
+    requested = []
+
+    def down(url, **kwargs):  # noqa: ARG001
+        requested.append(url)
+        raise requests.exceptions.HTTPError(
+            "503 Server Error", response=FredRejection(503, "")
+        )
+
+    monkeypatch.setattr(fred_model, "get_request", down)
+
+    assert fred_model.get_maturity_effective_yield(
+        "2026-01-01", "2026-02-01", "key"
+    ).empty
+    assert len(requested) == 1
+    assert "other 5 series are not requested" in caplog.text
+
+
+def test_an_invalid_fred_key_reports_freds_own_message(monkeypatch, caplog):
+    from financetoolkit.fixedincome.sources import fred_model
+
+    message = (
+        "Bad Request.  The value for variable api_key is not registered.  Read "
+        "https://fred.stlouisfed.org/docs/api/api_key.html for more information."
+    )
+
+    def rejected(url, **kwargs):  # noqa: ARG001
+        raise requests.exceptions.HTTPError(
+            "400 Client Error: Bad Request for url: https://api.stlouisfed.org/fred/"
+            "series/observations?series_id=GS10&api_key=BADKEY123",
+            response=FredRejection(400, message),
+        )
+
+    monkeypatch.setattr(fred_model, "get_request", rejected)
+
+    assert fred_model.get_fred_data(
+        ["GS10", "GS2"], "2026-01-01", "2026-02-01", "BADKEY123"
+    ).empty
+    errors = [record for record in caplog.records if record.levelname == "ERROR"]
+    # One line, naming both series once with FRED's explanation rather than the status line.
+    assert len(errors) == 1
+    assert "GS10, GS2 (FRED answered HTTP 400: Bad Request.  The value" in (
+        errors[0].message
+    )
+    assert "could not be reached" not in caplog.text
+    assert "BADKEY123" not in caplog.text

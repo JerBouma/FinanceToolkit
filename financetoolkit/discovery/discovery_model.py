@@ -3,7 +3,7 @@
 __docformat__ = "google"
 
 import re
-from urllib.parse import quote, urlparse
+from urllib.parse import parse_qs, quote, urlparse
 
 import numpy as np
 import pandas as pd
@@ -107,24 +107,46 @@ def get_cached_financial_data(
 
     if error_model.is_error_response(response):
         # The error frame names why there is no answer; it is logged here and an empty
-        # frame returned, so the error's name never reaches a result as a column.
-        endpoint = urlparse(url).path.rsplit("/", 1)[-1]
+        # frame returned, so the error's name never reaches a result as a column. A failed
+        # request (a server error, an answer other than JSON, a timeout) was logged where it
+        # failed, so it is not logged twice.
         reason = str(response.columns[0])
-        # No data for a query is an answer, not a failure.
-        log = logger.warning if reason == "NO DATA" else logger.error
-        log(
-            ERROR_RESPONSE_MESSAGES.get(
-                reason, "Could not reach Financial Modeling Prep for %s."
-            ),
-            endpoint,
-        )
+        if reason != "REQUEST FAILED":
+            # No data for a query is an answer, not a failure.
+            log = logger.warning if reason == "NO DATA" else logger.error
+            log(
+                ERROR_RESPONSE_MESSAGES.get(
+                    reason, "Could not reach Financial Modeling Prep for %s."
+                ),
+                _describe_request(url),
+            )
         return pd.DataFrame()
 
     return response
 
 
+def _describe_request(url: str) -> str:
+    """
+    Names a request for a log message by its endpoint and, where it asks for some, its
+    symbols, such as "historical-price-eod/light (^MOVE)" rather than the last part of the
+    path ("light"), which does not say what was asked for.
+
+    Args:
+        url (str): The request URL.
+
+    Returns:
+        str: The endpoint path after /stable/, with the symbols asked for in brackets.
+    """
+    parsed = urlparse(url)
+    endpoint = parsed.path.split("/stable/", 1)[-1].strip("/")
+    parameters = parse_qs(parsed.query)
+    symbols = parameters.get("symbol") or parameters.get("symbols")
+
+    return f"{endpoint} ({symbols[0]})" if symbols else endpoint
+
+
 # Why a discovery endpoint has no answer, per error frame of get_financial_data; any
-# other (a failed connection, a server error) is reported as the source being unreachable.
+# other (a failed connection) is reported as the source being unreachable.
 _UPGRADE = (
     "Consider upgrading your plan; you can get 15%% off with "
     "https://www.jeroenbouma.com/fmp, which also supports the project."
@@ -1649,16 +1671,21 @@ def _get_news_pages(
         user_subscription (str, optional): The user subscription level. Defaults to "Free".
 
     Returns:
-        pd.DataFrame: the concatenated, unformatted news DataFrame across all pages.
+        pd.DataFrame: the concatenated, unformatted news DataFrame across all pages, up to
+            the first page whose request failed (logged where it failed): the next pages
+            would fail alike, each after its own retries.
     """
     page_frames = []
 
-    for page in range(pages):
-        page_data = get_cached_financial_data(
-            url=f"{base_url}&page={page}", user_subscription=user_subscription
-        )
-        if not page_data.empty:
-            page_frames.append(page_data)
+    with error_model.count_request_failures() as failed_requests:
+        for page in range(pages):
+            page_data = get_cached_financial_data(
+                url=f"{base_url}&page={page}", user_subscription=user_subscription
+            )
+            if failed_requests():
+                break
+            if not page_data.empty:
+                page_frames.append(page_data)
 
     if not page_frames:
         return pd.DataFrame()

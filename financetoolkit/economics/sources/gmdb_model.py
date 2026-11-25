@@ -316,7 +316,7 @@ def get_nominal_gross_domestic_product(gmd_dataset: pd.DataFrame) -> pd.DataFram
     Args:
         gmd_dataset (pd.DataFrame): The dataset of collect_global_macro_database_dataset.
     """
-    return gmd_dataset["nGDP"].dropna(axis="rows", how="all")
+    return get_series(gmd_dataset, "nGDP")
 
 
 def get_real_gross_domestic_product(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
@@ -328,7 +328,7 @@ def get_real_gross_domestic_product(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
     Args:
         gmd_dataset (pd.DataFrame): The dataset of collect_global_macro_database_dataset.
     """
-    return gmd_dataset["rGDP"].dropna(axis="rows", how="all")
+    return get_series(gmd_dataset, "rGDP")
 
 
 def get_real_gross_domestic_product_per_capita(
@@ -342,7 +342,7 @@ def get_real_gross_domestic_product_per_capita(
     Args:
         gmd_dataset (pd.DataFrame): The dataset of collect_global_macro_database_dataset.
     """
-    return gmd_dataset["rGDP_pc"].dropna(axis="rows", how="all")
+    return get_series(gmd_dataset, "rGDP_pc")
 
 
 def get_gross_domestic_product_deflator(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
@@ -357,7 +357,7 @@ def get_gross_domestic_product_deflator(gmd_dataset: pd.DataFrame) -> pd.DataFra
     Args:
         gmd_dataset (pd.DataFrame): The dataset of collect_global_macro_database_dataset.
     """
-    return gmd_dataset["deflator"].dropna(axis="rows", how="all")
+    return get_series(gmd_dataset, "deflator")
 
 
 def get_population(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
@@ -372,7 +372,7 @@ def get_population(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
     Args:
         gmd_dataset (pd.DataFrame): The dataset of collect_global_macro_database_dataset.
     """
-    return gmd_dataset["pop"].dropna(axis="rows", how="all")
+    return get_series(gmd_dataset, "pop")
 
 
 def get_total_consumption(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
@@ -384,7 +384,7 @@ def get_total_consumption(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
     Args:
         gmd_dataset (pd.DataFrame): The dataset of collect_global_macro_database_dataset.
     """
-    return gmd_dataset["cons"].dropna(axis="rows", how="all")
+    return get_series(gmd_dataset, "cons")
 
 
 def get_total_consumption_to_gdp_ratio(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
@@ -400,9 +400,7 @@ def get_total_consumption_to_gdp_ratio(gmd_dataset: pd.DataFrame) -> pd.DataFram
     Args:
         gmd_dataset (pd.DataFrame): The dataset of collect_global_macro_database_dataset.
     """
-    total_consumption_to_gdp_ratio = gmd_dataset["cons_GDP"].dropna(
-        axis="rows", how="all"
-    )
+    total_consumption_to_gdp_ratio = get_series(gmd_dataset, "cons_GDP")
 
     # The GMDB quotes this in percentage points, so divide by 100 for the decimal.
     return total_consumption_to_gdp_ratio / 100
@@ -419,8 +417,12 @@ def get_real_total_consumption(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
     Args:
         gmd_dataset (pd.DataFrame): The dataset of collect_global_macro_database_dataset.
     """
+    # Already reported where the database could not be reached.
+    if gmd_dataset.empty:
+        return pd.DataFrame()
+
     if "rcons" in gmd_dataset.columns.get_level_values(0):
-        return gmd_dataset["rcons"].dropna(axis="rows", how="all")
+        return get_series(gmd_dataset, "rcons")
 
     real_total_consumption = gmd_dataset["cons"] / gmd_dataset["deflator"] * 100
 
@@ -438,7 +440,7 @@ def get_investment(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
     Args:
         gmd_dataset (pd.DataFrame): The dataset of collect_global_macro_database_dataset.
     """
-    return gmd_dataset["inv"].dropna(axis="rows", how="all")
+    return get_series(gmd_dataset, "inv")
 
 
 def get_investment_to_gdp_ratio(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
@@ -454,7 +456,7 @@ def get_investment_to_gdp_ratio(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
     Args:
         gmd_dataset (pd.DataFrame): The dataset of collect_global_macro_database_dataset.
     """
-    investment_to_gdp_ratio = gmd_dataset["inv_GDP"].dropna(axis="rows", how="all")
+    investment_to_gdp_ratio = get_series(gmd_dataset, "inv_GDP")
 
     # The GMDB quotes this in percentage points, so divide by 100 for the decimal.
     return investment_to_gdp_ratio / 100
@@ -469,7 +471,7 @@ def get_fixed_investment(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
     Args:
         gmd_dataset (pd.DataFrame): The dataset of collect_global_macro_database_dataset.
     """
-    return gmd_dataset["finv"].dropna(axis="rows", how="all")
+    return get_series(gmd_dataset, "finv")
 
 
 def get_fixed_investment_to_gdp_ratio(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
@@ -485,9 +487,7 @@ def get_fixed_investment_to_gdp_ratio(gmd_dataset: pd.DataFrame) -> pd.DataFrame
     Args:
         gmd_dataset (pd.DataFrame): The dataset of collect_global_macro_database_dataset.
     """
-    fixed_investment_to_gdp_ratio = gmd_dataset["finv_GDP"].dropna(
-        axis="rows", how="all"
-    )
+    fixed_investment_to_gdp_ratio = get_series(gmd_dataset, "finv_GDP")
 
     # The GMDB quotes this in percentage points, so divide by 100 for the decimal.
     return fixed_investment_to_gdp_ratio / 100
@@ -502,7 +502,7 @@ def get_exports(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
     Args:
         gmd_dataset (pd.DataFrame): The dataset of collect_global_macro_database_dataset.
     """
-    return gmd_dataset["exports"].dropna(axis="rows", how="all")
+    return get_series(gmd_dataset, "exports")
 
 
 def get_exports_to_gdp_ratio(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
@@ -518,7 +518,7 @@ def get_exports_to_gdp_ratio(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
     Args:
         gmd_dataset (pd.DataFrame): The dataset of collect_global_macro_database_dataset.
     """
-    exports_to_gdp_ratio = gmd_dataset["exports_GDP"].dropna(axis="rows", how="all")
+    exports_to_gdp_ratio = get_series(gmd_dataset, "exports_GDP")
 
     # The GMDB quotes this in percentage points, so divide by 100 for the decimal.
     return exports_to_gdp_ratio / 100
@@ -533,7 +533,7 @@ def get_imports(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
     Args:
         gmd_dataset (pd.DataFrame): The dataset of collect_global_macro_database_dataset.
     """
-    return gmd_dataset["imports"].dropna(axis="rows", how="all")
+    return get_series(gmd_dataset, "imports")
 
 
 def get_imports_to_gdp_ratio(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
@@ -549,7 +549,7 @@ def get_imports_to_gdp_ratio(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
     Args:
         gmd_dataset (pd.DataFrame): The dataset of collect_global_macro_database_dataset.
     """
-    imports_to_gdp_ratio = gmd_dataset["imports_GDP"].dropna(axis="rows", how="all")
+    imports_to_gdp_ratio = get_series(gmd_dataset, "imports_GDP")
 
     # The GMDB quotes this in percentage points, so divide by 100 for the decimal.
     return imports_to_gdp_ratio / 100
@@ -564,7 +564,7 @@ def get_current_account_balance(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
     Args:
         gmd_dataset (pd.DataFrame): The dataset of collect_global_macro_database_dataset.
     """
-    return gmd_dataset["CA"].dropna(axis="rows", how="all")
+    return get_series(gmd_dataset, "CA")
 
 
 def get_current_account_balance_to_gdp(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
@@ -580,9 +580,7 @@ def get_current_account_balance_to_gdp(gmd_dataset: pd.DataFrame) -> pd.DataFram
     Args:
         gmd_dataset (pd.DataFrame): The dataset of collect_global_macro_database_dataset.
     """
-    current_account_balance_to_gdp = gmd_dataset["CA_GDP"].dropna(
-        axis="rows", how="all"
-    )
+    current_account_balance_to_gdp = get_series(gmd_dataset, "CA_GDP")
 
     # The GMDB quotes this in percentage points, so divide by 100 for the decimal.
     return current_account_balance_to_gdp / 100
@@ -600,7 +598,7 @@ def get_usd_exchange_rate(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
     Args:
         gmd_dataset (pd.DataFrame): The dataset of collect_global_macro_database_dataset.
     """
-    return gmd_dataset["USDfx"].dropna(axis="rows", how="all")
+    return get_series(gmd_dataset, "USDfx")
 
 
 def get_real_effective_exchange_rate(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
@@ -615,7 +613,7 @@ def get_real_effective_exchange_rate(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
     Args:
         gmd_dataset (pd.DataFrame): The dataset of collect_global_macro_database_dataset.
     """
-    return gmd_dataset["REER"].dropna(axis="rows", how="all")
+    return get_series(gmd_dataset, "REER")
 
 
 def get_government_debt(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
@@ -627,7 +625,7 @@ def get_government_debt(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
     Args:
         gmd_dataset (pd.DataFrame): The dataset of collect_global_macro_database_dataset.
     """
-    return gmd_dataset["govdebt"].dropna(axis="rows", how="all")
+    return get_series(gmd_dataset, "govdebt")
 
 
 def get_government_debt_to_gdp_ratio(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
@@ -643,9 +641,7 @@ def get_government_debt_to_gdp_ratio(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
     Args:
         gmd_dataset (pd.DataFrame): The dataset of collect_global_macro_database_dataset.
     """
-    government_debt_to_gdp_ratio = gmd_dataset["govdebt_GDP"].dropna(
-        axis="rows", how="all"
-    )
+    government_debt_to_gdp_ratio = get_series(gmd_dataset, "govdebt_GDP")
 
     # The GMDB quotes this in percentage points, so divide by 100 for the decimal.
     return government_debt_to_gdp_ratio / 100
@@ -660,7 +656,7 @@ def get_government_revenue(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
     Args:
         gmd_dataset (pd.DataFrame): The dataset of collect_global_macro_database_dataset.
     """
-    return gmd_dataset["govrev"].dropna(axis="rows", how="all")
+    return get_series(gmd_dataset, "govrev")
 
 
 def get_government_revenue_to_gdp_ratio(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
@@ -676,9 +672,7 @@ def get_government_revenue_to_gdp_ratio(gmd_dataset: pd.DataFrame) -> pd.DataFra
     Args:
         gmd_dataset (pd.DataFrame): The dataset of collect_global_macro_database_dataset.
     """
-    government_revenue_to_gdp_ratio = gmd_dataset["govrev_GDP"].dropna(
-        axis="rows", how="all"
-    )
+    government_revenue_to_gdp_ratio = get_series(gmd_dataset, "govrev_GDP")
 
     # The GMDB quotes this in percentage points, so divide by 100 for the decimal.
     return government_revenue_to_gdp_ratio / 100
@@ -693,7 +687,7 @@ def get_government_tax_revenue(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
     Args:
         gmd_dataset (pd.DataFrame): The dataset of collect_global_macro_database_dataset.
     """
-    return gmd_dataset["govtax"].dropna(axis="rows", how="all")
+    return get_series(gmd_dataset, "govtax")
 
 
 def get_government_tax_revenue_to_gdp_ratio(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
@@ -709,9 +703,7 @@ def get_government_tax_revenue_to_gdp_ratio(gmd_dataset: pd.DataFrame) -> pd.Dat
     Args:
         gmd_dataset (pd.DataFrame): The dataset of collect_global_macro_database_dataset.
     """
-    government_tax_revenue_to_gdp_ratio = gmd_dataset["govtax_GDP"].dropna(
-        axis="rows", how="all"
-    )
+    government_tax_revenue_to_gdp_ratio = get_series(gmd_dataset, "govtax_GDP")
 
     # The GMDB quotes this in percentage points, so divide by 100 for the decimal.
     return government_tax_revenue_to_gdp_ratio / 100
@@ -726,7 +718,7 @@ def get_government_expenditure(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
     Args:
         gmd_dataset (pd.DataFrame): The dataset of collect_global_macro_database_dataset.
     """
-    return gmd_dataset["govexp"].dropna(axis="rows", how="all")
+    return get_series(gmd_dataset, "govexp")
 
 
 def get_government_expenditure_to_gdp_ratio(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
@@ -742,9 +734,7 @@ def get_government_expenditure_to_gdp_ratio(gmd_dataset: pd.DataFrame) -> pd.Dat
     Args:
         gmd_dataset (pd.DataFrame): The dataset of collect_global_macro_database_dataset.
     """
-    government_expenditure_to_gdp_ratio = gmd_dataset["govexp_GDP"].dropna(
-        axis="rows", how="all"
-    )
+    government_expenditure_to_gdp_ratio = get_series(gmd_dataset, "govexp_GDP")
 
     # The GMDB quotes this in percentage points, so divide by 100 for the decimal.
     return government_expenditure_to_gdp_ratio / 100
@@ -759,7 +749,7 @@ def get_government_deficit(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
     Args:
         gmd_dataset (pd.DataFrame): The dataset of collect_global_macro_database_dataset.
     """
-    return gmd_dataset["govdef"].dropna(axis="rows", how="all")
+    return get_series(gmd_dataset, "govdef")
 
 
 def get_government_deficit_to_gdp_ratio(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
@@ -775,9 +765,7 @@ def get_government_deficit_to_gdp_ratio(gmd_dataset: pd.DataFrame) -> pd.DataFra
     Args:
         gmd_dataset (pd.DataFrame): The dataset of collect_global_macro_database_dataset.
     """
-    government_deficit_to_gdp_ratio = gmd_dataset["govdef_GDP"].dropna(
-        axis="rows", how="all"
-    )
+    government_deficit_to_gdp_ratio = get_series(gmd_dataset, "govdef_GDP")
 
     # The GMDB quotes this in percentage points, so divide by 100 for the decimal.
     return government_deficit_to_gdp_ratio / 100
@@ -792,6 +780,10 @@ def get_money_supply(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
     Args:
         gmd_dataset (pd.DataFrame): The dataset of collect_global_macro_database_dataset.
     """
+    # Already reported where the database could not be reached.
+    if gmd_dataset.empty:
+        return pd.DataFrame()
+
     return gmd_dataset[["M0", "M1", "M2", "M3", "M4"]].dropna(axis="rows", how="all")
 
 
@@ -808,7 +800,7 @@ def get_central_bank_policy_rate(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
     Args:
         gmd_dataset (pd.DataFrame): The dataset of collect_global_macro_database_dataset.
     """
-    central_bank_policy_rate = gmd_dataset["cbrate"].dropna(axis="rows", how="all")
+    central_bank_policy_rate = get_series(gmd_dataset, "cbrate")
 
     # The GMDB quotes this in percentage points, so divide by 100 for the decimal.
     return central_bank_policy_rate / 100
@@ -827,7 +819,7 @@ def get_short_term_interest_rate(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
     Args:
         gmd_dataset (pd.DataFrame): The dataset of collect_global_macro_database_dataset.
     """
-    short_term_interest_rate = gmd_dataset["strate"].dropna(axis="rows", how="all")
+    short_term_interest_rate = get_series(gmd_dataset, "strate")
 
     # The GMDB quotes this in percentage points, so divide by 100 for the decimal.
     return short_term_interest_rate / 100
@@ -846,7 +838,7 @@ def get_long_term_interest_rate(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
     Args:
         gmd_dataset (pd.DataFrame): The dataset of collect_global_macro_database_dataset.
     """
-    long_term_interest_rate = gmd_dataset["ltrate"].dropna(axis="rows", how="all")
+    long_term_interest_rate = get_series(gmd_dataset, "ltrate")
 
     # The GMDB quotes this in percentage points, so divide by 100 for the decimal.
     return long_term_interest_rate / 100
@@ -864,7 +856,7 @@ def get_consumer_price_index(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
     Args:
         gmd_dataset (pd.DataFrame): The dataset of collect_global_macro_database_dataset.
     """
-    return gmd_dataset["CPI"].dropna(axis="rows", how="all")
+    return get_series(gmd_dataset, "CPI")
 
 
 def get_house_price_index(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
@@ -879,7 +871,7 @@ def get_house_price_index(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
     Args:
         gmd_dataset (pd.DataFrame): The dataset of collect_global_macro_database_dataset.
     """
-    return gmd_dataset["HPI"].dropna(axis="rows", how="all")
+    return get_series(gmd_dataset, "HPI")
 
 
 def get_inflation_rate(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
@@ -895,7 +887,7 @@ def get_inflation_rate(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
     Args:
         gmd_dataset (pd.DataFrame): The dataset of collect_global_macro_database_dataset.
     """
-    inflation_rate = gmd_dataset["infl"].dropna(axis="rows", how="all")
+    inflation_rate = get_series(gmd_dataset, "infl")
 
     # The GMDB quotes this in percentage points, so divide by 100 for the decimal.
     return inflation_rate / 100
@@ -914,7 +906,7 @@ def get_unemployment_rate(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
     Args:
         gmd_dataset (pd.DataFrame): The dataset of collect_global_macro_database_dataset.
     """
-    unemployment_rate = gmd_dataset["unemp"].dropna(axis="rows", how="all")
+    unemployment_rate = get_series(gmd_dataset, "unemp")
 
     # The GMDB quotes this in percentage points, so divide by 100 for the decimal.
     return unemployment_rate / 100
@@ -932,7 +924,7 @@ def get_sovereign_debt_crisis(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
     Args:
         gmd_dataset (pd.DataFrame): The dataset of collect_global_macro_database_dataset.
     """
-    return gmd_dataset["SovDebtCrisis"].dropna(axis="rows", how="all")
+    return get_series(gmd_dataset, "SovDebtCrisis")
 
 
 def get_currency_crisis(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
@@ -947,7 +939,7 @@ def get_currency_crisis(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
     Args:
         gmd_dataset (pd.DataFrame): The dataset of collect_global_macro_database_dataset.
     """
-    return gmd_dataset["CurrencyCrisis"].dropna(axis="rows", how="all")
+    return get_series(gmd_dataset, "CurrencyCrisis")
 
 
 def get_banking_crisis(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
@@ -962,4 +954,4 @@ def get_banking_crisis(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
     Args:
         gmd_dataset (pd.DataFrame): The dataset of collect_global_macro_database_dataset.
     """
-    return gmd_dataset["BankingCrisis"].dropna(axis="rows", how="all")
+    return get_series(gmd_dataset, "BankingCrisis")

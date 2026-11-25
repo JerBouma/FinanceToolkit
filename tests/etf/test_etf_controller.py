@@ -733,3 +733,40 @@ def test_funds_without_country_weightings_are_named(etf, caplog):
     caplog.clear()
     assert not etf.get_sector_weightings().empty
     assert "weightings" not in caplog.text
+
+
+def test_funds_whose_weightings_request_failed_are_not_called_non_funds(etf, caplog):
+    from financetoolkit.utilities import error_model
+
+    sectors = pd.DataFrame(
+        {"AAA": [0.2, 0.8]}, index=pd.Index(["Energy", "Technology"], name="Sector")
+    )
+
+    def failing_for_bbb(dataset, overwrite=False):  # noqa: ARG001
+        # The collector reports BBB's failed request itself and leaves it out.
+        error_model.report_request_failure()
+        return sectors
+
+    etf._fund_data_function = failing_for_bbb
+    assert list(etf.get_sector_weightings().columns) == ["AAA"]
+    assert "weightings for BBB" not in caplog.text
+
+    # A later call served from memory does not read the failed fund as one without any.
+    etf._fund_data_function = lambda dataset, overwrite=False: sectors  # noqa: ARG005
+    etf.get_sector_weightings()
+    assert "weightings for BBB" not in caplog.text
+
+    # Asked again, an answer without BBB means it has none.
+    etf.get_sector_weightings(overwrite=True)
+    assert "no sector weightings for BBB" in caplog.text
+
+
+def test_a_failed_fmp_request_names_its_status_for_the_tickers(caplog):
+    from financetoolkit import fmp_model
+    from financetoolkit.utilities import error_model
+
+    frame = fmp_model._request_failed("HTTP 500")
+    error_model.check_for_error_messages({"QQQ": frame}, user_subscription="Free")
+
+    assert "failed (HTTP 500) for the following tickers: QQQ" in caplog.text
+    assert "unrecognised" not in caplog.text

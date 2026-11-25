@@ -164,7 +164,7 @@ class OptionsBase:
         ]
 
     @cached_property
-    def _volatility(self) -> pd.DataFrame:
+    def _trailing_volatility(self) -> pd.DataFrame:
         """The annualized volatility of the year of daily returns up to each date."""
 
         # The volatility on a date is that of the year of daily returns up to it, so a past
@@ -179,9 +179,15 @@ class OptionsBase:
                 TRAILING_DAYS, min_periods=MINIMUM_VOLATILITY_DAYS
             ).std() * np.sqrt(TRAILING_DAYS)
 
-        volatility = trailing_volatility(self._daily_historical["Return"]).ffill()
+        return trailing_volatility(self._daily_historical["Return"]).ffill()
 
-        # Every option value of such a ticker is NaN, which says nothing about why on its own.
+    def _report_short_history(self) -> None:
+        """
+        Names the tickers with too few daily returns for a volatility. Every option value of
+        such a ticker is NaN, which says nothing about why on its own, so this is said on every
+        call that uses the volatility, not only the first of an Options instance.
+        """
+        volatility = self._trailing_volatility
         if short := [
             str(ticker)
             for ticker in volatility.columns
@@ -196,7 +202,15 @@ class OptionsBase:
                 "its" if len(short) == 1 else "their",
             )
 
-        return volatility
+    @property
+    def _volatility(self) -> pd.DataFrame:
+        """
+        The annualized volatility of the year of daily returns up to each date, naming the
+        tickers without one (see _report_short_history). A method reads it once per call; a
+        helper that runs per ticker reads _trailing_volatility instead.
+        """
+        self._report_short_history()
+        return self._trailing_volatility
 
     @cached_property
     def _risk_free_rate(self) -> pd.Series:

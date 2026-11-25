@@ -1123,3 +1123,61 @@ def test_a_failing_earnings_calendar_range_stops_the_others(monkeypatch):
 
     assert discovery_model.get_earnings_calendar(api_key="KEY").empty
     assert len(requested) == 1
+
+
+def test_news_paging_stops_at_the_first_failed_page(monkeypatch):
+    requested = []
+
+    def first_page_only(url, user_subscription="Free"):  # noqa: ARG001
+        requested.append(url)
+        if "page=0" in url:
+            return pd.DataFrame({"title": ["One"]})
+        discovery_model.error_model.report_request_failure()
+        return pd.DataFrame()
+
+    monkeypatch.setattr(discovery_model, "get_cached_financial_data", first_page_only)
+
+    news = discovery_model._get_news_pages(
+        "https://financialmodelingprep.com/stable/news/stock-latest?limit=10&apikey=K",
+        5,
+    )
+
+    # The pages after a failed one would fail alike, each after its own retries.
+    assert len(requested) == 2  # noqa: PLR2004
+    assert news["title"].tolist() == ["One"]
+
+
+def test_a_failed_request_is_not_logged_twice(monkeypatch, caplog):
+    monkeypatch.setattr(
+        discovery_model,
+        "get_financial_data",
+        lambda **_: pd.DataFrame(columns=["REQUEST FAILED"]),
+    )
+
+    with caplog.at_level("WARNING"):
+        answer = discovery_model.get_cached_financial_data(
+            "https://financialmodelingprep.com/stable/sector-pe-snapshot?date=2025-01-02&apikey=K"
+        )
+
+    # fmp_model logged the server error or the unreadable answer where it failed.
+    assert answer.empty
+    assert caplog.text == ""
+
+
+def test_an_error_names_the_endpoint_and_symbol_it_asked_for(monkeypatch, caplog):
+    monkeypatch.setattr(
+        discovery_model,
+        "get_financial_data",
+        lambda **_: pd.DataFrame(columns=["NO ERRORS"]),
+    )
+
+    with caplog.at_level("ERROR"):
+        discovery_model.get_cached_financial_data(
+            "https://financialmodelingprep.com/stable/historical-price-eod/light"
+            "?symbol=%5EMOVE&from=2026-01-01&to=2026-02-01&apikey=K"
+        )
+
+    assert (
+        "Could not reach Financial Modeling Prep for historical-price-eod/light (^MOVE)"
+        in caplog.text
+    )

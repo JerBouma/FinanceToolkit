@@ -202,6 +202,22 @@ def to_financial_modeling_prep_symbols(url: str) -> str:
     )
 
 
+def _request_failed(reason: str) -> pd.DataFrame:
+    """
+    The error frame of a request that failed, with the reason (such as "HTTP 500") in its
+    attrs, so the collectors that report the tickers without data name it.
+
+    Args:
+        reason (str): Why the request failed.
+
+    Returns:
+        pd.DataFrame: An empty frame with the single column REQUEST FAILED.
+    """
+    frame = pd.DataFrame(columns=["REQUEST FAILED"])
+    frame.attrs["reason"] = reason
+    return frame
+
+
 def get_financial_data(
     url: str,
     sleep_timer: bool = True,
@@ -336,7 +352,7 @@ def get_financial_data(
                     error_retry_counter + 1,
                 )
                 error_model.report_request_failure()
-                return pd.DataFrame(columns=["REQUEST FAILED"])
+                return _request_failed(f"HTTP {status_code}")
 
             if not isinstance(e, requests.exceptions.HTTPError):
                 # The body could not be read as JSON: an error page (HTML) or a cut-off answer.
@@ -347,7 +363,7 @@ def get_financial_data(
                     e,
                 )
                 error_model.report_request_failure()
-                return pd.DataFrame(columns=["REQUEST FAILED"])
+                return _request_failed("an answer other than JSON")
 
             # Anything that is not one of the messages above is not retryable, without this the loop would fall through and hammer the endpoint indefinitely.  # noqa: E501
             # An HTTP error without a body reads as its URL, which carries the API key.
@@ -357,7 +373,9 @@ def get_financial_data(
             )
 
             error_model.report_request_failure()
-            return pd.DataFrame(columns=["REQUEST FAILED"])
+            return _request_failed(
+                f"HTTP {status_code}" if status_code else "an unrecognised error"
+            )
 
         except (
             requests.exceptions.Timeout,
@@ -367,8 +385,15 @@ def get_financial_data(
             # then reported for this request only, so it does not abort the other
             # tickers fetched alongside it.
             if error_retry_counter >= TRANSIENT_RETRY_LIMIT:
+                _log_server_error(
+                    "timeout",
+                    "Financial Modeling Prep did not answer in full after %s attempts (a "
+                    "timeout or a cut-off answer), so no data could be collected. Please try "
+                    "again later.",
+                    error_retry_counter + 1,
+                )
                 error_model.report_request_failure()
-                return pd.DataFrame(columns=["REQUEST FAILED"])
+                return _request_failed("a timeout or a cut-off answer")
 
             time.sleep(determine_retry_delay(error_retry_counter))
             error_retry_counter += 1

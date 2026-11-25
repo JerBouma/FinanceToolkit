@@ -3,8 +3,8 @@
 import pandas as pd
 import pytest
 
+from financetoolkit import yfinance_model
 from financetoolkit.cache import cache_controller
-from financetoolkit.economics.sources import yfinance_model as economics_yfinance_model
 from financetoolkit.options import options_model
 from financetoolkit.performance import performance_model
 
@@ -49,7 +49,7 @@ class FakeTicker:
 def test_option_expiry_dates_are_cached(cache, monkeypatch):
     """Test that the expiry date lookup happens once per ticker."""
     FakeTicker.calls = []
-    monkeypatch.setattr(options_model.yf, "Ticker", FakeTicker)
+    monkeypatch.setattr(yfinance_model.yf, "Ticker", FakeTicker)
 
     first = options_model.get_option_expiry_dates("AAPL")
     second = options_model.get_option_expiry_dates("AAPL")
@@ -62,7 +62,7 @@ def test_option_expiry_dates_without_a_cache_look_up_every_time(monkeypatch):
     """Test that behaviour is unchanged when no cache is active."""
     cache_controller.clear_active_cache()
     FakeTicker.calls = []
-    monkeypatch.setattr(options_model.yf, "Ticker", FakeTicker)
+    monkeypatch.setattr(yfinance_model.yf, "Ticker", FakeTicker)
 
     options_model.get_option_expiry_dates("AAPL")
     options_model.get_option_expiry_dates("AAPL")
@@ -112,15 +112,15 @@ def test_carhart_momentum_dataset_is_cached(cache, monkeypatch):
 def test_forward_curve_caches_each_contract_separately(cache, monkeypatch):
     """Test that rebuilding a forward curve does not refetch every delivery month."""
     FakeTicker.calls = []
-    monkeypatch.setattr(economics_yfinance_model.yf, "Ticker", FakeTicker)
+    monkeypatch.setattr(yfinance_model.yf, "Ticker", FakeTicker)
 
-    first = economics_yfinance_model.get_commodity_forward_curve(
+    first = yfinance_model.get_commodity_forward_curve(
         "Gold", "2026-01-01", "2026-01-10", contracts=3
     )
     first_call_count = len(FakeTicker.calls)
     FakeTicker.calls = []
 
-    second = economics_yfinance_model.get_commodity_forward_curve(
+    second = yfinance_model.get_commodity_forward_curve(
         "Gold", "2026-01-01", "2026-01-10", contracts=3
     )
 

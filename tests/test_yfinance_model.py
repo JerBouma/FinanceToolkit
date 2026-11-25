@@ -1,23 +1,32 @@
 """Yahoo Finance Model Tests"""
 
+import logging
 import time
 
+import numpy as np
+import pandas as pd
 import pytest
-import requests
 
 from financetoolkit import yfinance_model
+from financetoolkit.utilities import error_model
 
 
-class FakeResponse:
-    """A Yahoo Finance chart response holding only the metadata."""
+def metadata_ticker(meta: dict | Exception):
+    """A stand-in for yfinance.Ticker whose chart metadata is the given dict or raises the given error."""
 
-    status_code = 200
+    class MetadataTicker:
+        requested: list[str] = []
 
-    def __init__(self, meta: dict):
-        self.meta = meta
+        def __init__(self, ticker):
+            MetadataTicker.requested.append(ticker)
 
-    def json(self) -> dict:
-        return {"chart": {"result": [{"meta": self.meta}]}}
+        def get_history_metadata(self, repair):
+            assert repair is False
+            if isinstance(meta, Exception):
+                raise meta
+            return dict(meta)
+
+    return MetadataTicker
 
 
 @pytest.fixture(autouse=True)
@@ -34,9 +43,7 @@ def test_statistics_dates_are_the_exchange_dates_on_any_machine(monkeypatch, tim
         "regularMarketTime": 1700010000,
         "gmtoffset": -18000,
     }
-    monkeypatch.setattr(
-        yfinance_model, "get_request", lambda *_, **__: FakeResponse(meta)
-    )
+    monkeypatch.setattr(yfinance_model.yf, "Ticker", metadata_ticker(meta))
     monkeypatch.setenv("TZ", timezone)
     time.tzset()
 
@@ -68,9 +75,7 @@ def test_statistics_of_a_stock_first_traded_before_1970(monkeypatch):
         "regularMarketTime": 1700010000,
         "gmtoffset": -18000,
     }
-    monkeypatch.setattr(
-        yfinance_model, "get_request", lambda *_, **__: FakeResponse(meta)
-    )
+    monkeypatch.setattr(yfinance_model.yf, "Ticker", metadata_ticker(meta))
     monkeypatch.setattr(yfinance_model, "datetime", WindowsDatetime)
 
     statistics = yfinance_model.get_historical_statistics("KO")
@@ -80,12 +85,139 @@ def test_statistics_of_a_stock_first_traded_before_1970(monkeypatch):
 
 
 def test_statistics_of_a_ticker_that_times_out_are_empty(monkeypatch):
-    def timeout(*_, **__):
-        raise requests.exceptions.ReadTimeout("Read timed out.")
+    from curl_cffi.requests.exceptions import Timeout
 
-    monkeypatch.setattr(yfinance_model, "get_request", timeout)
+    monkeypatch.setattr(
+        yfinance_model.yf, "Ticker", metadata_ticker(Timeout("Operation timed out"))
+    )
+    failures = error_model.get_request_failures()
 
     assert yfinance_model.get_historical_statistics("AAPL").empty
+    assert error_model.get_request_failures() == failures + 1
+
+
+def test_statistics_keep_their_labels_and_types(monkeypatch):
+    # The metadata of AAPL as Yahoo Finance reports it, with fields the statistics leave out.
+    meta = {
+        "currency": "USD",
+        "symbol": "AAPL",
+        "exchangeName": "NMS",
+        "fullExchangeName": "NasdaqGS",
+        "instrumentType": "EQUITY",
+        "firstTradeDate": 345479400,
+        "regularMarketTime": 1795554001,
+        "hasPrePostMarketData": True,
+        "gmtoffset": -18000,
+        "timezone": "EST",
+        "exchangeTimezoneName": "America/New_York",
+        "regularMarketPrice": 276.97,
+    }
+    monkeypatch.setattr(yfinance_model.yf, "Ticker", metadata_ticker(meta))
+
+    statistics = yfinance_model.get_historical_statistics("AAPL")
+
+    assert statistics.to_dict() == {
+        "Currency": "USD",
+        "Symbol": "AAPL",
+        "Exchange Name": "NMS",
+        "Instrument Type": "EQUITY",
+        "First Trade Date": "1980-12-12",
+        "Regular Market Time": "2026-11-24",
+        "GMT Offset": -18000,
+        "Timezone": "EST",
+        "Exchange Timezone Name": "America/New_York",
+    }
+    assert statistics.dtype == object
+
+
+def test_statistics_of_a_currency_pair_are_requested_as_yahoo_finance_writes_it(
+    monkeypatch,
+):
+    ticker = metadata_ticker({"currency": "USD", "symbol": "EURUSD=X"})
+    monkeypatch.setattr(yfinance_model.yf, "Ticker", ticker)
+
+    yfinance_model.get_historical_statistics("EURUSD")
+
+    assert ticker.requested == ["EURUSD=X"]
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        # yfinance's answer to a symbol Yahoo Finance does not know, such as "Portfolio".
+        KeyError("exchangeTimezoneName"),
+        yfinance_model.yf.exceptions.YFRateLimitError(),
+    ],
+    ids=["unknown symbol", "rate limit"],
+)
+def test_statistics_yahoo_finance_cannot_give_are_a_failed_request(monkeypatch, error):
+    monkeypatch.setattr(yfinance_model.yf, "Ticker", metadata_ticker(error))
+    failures = error_model.get_request_failures()
+
+    assert yfinance_model.get_historical_statistics("Portfolio").empty
+    assert error_model.get_request_failures() == failures + 1
+
+
+def test_statistics_with_a_broken_cache_database_are_a_failed_request(
+    monkeypatch, caplog
+):
+    import peewee
+
+    monkeypatch.setattr(
+        yfinance_model.yf,
+        "Ticker",
+        metadata_ticker(peewee.OperationalError("no such table: _kv")),
+    )
+    failures = error_model.get_request_failures()
+
+    with caplog.at_level("WARNING", logger="financetoolkit"):
+        assert yfinance_model.get_historical_statistics("AAPL").empty
+
+    assert error_model.get_request_failures() == failures + 1
+    assert "no such table: _kv" in caplog.text
+
+
+def test_statistics_mute_the_log_of_yfinance(monkeypatch, caplog):
+    class LoggingTicker:
+        def __init__(self, ticker):
+            pass
+
+        def get_history_metadata(self, repair):  # noqa: ARG002
+            logging.getLogger("yfinance").error("$PORTFOLIO: possibly delisted")
+            raise KeyError("exchangeTimezoneName")
+
+    monkeypatch.setattr(yfinance_model.yf, "Ticker", LoggingTicker)
+
+    with caplog.at_level("DEBUG"):
+        assert yfinance_model.get_historical_statistics("Portfolio").empty
+
+    assert "possibly delisted" not in caplog.text
+
+    # Outside the call the log of yfinance is written again.
+    with caplog.at_level("DEBUG"):
+        logging.getLogger("yfinance").error("$XYZ: possibly delisted")
+    assert "$XYZ: possibly delisted" in caplog.text
+
+
+def test_statistics_are_cached(monkeypatch):
+    stored = {}
+
+    class Cache:
+        def get(self, **kwargs):
+            return stored.get(kwargs["entity"])
+
+        def set(self, **kwargs):
+            stored[kwargs["entity"]] = kwargs["data"]
+
+    ticker = metadata_ticker({"currency": "EUR", "symbol": "ASML.AS"})
+    monkeypatch.setattr(yfinance_model, "get_active_cache", Cache)
+    monkeypatch.setattr(yfinance_model.yf, "Ticker", ticker)
+
+    first = yfinance_model.get_historical_statistics("ASML.AS")
+    second = yfinance_model.get_historical_statistics("ASML.AS")
+
+    assert first.equals(second)
+    assert ticker.requested == ["ASML.AS"]
 
 
 def test_a_curl_timeout_from_yfinance_is_no_data(monkeypatch):
@@ -239,25 +371,9 @@ def test_a_yahoo_statement_without_period_end_dates_leaves_the_statistic_out(
     assert statistics.loc["periodEndDate"].tolist() == ["2023-09-30", "2022-09-24"]
 
 
-@pytest.mark.parametrize(
-    "payload",
-    [
-        ValueError("Expecting value"),
-        {"chart": {"result": None}},
-        {"chart": {"result": []}},
-    ],
-)
-def test_statistics_from_an_unexpected_answer_are_empty(monkeypatch, payload):
-    class Response:
-        status_code = 200
-
-        def json(self):
-            # A consent page instead of JSON raises when it is read.
-            if isinstance(payload, Exception):
-                raise payload
-            return payload
-
-    monkeypatch.setattr(yfinance_model, "get_request", lambda *_, **__: Response())
+@pytest.mark.parametrize("meta", [{}, {"chart": None, "gmtoffset": "x"}])
+def test_statistics_from_an_unexpected_answer_are_empty(monkeypatch, meta):
+    monkeypatch.setattr(yfinance_model.yf, "Ticker", metadata_ticker(meta))
 
     assert yfinance_model.get_historical_statistics("AAPL").empty
 
@@ -587,3 +703,230 @@ def test_a_broken_cache_database_is_reported_once_per_call(monkeypatch, caplog):
     with caplog.at_level("WARNING", logger="financetoolkit"):
         assert yfinance_model.get_financial_statement("AAPL", statement="balance").empty
     assert "no such table: _kv" in caplog.text
+
+
+def search_returning(quotes: list | Exception):
+    """A stand-in for yfinance.Search whose quotes are the given list or which raises the given error."""
+
+    class Search:
+        queries: list[dict] = []
+
+        def __init__(self, query, **kwargs):
+            Search.queries.append({"query": query, **kwargs})
+            if isinstance(quotes, Exception):
+                raise quotes
+            self.quotes = quotes
+
+    return Search
+
+
+def test_an_isin_is_converted_to_the_ticker_of_the_best_match(monkeypatch, caplog):
+    search = search_returning([{"symbol": "AAPL", "exchange": "NMS"}])
+    monkeypatch.setattr(yfinance_model.yf, "Search", search)
+
+    with caplog.at_level("INFO", logger="financetoolkit"):
+        assert yfinance_model.convert_isin_to_ticker("US0378331005") == "AAPL"
+
+    assert search.queries[0]["query"] == "US0378331005"
+    assert search.queries[0]["max_results"] == 1
+    assert "Converted ISIN US0378331005 to ticker AAPL" in caplog.text
+
+
+def test_a_ticker_is_not_searched_as_an_isin(monkeypatch):
+    search = search_returning(AssertionError("A ticker is not searched."))
+    monkeypatch.setattr(yfinance_model.yf, "Search", search)
+
+    assert yfinance_model.convert_isin_to_ticker("AAPL") == "AAPL"
+    assert yfinance_model.convert_isin_to_ticker("INVALID") == "INVALID"
+
+
+def test_an_isin_without_a_match_is_returned_with_a_warning(monkeypatch, caplog):
+    monkeypatch.setattr(yfinance_model.yf, "Search", search_returning([]))
+
+    with caplog.at_level("WARNING", logger="financetoolkit"):
+        assert yfinance_model.convert_isin_to_ticker("XS0000000000") == "XS0000000000"
+
+    assert "Could not find a ticker for ISIN XS0000000000" in caplog.text
+
+
+@pytest.mark.parametrize(
+    ("error", "message", "failed_request"),
+    [
+        (OSError("Could not resolve host"), "Request failed for ISIN", True),
+        (
+            yfinance_model.yf.exceptions.YFRateLimitError(),
+            "Request failed for ISIN",
+            True,
+        ),
+        (KeyError("symbol"), "Could not parse response for ISIN", False),
+    ],
+    ids=["unreachable", "rate limit", "unexpected answer"],
+)
+def test_an_isin_that_cannot_be_searched_is_returned_with_a_warning(
+    monkeypatch, caplog, error, message, failed_request
+):
+    monkeypatch.setattr(yfinance_model.yf, "Search", search_returning(error))
+    failures = error_model.get_request_failures()
+
+    with caplog.at_level("WARNING", logger="financetoolkit"):
+        assert yfinance_model.convert_isin_to_ticker("US0378331005") == "US0378331005"
+
+    assert message in caplog.text
+    assert error_model.get_request_failures() == failures + failed_request
+
+
+def test_tickers_given_as_isins_are_converted_when_validated(monkeypatch):
+    from financetoolkit.utilities import validation_model
+
+    monkeypatch.setattr(
+        yfinance_model.yf, "Search", search_returning([{"symbol": "ASML.AS"}])
+    )
+
+    tickers = validation_model.validate_toolkit_parameters(
+        tickers=["NL0010273215", "AAPL"],
+        start_date=None,
+        end_date=None,
+        risk_free_rate="10y",
+        enforce_source=None,
+        api_key="",
+        intraday_period=None,
+        benchmark_ticker=None,
+    )
+
+    assert tickers == ["ASML.AS", "AAPL"]
+
+
+class OptionsTicker:
+    """A stand-in for yfinance.Ticker with the options of one expiry date."""
+
+    def __init__(self, ticker):
+        self.ticker = ticker
+
+    @property
+    def options(self):
+        return ("2026-12-18",)
+
+    def option_chain(self, expiration_date):
+        chain = pd.DataFrame({"contractSymbol": ["X"], "strike": [100.0]})
+        return type(
+            "Chain",
+            (),
+            {
+                "calls": chain,
+                "puts": chain.assign(strike=90.0),
+                "underlying": {"regularMarketPrice": 101.5},
+            },
+        )()
+
+
+def test_option_expiry_dates_and_chains_come_from_yahoo_finance(monkeypatch):
+    monkeypatch.setattr(yfinance_model.yf, "Ticker", OptionsTicker)
+
+    assert yfinance_model.get_option_expiry_dates("AAPL") == ["2026-12-18"]
+
+    calls, underlying_price = yfinance_model.get_option_chain("AAPL", "2026-12-18")
+    puts, _ = yfinance_model.get_option_chain("AAPL", "2026-12-18", put_option=True)
+
+    assert calls["strike"].tolist() == [100.0]
+    assert puts["strike"].tolist() == [90.0]
+    assert underlying_price == 101.5
+
+
+@pytest.mark.parametrize(
+    ("error", "failed_request"),
+    [
+        (OSError("Could not resolve host"), True),
+        (ValueError("Expiration `2026-12-18` cannot be found."), False),
+    ],
+    ids=["unreachable", "no such expiry"],
+)
+def test_options_yahoo_finance_cannot_give_are_left_out(
+    monkeypatch, caplog, error, failed_request
+):
+    class FailingTicker:
+        def __init__(self, ticker):
+            pass
+
+        @property
+        def options(self):
+            raise error
+
+        def option_chain(self, expiration_date):  # noqa: ARG002
+            raise error
+
+    monkeypatch.setattr(yfinance_model.yf, "Ticker", FailingTicker)
+    failures = error_model.get_request_failures()
+
+    with caplog.at_level("INFO", logger="financetoolkit"):
+        assert yfinance_model.get_option_expiry_dates("AAPL") == []
+        chain, underlying_price = yfinance_model.get_option_chain("AAPL", "2026-12-18")
+
+    assert chain.empty
+    assert np.isnan(underlying_price)
+    assert "Yahoo Finance has no options of AAPL" in caplog.text
+    assert (
+        "No options data is available for AAPL expiring on 2026-12-18, so it is left out"
+        in caplog.text
+    )
+    assert error_model.get_request_failures() == failures + 2 * failed_request
+
+
+def test_dividends_come_as_daily_periods(monkeypatch):
+    dividends = pd.Series(
+        [0.2, 0.25],
+        index=pd.DatetimeIndex(["2023-05-01", "2023-08-01"], tz="America/New_York"),
+    )
+    requested = []
+
+    class DividendTicker:
+        def __init__(self, ticker):
+            requested.append(ticker)
+            self.dividends = dividends
+
+    monkeypatch.setattr(yfinance_model.yf, "Ticker", DividendTicker)
+
+    result = yfinance_model.get_dividends("KO")
+
+    assert requested == ["KO"]
+    assert result.index.astype(str).tolist() == ["2023-05-01", "2023-08-01"]
+    assert result.tolist() == [0.2, 0.25]
+
+
+def test_dividends_yahoo_finance_cannot_give_are_empty(monkeypatch):
+    class RateLimitedTicker:
+        def __init__(self, ticker):
+            pass
+
+        @property
+        def dividends(self):
+            raise yfinance_model.yf.exceptions.YFRateLimitError()
+
+    monkeypatch.setattr(yfinance_model.yf, "Ticker", RateLimitedTicker)
+    failures = error_model.get_request_failures()
+
+    assert yfinance_model.get_dividends("KO").empty
+    assert error_model.get_request_failures() == failures + 1
+
+
+def test_a_muted_call_does_not_mute_a_concurrent_one(caplog):
+    import threading
+
+    muted, written = threading.Event(), threading.Event()
+
+    def muted_call():
+        with yfinance_model.quiet_yfinance():
+            logging.getLogger("yfinance").error("muted call")
+            muted.set()
+            written.wait(timeout=5)
+
+    thread = threading.Thread(target=muted_call)
+
+    with caplog.at_level("DEBUG"):
+        thread.start()
+        muted.wait(timeout=5)
+        logging.getLogger("yfinance").error("concurrent call")
+        written.set()
+        thread.join()
+
+    assert "concurrent call" in caplog.text
+    assert "muted call" not in caplog.text

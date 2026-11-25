@@ -70,7 +70,6 @@ from financetoolkit.economics.sources import (
     stoxx_model,
     treasury_model,
     world_bank_model,
-    yfinance_model as futures_model,
 )
 from financetoolkit.fixedincome.sources import (
     boc_model,
@@ -1073,7 +1072,7 @@ def test_asset_class_proxies(name):
     "name",
     [
         f"Yahoo Finance {commodity} forward curve"
-        for commodity in futures_model.COMMODITY_TICKERS
+        for commodity in yfinance_model.COMMODITY_TICKERS
     ],
 )
 def test_commodity_forward_curve(name):
@@ -1081,7 +1080,7 @@ def test_commodity_forward_curve(name):
 
     # A year of contracts: the front month may have expired, and grains trade only five
     # delivery months a year.
-    curve = futures_model.get_commodity_forward_curve(
+    curve = yfinance_model.get_commodity_forward_curve(
         commodity, START, END, contracts=12
     )
 

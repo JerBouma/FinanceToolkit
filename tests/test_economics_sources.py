@@ -3654,7 +3654,7 @@ def test_the_treasury_years_without_data_are_reported_in_one_line(monkeypatch, c
 
 
 def test_an_unreachable_yahoo_finance_stops_the_futures_scan(monkeypatch, caplog):
-    from financetoolkit.economics.sources import yfinance_model
+    from financetoolkit import yfinance_model
 
     attempts = []
 
@@ -3678,8 +3678,7 @@ def test_an_unreachable_yahoo_finance_stops_the_futures_scan(monkeypatch, caplog
 
 
 def test_commodity_curves_without_any_prices_are_empty(monkeypatch, caplog):
-    from financetoolkit import Economics
-    from financetoolkit.economics.sources import yfinance_model
+    from financetoolkit import Economics, yfinance_model
 
     monkeypatch.setattr(
         yfinance_model, "get_commodity_forward_curve", lambda *args: pd.DataFrame()

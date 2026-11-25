@@ -1100,12 +1100,12 @@ def get_historical_statistics(
     """
 
     def worker(ticker):
-        historical_statistics = pd.DataFrame()
+        # The "Portfolio" a Portfolio's Toolkit includes is no listed instrument: asking Yahoo Finance for it
+        # costs yfinance about six requests (it tries several endpoints for the time zone) and FMP one, all failing.
+        if ticker == "Portfolio":
+            return ticker, pd.Series()
 
-        if historical_statistics.empty:
-            historical_statistics = yfinance_model.get_historical_statistics(
-                ticker=ticker
-            )
+        historical_statistics = yfinance_model.get_historical_statistics(ticker=ticker)
 
         if api_key and historical_statistics.empty:
             historical_statistics = fmp_model.get_historical_statistics(

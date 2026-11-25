@@ -212,30 +212,14 @@ def test_historical_statistics_are_cached_per_ticker(cache, monkeypatch):
     """Test that the instrument descriptors are only looked up once per ticker."""
     calls: list[str] = []
 
-    class FakeResponse:
-        status_code = 200
+    class FakeTicker:
+        def __init__(self, ticker):
+            calls.append(ticker)
 
-        def json(self):
-            return {
-                "chart": {
-                    "result": [
-                        {
-                            "meta": {
-                                "currency": "USD",
-                                "symbol": "AAPL",
-                                "exchangeName": "NMS",
-                            }
-                        }
-                    ]
-                }
-            }
+        def get_history_metadata(self, repair):  # noqa: ARG002
+            return {"currency": "USD", "symbol": "AAPL", "exchangeName": "NMS"}
 
-    def fake_get_request(url, timeout=60):  # noqa: ARG001
-        calls.append(url)
-
-        return FakeResponse()
-
-    monkeypatch.setattr(yfinance_model, "get_request", fake_get_request)
+    monkeypatch.setattr(yfinance_model.yf, "Ticker", FakeTicker)
 
     first = yfinance_model.get_historical_statistics("AAPL")
     second = yfinance_model.get_historical_statistics("AAPL")

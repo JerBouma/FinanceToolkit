@@ -95,7 +95,7 @@ def test_frn_reopening_reproduces_the_treasury_auction():
     # discount margin of 0.040%: the Treasury announced accrued interest of 0.6036702480
     # and a price of 100.015499.
     settlement, dated = date(2026, 9, 25), date(2026, 7, 31)
-    accrued = frn_model.get_accrued_interest(
+    accrued = frn_model.get_floating_rate_note_accrued_interest(
         frn_model.get_daily_index_rates(index_rates(), dated, settlement), 0.0005
     )
     assert accrued == pytest.approx(0.6036702480, abs=1e-9)
@@ -217,8 +217,10 @@ FORWARD_CASES = [
 )
 def test_bond_forward_price_against_quantlib(forward_date, repo, quantlib, tolerance):
     settlement, maturity, coupon = date(2026, 11, 20), date(2036, 8, 15), 0.04625
-    accrued = bond_data_model.get_accrued_interest(coupon, settlement, maturity)
-    forward_accrued = bond_data_model.get_accrued_interest(
+    accrued = bond_data_model.get_treasury_accrued_interest(
+        coupon, settlement, maturity
+    )
+    forward_accrued = bond_data_model.get_treasury_accrued_interest(
         coupon, forward_date, maturity
     )
     _, coupon_dates = bond_data_model.get_coupon_dates(settlement, maturity)

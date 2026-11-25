@@ -228,25 +228,6 @@ def get_fixed_asset_turnover(
     return net_sales / average_net_fixed_assets
 
 
-def get_operating_margin(
-    operating_income: pd.Series | pd.DataFrame, revenue: pd.Series | pd.DataFrame
-) -> pd.Series | pd.DataFrame:
-    """
-    Calculate the operating margin, a financial metric that measures the percentage of revenue that remains after
-    covering operating expenses.
-
-    It is calculated as operating income divided by revenue.
-
-    Args:
-        operating_income (float or pd.Series): Operating income of the company.
-        revenue (float or pd.Series): Total revenue of the company.
-
-    Returns:
-        float or pd.Series: The operating ratio value.
-    """
-    return operating_income / revenue
-
-
 def get_operating_ratio(
     operating_expenses: pd.Series | pd.DataFrame,
     cost_of_goods_sold: pd.Series | pd.DataFrame,

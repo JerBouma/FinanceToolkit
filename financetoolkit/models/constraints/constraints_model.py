@@ -282,7 +282,7 @@ def get_long_term_debt_to_total_assets(
     return drop_non_finite(long_term_debt / total_assets)
 
 
-def get_log_of_total_assets(
+def get_log_of_total_assets_in_millions(
     total_assets: pd.Series | pd.DataFrame,
 ) -> pd.Series | pd.DataFrame:
     """

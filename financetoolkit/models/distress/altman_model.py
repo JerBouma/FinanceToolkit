@@ -17,7 +17,8 @@ def get_working_capital_to_total_assets_ratio(
     company's liquidity and ability to meet short-term obligations.
 
     It represents the proportion of a company's total assets that are financed by its
-    working capital.
+    working capital. It is the liquidity component of the Altman Z-Score, the Ohlson O-Score,
+    the Springate Score and the Grover Score.
 
     The formula is as follows:
 
@@ -45,6 +46,8 @@ def get_retained_earnings_to_total_assets_ratio(
     """
     The Retained Earnings to Total Assets Ratio shows the proportion of its assets that are
     financed by its retained earnings.
+
+    It is a component of the Altman Z-Score and the first component (V1) of the Fulmer H-Score.
 
     The formula is as follows:
 
@@ -126,6 +129,9 @@ def get_sales_to_total_assets_ratio(
     """
     The Sales to Total Assets Ratio is a financial metric used to measure a company's efficiency and the
     proportion of its assets that are used to generate sales.
+
+    It is a component of the Altman Z-Score, the efficiency component of the Springate Score and the
+    second component (V2) of the Fulmer H-Score.
 
     The formula is as follows:
 

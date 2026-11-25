@@ -62,7 +62,8 @@ def get_total_liabilities_to_total_assets_ratio(
     The Total Liabilities to Total Assets Ratio (TLTA) measures the proportion of a
     company's assets that are financed through debt rather than equity.
 
-    It is one of the leverage components of the Ohlson O-Score.
+    It is one of the leverage components of the Ohlson O-Score and the leverage component of the
+    Zmijewski Score.
 
     The formula is as follows:
 
@@ -78,38 +79,10 @@ def get_total_liabilities_to_total_assets_ratio(
         float | pd.Series | pd.DataFrame: The Total Liabilities to Total Assets Ratio.
 
     Notes:
-    - A higher TLTA indicates higher leverage and, all else equal, a higher probability of bankruptcy.
+    - A higher TLTA indicates higher leverage and, all else equal, a higher probability of bankruptcy:
+      it raises both the Ohlson O-Score and the Zmijewski Score.
     """
     return drop_non_finite(total_liabilities / total_assets)
-
-
-def get_working_capital_to_total_assets_ratio(
-    working_capital: float | pd.Series | pd.DataFrame,
-    total_assets: float | pd.Series | pd.DataFrame,
-) -> float | pd.Series | pd.DataFrame:
-    """
-    The Working Capital to Total Assets Ratio (WCTA) measures a company's short-term
-    liquidity relative to the size of its balance sheet.
-
-    It is one of the liquidity components of the Ohlson O-Score.
-
-    The formula is as follows:
-
-        - WCTA = Working Capital / Total Assets
-
-    Args:
-        working_capital (float | pd.Series | pd.DataFrame): The difference between a company's current
-        assets and its current liabilities.
-        total_assets (float | pd.Series | pd.DataFrame): The sum of a company's current and non-current
-        assets.
-
-    Returns:
-        float | pd.Series | pd.DataFrame: The Working Capital to Total Assets Ratio.
-
-    Notes:
-    - A lower (or negative) WCTA indicates weaker short-term liquidity, which raises the O-Score.
-    """
-    return drop_non_finite(working_capital / total_assets)
 
 
 def get_current_liabilities_to_current_assets_ratio(
@@ -187,7 +160,7 @@ def get_net_income_to_total_assets_ratio(
     The Net Income to Total Assets Ratio (NITA) measures a company's profitability relative
     to the size of its balance sheet.
 
-    It is the profitability component of the Ohlson O-Score.
+    It is the profitability component of the Ohlson O-Score and of the Zmijewski Score.
 
     The formula is as follows:
 
@@ -206,6 +179,8 @@ def get_net_income_to_total_assets_ratio(
     - Unlike Altman's ROA-style component, NITA is not annualized/averaged across beginning and ending
       total assets — it uses the point-in-time Total Assets balance, matching Ohlson's (1980) original
       specification.
+    - A lower (or negative) ratio indicates weaker profitability, which raises the Zmijewski Score and,
+      in turn, the estimated probability of financial distress.
     """
     return drop_non_finite(net_income / total_assets)
 

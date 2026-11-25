@@ -4,24 +4,6 @@ import pandas as pd
 from financetoolkit.models.distress import zmijewski_model
 
 
-def test_get_net_income_to_total_assets_ratio(recorder):
-    recorder.capture(
-        zmijewski_model.get_net_income_to_total_assets_ratio(
-            net_income=pd.Series([100, -110, 120, 130, -80]),
-            total_assets=pd.Series([500, 400, 300, 200, 100]),
-        )
-    )
-
-
-def test_get_total_liabilities_to_total_assets_ratio(recorder):
-    recorder.capture(
-        zmijewski_model.get_total_liabilities_to_total_assets_ratio(
-            total_liabilities=pd.Series([100, 110, 120, 130, 80]),
-            total_assets=pd.Series([500, 400, 300, 200, 100]),
-        )
-    )
-
-
 def test_get_current_assets_to_current_liabilities_ratio(recorder):
     recorder.capture(
         zmijewski_model.get_current_assets_to_current_liabilities_ratio(

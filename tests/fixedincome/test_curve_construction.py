@@ -306,7 +306,7 @@ def synthetic_treasuries(mispriced: float = 0.0) -> pd.DataFrame:
         discount = fitted_curve_model.get_fitted_discount_factors(
             TRUE_CURVE, times, "svensson"
         )
-        price = flows @ discount - bond_data_model.get_accrued_interest(
+        price = flows @ discount - bond_data_model.get_treasury_accrued_interest(
             coupon, PRICE_DATE, maturity.date()
         )
         if number == 20:
@@ -351,7 +351,9 @@ def bond_inputs(prices: pd.DataFrame):
         times[row, : len(schedule)] = schedule
         flows[row, : len(cash)] = cash
     accrued = [
-        bond_data_model.get_accrued_interest(coupon, PRICE_DATE, maturity.date())
+        bond_data_model.get_treasury_accrued_interest(
+            coupon, PRICE_DATE, maturity.date()
+        )
         for coupon, maturity in zip(bonds["Coupon"], bonds["Maturity"], strict=True)
     ]
     return times, flows, bonds["Price"].to_numpy() + np.array(accrued)

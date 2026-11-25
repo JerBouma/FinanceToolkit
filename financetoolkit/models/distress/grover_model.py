@@ -7,36 +7,6 @@ import pandas as pd
 from financetoolkit.utilities.statistics_model import drop_non_finite
 
 
-def get_working_capital_to_total_assets_ratio(
-    working_capital: float | pd.Series | pd.DataFrame,
-    total_assets: float | pd.Series | pd.DataFrame,
-) -> float | pd.Series | pd.DataFrame:
-    """
-    The Working Capital to Total Assets Ratio is a financial metric used to measure a
-    company's liquidity and ability to meet short-term obligations.
-
-    It represents the proportion of a company's total assets that are financed by its
-    working capital. It is the liquidity component of the Grover Score.
-
-    The formula is as follows:
-
-        - Working Capital to Total Assets Ratio = Working Capital / Total Assets
-
-    Args:
-        working_capital (float | pd.Series | pd.DataFrame): The difference between a company's current assets and
-        its current liabilities.
-        total_assets (float | pd.Series | pd.DataFrame): The sum of a company's current and non-current assets.
-
-    Returns:
-        float | pd.Series | pd.DataFrame: The Working Capital to Total Assets Ratio.
-
-    Notes:
-    - A ratio of less than 1 indicates that a company may have difficulty meeting its short-term obligations.
-    """
-
-    return drop_non_finite(working_capital / total_assets)
-
-
 def get_ebit_to_total_assets_ratio(
     ebit: float | pd.Series | pd.DataFrame,
     total_assets: float | pd.Series | pd.DataFrame,
@@ -45,7 +15,7 @@ def get_ebit_to_total_assets_ratio(
     The EBIT to Total Assets Ratio is a financial metric used to measure a company's
     profitability and the efficiency with which it uses its assets.
 
-    It is the profitability component of the Grover Score.
+    It is the profitability component of the Grover Score and of the Springate Score.
 
     The formula is as follows:
 

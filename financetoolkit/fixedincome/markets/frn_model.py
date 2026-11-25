@@ -121,7 +121,9 @@ def get_daily_index_rates(
     return pd.Series(rates, index=pd.Index(days, name="Date"), dtype=float)
 
 
-def get_accrued_interest(daily_index_rates: pd.Series, spread: float) -> float:
+def get_floating_rate_note_accrued_interest(
+    daily_index_rates: pd.Series, spread: float
+) -> float:
     """
     Calculate the interest a US Treasury floating rate note has accrued per 100 of par: the
     sum of each day's interest at the index rate plus the spread, over 360, with a minimum
@@ -173,7 +175,7 @@ def get_frn_price(
     - Clean Price = Dirty Price - AI
 
     where r is the index rate, s the spread, m the discount margin, T_0 the settlement date,
-    T_i the interest payment dates and AI the accrued interest (see get_accrued_interest).
+    T_i the interest payment dates and AI the accrued interest (see get_floating_rate_note_accrued_interest).
     For a new note the discount margin of the auction is its spread. The Treasury's auction
     of 91282CRD5 reopened on 25 September 2026 at a discount margin of 0.040% prices at
     100.015499, as the Treasury announced.

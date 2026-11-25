@@ -719,7 +719,9 @@ def test_a_matured_bond_or_impossible_frequency_is_refused():
     with pytest.raises(ValueError, match="on or after the maturity date"):
         bond_data_model.get_years_to_maturity(date(2031, 1, 1), date(2030, 1, 1))
     with pytest.raises(ValueError, match="on or after the maturity date"):
-        bond_data_model.get_accrued_interest(0.04, date(2030, 1, 1), date(2030, 1, 1))
+        bond_data_model.get_treasury_accrued_interest(
+            0.04, date(2030, 1, 1), date(2030, 1, 1)
+        )
     for frequency in (0, -1, 5):
         with pytest.raises(ValueError, match="frequency"):
             bond_data_model.get_years_to_maturity(

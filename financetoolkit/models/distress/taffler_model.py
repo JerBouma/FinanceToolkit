@@ -65,34 +65,6 @@ def get_current_assets_to_total_liabilities_ratio(
     return drop_non_finite(current_assets / total_liabilities)
 
 
-def get_current_liabilities_to_total_assets_ratio(
-    current_liabilities: float | pd.Series | pd.DataFrame,
-    total_assets: float | pd.Series | pd.DataFrame,
-) -> float | pd.Series | pd.DataFrame:
-    """
-    The Current Liabilities to Total Assets Ratio measures the share of a company's assets
-    financed by short-term obligations.
-
-    It is the financial risk component (X3) of the Taffler z-score.
-
-    The formula is as follows:
-
-        - Current Liabilities to Total Assets Ratio = Current Liabilities / Total Assets
-
-    Args:
-        current_liabilities (float | pd.Series | pd.DataFrame): The short-term liabilities of a company due
-        within one year.
-        total_assets (float | pd.Series | pd.DataFrame): The sum of a company's current and non-current assets.
-
-    Returns:
-        float | pd.Series | pd.DataFrame: The Current Liabilities to Total Assets Ratio.
-
-    Notes:
-    - A higher ratio lowers the Taffler z-score, as its coefficient is negative.
-    """
-    return drop_non_finite(current_liabilities / total_assets)
-
-
 def get_no_credit_interval(
     quick_assets: float | pd.Series | pd.DataFrame,
     current_liabilities: float | pd.Series | pd.DataFrame,

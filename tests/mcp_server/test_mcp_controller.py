@@ -197,6 +197,10 @@ def test_the_transport_flag_builds_the_server_as_mcp_transport_does(monkeypatch)
 
     server = mcp_controller.get_server("streamable-http")
     assert server.settings.host == "127.0.0.1"
+    # Every request stands on its own: no session to expire or to be missing.
+    assert server.settings.stateless_http
+    middleware = [entry.cls for entry in configs[0].app.user_middleware]
+    assert middleware[0] is mcp_controller.TrimEndpointPathMiddleware
     assert server.settings.transport_security.enable_dns_rebinding_protection
     assert configs[0].forwarded_allow_ips == "127.0.0.1"
     assert mcp_controller.cors_origins(loopback=True) == []
@@ -424,3 +428,35 @@ def test_the_wizard_writes_key_files_privately_and_masks_keys(monkeypatch, tmp_p
     assert "FMPK...7890" in output
     assert "FMPKEY1234567890" not in output
     assert "FREDKEY1234567890" not in output
+
+
+def test_an_endpoint_address_with_a_trailing_space_dot_or_line_break_is_served():
+    """A pasted "/mcp ." or "/mcp\\n" reaches /mcp; other paths are left as they are."""
+    import anyio
+
+    from financetoolkit.mcp_server import mcp_controller
+
+    seen = []
+
+    async def app(scope, receive, send):
+        seen.append((scope["path"], scope.get("raw_path")))
+
+    middleware = mcp_controller.TrimEndpointPathMiddleware(app)
+    for path in ["/mcp .", "/mcp\n", "/mcp/", "/sse .", "/mcp", "/mcpx", "/health ."]:
+        anyio.run(
+            middleware,
+            {"type": "http", "path": path, "raw_path": path.encode()},
+            None,
+            None,
+        )
+
+    assert [path for path, _ in seen] == [
+        "/mcp",
+        "/mcp",
+        "/mcp",
+        "/sse",
+        "/mcp",
+        "/mcpx",
+        "/health .",
+    ]
+    assert seen[0][1] == b"/mcp"

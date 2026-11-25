@@ -113,6 +113,26 @@ CACHE_MODES = ("full", "shared", "off")
 LOOPBACK_HOSTS = ("127.0.0.1", "localhost", "::1")
 
 
+class TrimEndpointPathMiddleware:
+    """
+    Serve "/mcp " followed by spaces, line breaks, dots or slashes as "/mcp" (and "/sse" alike).
+
+    Clients pass the server address as typed or pasted, and an address copied from a sentence
+    ("https://financetoolkit.jeroenbouma.com/mcp .") or with its line break otherwise gets a
+    404 on every request.
+    """
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http":
+            trimmed = scope["path"].rstrip(" \t\r\n./") or "/"
+            if trimmed != scope["path"] and trimmed in ("/mcp", "/sse"):
+                scope = dict(scope, path=trimmed, raw_path=trimmed.encode())
+        await self.app(scope, receive, send)
+
+
 def is_hosted(transport: str) -> bool:
     """Whether a transport serves over HTTP, where one process serves every user."""
     return transport in ("sse", "streamable-http")
@@ -566,6 +586,12 @@ def main() -> None:
                 ],
             )
 
+        # Every request stands on its own: the tools keep no state between calls, and with
+        # sessions a client that resumes after the 30-minute idle timeout, or sends a call
+        # without its session header (as hosted clients behind a pool of addresses do), is
+        # refused with "Session not found" or "Missing session ID" and has to start over.
+        server.settings.stateless_http = True
+
         starlette_app = (
             server.streamable_http_app()
             if transport == "streamable-http"
@@ -582,6 +608,10 @@ def main() -> None:
             allow_headers=["*"],
             expose_headers=["WWW-Authenticate"],
         )
+        # Outermost, so the authentication sees the path the request is served on: a server
+        # address copied with the end of its sentence ("/mcp .") or a line break ("/mcp\n")
+        # is the same endpoint, where it otherwise only ever gets a 404.
+        starlette_app.add_middleware(TrimEndpointPathMiddleware)
 
         # The client address and scheme are taken from X-Forwarded-For and
         # X-Forwarded-Proto only when the request comes from a trusted proxy, which

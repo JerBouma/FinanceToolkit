@@ -11,7 +11,11 @@ import pandas as pd
 from financetoolkit.technicals.helpers import apply_on_own_closes
 from financetoolkit.technicals.labeling import bet_sizing_model, labeling_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
-from financetoolkit.utilities.error_model import check_option, handle_errors
+from financetoolkit.utilities.error_model import (
+    check_option,
+    handle_errors,
+    validate_window,
+)
 from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import apply_rounding
 
@@ -208,6 +212,7 @@ class LabelingTechnicals:
         | 2025-12-22 |     -1 |      0 |           1 |
         | 2025-12-23 |      0 |      1 |           0 |
         """
+        self._check_arguments(period, close_column, span=span, window=window)
         check_option("method", method, ("cusum", "z_score"))
         closes = self._close_prices(period, close_column, traded_only=True)
 
@@ -369,6 +374,7 @@ class LabelingTechnicals:
         | 2025-12-15 |      -1 |  -0.0038 |         0 |               10 |   0.0141 |
         | 2025-12-16 |      -1 |  -0.01   |         0 |               10 |   0.014  |
         """
+        self._check_arguments(period, close_column, horizon=horizon, span=span)
         closes = self._close_prices(period, close_column, traded_only=True)
 
         if isinstance(events, str):
@@ -520,6 +526,7 @@ class LabelingTechnicals:
         | 2025-12-22 |     -1 |     -1 |      1 |      1 |
         | 2025-12-23 |      1 |      1 |     -1 |      1 |
         """
+        self._check_arguments(period, close_column, horizon=horizon, span=span)
         check_option("relative_to", relative_to, (None, "mean", "median", "benchmark"))
         closes = self._close_prices(period, close_column, traded_only=True)
         forward_returns = apply_on_own_closes(
@@ -617,7 +624,9 @@ class LabelingTechnicals:
                 Defaults to "Adj Close".
             minimum_window (int, optional): The shortest forward window in prices, at least 3.
                 Defaults to 5.
-            maximum_window (int, optional): The longest forward window in prices. Defaults to 20.
+            maximum_window (int, optional): The longest forward window in prices, at least the
+                minimum window. A maximum window longer than the data leaves every date without a
+                label, which is logged. Defaults to 20.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -664,6 +673,14 @@ class LabelingTechnicals:
         | 2025-12-02 |      -1 |   -2.0796 |  -0.0283 |               11 |
         | 2025-12-03 |       1 |    7.1482 |   0.0299 |                4 |
         """
+        self._check_arguments(
+            period,
+            close_column,
+            minimum_window=minimum_window,
+            maximum_window=maximum_window,
+        )
+        validate_window("minimum_window", minimum_window, 3)
+        validate_window("maximum_window", maximum_window, minimum_window)
         closes = self._close_prices(period, close_column, traded_only=True)
         labels = _per_ticker(
             closes,
@@ -776,6 +793,7 @@ class LabelingTechnicals:
         | 2025-12-29 |      0 |      0 |      0 |      0 |       0 |      1 |     -1 |      0 |      0 |     0 |
         | 2025-12-30 |      0 |     -1 |      0 |      0 |       0 |      0 |      0 |      0 |      0 |     1 |
         """
+        self._check_arguments(period, close_column, horizon=horizon, span=span)
         closes = self._close_prices(period, close_column, traded_only=True)
         closes = closes[
             [ticker for ticker in closes.columns if ticker not in NON_TICKER_COLUMNS]
@@ -906,6 +924,7 @@ class LabelingTechnicals:
         | 2025-12-30 |   4.75  |       1 |
         | 2025-12-31 |   4.125 |       1 |
         """
+        self._check_arguments(period, close_column, window=window)
         check_option("template", template, labeling_model.MATRIX_FLAG_TEMPLATES)
         closes = self._close_prices(period, close_column, traded_only=True)
         flags = _per_ticker(
@@ -1012,6 +1031,7 @@ class LabelingTechnicals:
         | 2025-12-15 |             8 |               0.4114 |
         | 2025-12-16 |             5 |               0.4909 |
         """
+        self._check_arguments(period, close_column)
         closes, holding_periods = self._get_labels_or_default(
             labels, period, close_column
         )
@@ -1137,6 +1157,7 @@ class LabelingTechnicals:
         | 2025-12-15 | 0.1058 | 0.7868 |      0.5882 |
         | 2025-12-16 | 0.7306 | 0.6239 |      0.4716 |
         """
+        self._check_arguments(period, close_column)
         check_option("method", method, ("return", "time_decay"))
         if method == "time_decay" and not -1 < decay <= 1:
             raise ValueError(f"The decay must lie in (-1, 1], not {decay}.")
@@ -1303,6 +1324,7 @@ class LabelingTechnicals:
         | 2025-12-30 |           0 |            0 |      0     |
         | 2025-12-31 |           0 |            0 |      0     |
         """
+        self._check_arguments(period, close_column)
         check_option("method", method, ("budget", "reserve", "probability"))
         if step_size is not None and not 0 < step_size <= 1:
             raise ValueError(f"step_size must lie in (0, 1], not {step_size}.")

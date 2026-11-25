@@ -34,6 +34,7 @@ class TestingEconometrics:
         period: str | None,
         column: str,
         add_constant: bool,
+        sample_tickers: list[str] | None = None,
     ) -> dict:
         """
         Shared helper for the hypothesis-testing methods below -- fits an OLS model
@@ -41,6 +42,11 @@ class TestingEconometrics:
         result dict, rather than the rounded coefficient table `get_ols` returns,
         since the F-test, Wald test and Likelihood Ratio test all operate directly
         on the result dict's residuals/coefficients/covariance matrix.
+
+        Nested models are compared on the same dates: `sample_tickers` (the tickers of
+        both models) sets the dates the fit uses to those every one of them has, so a
+        regressor with gaps in only the unrestricted model does not give the two fits
+        different rows.
         """
         period = period if period else "daily"
         independent_tickers = (
@@ -49,7 +55,9 @@ class TestingEconometrics:
             else independent_tickers
         )
         returns = self._get_series_column(
-            period, column, [dependent_ticker, *independent_tickers]
+            period,
+            column,
+            [dependent_ticker, *independent_tickers, *(sample_tickers or [])],
         )
 
         return regression_model.get_ols(
@@ -264,12 +272,22 @@ class TestingEconometrics:
         | P-Value                  |   0     |
         | Reject Restrictions (5%) |   1     |
         """
+        # Both models are fitted on the dates every ticker of either model has.
+        sample_tickers = [
+            ticker
+            for tickers in (
+                restricted_independent_tickers,
+                unrestricted_independent_tickers,
+            )
+            for ticker in ([tickers] if isinstance(tickers, str) else tickers)
+        ]
         restricted_result = self._fit_ols_result(
             dependent_ticker,
             restricted_independent_tickers,
             period=period,
             column=column,
             add_constant=add_constant,
+            sample_tickers=sample_tickers,
         )
         unrestricted_result = self._fit_ols_result(
             dependent_ticker,
@@ -277,6 +295,7 @@ class TestingEconometrics:
             period=period,
             column=column,
             add_constant=add_constant,
+            sample_tickers=sample_tickers,
         )
 
         result = hypothesis_testing_model.get_f_test(
@@ -381,12 +400,22 @@ class TestingEconometrics:
         | P-Value                  |  0      |
         | Reject Restrictions (5%) |  1      |
         """
+        # Both models are fitted on the dates every ticker of either model has.
+        sample_tickers = [
+            ticker
+            for tickers in (
+                restricted_independent_tickers,
+                unrestricted_independent_tickers,
+            )
+            for ticker in ([tickers] if isinstance(tickers, str) else tickers)
+        ]
         restricted_result = self._fit_ols_result(
             dependent_ticker,
             restricted_independent_tickers,
             period=period,
             column=column,
             add_constant=add_constant,
+            sample_tickers=sample_tickers,
         )
         unrestricted_result = self._fit_ols_result(
             dependent_ticker,
@@ -394,6 +423,7 @@ class TestingEconometrics:
             period=period,
             column=column,
             add_constant=add_constant,
+            sample_tickers=sample_tickers,
         )
 
         result = hypothesis_testing_model.get_likelihood_ratio_test(

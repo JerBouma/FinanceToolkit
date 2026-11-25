@@ -30,7 +30,6 @@ from financetoolkit.ratios.helpers import map_period_data_to_daily_data
 from financetoolkit.utilities import factor_model, logger_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
 from financetoolkit.utilities.error_model import (
-    check_option,
     handle_errors,
     validate_window,
 )
@@ -19560,24 +19559,9 @@ class Ratios:
         | ('get_price_to_book_ratio', '12 Months')     |    0.123  |                  0.3142 |                 0.3916 |        4.0697 |    0.0001 |       -0.25   |       -0.4529 |           0.6759 |            108 |             0.1688 |            -0.0322 | 0.2882 |              0.0301 |                 0.989  |
         | ('get_return_on_equity', '12 Months')        |    0.0356 |                  0.3525 |                 0.1009 |        1.0093 |    0.3153 |        0.3158 |       -0.1381 |           0.49   |            100 |             0.0194 |            -0.0313 | 0.1369 |              0.0494 |                 0.9665 |
         """
-        selected_metrics = factor_model.select_metrics(metrics, FACTOR_COLLECTIONS)
-
-        # A name that is no metric of this module is a mistake in the call, not missing data.
-        metric_names = [
-            name
-            for name in dir(self)
-            if name.startswith("get_") and name != "get_factor_analysis"
-        ]
-        for metric in selected_metrics:
-            check_option(
-                "metrics",
-                metric if isinstance(metric, str) else metric[0],
-                [*FACTOR_COLLECTIONS, *metric_names],
-            )
-
         factors = factor_model.get_daily_factors(
             self,
-            selected_metrics,
+            factor_model.select_metrics(metrics, FACTOR_COLLECTIONS),
             kwargs,
             {"show_daily": True},
             self._tickers,

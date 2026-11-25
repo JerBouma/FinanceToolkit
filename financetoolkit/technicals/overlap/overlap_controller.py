@@ -131,6 +131,7 @@ class OverlapTechnicals:
         | 2025-12-30 |                       273.255 |                            273.117 |                                    272.247 | 0.0002 |                     272.531 |                         272.403 |                     271.798 |                                    271.015 |                                       271.736 |                                  272.774 |                                 272.681 |                                    272.315 |                                   271.738 |                                  272.849 |                          275.78  |                               272.173 |                                 273.113 |            271.995 |                                  270.932 |                                   272.442 |                              269.554 |                           272.853 |                           266.256 |                                          272.648 |                                 273.181 |    273.921 |          272.6   |         272.115 |        272.232 |         272.198 |                272.182 |                                272.911 |         274.769 |               274.771 |   266.023 |       272.541 |                    273.677 |                 271.674 |                       272.6   |                       271.048 |
         | 2025-12-31 |                       272.762 |                            272.823 |                                    271.815 | 0.0001 |                     272.2   |                         272.091 |                     271.883 |                                    270.627 |                                       271.745 |                                  272.642 |                                 272.319 |                                    271.777 |                                   271.608 |                                  272.686 |                          275.262 |                               272.102 |                                 272.746 |            271.917 |                                  270.932 |                                   272.383 |                              268.893 |                           272.144 |                           265.643 |                                          272.568 |                                 272.8   |    273.672 |          272.6   |         271.641 |        271.768 |         271.484 |                271.342 |                                272.594 |         273.895 |               274.318 |   266.023 |       272.198 |                    273.062 |                 271.268 |                       272.6   |                       271.048 |
         """
+        self._check_arguments(period, close_column, window=window)
         check_period(
             period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
         )
@@ -870,6 +871,14 @@ class OverlapTechnicals:
         | 2025-12-30 | 6800.34 |     671.316 |
         | 2025-12-31 | 6802.55 |     671.566 |
         """
+        self._check_arguments(
+            period,
+            close_column,
+            window=window,
+            short_window=short_window,
+            long_window=long_window,
+            cmo_window=cmo_window,
+        )
         moving_averages = volatility_model.MOVING_AVERAGES
         methods = (*moving_averages, *MOVING_AVERAGE_WINDOWS)
         check_option("method", method, methods)
@@ -1088,6 +1097,9 @@ class OverlapTechnicals:
         | 2025-12-30 | 0.000454 |    0.000651 |
         | 2025-12-31 | 0.000452 |    0.00066  |
         """
+        self._check_arguments(
+            period, close_column, window=window, signal_window=signal_window
+        )
         check_period(
             period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
         )
@@ -1236,6 +1248,7 @@ class OverlapTechnicals:
         | 2025-12-30 | 187.312 |     681.964 |
         | 2025-12-31 | 187.075 |     677.933 |
         """
+        self._check_arguments(period, close_column)
         check_option(
             "method", method, ("average", "median", "typical", "weighted_close")
         )
@@ -1374,6 +1387,7 @@ class OverlapTechnicals:
         | 2025-12-30 | 226.99 |     675.168 |
         | 2025-12-31 | 226.99 |     675.168 |
         """
+        self._check_arguments(period, close_column, window=window)
         check_option("method", method, ("close", "high_low"))
         check_period(
             period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
@@ -1519,6 +1533,7 @@ class OverlapTechnicals:
         | 2025-12-30 |      294.532 |       305.508 |      316.484 |
         | 2025-12-31 |      294.23  |       304.872 |      315.512 |
         """
+        self._check_arguments(period, close_column)
         check_period(
             period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
         )
@@ -1663,6 +1678,9 @@ class OverlapTechnicals:
         | 2025-12-30 |               215.85  |                -1 |
         | 2025-12-31 |               215.553 |                -1 |
         """
+        self._check_arguments(
+            period, close_column, high_window=high_window, low_window=low_window
+        )
         check_period(
             period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
         )
@@ -1810,6 +1828,7 @@ class OverlapTechnicals:
         | 2025-12-30 |                     0 |                 1 |    78.065 |
         | 2025-12-31 |                     0 |                -1 |    69.255 |
         """
+        self._check_arguments(period, close_column)
         check_period(
             period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
         )
@@ -1967,6 +1986,7 @@ class OverlapTechnicals:
         | 2025-12-30 | 675.891 |
         | 2025-12-31 | 675.847 |
         """
+        self._check_arguments(period, close_column, window=window)
         check_period(
             period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
         )
@@ -2130,6 +2150,7 @@ class OverlapTechnicals:
         | 2025-12-30 | 56.325  |     669.389 |
         | 2025-12-31 | 56.5294 |     670.742 |
         """
+        self._check_arguments(period, close_column)
         check_period(
             period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
         )
@@ -2301,6 +2322,7 @@ class OverlapTechnicals:
         | 2025-12-30 |        1.177  |         1.1791 |         1.181  |      1.1752 |      1.1731 |
         | 2025-12-31 |        1.1757 |         1.1771 |         1.1793 |      1.1734 |      1.1721 |
         """
+        self._check_arguments(period, close_column)
         check_period(
             period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
         )
@@ -2455,6 +2477,7 @@ class OverlapTechnicals:
         | 2025-12-30 |       4359.4 |    3960.5 |
         | 2025-12-31 |       4359.4 |    3960.5 |
         """
+        self._check_arguments(period, close_column, window=window)
         check_period(
             period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
         )
@@ -2601,6 +2624,7 @@ class OverlapTechnicals:
         | 2025-12-30 | 90541.8 |    84400 | 89092.3 | 88195.6 | 87470.9 | 86746.2 | 85714.3 |
         | 2025-12-31 | 90541.8 |    84400 | 89092.3 | 88195.6 | 87470.9 | 86746.2 | 85714.3 |
         """
+        self._check_arguments(period, close_column, window=window)
         check_period(
             period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
         )
@@ -2752,6 +2776,7 @@ class OverlapTechnicals:
         | 2025-12-30 |       272.335 |       266.099 |               0.8491 |              6.3103 |         2.8482 |
         | 2025-12-31 |       271.625 |       266.257 |               1.2684 |              6.056  |         2.4064 |
         """
+        self._check_arguments(period, close_column)
         check_period(
             period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
         )

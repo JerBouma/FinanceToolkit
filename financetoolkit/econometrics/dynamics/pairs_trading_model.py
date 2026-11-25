@@ -130,9 +130,9 @@ def get_pairs_trading(
             elasticity. Defaults to True.
 
     Returns:
-        tuple[pd.DataFrame, dict[str, float]]: Per date the Spread, Z-Score and Signal; and
-        the Hedge Ratio, Intercept, Half-Life, Cointegration P-Value, the latest Z-Score and
-        Signal and the Number of Trades.
+        tuple[pd.DataFrame, dict[str, float]]: Per date the Spread, Z-Score and Signal (NaN
+        where the Z-Score is); and the Hedge Ratio, Intercept, Half-Life, Cointegration P-Value,
+        the latest Z-Score and Signal and the Number of Trades (NaN without any Z-Score).
     """
     data = pd.concat([dependent, independent], axis=1).dropna()
     if log_prices:
@@ -155,7 +155,9 @@ def get_pairs_trading(
     else:
         mean, deviation = spread.mean(), spread.std()
     z_score = (spread - mean) / deviation
-    signals = get_signals(z_score, entry, exit_)
+    positions = get_signals(z_score, entry, exit_)
+    # A date without a z-score (the warm-up of the rolling window) has no signal rather than a flat one.
+    signals = positions.where(z_score.notna())
 
     cointegration = cointegration_model.get_engle_granger_cointegration(y, x)
 
@@ -167,9 +169,14 @@ def get_pairs_trading(
         "Cointegration P-Value": float(cointegration["P-Value"]),
         "Z-Score": float(z_score.iloc[-1]),
         "Signal": float(signals.iloc[-1]),
-        # Every new position counts, including a reversal from short to long at once.
-        "Number of Trades": float(
-            ((signals != 0) & (signals != signals.shift(fill_value=0))).sum()
+        # Every new position counts, including a reversal from short to long at once; without
+        # any z-score there is nothing to count.
+        "Number of Trades": (
+            float(
+                ((positions != 0) & (positions != positions.shift(fill_value=0))).sum()
+            )
+            if z_score.notna().any()
+            else np.nan
         ),
     }
     return series, summary
@@ -205,6 +212,13 @@ def get_ornstein_uhlenbeck_fit(levels: pd.Series) -> dict[str, float]:
         raise ValueError(
             f"At least {MINIMUM_ORNSTEIN_UHLENBECK_OBSERVATIONS} observations are needed to "
             "fit an Ornstein-Uhlenbeck process."
+        )
+
+    # A constant series makes the regressors collinear, and the residuals of the fit are
+    # exactly zero or rounding noise depending on the linear algebra library.
+    if np.ptp(values) == 0:
+        raise ValueError(
+            "The series is constant, so it has no Ornstein-Uhlenbeck process."
         )
 
     design = np.column_stack([np.ones(len(values) - 1), values[:-1]])

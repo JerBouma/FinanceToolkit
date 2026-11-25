@@ -20,7 +20,7 @@ from financetoolkit.models.valuation.valuation_controller import ValuationModels
 from financetoolkit.ratios import profitability_model, valuation_model
 from financetoolkit.utilities import factor_model
 from financetoolkit.utilities.dataframe_model import concat_frames, filter_shown_columns
-from financetoolkit.utilities.error_model import check_option, handle_errors
+from financetoolkit.utilities.error_model import handle_errors
 from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import apply_rounding, finalize_dataset
@@ -737,24 +737,9 @@ class Models(
         | ('get_piotroski_score', '12 Months') |   -0.1353 |                  0.3685 |                -0.3672 |       -3.6724 |    0.0004 |        0.3723 |       -0.1763 |             0.31 |            100 |            -0.1482 |             0.0279 | -0.3828 |              0.0787 |                 0.93   |
         | ('get_altman_z_score', '12 Months')  |    0.1179 |                  0.3915 |                 0.3011 |        3.0112 |    0.0033 |       -0.657  |       -0.2792 |             0.66 |            100 |             0.1564 |            -0.1619 |  1.2913 |              0.0258 |                 0.9939 |
         """
-        selected_metrics = factor_model.select_metrics(metrics, FACTOR_COLLECTIONS)
-
-        # A name that is no metric of this module is a mistake in the call, not missing data.
-        metric_names = [
-            name
-            for name in dir(self)
-            if name.startswith("get_") and name != "get_factor_analysis"
-        ]
-        for metric in selected_metrics:
-            check_option(
-                "metrics",
-                metric if isinstance(metric, str) else metric[0],
-                [*FACTOR_COLLECTIONS, *metric_names],
-            )
-
         factors = factor_model.get_daily_factors(
             self,
-            selected_metrics,
+            factor_model.select_metrics(metrics, FACTOR_COLLECTIONS),
             kwargs,
             {},
             self._tickers,

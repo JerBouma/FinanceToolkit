@@ -10,7 +10,12 @@ from financetoolkit.econometrics.helpers import BENCHMARK_TICKER, calculate_per_
 from financetoolkit.econometrics.statistics import entropy_model, statistics_model
 from financetoolkit.helpers import calculate_per_window, handle_portfolio
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
-from financetoolkit.utilities.error_model import InvalidArgumentError, handle_errors
+from financetoolkit.utilities.error_model import (
+    InvalidArgumentError,
+    check_option,
+    handle_errors,
+    validate_window,
+)
 from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import apply_rounding
 
@@ -123,6 +128,7 @@ class StatisticsEconometrics:
         | 2025-12-30 | -21.4583 |     275.809 |             270.7   | -0.3931 |                270.306 |
         | 2025-12-31 | -17.2038 |     274.774 |             270.749 | -0.3096 |                270.44  |
         """
+        validate_window("window", window, 2)
         period = period if period else "daily"
 
         data = self._filter_benchmark(
@@ -225,6 +231,7 @@ class StatisticsEconometrics:
         | 2025-12-30 |  0.4205 |  0.5078 |
         | 2025-12-31 | -0.0997 | -0.6407 |
         """
+        validate_window("window", window, 1)
         period = period if period else "daily"
 
         data = self._filter_benchmark(
@@ -287,8 +294,8 @@ class StatisticsEconometrics:
                 returns (the changes of the series), "Adj Close" for the prices (the series as given
                 with `Econometrics(data=...)`) or another price column such as "High". Defaults to
                 "Return".
-            rolling (int | None, optional): The number of periods of a rolling window. Defaults to
-                None, which calculates one value over the full history of every asset.
+            rolling (int | None, optional): The number of periods of a rolling window, at least 2.
+                Defaults to None, which calculates one value over the full history of every asset.
             against (str | None, optional): What to correlate with: a ticker of the Toolkit (or a
                 series of the data), such as "Benchmark" or "MSFT", or another column of the same
                 ticker, such as "Low" with column="High". Defaults to None, which uses the
@@ -342,6 +349,7 @@ class StatisticsEconometrics:
         | 2025-12-30 | 0.5132 | 0.3062 |
         | 2025-12-31 | 0.4705 | 0.315  |
         """
+        validate_window("rolling", rolling, 2)
         period = period if period else "daily"
 
         data = self._get_series_column(period, column)
@@ -447,8 +455,8 @@ class StatisticsEconometrics:
             column (str, optional): The historical data column the statistic is calculated on: "Adj Close"
                 for the prices (the series as given with `Econometrics(data=...)`), "Close" for the
                 traded prices or "Return" for the returns (the changes of the series). Defaults to "Adj Close".
-            rolling (int | None, optional): The number of periods of a rolling window. Defaults to
-                None, which calculates one value over the full history of every asset.
+            rolling (int | None, optional): The number of periods of a rolling window, at least 1.
+                Defaults to None, which calculates one value over the full history of every asset.
             percentile (float, optional): The percentile as a decimal between 0 and 1. Defaults
                 to 0.5, the median.
             method (str, optional): The percentile definition. Options are: "linear" (Hyndman and
@@ -501,6 +509,7 @@ class StatisticsEconometrics:
         | 2025-12-30 | 273.408 | 481.221 |
         | 2025-12-31 | 273.408 | 480.468 |
         """
+        validate_window("rolling", rolling, 1)
         period = period if period else "daily"
 
         data = self._filter_benchmark(
@@ -557,7 +566,7 @@ class StatisticsEconometrics:
             column (str, optional): The historical data column the statistic is calculated on: "Adj Close"
                 for the prices (the series as given with `Econometrics(data=...)`), "Close" for the
                 traded prices or "Return" for the returns (the changes of the series). Defaults to "Adj Close".
-            rolling (int | None, optional): The number of previous periods of a rolling window.
+            rolling (int | None, optional): The number of previous periods of a rolling window, at least 1.
                 Defaults to None, which ranks the latest value among every earlier one of every
                 asset.
             include_benchmark (bool, optional): Whether to include "Benchmark" among the assets.
@@ -607,6 +616,7 @@ class StatisticsEconometrics:
         | 2025-12-30 |   0.78 |   0.21 |
         | 2025-12-31 |   0.73 |   0.13 |
         """
+        validate_window("rolling", rolling, 1)
         period = period if period else "daily"
 
         data = self._filter_benchmark(
@@ -659,8 +669,8 @@ class StatisticsEconometrics:
             column (str, optional): The historical data column the statistic is calculated on: "Adj Close"
                 for the prices (the series as given with `Econometrics(data=...)`), "Close" for the
                 traded prices or "Return" for the returns (the changes of the series). Defaults to "Adj Close".
-            rolling (int | None, optional): The number of periods of a rolling window. Defaults to
-                None, which scores the latest value against the mean and standard deviation of the
+            rolling (int | None, optional): The number of periods of a rolling window, at least 2.
+                Defaults to None, which scores the latest value against the mean and standard deviation of the
                 full history of every asset.
             include_benchmark (bool, optional): Whether to include "Benchmark" among the assets.
                 Defaults to False.
@@ -710,6 +720,7 @@ class StatisticsEconometrics:
         | 2025-12-30 | -0.4439 | 0.4538 |
         | 2025-12-31 | -0.7516 | 0.0311 |
         """
+        validate_window("rolling", rolling, 2)
         period = period if period else "daily"
 
         data = self._filter_benchmark(
@@ -768,8 +779,8 @@ class StatisticsEconometrics:
             column (str, optional): The historical data column the statistic is calculated on: "Adj Close"
                 for the prices (the series as given with `Econometrics(data=...)`), "Close" for the
                 traded prices or "Return" for the returns (the changes of the series). Defaults to "Adj Close".
-            rolling (int | None, optional): The number of periods of a rolling window. Defaults to
-                None, which calculates one value over the full history of every asset.
+            rolling (int | None, optional): The number of periods of a rolling window, at least 1.
+                Defaults to None, which calculates one value over the full history of every asset.
             include_benchmark (bool, optional): Whether to include "Benchmark" among the assets.
                 Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
@@ -818,6 +829,7 @@ class StatisticsEconometrics:
         | 2025-12-30 | 1.8328 | 4.2249 |
         | 2025-12-31 | 1.4702 | 3.8222 |
         """
+        validate_window("rolling", rolling, 1)
         period = period if period else "daily"
 
         data = self._filter_benchmark(
@@ -877,8 +889,8 @@ class StatisticsEconometrics:
             column (str, optional): The historical data column the statistic is calculated on: "Adj Close"
                 for the prices (the series as given with `Econometrics(data=...)`), "Close" for the
                 traded prices or "Return" for the returns (the changes of the series). Defaults to "Adj Close".
-            rolling (int | None, optional): The number of periods of a rolling window. Defaults to
-                None, which calculates one value over the full history of every asset.
+            rolling (int | None, optional): The number of periods of a rolling window, at least 2.
+                Defaults to None, which calculates one value over the full history of every asset.
             include_benchmark (bool, optional): Whether to include "Benchmark" among the assets.
                 Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
@@ -925,6 +937,7 @@ class StatisticsEconometrics:
         | 2025-12-30 | 0.6541 | 1.2939 |
         | 2025-12-31 | 0.5702 | 1.2523 |
         """
+        validate_window("rolling", rolling, 2)
         period = period if period else "daily"
 
         data = self._filter_benchmark(
@@ -1066,8 +1079,8 @@ class StatisticsEconometrics:
                 prices, the series as given with `Econometrics(data=...)`), "Close" (the traded
                 prices). Defaults to None, which uses "Adj Close" for the share entropy, whose
                 values must be positive, and "Return" for the others.
-            rolling (int | None, optional): The number of periods of a rolling window. Defaults to
-                None, which calculates one value over the full history of every asset.
+            rolling (int | None, optional): The number of periods of a rolling window, at least 2.
+                Defaults to None, which calculates one value over the full history of every asset.
             order (int | None, optional): The template length m of the sample and approximate
                 entropy or the number of values n of the permutation and SVD entropy. Defaults to
                 None, which uses 2 for the sample and approximate and 3 for the permutation and
@@ -1144,6 +1157,9 @@ class StatisticsEconometrics:
         | 2025-12-30 | 0.998  | 0.9921 | 0.9992 |
         | 2025-12-31 | 0.9981 | 0.9919 | 0.9992 |
         """
+        validate_window("rolling", rolling, 2)
+        check_option("estimator", estimator, ("periodogram", "welch"))
+        check_option("encoding", encoding, ("binary", "quantile", "sigma"))
         period = period if period else "daily"
         column = column if column else "Adj Close" if method == "share" else "Return"
 
@@ -1264,8 +1280,8 @@ class StatisticsEconometrics:
             column (str, optional): The historical data column that is encoded: "Return" for the
                 returns (the changes of the series), "Adj Close" for the prices (the series as given
                 with `Econometrics(data=...)`) or "Close" for the traded prices. Defaults to "Return".
-            rolling (int | None, optional): The number of periods of a rolling window. Defaults to
-                None, which calculates one value over the full history of every asset.
+            rolling (int | None, optional): The number of periods of a rolling window, at least 2.
+                Defaults to None, which calculates one value over the full history of every asset.
             encoding (str, optional): The encoding. Options are: "binary" (1 for a positive and 0 for
                 a negative value, values of 0 left out), "quantile" (the quantile of the value),
                 "sigma" (the bucket of one standard deviation the value falls in). Defaults to
@@ -1317,6 +1333,7 @@ class StatisticsEconometrics:
         | 2025-12-30 | 1.0763 | 1.108  | 1.1396 |
         | 2025-12-31 | 1.0763 | 1.108  | 1.1396 |
         """
+        validate_window("rolling", rolling, 2)
         period = period if period else "daily"
 
         data = self._filter_benchmark(
@@ -1389,8 +1406,8 @@ class StatisticsEconometrics:
                 "Return" for the returns (the changes of the series), "Adj Close" for the prices
                 (the series as given with `Econometrics(data=...)`) or "Close" for the traded
                 prices. Defaults to "Return".
-            rolling (int | None, optional): The number of periods of a rolling window. Defaults to
-                None, which calculates the parameters over the full history of every asset.
+            rolling (int | None, optional): The number of periods of a rolling window, at least 2.
+                Defaults to None, which calculates the parameters over the full history of every asset.
             include_benchmark (bool, optional): Whether to include "Benchmark" among the assets.
                 Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
@@ -1435,6 +1452,7 @@ class StatisticsEconometrics:
         | MSFT |     0.0003 |     1.4267 |       1.2057 |              625 |
         | NVDA |     0.0011 |     1.4484 |       1.2098 |              619 |
         """
+        validate_window("rolling", rolling, 2)
         period = period if period else "daily"
 
         data = self._filter_benchmark(

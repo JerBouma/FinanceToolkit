@@ -2360,3 +2360,110 @@ def test_get_bet_sizes(recorder, technical_module):
     with pytest.raises(InvalidArgumentError, match="method must be one of"):
         technical_module.get_bet_sizes(method="unknown")
     assert technical_module.get_bet_sizes(step_size=2).empty
+
+
+# Robustness: invalid windows, columns and options raise, and a window longer than the data
+# says why the indicator has no values.
+
+
+@pytest.mark.parametrize(
+    ("method", "arguments"),
+    [
+        ("get_relative_strength_index", {"window": 0}),
+        ("get_moving_average", {"window": 0}),
+        ("get_bollinger_bands", {"window": -1}),
+        ("get_moving_average_convergence_divergence", {"long_window": 0}),
+        ("get_stochastic_oscillator", {"smooth_window": 0}),
+        ("get_triple_barrier_labels", {"horizon": 0}),
+        ("get_relative_strength_index", {"window": 2.5}),
+    ],
+)
+def test_a_window_below_one_period_is_rejected(technical_module, method, arguments):
+    with pytest.raises(InvalidArgumentError, match="at least 1"):
+        getattr(technical_module, method)(**arguments)
+
+
+def test_trend_scanning_windows_are_checked(technical_module, caplog):
+    with pytest.raises(InvalidArgumentError, match="minimum_window"):
+        technical_module.get_trend_scanning_labels(minimum_window=2)
+    with pytest.raises(InvalidArgumentError, match="maximum_window"):
+        technical_module.get_trend_scanning_labels(minimum_window=10, maximum_window=5)
+
+    # A maximum window longer than the data returns at once, without labels and with a reason.
+    with caplog.at_level("WARNING", logger="financetoolkit"):
+        labels = technical_module.get_trend_scanning_labels(maximum_window=5000)
+    assert labels.isna().all().all()
+    assert "A window of 5000 periods is longer than" in caplog.text
+
+
+def test_a_window_longer_than_the_data_is_logged_once(technical_module, caplog):
+    technical_module._reported_windows.clear()
+    with caplog.at_level("WARNING", logger="financetoolkit"):
+        technical_module.collect_overlap_indicators(window=1400)
+    # Every indicator of the collection gets the window, the warning is given once.
+    assert caplog.text.count("A window of 1400 periods is longer than") == 1
+
+
+@pytest.mark.parametrize(
+    "method",
+    [
+        "get_relative_strength_index",
+        "get_bollinger_bands",
+        "get_moving_average_convergence_divergence",
+        "get_trin",
+        "get_seasonality",
+    ],
+)
+def test_an_unknown_close_column_is_rejected(technical_module, method):
+    with pytest.raises(InvalidArgumentError, match="close_column must be one of"):
+        getattr(technical_module, method)(close_column="Bogus")
+
+
+def test_unknown_options_raise_an_invalid_argument_error(technical_module):
+    with pytest.raises(InvalidArgumentError, match="signal_moving_average"):
+        technical_module.get_moving_average_convergence_divergence(
+            signal_moving_average="bogus"
+        )
+    with pytest.raises(InvalidArgumentError, match="moving_average"):
+        technical_module.get_know_sure_thing(moving_average="bogus")
+    with pytest.raises(InvalidArgumentError, match="get_bogus is not a metric"):
+        technical_module.get_indicator_summary(metric="get_bogus")
+    with pytest.raises(InvalidArgumentError, match="get_bogus is not a metric"):
+        technical_module.get_factor_analysis(metrics="get_bogus")
+
+
+def test_trin_says_why_it_has_no_values(caplog):
+    from financetoolkit import Toolkit
+
+    historical = pd.read_pickle("tests/datasets/historical_dataset.pickle")
+    historical = historical.loc[
+        :, historical.columns.get_level_values(1).isin(["AAPL", "Benchmark"])
+    ]
+    toolkit = Toolkit(
+        tickers=["AAPL"],
+        historical=historical,
+        convert_currency=False,
+        start_date="2019-12-31",
+        end_date="2023-01-01",
+        sleep_timer=False,
+        progress_bar=False,
+    )
+    toolkit._daily_risk_free_rate = pd.read_pickle(
+        "tests/datasets/risk_free_rate.pickle"
+    )
+    toolkit._daily_treasury_data = pd.read_pickle("tests/datasets/treasury_data.pickle")
+    with caplog.at_level("WARNING", logger="financetoolkit"):
+        trin = toolkit.technicals.get_trin()
+    assert trin.isna().all().all()
+    assert "fewer than two tickers" in caplog.text
+
+
+def test_a_factor_analysis_without_rankings_names_a_few_metrics(
+    technical_module, monkeypatch
+):
+    # Three tickers can't be ranked; the message names a few of the metrics, not all of them.
+    monkeypatch.setenv("FINANCETOOLKIT_STRICT_ERRORS", "1")
+    with pytest.raises(
+        ValueError, match=r"^\d+ metrics \(get_\w+, get_\w+, get_\w+ and others\)"
+    ):
+        technical_module.get_factor_analysis()

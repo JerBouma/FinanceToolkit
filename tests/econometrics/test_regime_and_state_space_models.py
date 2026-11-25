@@ -423,3 +423,10 @@ def test_optimal_trading_rule_of_a_mean_reverting_price(recorder):
     # after a last-bit difference on another platform moves a mean by at most
     # (profit-taking + stop-loss) / paths.
     recorder.capture(pd.Series(summary).round(2))
+
+
+def test_ornstein_uhlenbeck_fit_of_a_constant_series_raises():
+    # The residuals of a constant series are zero or rounding noise depending on the linear
+    # algebra library, so the series itself is checked.
+    with pytest.raises(ValueError, match="constant"):
+        pairs_trading_model.get_ornstein_uhlenbeck_fit(pd.Series(np.full(400, 50.0)))

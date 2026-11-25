@@ -20,6 +20,7 @@ from financetoolkit.utilities.error_model import (
     check_period,
     handle_errors,
     validate_alpha,
+    validate_window,
 )
 from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.sources_model import track_sources
@@ -112,8 +113,8 @@ class ForecastingEconometrics:
             (RiskMetrics EWMA), "rolling" (rolling sample variance). Defaults to "ewma".
             method_b (str, optional): The second (competing) volatility forecasting method. Options are:
             "ewma" (RiskMetrics EWMA), "rolling" (rolling sample variance). Defaults to "rolling".
-            window (int, optional): The rolling window size used by the rolling method. Defaults to
-            22 (approximately one trading month).
+            window (int, optional): The rolling window size used by the rolling method, at least 2.
+            Defaults to 22 (approximately one trading month).
             lambda_ (float, optional): The decay factor used by the EWMA method. Defaults to 0.94.
             loss (str, optional): The loss function to compare forecast errors with. Options are:
             "squared" (squared error), "absolute" (absolute error). Defaults to "squared".
@@ -163,6 +164,7 @@ class ForecastingEconometrics:
         | Mean Loss Differential    |    0      |    0      |    0      |    0      |
         | Observations              | 1232      | 1232      | 1232      | 1232      |
         """
+        validate_window("window", window, 2)
         if method_a not in ("ewma", "rolling") or method_b not in ("ewma", "rolling"):
             raise InvalidArgumentError(
                 "method_a and method_b must be 'ewma' or 'rolling'."
@@ -1206,8 +1208,9 @@ class ForecastingEconometrics:
             "gaussian" (rolling normal), "ewma" (RiskMetrics EWMA). Defaults to "garch".
             alpha (float | None, optional): The tail probability of the tail test. Defaults to None, which tests
             the whole density.
-            window (int | None, optional): The number of returns of every window or GARCH fit. Defaults to
-            None, which uses two years of observations with a minimum of 100 for "garch" (504 daily returns) and
+            window (int | None, optional): The number of returns of every window or GARCH fit, at least 100
+            for the GARCH model (a GARCH fit needs at least 100 returns) and 2 otherwise. Defaults to None,
+            which uses two years of observations with a minimum of 100 for "garch" (504 daily returns) and
             a year with a minimum of 20 for "gaussian".
             lambda_ (float, optional): The decay factor of model="ewma". Defaults to 0.94.
             refit_every (int, optional): The number of returns between two GARCH fits. Defaults to 21.
@@ -1272,9 +1275,12 @@ class ForecastingEconometrics:
         check_period(period, PERIODS)
         check_option("model", model, ("garch", "gaussian", "ewma"))
 
+        validate_window(
+            "window", window, MINIMUM_GARCH_WINDOW if model == "garch" else 2
+        )
         window = (
             window
-            if window
+            if window is not None
             else (
                 _garch_window_size(period)
                 if model == "garch"
@@ -1287,16 +1293,33 @@ class ForecastingEconometrics:
             .dropna(how="all"),
             include_benchmark=include_benchmark,
         )
-        pit = forecast_evaluation_model.get_probability_integral_transform(
-            returns,
-            model,
-            window,
-            lambda_,
-            refit_every,
-            garch_method,
-            garch_distribution,
-        )
-        result = forecast_evaluation_model.get_berkowitz_test(pit, alpha)
+        # A ticker whose forecasts cannot be evaluated (a constant series has no volatility to
+        # fit) is left out instead of failing the other tickers.
+        tests = {}
+        for ticker in returns.columns:
+            try:
+                pit = forecast_evaluation_model.get_probability_integral_transform(
+                    returns[ticker],
+                    model,
+                    window,
+                    lambda_,
+                    refit_every,
+                    garch_method,
+                    garch_distribution,
+                )
+                tests[ticker] = forecast_evaluation_model.get_berkowitz_test(pit, alpha)
+            except InvalidArgumentError:
+                # A mistake in the call is not a reason to skip a ticker.
+                raise
+            except ValueError as error:
+                logger.warning("No Berkowitz test for %s: %s", ticker, error)
+
+        if not tests:
+            raise ValueError(
+                "None of the tickers has returns to evaluate forecasts on."
+            )
+
+        result = pd.DataFrame(tests)
 
         if alpha is None:
             result = result.drop(index="Tail Observations")
@@ -1369,8 +1392,9 @@ class ForecastingEconometrics:
             model (str, optional): The density forecast. Options are: "garch" (GARCH-family model),
             "gaussian" (rolling normal), "ewma" (RiskMetrics EWMA). Defaults to "garch".
             lags (int, optional): The number of lags of the portmanteau statistic. Defaults to 4.
-            window (int | None, optional): The number of returns of every window or GARCH fit. Defaults to
-            None, which uses two years of observations with a minimum of 100 for "garch" (504 daily returns) and
+            window (int | None, optional): The number of returns of every window or GARCH fit, at least 100
+            for the GARCH model (a GARCH fit needs at least 100 returns) and 2 otherwise. Defaults to None,
+            which uses two years of observations with a minimum of 100 for "garch" (504 daily returns) and
             a year with a minimum of 20 for "gaussian".
             lambda_ (float, optional): The decay factor of model="ewma". Defaults to 0.94.
             refit_every (int, optional): The number of returns between two GARCH fits. Defaults to 21.
@@ -1446,9 +1470,12 @@ class ForecastingEconometrics:
         check_period(period, PERIODS)
         check_option("model", model, ("garch", "gaussian", "ewma"))
 
+        validate_window(
+            "window", window, MINIMUM_GARCH_WINDOW if model == "garch" else 2
+        )
         window = (
             window
-            if window
+            if window is not None
             else (
                 _garch_window_size(period)
                 if model == "garch"
@@ -1536,8 +1563,8 @@ class ForecastingEconometrics:
             "anatolyev_gerko" (Anatolyev-Gerko). Defaults to "pesaran_timmermann".
             forecast (str, optional): The return forecast. Options are: "momentum" (the mean of the previous
             `window` returns), "autoregressive" (the rolling AR(1)). Defaults to "momentum".
-            window (int | None, optional): The number of returns of every forecast window. Defaults to None,
-            which uses a year of observations with a minimum of 20 (252 daily, 52 weekly and 20 monthly,
+            window (int | None, optional): The number of returns of every forecast window, at least 2.
+            Defaults to None, which uses a year of observations with a minimum of 20 (252 daily, 52 weekly and 20 monthly,
             quarterly or yearly returns).
             include_benchmark (bool, optional): Whether to include "Benchmark" among the assets tested. Defaults
             to False.
@@ -1583,7 +1610,8 @@ class ForecastingEconometrics:
 
         check_period(period, PERIODS)
 
-        window = window if window else max(PERIODS_PER_YEAR[period], 20)
+        validate_window("window", window, 2)
+        window = window if window is not None else max(PERIODS_PER_YEAR[period], 20)
         returns = self._filter_benchmark(
             self._historical_data[period]["Return"]
             .loc[self._start_date : self._end_date]
@@ -1685,10 +1713,12 @@ class ForecastingEconometrics:
             n_bootstrap (int, optional): The number of bootstrap resamples. Defaults to 1000.
             block_size (int | None, optional): The average block length of the stationary bootstrap. Defaults to
             None, which uses the cube root of the number of periods, rounded.
-            window (int, optional): The window of the "rolling" model. Defaults to 22 (about a month).
+            window (int, optional): The window of the "rolling" model, at least 2. Defaults to 22 (about a
+            month).
             lambda_ (float, optional): The decay factor of the "ewma" model. Defaults to 0.94.
-            garch_window (int | None, optional): The number of returns of every GARCH fit. Defaults to None,
-            which uses two years of observations with a minimum of 100 (504 daily returns).
+            garch_window (int | None, optional): The number of returns of every GARCH fit, at least 100, as a
+            GARCH fit on fewer returns is not reliable. Defaults to None, which uses two years of observations
+            with a minimum of 100 (504 daily returns).
             refit_every (int, optional): The number of returns between two GARCH fits. Defaults to 21.
             seed (int, optional): The seed of the bootstrap. Defaults to 0.
             include_benchmark (bool, optional): Whether to include "Benchmark" among the assets. Defaults to
@@ -1762,7 +1792,11 @@ class ForecastingEconometrics:
                 f"Risk.get_garch ({', '.join(VOLATILITY_GARCH_METHODS)})."
             )
 
-        garch_window = garch_window if garch_window else _garch_window_size(period)
+        validate_window("window", window, 2)
+        validate_window("garch_window", garch_window, MINIMUM_GARCH_WINDOW)
+        garch_window = (
+            garch_window if garch_window is not None else _garch_window_size(period)
+        )
         returns = self._filter_benchmark(
             self._historical_data[period]["Return"]
             .loc[self._start_date : self._end_date]
@@ -1773,6 +1807,17 @@ class ForecastingEconometrics:
         results = {}
         for ticker in returns.columns:
             ticker_returns = returns[ticker].dropna()
+            # A constant price has no variance to forecast, and every loss would be 0 / 0.
+            if (
+                len(ticker_returns) > 1
+                and (ticker_returns == ticker_returns.iloc[0]).all()
+            ):
+                logger.warning(
+                    "%s has constant returns, so its volatility forecasts have no losses to compare "
+                    "and it has no model confidence set.",
+                    ticker,
+                )
+                continue
             realized = ticker_returns**2
             forecasts = {
                 model: forecast_evaluation_model.get_volatility_forecast(
@@ -1785,16 +1830,20 @@ class ForecastingEconometrics:
                 )
                 for model in dict.fromkeys(models)
             }
-            losses = pd.DataFrame(
-                {
-                    model: (
-                        (realized - forecast) ** 2
-                        if loss == "squared"
-                        else realized / forecast + np.log(forecast)
-                    )
-                    for model, forecast in forecasts.items()
-                }
-            ).dropna()
+            # A forecast of zero variance (before a model has returns to start from) has no
+            # QLIKE loss (0 / 0 plus the logarithm of 0); those dates are dropped with the
+            # warm-up of the other models.
+            with np.errstate(divide="ignore", invalid="ignore"):
+                losses = pd.DataFrame(
+                    {
+                        model: (
+                            (realized - forecast) ** 2
+                            if loss == "squared"
+                            else realized / forecast + np.log(forecast)
+                        )
+                        for model, forecast in forecasts.items()
+                    }
+                ).dropna()
 
             if len(losses) < 2:  # noqa: PLR2004
                 logger.warning(

@@ -67,11 +67,15 @@ class StationarityEconometrics:
         causality, Engle-Granger cointegration), where swapping the pair changes
         which ticker is treated as dependent.
         """
-        return list(
-            itertools.permutations(
-                self._get_tickers(include_benchmark=include_benchmark), 2
+        tickers = self._get_tickers(include_benchmark=include_benchmark)
+        if len(tickers) < 2:  # noqa: PLR2004
+            raise ValueError(
+                f"A test between two series needs at least two series, not only "
+                f"{', '.join(tickers) or 'none'}. Please add a ticker, or pass "
+                "include_benchmark=True to test against the Benchmark."
             )
-        )
+
+        return list(itertools.permutations(tickers, 2))
 
     @handle_portfolio
     @handle_errors
@@ -888,6 +892,33 @@ class StationarityEconometrics:
             },
             index=levels.index,
         )
+
+        # The fixed-width window of a small d spans thousands of observations; a series shorter
+        # than the window has no values at all, which would otherwise pass without a reason.
+        if method == "fixed_width":
+            observations = levels.count()
+            width = len(
+                fractional_model.get_fractional_weights(
+                    d,
+                    size=int(observations.max()) + 1,
+                    threshold=(
+                        fractional_model.FIXED_WIDTH_THRESHOLD
+                        if threshold is None
+                        else threshold
+                    ),
+                )
+            )
+            short = list(observations.index[observations < width])
+            if short:
+                logger.warning(
+                    "The fixed-width window of d = %s needs at least %s observations, more than %s %s, "
+                    "so the result is NaN there. Please pass a larger threshold (such as 1e-4) "
+                    "or a longer date range.",
+                    d,
+                    width,
+                    ", ".join(map(str, short)),
+                    "has" if len(short) == 1 else "have",
+                )
 
         return apply_rounding(
             result, rounding if rounding is not None else self._rounding

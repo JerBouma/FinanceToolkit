@@ -13,6 +13,9 @@ from financetoolkit.econometrics.least_squares_model import (
     fit_least_squares,
 )
 from financetoolkit.utilities.error_model import InvalidArgumentError, check_option
+from financetoolkit.utilities.logger_model import get_logger
+
+logger = get_logger()
 
 TWO_DIMENSIONAL = 2
 
@@ -723,25 +726,53 @@ def _fit_binary_glm(
         f"The {'Logistic' if link == 'logit' else 'Probit'} regression",
     )
     model_cls = sm.Logit if link == "logit" else sm.Probit
-    sm_result = model_cls(y, x).fit(
-        disp=0, maxiter=max_iterations, tol=tolerance, warn_convergence=False
-    )
+    perfect_separation_warning = import_optional(
+        "statsmodels.tools.sm_exceptions", "The binary regression"
+    ).PerfectSeparationWarning
+    # Under perfect separation the coefficients run off to infinity: statsmodels warns on every
+    # iteration and its logistic function overflows in the fit and the statistics derived from
+    # it, so the warnings are collected and reported once.
+    with (
+        warnings.catch_warnings(record=True) as raised,
+        np.errstate(over="ignore", divide="ignore", invalid="ignore"),
+    ):
+        warnings.simplefilter("always", perfect_separation_warning)
+        sm_result = model_cls(y, x).fit(
+            disp=0, maxiter=max_iterations, tol=tolerance, warn_convergence=False
+        )
+        result = {
+            "coefficients": np.asarray(sm_result.params),
+            "standard_errors": np.asarray(sm_result.bse),
+            "z_statistics": np.asarray(sm_result.tvalues),
+            "p_values": np.asarray(sm_result.pvalues),
+            "fitted_probabilities": np.asarray(sm_result.predict()),
+            "log_likelihood": float(sm_result.llf),
+            "null_log_likelihood": float(sm_result.llnull),
+            "pseudo_r_squared": float(sm_result.prsquared),
+            "n_observations": int(sm_result.nobs),
+            "n_parameters": k,
+            "n_iterations": int(sm_result.mle_retvals.get("iterations", 0)),
+            "converged": bool(sm_result.mle_retvals.get("converged", False)),
+            "feature_names": feature_names,
+        }
 
-    return {
-        "coefficients": np.asarray(sm_result.params),
-        "standard_errors": np.asarray(sm_result.bse),
-        "z_statistics": np.asarray(sm_result.tvalues),
-        "p_values": np.asarray(sm_result.pvalues),
-        "fitted_probabilities": np.asarray(sm_result.predict()),
-        "log_likelihood": float(sm_result.llf),
-        "null_log_likelihood": float(sm_result.llnull),
-        "pseudo_r_squared": float(sm_result.prsquared),
-        "n_observations": int(sm_result.nobs),
-        "n_parameters": k,
-        "n_iterations": int(sm_result.mle_retvals.get("iterations", 0)),
-        "converged": bool(sm_result.mle_retvals.get("converged", False)),
-        "feature_names": feature_names,
-    }
+    separated = False
+    for entry in raised:
+        if entry.category is perfect_separation_warning:
+            separated = True
+        else:
+            # Re-emitted: recording captures every category, not just this one.
+            warnings.warn_explicit(
+                entry.message, entry.category, entry.filename, entry.lineno
+            )
+    if separated:
+        logger.warning(
+            "The %s regression separates the outcomes perfectly (or nearly so), so its "
+            "coefficients are not identified and their size and p-values are not meaningful.",
+            "Logistic" if link == "logit" else "Probit",
+        )
+
+    return result
 
 
 def get_logistic_regression(

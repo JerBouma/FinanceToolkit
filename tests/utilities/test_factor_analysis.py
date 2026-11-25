@@ -211,14 +211,16 @@ def test_a_parameter_no_metric_takes_raises_before_calculating(monkeypatch):
     assert ratios.calls == []
 
 
-def test_fewer_than_three_tickers_return_no_result_and_an_unknown_metric_raises():
+def test_fewer_than_three_tickers_return_no_result():
     ratios = FakeRatios()
     ratios._tickers = TICKERS[:2]
 
     assert ratios.get_factor_analysis("get_price_to_earnings_ratio").empty
 
-    # A metric the module does not have is a mistake in the call, not missing data.
-    with pytest.raises(InvalidArgumentError, match="get_unknown_ratio"):
+
+def test_an_unknown_metric_is_a_mistake_in_the_call():
+    # A misspelled metric raises with what to pass instead of reading as "no data".
+    with pytest.raises(InvalidArgumentError, match="get_unknown_ratio is not a metric"):
         FakeRatios().get_factor_analysis("get_unknown_ratio")
 
 

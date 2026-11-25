@@ -12,9 +12,16 @@ from financetoolkit.econometrics.dynamics import (
 )
 from financetoolkit.econometrics.helpers import BENCHMARK_TICKER
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
-from financetoolkit.utilities.error_model import InvalidArgumentError, handle_errors
+from financetoolkit.utilities.error_model import (
+    InvalidArgumentError,
+    handle_errors,
+    validate_window,
+)
+from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import apply_rounding
+
+logger = get_logger()
 
 # ruff: noqa: E501
 
@@ -145,12 +152,24 @@ class DynamicsEconometrics:
             self._get_series_column(period, column), include_benchmark=include_benchmark
         )
 
-        fits = {
-            ticker: regime_model.get_markov_regime_switching(
-                data[ticker], regimes=regimes, switching_variance=switching_variance
-            )
-            for ticker in data.columns
-        }
+        # A ticker the model cannot be fitted to (too short, constant or without convergence)
+        # is left out instead of failing the other tickers.
+        fits = {}
+        for ticker in data.columns:
+            try:
+                fits[ticker] = regime_model.get_markov_regime_switching(
+                    data[ticker], regimes=regimes, switching_variance=switching_variance
+                )
+            except InvalidArgumentError:
+                # A mistake in the call is not a reason to skip a ticker.
+                raise
+            except ValueError as error:
+                logger.warning(
+                    "No Markov regime switching fit for %s: %s", ticker, error
+                )
+
+        if not fits:
+            raise ValueError("None of the tickers has data to fit the regimes to.")
 
         if probabilities:
             result = pd.concat(
@@ -270,17 +289,29 @@ class DynamicsEconometrics:
             self._get_series_column(period, column), include_benchmark=include_benchmark
         )
 
-        result = pd.concat(
-            {
-                ticker: regime_model.get_structural_breaks(
+        # A ticker without breaks to find (a constant or short series) is left out instead of
+        # failing the other tickers.
+        segments = {}
+        for ticker in data.columns:
+            try:
+                segments[ticker] = regime_model.get_structural_breaks(
                     data[ticker],
                     max_breaks=max_breaks,
                     minimum_segment=minimum_segment,
                     breaks=breaks,
                 )
-                for ticker in data.columns
-            }
-        )
+            except InvalidArgumentError:
+                # A mistake in the call is not a reason to skip a ticker.
+                raise
+            except ValueError as error:
+                logger.warning("No structural breaks for %s: %s", ticker, error)
+
+        if not segments:
+            raise ValueError(
+                "None of the tickers has data to find structural breaks in."
+            )
+
+        result = pd.concat(segments)
         result.index = result.index.set_names(["Asset", "Segment"])
 
         return apply_rounding(
@@ -412,17 +443,27 @@ class DynamicsEconometrics:
             self._get_series_column(period, column), include_benchmark=include_benchmark
         )
 
-        result = pd.concat(
-            {
-                ticker: regime_model.get_change_points(
+        # A ticker without change points to find (a constant or short series) is left out
+        # instead of failing the other tickers.
+        segments = {}
+        for ticker in data.columns:
+            try:
+                segments[ticker] = regime_model.get_change_points(
                     data[ticker],
                     cost=cost,
                     penalty=penalty,
                     minimum_segment=minimum_segment,
                 )
-                for ticker in data.columns
-            }
-        )
+            except InvalidArgumentError:
+                # A mistake in the call is not a reason to skip a ticker.
+                raise
+            except ValueError as error:
+                logger.warning("No change points for %s: %s", ticker, error)
+
+        if not segments:
+            raise ValueError("None of the tickers has data to find change points in.")
+
+        result = pd.concat(segments)
         result.index = result.index.set_names(["Asset", "Segment"])
 
         return apply_rounding(
@@ -553,15 +594,24 @@ class DynamicsEconometrics:
             )
         )
 
-        result = pd.concat(
-            {
-                ticker: state_space_model.get_time_varying_beta(
+        # A ticker without a beta to estimate (too short or constant) is left out instead of
+        # failing the other tickers.
+        betas = {}
+        for ticker in dependent:
+            try:
+                betas[ticker] = state_space_model.get_time_varying_beta(
                     data[ticker], data[independent_ticker]
                 )[0]
-                for ticker in dependent
-            },
-            axis=1,
-        )
+            except InvalidArgumentError:
+                # A mistake in the call is not a reason to skip a ticker.
+                raise
+            except ValueError as error:
+                logger.warning("No time-varying beta for %s: %s", ticker, error)
+
+        if not betas:
+            raise ValueError("None of the tickers has data for a time-varying beta.")
+
+        result = pd.concat(betas, axis=1)
 
         return apply_rounding(
             result, rounding if rounding is not None else self._rounding
@@ -748,8 +798,8 @@ class DynamicsEconometrics:
                 yearly). Defaults to "daily".
             column (str, optional): The price column. Defaults to "Adj Close".
             rolling (int | None, optional): The number of periods of a rolling window for the
-                mean and standard deviation of the z-score. Defaults to None, which uses the full
-                sample.
+                mean and standard deviation of the z-score, at least 2. Defaults to None, which
+                uses the full sample.
             entry_z_score (float, optional): The z-score at which a position is opened.
                 Defaults to 2.0.
             exit_z_score (float, optional): The z-score whose crossing on the way back closes
@@ -797,6 +847,7 @@ class DynamicsEconometrics:
         |:--------------|--------------:|------------:|------------:|------------------------:|----------:|---------:|-------------------:|
         | ('KO', 'PEP') |        0.8685 |     -0.3098 |     290.448 |                  0.8345 |     0.684 |        0 |                 42 |
         """
+        validate_window("rolling", rolling, 2)
         period = period if period else "daily"
         # Every pair is aligned on its own common dates by the model.
         prices = self._get_series_column(period, column)
@@ -814,8 +865,6 @@ class DynamicsEconometrics:
                 include_benchmark=include_benchmark
             )
         }
-        if not fits:
-            raise ValueError("Pairs trading needs at least two assets.")
 
         if time_series:
             result = pd.concat(
@@ -986,17 +1035,29 @@ class DynamicsEconometrics:
                 )
             prices = np.log(prices)
 
-        fits = {
-            ticker: pairs_trading_model.get_optimal_trading_rule(
-                prices[ticker],
-                maximum_threshold=maximum_threshold,
-                grid_size=grid_size,
-                maximum_holding_period=maximum_holding_period,
-                simulations=simulations,
-                seed=seed,
+        # A ticker without an Ornstein-Uhlenbeck fit (too short or without noise) is left out
+        # instead of failing the other tickers.
+        fits = {}
+        for ticker in prices.columns:
+            try:
+                fits[ticker] = pairs_trading_model.get_optimal_trading_rule(
+                    prices[ticker],
+                    maximum_threshold=maximum_threshold,
+                    grid_size=grid_size,
+                    maximum_holding_period=maximum_holding_period,
+                    simulations=simulations,
+                    seed=seed,
+                )
+            except InvalidArgumentError:
+                # A mistake in the call is not a reason to skip a ticker.
+                raise
+            except ValueError as error:
+                logger.warning("No optimal trading rule for %s: %s", ticker, error)
+
+        if not fits:
+            raise ValueError(
+                "None of the tickers has data to fit an Ornstein-Uhlenbeck process to."
             )
-            for ticker in prices.columns
-        }
 
         if grid:
             result = pd.concat({ticker: mesh for ticker, (_, mesh) in fits.items()})

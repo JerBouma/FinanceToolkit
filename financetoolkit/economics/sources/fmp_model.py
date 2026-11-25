@@ -10,7 +10,7 @@ import pandas as pd
 from financetoolkit import helpers
 from financetoolkit.discovery.discovery_model import get_cached_financial_data
 from financetoolkit.economics.helpers import COUNTRY_CODES
-from financetoolkit.utilities import validation_model
+from financetoolkit.utilities import error_model, validation_model
 from financetoolkit.utilities.logger_model import get_logger
 
 # The endpoint returns at most this many days per request, so longer ranges are split.
@@ -128,11 +128,21 @@ def get_economic_calendar(
             for window_start, window_end in _windows(start_date, end_date)
         ]
 
-    frames = helpers.run_in_parallel(
+    # The first window is asked on its own: when it fails (the source unreachable or the
+    # rate limit reached), which get_cached_financial_data logs, the other windows would
+    # fail alike, each after its own retries.
+    failures_before = error_model.get_request_failures()
+    first_frame = get_cached_financial_data(
+        url=urls[0], user_subscription=user_subscription
+    )
+    if first_frame.empty and error_model.get_request_failures() != failures_before:
+        return pd.DataFrame()
+
+    frames = [first_frame] + helpers.run_in_parallel(
         lambda url: get_cached_financial_data(
             url=url, user_subscription=user_subscription
         ),
-        [(url,) for url in urls],
+        [(url,) for url in urls[1:]],
     )
     frames = [frame for frame in frames if "event" in frame.columns]
 

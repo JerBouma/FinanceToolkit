@@ -29,7 +29,10 @@ from financetoolkit.economics.sources import (
     world_bank_model,
 )
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
-from financetoolkit.utilities.error_model import handle_errors
+from financetoolkit.utilities.error_model import (
+    InvalidArgumentError,
+    handle_errors,
+)
 from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import (
@@ -605,7 +608,7 @@ class PricesEconomics:
         )
 
         if overnight_rate and period != "monthly":
-            raise ValueError(
+            raise InvalidArgumentError(
                 "The purchasing power of cash at the overnight rate is only available with "
                 "period='monthly', as the interest is compounded to the end of every month."
             )

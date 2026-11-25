@@ -35,7 +35,11 @@ from financetoolkit.fixedincome.sources import (
     ecb_model as ecb_rates_model,
 )
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
-from financetoolkit.utilities.error_model import handle_errors
+from financetoolkit.utilities.error_model import (
+    InvalidArgumentError,
+    check_option,
+    handle_errors,
+)
 from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.sources_model import (
     collect_sources,
@@ -77,6 +81,10 @@ class RatesEconomics:
             pd.DataFrame: One column per country, indexed by day.
         """
         policy_rate = bis_model.get_central_bank_policy_rate(start_date, self._end_date)
+        # An empty answer (the BIS unreachable or without data) has no dates to filter on.
+        if policy_rate.empty:
+            return policy_rate
+
         # The BIS lists every calendar day for some central banks (the Federal Reserve
         # and the ECB) and business days for others (the Bank of England and the Bank of
         # Japan), so weekends are left out for all, as no rate is set on them.
@@ -275,15 +283,20 @@ class RatesEconomics:
         """
         check_period_type(period)
 
-        period = self._default_period(period, "daily")
+        # An unknown period is refused before a source is chosen, as it would otherwise
+        # be answered with the GMDB's yearly data.
+        period = validate_period(
+            self._default_period(period, "daily"),
+            ["daily", "weekly", "monthly", "quarterly", "yearly"],
+            "exchange rates",
+        )
         # The GMDB is annual, so a monthly or quarterly request goes to the sources that
         # have that frequency unless the GMDB is asked for explicitly.
         gmdb_source = (
             gmdb_source
             if gmdb_source is not None
-            else self._gmdb_source and period.lower() not in ("monthly", "quarterly")
+            else self._gmdb_source and period not in ("monthly", "quarterly")
         )
-        period = "yearly" if period.lower() == "annual" else period.lower()
 
         if period in ("daily", "weekly"):
             exchange_rates = resample_to_period(
@@ -843,9 +856,12 @@ class RatesEconomics:
         """
         check_period_type(period)
 
-        # "annual" is accepted as well, the word the MCP server's parameter description uses.
-        period = (
-            self._default_period(period, "monthly").lower().replace("annual", "yearly")
+        # An unknown period is refused before a source is chosen, as it would otherwise
+        # be answered with the GMDB's yearly data.
+        period = validate_period(
+            self._default_period(period, "monthly"),
+            ["monthly", "quarterly", "yearly"],
+            "interest rate",
         )
 
         # The GMDB is annual, so a monthly or quarterly request goes to the sources that
@@ -1007,8 +1023,9 @@ class RatesEconomics:
         # the euro area; any other country is published monthly at most.
         daily_countries = {"United States", "United Kingdom", "Japan", "Euro Area"}
         requested = normalize_requested_countries(countries, daily_countries)
-        # "annual" is accepted as well, the word the MCP server's parameter description uses.
-        period = (
+        # An unknown period is refused before a source is chosen, as it would otherwise
+        # be answered with the GMDB's yearly data.
+        period = validate_period(
             self._default_period(
                 period,
                 (
@@ -1016,9 +1033,9 @@ class RatesEconomics:
                     if requested and set(requested) <= daily_countries
                     else "monthly"
                 ),
-            )
-            .lower()
-            .replace("annual", "yearly")
+            ),
+            ["daily", "weekly", "monthly", "quarterly", "yearly"],
+            "long-term interest rate",
         )
 
         # The GMDB is annual, so a monthly or quarterly request goes to the sources that
@@ -1317,11 +1334,7 @@ class RatesEconomics:
 
         rate_type = rate_type.lower()
 
-        if rate_type not in ["long_term", "short_term", "policy"]:
-            raise ValueError(
-                "Please choose 'long_term', 'short_term' or 'policy' for the rate_type "
-                "parameter."
-            )
+        check_option("rate_type", rate_type, ("long_term", "short_term", "policy"))
 
         # The inflation rate is monthly or yearly, so the real rate is as well.
         period = validate_period(
@@ -1498,9 +1511,12 @@ class RatesEconomics:
         """
         check_period_type(period)
 
-        # "annual" is accepted as well, the word the MCP server's parameter description uses.
-        period = (
-            self._default_period(period, "monthly").lower().replace("annual", "yearly")
+        # An unknown period is refused before a source is chosen, as it would otherwise
+        # be answered with the GMDB's yearly data.
+        period = validate_period(
+            self._default_period(period, "monthly"),
+            ["monthly", "quarterly", "yearly"],
+            "interest rate",
         )
         # The GMDB is annual, so a monthly or quarterly request goes to the sources that
         # have that frequency unless the GMDB is asked for explicitly.
@@ -1815,23 +1831,27 @@ class RatesEconomics:
         weightings = {"loans": "Loans", "balance": "Balance"}
 
         if market.lower().strip() not in markets:
-            raise ValueError(
+            raise InvalidArgumentError(
                 f"Please choose 'all', 'enterprise', 'government' or 'other conventional' "
                 f"for the market parameter, not '{market}'."
             )
         if weighting.lower().strip() not in weightings:
-            raise ValueError(
+            raise InvalidArgumentError(
                 f"Please choose 'loans' or 'balance' for the weighting parameter, not "
                 f"'{weighting}'."
             )
 
         interest_rates = fhfa_model.get_outstanding_mortgage_interest_rates()
 
+        # The FHFA unreachable (logged as such) leaves nothing to select from.
+        if interest_rates.empty:
+            return interest_rates
+
         regions = {
             name.lower(): name for name in interest_rates.columns.unique(level="Region")
         }
         if region.lower().strip() not in regions:
-            raise ValueError(
+            raise InvalidArgumentError(
                 f"The FHFA has no outstanding mortgage statistics for '{region}'. Please "
                 f"choose one of {', '.join(sorted(regions.values()))}."
             )
@@ -2304,6 +2324,10 @@ class RatesEconomics:
         breakeven_inflation = self.get_breakeven_inflation_expectations(
             countries=countries, period=period, rounding=unrounded
         )
+
+        # Either part failing (logged by its own method) leaves nothing to decompose.
+        if real_yield.empty or breakeven_inflation.empty:
+            return pd.DataFrame()
 
         decompositions = {}
         for country, maturity in itertools.product(

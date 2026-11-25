@@ -50,6 +50,29 @@ TRANSIENT_STATUS_CODES = (429, 500, 502, 503, 504)
 RETRY_BASE_DELAY_SECONDS = 2.5
 RETRY_MAX_DELAY_SECONDS = 60.0
 
+# A server error or an answer that is not JSON usually hits every request of a call (each
+# ticker, each page), so it is logged once a minute per kind rather than once per request.
+SERVER_ERROR_LOG_INTERVAL_SECONDS = 60.0
+_server_errors_logged: dict[int | str, float] = {}
+
+
+def _log_server_error(kind: int | str, message: str, *args) -> None:
+    """
+    Logs a server error once a minute per kind (a status code, or "not json").
+
+    Args:
+        kind (int | str): What failed, which decides whether it was logged just now.
+        message (str): The message, with %s placeholders.
+        *args: The values of the placeholders.
+    """
+    now = time.monotonic()
+    if (
+        now - _server_errors_logged.get(kind, -np.inf)
+        >= SERVER_ERROR_LOG_INTERVAL_SECONDS
+    ):
+        _server_errors_logged[kind] = now
+        logger.error(message, *args)
+
 
 def determine_retry_delay(attempt: int) -> float:
     """
@@ -269,6 +292,35 @@ def get_financial_data(
                 time.sleep(determine_retry_delay(error_retry_counter))
                 error_retry_counter += 1
                 continue
+
+            if status_code == requests.codes.too_many_requests:
+                # A 429 without FMP's own "Limit Reach" message is still a rate limit, which
+                # the callers report as one.
+                error_model.report_request_failure()
+                return pd.DataFrame(columns=["LIMIT REACH"])
+
+            if status_code in TRANSIENT_STATUS_CODES:
+                _log_server_error(
+                    status_code,
+                    "Financial Modeling Prep answered HTTP %s after %s attempts, so no "
+                    "data could be collected. The service is likely down for a moment; "
+                    "please try again later.",
+                    status_code,
+                    error_retry_counter + 1,
+                )
+                error_model.report_request_failure()
+                return pd.DataFrame(columns=["REQUEST FAILED"])
+
+            if not isinstance(e, requests.exceptions.HTTPError):
+                # The body could not be read as JSON: an error page (HTML) or a cut-off answer.
+                _log_server_error(
+                    "not json",
+                    "Financial Modeling Prep answered with something other than JSON (%s), "
+                    "so no data could be collected.",
+                    e,
+                )
+                error_model.report_request_failure()
+                return pd.DataFrame(columns=["REQUEST FAILED"])
 
             # Anything that is not one of the messages above is not retryable, without this the loop would fall through and hammer the endpoint indefinitely.  # noqa: E501
             # An HTTP error without a body reads as its URL, which carries the API key.

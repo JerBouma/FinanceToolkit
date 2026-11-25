@@ -5,6 +5,8 @@
 import pandas as pd
 import pytest
 
+from financetoolkit.utilities.error_model import InvalidArgumentError
+
 from financetoolkit.fixedincome import fixedincome_controller
 from financetoolkit.fixedincome.sources import fred_model as fixedincome_fred_model
 from financetoolkit.fixedincome.sources import ecb_model as fixedincome_ecb_model
@@ -206,9 +208,8 @@ def test_european_central_bank_rates_take_the_rate_at_the_end_of_each_period(
         == 2
     )
 
-    assert fixedincome.get_european_central_bank_rates(
-        rate="deposit", period="hourly"
-    ).empty
+    with pytest.raises(InvalidArgumentError, match="period must be one of"):
+        fixedincome.get_european_central_bank_rates(rate="deposit", period="hourly")
 
 
 def test_moodys_yields_average_the_months_of_complete_years(monkeypatch):

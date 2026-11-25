@@ -24,7 +24,10 @@ from financetoolkit.economics.sources import (
     ons_model,
 )
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
-from financetoolkit.utilities.error_model import handle_errors
+from financetoolkit.utilities.error_model import (
+    check_option,
+    handle_errors,
+)
 from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.sources_model import (
     collect_sources,
@@ -394,16 +397,22 @@ class JobsEconomics:
         """
         check_period_type(period)
 
-        period = self._default_period(period, "monthly")
+        # An unknown period is refused before a source is chosen, as it would otherwise
+        # be answered with the GMDB's yearly data.
+        period = validate_period(
+            self._default_period(period, "monthly"),
+            ["monthly", "quarterly", "yearly"],
+            "unemployment rate",
+        )
         # The GMDB is annual, so a monthly request goes to the monthly sources unless the
         # GMDB is asked for explicitly.
-        monthly = period.lower() == "monthly" and gmdb_source is not True
+        monthly = period == "monthly" and gmdb_source is not True
         # The GMDB is annual, so a monthly or quarterly request goes to the sources that
         # have that frequency unless the GMDB is asked for explicitly.
         gmdb_source = (
             gmdb_source
             if gmdb_source is not None
-            else self._gmdb_source and period.lower() not in ("monthly", "quarterly")
+            else self._gmdb_source and period not in ("monthly", "quarterly")
         )
 
         if monthly:
@@ -1968,15 +1977,8 @@ class JobsEconomics:
         | 2023 | 0.0033 | 0.0006 | 0.0153 | 0.0571 |    1 |
         | 2024 | 0.0035 | 0.0005 | 0.0151 | 0.0566 |    1 |
         """
-        if measure not in eurostat_model.LIFE_TABLE_MEASURES:
-            raise ValueError(
-                f"The measure must be one of {', '.join(eurostat_model.LIFE_TABLE_MEASURES)}, "
-                f"not {measure!r}."
-            )
-        if sex not in eurostat_model.LIFE_TABLE_SEXES:
-            raise ValueError(
-                f"The sex must be 'total', 'male' or 'female', not {sex!r}."
-            )
+        check_option("measure", measure, tuple(eurostat_model.LIFE_TABLE_MEASURES))
+        check_option("sex", sex, tuple(eurostat_model.LIFE_TABLE_SEXES))
 
         requested = [countries] if isinstance(countries, str) else countries
         codes = None

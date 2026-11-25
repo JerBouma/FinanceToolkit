@@ -52,6 +52,7 @@ from financetoolkit.economics.stability.stability_controller import StabilityEco
 from financetoolkit.fixedincome.sources import fed_model
 from financetoolkit.utilities import validation_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
+from financetoolkit.utilities.error_model import InvalidArgumentError
 from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.sources_model import (
     collect_sources,
@@ -156,15 +157,15 @@ class EconomicsBase:
         | 2025 |        135.831  |      134.486  | 113.98   |
         """
         if start_date and not validation_model.is_valid_date(start_date):
-            raise ValueError(
+            raise InvalidArgumentError(
                 f"Please input a valid start date (%Y-%m-%d) like '2010-01-01', not '{start_date}'"
             )
         if end_date and not validation_model.is_valid_date(end_date):
-            raise ValueError(
+            raise InvalidArgumentError(
                 f"Please input a valid end date (%Y-%m-%d) like '2020-01-01', not '{end_date}'"
             )
         if start_date and end_date and start_date > end_date:
-            raise ValueError(
+            raise InvalidArgumentError(
                 f"Please ensure the start date {start_date} is before the end date {end_date}"
             )
 

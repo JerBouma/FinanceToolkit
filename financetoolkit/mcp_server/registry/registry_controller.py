@@ -2427,8 +2427,22 @@ class ToolRegistry:
                 and not tickers
                 and not raw_series
             ):
+                # A ticker given under another name (ticker, symbol) is pointed to tickers;
+                # `ticker` can be a parameter of another indicator of the same tool.
+                misnamed = [
+                    pname
+                    for pname in [*unknown_arguments, *kwargs]
+                    if pname.lower() in ("ticker", "symbol", "symbols")
+                    and pname not in method_param_names[method_name]
+                ]
                 return (
-                    f"`{tool_name}` (`{method_name}`) requires a `tickers` parameter. "
+                    (
+                        f"`{misnamed[0]}` is not a parameter of `{method_name}`; pass the "
+                        "ticker symbols as `tickers`. "
+                        if misnamed
+                        else ""
+                    )
+                    + f"`{tool_name}` (`{method_name}`) requires a `tickers` parameter. "
                     "Please provide one or more ticker symbols, e.g. `tickers='AAPL'` "
                     "or `tickers='AAPL,MSFT'`."
                 )
@@ -3397,7 +3411,11 @@ class ToolRegistry:
                     max_characters=None if full_text else max_response_characters,
                 )
                 return formatted
-            except (ValueError, KeyError) as exc:
+            except KeyError as exc:
+                # A missing key is missing data (a ticker, column or date the source did not
+                # return), not a mistake in the call.
+                return f"No data for `{tool_name}` (`{method_name}`): {redact(exc)} is missing."
+            except ValueError as exc:
                 return (
                     f"Invalid input for `{tool_name}` (`{method_name}`): {redact(exc)}"
                 )

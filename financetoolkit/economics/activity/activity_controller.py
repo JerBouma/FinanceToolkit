@@ -25,7 +25,10 @@ from financetoolkit.economics.sources import (
     portwatch_model,
 )
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
-from financetoolkit.utilities.error_model import handle_errors
+from financetoolkit.utilities.error_model import (
+    check_option,
+    handle_errors,
+)
 from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import finalize_dataset
@@ -1342,11 +1345,7 @@ class ActivityEconomics:
         | 2026-03-02 |        1 |       3 |       4 |
         | 2026-03-03 |        1 |       3 |       4 |
         """
-        if measure not in ("transits", "trade_volume"):
-            raise ValueError(
-                f"measure='{measure}' is not available. Choose 'transits' or "
-                "'trade_volume'."
-            )
+        check_option("measure", measure, ("transits", "trade_volume"))
 
         frequencies = {
             "daily": "D",

@@ -14,6 +14,7 @@ from financetoolkit.cache.cache_controller import get_active_cache
 from financetoolkit.economics.helpers import (
     collect_cached_data,
     collect_ranged_data,
+    open_zip_archive,
     require_columns,
 )
 from financetoolkit.utilities.excel_model import excel_file, read_excel
@@ -241,7 +242,7 @@ def _parse_spot_curve(workbook: bytes, description: str) -> pd.DataFrame:
         ValueError: When the worksheet or its row of maturities is missing.
     """
     # The worksheet is found by its number and name, see SPOT_CURVE_SHEET_PATTERN.
-    excel = excel_file(workbook)
+    excel = excel_file(workbook, description)
     sheet_name = next(
         (name for name in excel.sheet_names if SPOT_CURVE_SHEET_PATTERN.match(name)),
         None,
@@ -317,7 +318,7 @@ def _get_archive_workbooks(
         response = get_request(
             f"{YIELD_CURVE_URL}{archive_name}", timeout=300, extra_headers=HEADERS
         )
-        return zipfile.ZipFile(io.BytesIO(response.content))
+        return open_zip_archive(response, description)
 
     if names is None:
         archive = download()
@@ -401,7 +402,7 @@ def get_spot_curve(curve: str, start_date: str, end_date: str) -> pd.DataFrame:
             timeout=120,
             extra_headers=HEADERS,
         )
-        archive = zipfile.ZipFile(io.BytesIO(response.content))
+        archive = open_zip_archive(response, f"current month of the {description}")
 
         if current_name not in archive.namelist():
             raise ValueError(
@@ -477,14 +478,12 @@ def get_millennium_data() -> pd.DataFrame:
     def fetch() -> pd.DataFrame:
         response = get_request(MILLENNIUM_URL, timeout=300, extra_headers=HEADERS)
 
-        try:
-            sheet = read_excel(
-                response.content, sheet_name=MILLENNIUM_SHEET, header=None
-            )
-        except ValueError as error:
+        workbook = excel_file(response.content, description)
+        if MILLENNIUM_SHEET not in workbook.sheet_names:
             raise ValueError(
                 f"The {description} has no worksheet '{MILLENNIUM_SHEET}', which means it changed."
-            ) from error
+            )
+        sheet = read_excel(workbook, sheet_name=MILLENNIUM_SHEET, header=None)
 
         descriptions = sheet.iloc[MILLENNIUM_DESCRIPTION_ROW]
         units = sheet.iloc[MILLENNIUM_UNITS_ROW].astype(str).str.strip()

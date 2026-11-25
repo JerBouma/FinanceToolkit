@@ -460,3 +460,70 @@ def test_the_sector_and_industry_histories_check_their_dates(method, name):
             )
 
     mock_fn.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "method, name, value",
+    [
+        ("get_sector_performance", "sector", "Energy"),
+        ("get_industry_performance", "industry", "Biotechnology"),
+        ("get_sector_pe", "sector", "Energy"),
+        ("get_industry_pe", "industry", "Biotechnology"),
+    ],
+)
+def test_the_sector_and_industry_snapshots_work_without_arguments(method, name, value):
+    from financetoolkit.utilities.error_model import InvalidArgumentError
+
+    discovery = discovery_controller.Discovery(api_key="test_key")
+
+    with patch(f"financetoolkit.discovery.discovery_model.{method}") as mock_fn:
+        mock_fn.return_value = pd.DataFrame()
+        getattr(discovery, method)()
+
+        # The snapshot of the latest business day.
+        date = pd.Timestamp(mock_fn.call_args.kwargs["date"])
+        assert date.dayofweek < 5 and date <= pd.Timestamp.today()
+        assert mock_fn.call_args.kwargs[name] is None
+
+        with pytest.raises(InvalidArgumentError, match="not both"):
+            getattr(discovery, method)(**{"date": "2025-01-02", name: value})
+        with pytest.raises(InvalidArgumentError, match="exchange must be one of"):
+            getattr(discovery, method)(exchange="INVALID")
+
+    assert mock_fn.call_count == 1
+
+
+@pytest.mark.parametrize(
+    ("method", "arguments"),
+    [
+        ("search_instruments", {"query": "Apple", "search_method": "invalid"}),
+        ("search_instruments", {"query": ""}),
+        ("search_instruments", {}),
+        ("get_sector_performance", {"sector": "Nonsense"}),
+        ("get_sector_pe", {"sector": "Nonsense"}),
+        ("get_sectors_performance", {"exchange": "INVALID"}),
+        ("get_stock_screener", {"market_cap_higher": 10, "market_cap_lower": 5}),
+        ("get_stock_screener", {"sector": "Nonsense"}),
+        ("search_stock_news", {"symbols": ""}),
+        ("search_stock_news", {"symbols": []}),
+        ("search_press_releases", {"symbols": " , "}),
+        ("search_crypto_news", {"symbols": []}),
+        ("search_forex_news", {"symbols": ""}),
+        ("get_crypto_news", {"limit": 0}),
+        ("get_ipo_calendar", {"start_date": "2025-02-01", "end_date": "2025-01-01"}),
+    ],
+)
+def test_invalid_discovery_arguments_are_refused_before_any_request(method, arguments):
+    from financetoolkit.utilities.error_model import InvalidArgumentError
+
+    discovery = discovery_controller.Discovery(api_key="test_key")
+
+    with (
+        patch(
+            "financetoolkit.discovery.discovery_model.get_cached_financial_data"
+        ) as mock_fetch,
+        pytest.raises(InvalidArgumentError),
+    ):
+        getattr(discovery, method)(**arguments)
+
+    mock_fetch.assert_not_called()

@@ -1736,7 +1736,8 @@ def test_an_error_message_sent_with_status_200_is_not_cached(
     first = discovery_model.get_cached_financial_data(url)
     second = discovery_model.get_cached_financial_data(url)
 
-    assert list(first.columns) == ["LIMIT REACH"]
+    # The rate limit is logged and answered with an empty frame, never cached.
+    assert first.empty and list(first.columns) == []
     assert second["symbol"].tolist() == ["M&M.NS"]
 
 
@@ -2060,3 +2061,40 @@ def test_dividends_on_the_same_ex_dividend_date_are_added_up(monkeypatch):
         assert data["Dividends"].loc["2024-01-04"] == pytest.approx(2.0)
         assert data["Adj Close"].iloc[0] == pytest.approx(100 * (1 - 2 / 101))
         assert data["Return"].iloc[2] == pytest.approx(0)
+
+
+@pytest.mark.parametrize(
+    ("status", "expected"), [(503, "REQUEST FAILED"), (429, "LIMIT REACH")]
+)
+def test_a_lasting_server_error_or_rate_limit_is_named(
+    monkeypatch, caplog, status, expected
+):
+    monkeypatch.setattr(
+        fmp_model, "get_request", lambda *_, **__: _Response(status, "Unavailable")
+    )
+    monkeypatch.setattr(fmp_model.time, "sleep", lambda _: None)
+    monkeypatch.setattr(fmp_model, "_server_errors_logged", {})
+
+    with caplog.at_level("ERROR"):
+        first = fmp_model.get_financial_data("https://example.com")
+        second = fmp_model.get_financial_data("https://example.com")
+
+    assert list(first.columns) == list(second.columns) == [expected]
+    assert "unrecognised error" not in caplog.text
+    if status == 503:
+        # Logged once for both requests, with the status and the number of attempts.
+        assert caplog.text.count("answered HTTP 503 after 4 attempts") == 1
+
+
+def test_an_answer_that_is_not_json_is_named_once(monkeypatch, caplog):
+    page = "<!DOCTYPE html><html><body>Service Unavailable</body></html>"
+    monkeypatch.setattr(fmp_model, "get_request", lambda *_, **__: _Response(200, page))
+    monkeypatch.setattr(fmp_model, "_server_errors_logged", {})
+
+    with caplog.at_level("ERROR"):
+        for _ in range(3):
+            result = fmp_model.get_financial_data("https://example.com")
+
+    assert list(result.columns) == ["REQUEST FAILED"]
+    assert "unrecognised error" not in caplog.text
+    assert caplog.text.count("answered with something other than JSON") == 1

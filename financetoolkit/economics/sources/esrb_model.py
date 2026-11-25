@@ -157,7 +157,7 @@ def get_macro_financial_scenario(scenario: str) -> pd.DataFrame:
     description = f"ESRB macro-financial scenario of {date}"
 
     def fetch() -> pd.DataFrame:
-        workbook = excel_file(get_request(link, timeout=120).content)
+        workbook = excel_file(get_request(link, timeout=120).content, description)
         series = {}
 
         for sheet, (variable, scale) in SHEETS.items():

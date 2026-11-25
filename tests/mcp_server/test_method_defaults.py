@@ -907,3 +907,55 @@ def test_a_ranking_of_amounts_in_different_currencies_says_so(
 
     assert '"Rank"' in text
     assert ("in each ticker's own currency (AAPL: USD, ASML.AS: EUR)" in text) is noted
+
+
+@pytest.mark.parametrize(
+    ("tool", "indicator", "name"),
+    [
+        # risk has a ticker parameter (of another indicator), performance has none.
+        ("risk", "get_value_at_risk", "ticker"),
+        ("performance", "get_sharpe_ratio", "ticker"),
+        ("performance", "get_sharpe_ratio", "symbol"),
+    ],
+)
+def test_a_ticker_passed_as_ticker_is_pointed_to_tickers(
+    captured, tool, indicator, name
+):
+    text = asyncio.run(
+        mcp_controller.mcp.call_tool(tool, {"indicator": indicator, name: "AAPL"})
+    )[0][0].text
+
+    assert (
+        f"`{name}` is not a parameter of `{indicator}`; pass the ticker symbols as "
+        "`tickers`" in text
+    )
+    assert "requires a `tickers` parameter" in text
+    assert captured == []
+
+
+@pytest.mark.parametrize(
+    ("error", "expected"),
+    [
+        (
+            KeyError("AAPL"),
+            "No data for `risk` (`get_value_at_risk`): 'AAPL' is missing.",
+        ),
+        (
+            ValueError("alpha is wrong"),
+            "Invalid input for `risk` (`get_value_at_risk`)",
+        ),
+    ],
+)
+def test_missing_data_is_not_called_invalid_input(monkeypatch, error, expected):
+    def failing(self, module_name, method_name, category, **kwargs):  # noqa: ARG001
+        raise error
+
+    monkeypatch.setattr(ToolkitProvider, "call_method", failing)
+
+    text = asyncio.run(
+        mcp_controller.mcp.call_tool(
+            "risk", {"indicator": "get_value_at_risk", "tickers": "AAPL"}
+        )
+    )[0][0].text
+
+    assert expected in text

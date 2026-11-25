@@ -3,7 +3,7 @@
 __docformat__ = "google"
 
 import re
-from urllib.parse import quote
+from urllib.parse import quote, urlparse
 
 import numpy as np
 import pandas as pd
@@ -62,7 +62,8 @@ def get_cached_financial_data(
         sleep_timer (bool): Whether to wait and retry when the rate limit is reached.
 
     Returns:
-        pd.DataFrame: The endpoint's response, either freshly retrieved or cached.
+        pd.DataFrame: The endpoint's response, either freshly retrieved or cached, and an
+        empty DataFrame (with the reason logged) when the request failed.
     """
     cache = get_active_cache()
     # Identified by the URL as it is requested, with its symbols encoded, so a symbol such as
@@ -104,7 +105,49 @@ def get_cached_financial_data(
             data=response,
         )
 
+    if error_model.is_error_response(response):
+        # The error frame names why there is no answer; it is logged here and an empty
+        # frame returned, so the error's name never reaches a result as a column.
+        endpoint = urlparse(url).path.rsplit("/", 1)[-1]
+        reason = str(response.columns[0])
+        # No data for a query is an answer, not a failure.
+        log = logger.warning if reason == "NO DATA" else logger.error
+        log(
+            ERROR_RESPONSE_MESSAGES.get(
+                reason, "Could not reach Financial Modeling Prep for %s."
+            ),
+            endpoint,
+        )
+        return pd.DataFrame()
+
     return response
+
+
+# Why a discovery endpoint has no answer, per error frame of get_financial_data; any
+# other (a failed connection, a server error) is reported as the source being unreachable.
+_UPGRADE = (
+    "Consider upgrading your plan; you can get 15%% off with "
+    "https://www.jeroenbouma.com/fmp, which also supports the project."
+)
+ERROR_RESPONSE_MESSAGES = {
+    "LIMIT REACH": "The rate limit of Financial Modeling Prep was reached for %s. "
+    "Please try again later. " + _UPGRADE,
+    "BANDWIDTH LIMIT REACH": "The bandwidth limit of Financial Modeling Prep was reached "
+    "for %s. " + _UPGRADE,
+    "PREMIUM QUERY PARAMETER": "%s uses a query parameter that is not available in your "
+    "plan of Financial Modeling Prep. " + _UPGRADE,
+    "EXCLUSIVE ENDPOINT": "%s is an endpoint of Financial Modeling Prep that is not "
+    "available in your plan. " + _UPGRADE,
+    "SPECIAL ENDPOINT": "%s is an endpoint of Financial Modeling Prep that is not "
+    "available in your plan. " + _UPGRADE,
+    "NOT AVAILABLE": "%s is an endpoint of Financial Modeling Prep that is not available "
+    "in your plan. " + _UPGRADE,
+    "US STOCKS ONLY": "%s covers US stocks only in your plan of Financial Modeling Prep. "
+    + _UPGRADE,
+    "INVALID API KEY": "Financial Modeling Prep did not accept the API key for %s. Please "
+    "check it, or obtain one at https://www.jeroenbouma.com/fmp.",
+    "NO DATA": "Financial Modeling Prep has no data for %s with these arguments.",
+}
 
 
 # The parameter each search of Financial Modeling Prep takes the query as.
@@ -136,11 +179,7 @@ def get_instruments(
     Returns:
         pd.DataFrame: DataFrame of instruments.
     """
-    if search_method not in SEARCH_PARAMETERS:
-        raise ValueError(
-            f"The search method {search_method!r} is not valid. Choose from "
-            f"{', '.join(SEARCH_PARAMETERS)}."
-        )
+    error_model.check_option("search_method", search_method, tuple(SEARCH_PARAMETERS))
 
     # The identifier searches take the identifier as their own parameter: given `query`,
     # FinancialModelingPrep ignores it and answers with Apple for every ISIN or CUSIP.
@@ -939,9 +978,18 @@ def get_sectors_performance(
             f"&apikey={api_key}"
         )
 
+        failures_before = error_model.get_request_failures()
         sector_performance = get_cached_financial_data(
             url=url, user_subscription=user_subscription
         )
+
+        # A failed request (logged by get_cached_financial_data) would fail alike for
+        # the other sectors, each after its own retries.
+        if (
+            sector_performance.empty
+            and error_model.get_request_failures() != failures_before
+        ):
+            return pd.DataFrame()
 
         if sector_performance.empty:
             continue
@@ -1321,11 +1369,7 @@ def get_index_constituents(
         headquarters, the date they were added, CIK and founding year. On a past date, also
         the date each member left the index (empty while it is still a member).
     """
-    if index not in INDEX_CONSTITUENTS:
-        raise ValueError(
-            f"The constituents of {index!r} are not available. Choose from "
-            f"{', '.join(INDEX_CONSTITUENTS)}."
-        )
+    error_model.check_option("index", index, tuple(INDEX_CONSTITUENTS))
 
     url = (
         f"https://financialmodelingprep.com/stable/{INDEX_CONSTITUENTS[index]}"
@@ -1464,11 +1508,7 @@ def get_index_constituent_changes(
         pd.DataFrame: The changes in date order, indexed by date, with the added and removed
         ticker and company, the kind of change and its reason.
     """
-    if index not in INDEX_CONSTITUENTS:
-        raise ValueError(
-            f"The constituent changes of {index!r} are not available. Choose from "
-            f"{', '.join(INDEX_CONSTITUENTS)}."
-        )
+    error_model.check_option("index", index, tuple(INDEX_CONSTITUENTS))
 
     # The endpoint answers with the full history whatever the range; from and to are passed
     # all the same, as other endpoints fall back to old data without them.
@@ -2256,7 +2296,9 @@ def get_sector_performance(
             or Date (historical).
     """
     if bool(date) == bool(sector):
-        raise ValueError("Please provide exactly one of `date` or `sector`.")
+        raise error_model.InvalidArgumentError(
+            "Please pass either a date (a snapshot of every sector) or a sector (its history)."
+        )
 
     if date:
         url = (
@@ -2332,7 +2374,9 @@ def get_industry_performance(
             or Date (historical).
     """
     if bool(date) == bool(industry):
-        raise ValueError("Please provide exactly one of `date` or `industry`.")
+        raise error_model.InvalidArgumentError(
+            "Please pass either a date (a snapshot of every industry) or a industry (its history)."
+        )
 
     if date:
         url = (
@@ -2408,7 +2452,9 @@ def get_sector_pe(
             or Date (historical).
     """
     if bool(date) == bool(sector):
-        raise ValueError("Please provide exactly one of `date` or `sector`.")
+        raise error_model.InvalidArgumentError(
+            "Please pass either a date (a snapshot of every sector) or a sector (its history)."
+        )
 
     if date:
         url = (
@@ -2478,7 +2524,9 @@ def get_industry_pe(
             or Date (historical).
     """
     if bool(date) == bool(industry):
-        raise ValueError("Please provide exactly one of `date` or `industry`.")
+        raise error_model.InvalidArgumentError(
+            "Please pass either a date (a snapshot of every industry) or a industry (its history)."
+        )
 
     if date:
         url = (
@@ -2660,8 +2708,7 @@ def get_earnings_calendar(
     Returns:
         pd.DataFrame: DataFrame of the earnings releases, indexed by symbol.
     """
-    if sort_by not in {"date", "market_cap"}:
-        raise ValueError(f"sort_by must be 'date' or 'market_cap', not '{sort_by}'.")
+    error_model.check_option("sort_by", sort_by, ("date", "market_cap"))
 
     # The endpoint answers without a range with the past weeks, so a range is always sent.
     week = pd.Timedelta(days=7)
@@ -2692,6 +2739,7 @@ def get_earnings_calendar(
     ]
     while ranges:
         start, end = ranges.pop()
+        failures_before = error_model.get_request_failures()
         response = get_cached_financial_data(
             url=(
                 "https://financialmodelingprep.com/stable/earnings-calendar"
@@ -2699,6 +2747,10 @@ def get_earnings_calendar(
             ),
             user_subscription=user_subscription,
         )
+        # A failed request (logged by get_cached_financial_data) leaves the calendar
+        # incomplete, and the other ranges would fail alike after their own retries.
+        if response.empty and error_model.get_request_failures() != failures_before:
+            return pd.DataFrame()
         if len(response) >= EARNINGS_CALENDAR_LIMIT and start < end:
             middle = (start + (end - start) / 2).normalize()
             ranges += [(start, middle), (middle + pd.Timedelta(days=1), end)]

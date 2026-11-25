@@ -15,6 +15,7 @@ from financetoolkit.utilities.error_model import (
     check_option,
     check_period,
     handle_errors,
+    validate_window,
 )
 from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.sources_model import track_sources
@@ -430,6 +431,14 @@ class ETF:
         | MU      | Micron Technology Inc | US5951121038 | 595112103 | 2.35156e+07 |   0.0457 |    2.19699e+10 | 2026-10-31 15:30:02 |
         | AMZN    | Amazon.com Inc        | US0231351067 | 023135106 | 8.13519e+07 |   0.0412 |    1.98328e+10 | 2026-10-31 15:30:02 |
         """
+        if limit is not None and (
+            isinstance(limit, bool) or not isinstance(limit, int) or limit == 0
+        ):
+            raise InvalidArgumentError(
+                f"limit is a number of holdings, not {limit!r}. Please pass a positive whole "
+                "number for the largest holdings, a negative one for the smallest, or None."
+            )
+
         holdings = self._fund_data_function("holdings", overwrite=overwrite)
         if holdings is None:
             return None
@@ -1256,6 +1265,8 @@ class ETF:
         | Net Profit Margin       |  0.3673 |  0.3113 |  0.1583 |
         | Coverage                |  0.5324 |  0.7154 |  0.8077 |
         """
+        validate_window("holdings", holdings)
+
         weights = {
             fund: fund_weights.sort_values(ascending=False).iloc[:holdings]
             for fund, fund_weights in self._weights().items()
@@ -1409,6 +1420,7 @@ class ETF:
                 "The prices of the holdings come from the Toolkit. Please use this method from a "
                 "Toolkit (toolkit.etf), or pass prices_function when creating the ETF class."
             )
+        validate_window("holdings", holdings)
 
         weights = {
             fund: fund_weights.sort_values(ascending=False).iloc[:holdings]
@@ -1490,6 +1502,13 @@ class ETF:
         if close(prices, start, inclusive=False).isna().all():
             raise ValueError(
                 "There are no prices before the start date to measure the period from."
+            )
+        # The funds are priced, so an index without any price is not a ticker.
+        if index and prices[index].isna().all():
+            raise InvalidArgumentError(
+                f"index {index!r} has no prices over the period. Please pass the ticker of an "
+                "index or fund, such as '^GSPC' for SPY, or None for points of the fund's own "
+                "price."
             )
 
         holding_currencies = self._holding_currencies(
@@ -1766,7 +1785,10 @@ class ETF:
             names = [exclude] if isinstance(exclude, str) else list(exclude)
             wanted = {name.strip().upper() for name in names if name and name.strip()}
             if not wanted:
-                raise ValueError("Name at least one holding or sector to exclude.")
+                raise InvalidArgumentError(
+                    "Name at least one holding or sector to exclude, or pass None to leave out "
+                    "the largest holding of each fund."
+                )
 
         contributions = self._contributions(holdings, index=None)
         priced = sorted(
@@ -1792,13 +1814,33 @@ class ETF:
                 )
 
         result = {}
+        # A ticker that is not a fund (or a fund without published holdings) has nothing
+        # to exclude from, so it is left out rather than failing the funds that have them.
+        without_holdings = [
+            fund for fund, (table, _, _) in contributions.items() if table.empty
+        ]
+        if without_holdings:
+            logger.warning(
+                "%s %s no holdings and %s left out.",
+                ", ".join(without_holdings),
+                "has" if len(without_holdings) == 1 else "have",
+                "is" if len(without_holdings) == 1 else "are",
+            )
         for fund, (table, fund_return, _) in contributions.items():
+            if table.empty:
+                continue
             sector = sectors.reindex(table.index).fillna("").astype(str).str.upper()
-            # Without names, each fund leaves out its own largest holding.
+            # Without names, each fund leaves out its own largest holding (none when no
+            # holding has a start weight, as the fund has no price at the start).
+            start_weights = table["Start Weight"].dropna()
             names_out = (
                 wanted
                 if wanted is not None
-                else {str(table["Start Weight"].idxmax()).upper()}
+                else (
+                    {str(start_weights.idxmax()).upper()}
+                    if not start_weights.empty
+                    else set()
+                )
             )
             excluded = table.index.str.upper().isin(names_out) | sector.isin(names_out)
             rest = table.loc[~excluded]

@@ -12,7 +12,11 @@ from financetoolkit.discovery import discovery_model
 from financetoolkit.models.valuation import damodaran_model
 from financetoolkit.utilities import logger_model, validation_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
-from financetoolkit.utilities.error_model import handle_errors
+from financetoolkit.utilities.error_model import (
+    InvalidArgumentError,
+    check_option,
+    handle_errors,
+)
 from financetoolkit.utilities.sources_model import track_sources
 
 # ruff: noqa: E501
@@ -41,8 +45,8 @@ def _validate_arguments(
             of at least one (page, which starts at zero, at least zero).
 
     Raises:
-        ValueError: When a date cannot be read, the start is after the end, or a count is
-            out of range.
+        InvalidArgumentError: When a date cannot be read, the start is after the end, or a
+            count is out of range.
         TypeError: When a count is not a whole number.
     """
     for name, value in (
@@ -51,12 +55,12 @@ def _validate_arguments(
         ("date", date),
     ):
         if value is not None and not validation_model.is_valid_date(value):
-            raise ValueError(
+            raise InvalidArgumentError(
                 f"The {name} must be a date written as YYYY-MM-DD, such as '2026-09-01', not '{value}'."
             )
 
     if start_date and end_date and start_date > end_date:
-        raise ValueError(
+        raise InvalidArgumentError(
             f"The start_date {start_date} must be on or before the end_date {end_date}."
         )
 
@@ -66,9 +70,70 @@ def _validate_arguments(
         if isinstance(value, bool) or not isinstance(value, int):
             raise TypeError(f"The {name} must be a whole number, not {value!r}.")
         if value < (0 if name == "page" else 1):
-            raise ValueError(
+            raise InvalidArgumentError(
                 f"The {name} must be {'zero or more' if name == 'page' else 'one or more'}, not {value}."
             )
+
+
+def _check_symbols(symbols: str | list[str] | None) -> None:
+    """
+    Checks that a news search names at least one symbol; None searches the defaults.
+
+    Args:
+        symbols (str | list[str] | None): The symbols, a comma-separated string or a list.
+
+    Raises:
+        InvalidArgumentError: When the symbols are empty, such as "" or [].
+    """
+    if symbols is not None and not [
+        symbol
+        for symbol in (symbols.split(",") if isinstance(symbols, str) else symbols)
+        if str(symbol).strip()
+    ]:
+        raise InvalidArgumentError(
+            f"Please pass at least one symbol, such as 'AAPL' or ['AAPL', 'MSFT'], or None, "
+            f"not {symbols!r}."
+        )
+
+
+# The exchanges the sector and industry endpoints average the companies of.
+SECTOR_EXCHANGES = ("NASDAQ", "NYSE", "AMEX")
+
+
+def _snapshot_date(
+    date: str | None, name: str, value: str | None, exchange: str
+) -> str | None:
+    """
+    Checks the arguments of a sector or industry method, which gives either a snapshot of
+    every sector (industry) on a date or the history of one, and the exchange.
+
+    Args:
+        date (str | None): The date of the snapshot.
+        name (str): "sector" or "industry".
+        value (str | None): The sector or industry of the history.
+        exchange (str): The exchange whose companies are averaged.
+
+    Returns:
+        str | None: The date of the snapshot: the latest business day when neither a date
+        nor a sector (industry) is given, and None for a history.
+
+    Raises:
+        InvalidArgumentError: When both a date and a sector (industry) are given, or the
+            exchange or sector is not one of the options.
+    """
+    check_option("exchange", exchange, SECTOR_EXCHANGES)
+    if name == "sector" and value:
+        check_option("sector", value, discovery_model.FMP_SECTORS)
+    if date and value:
+        raise InvalidArgumentError(
+            f"Please pass either a date (a snapshot of every {name}) or a {name} (its "
+            "history), not both."
+        )
+    if not date and not value:
+        return (
+            f"{pd.offsets.BDay().rollback(pd.Timestamp.today().normalize()):%Y-%m-%d}"
+        )
+    return date
 
 
 # Used as the Toolkit's default API key when set as an environment variable.
@@ -200,13 +265,13 @@ class Discovery:
         | MCAPUSD  | Meta Capital USD | USD        | CCC                   | CRYPTO          |
 
         """
-        if search_method not in ["symbol", "name", "cik", "cusip", "isin"]:
-            raise ValueError(
-                "Please enter a valid search method. Valid options are: 'symbol', 'name', 'cik', 'cusip', 'isin'. "
-            )
-        if not query:
-            raise ValueError(
-                "Please enter a query to search for, e.g. search_instruments(query='META'). "
+        check_option(
+            "search_method", search_method, ("symbol", "name", "cik", "cusip", "isin")
+        )
+        if not isinstance(query, str) or not query.strip():
+            raise InvalidArgumentError(
+                "Please pass a query to search for, e.g. search_instruments(query='META'), "
+                f"not {query!r}."
             )
 
         symbol_list = discovery_model.get_instruments(
@@ -284,8 +349,9 @@ class Discovery:
             dividend_higher (float | None): The minimum dividend of the stock, as an amount per share
                 over the last annual period rather than as a yield. Defaults to None, which applies no filter.
             dividend_lower (float | None): The maximum dividend of the stock. Defaults to None, which applies no filter.
-            sector (str | None): The sector to restrict the screen to, e.g. "Energy". Defaults to None, which applies no
-                filter.
+            sector (str | None): The sector to restrict the screen to. Options are: "Basic Materials", "Communication
+                Services", "Consumer Cyclical", "Consumer Defensive", "Energy", "Financial Services", "Healthcare",
+                "Industrials", "Real Estate", "Technology", "Utilities". Defaults to None, which applies no filter.
             industry (str | None): The industry to restrict the screen to, e.g. "Biotechnology". Defaults to None, which
                 applies no filter.
             country (str | None): The country to restrict the screen to, as a two-letter code ("US")
@@ -353,6 +419,22 @@ class Discovery:
 
         """
         _validate_arguments(limit=limit)
+        for name, higher, lower in (
+            ("market_cap", market_cap_higher, market_cap_lower),
+            ("price", price_higher, price_lower),
+            ("beta", beta_higher, beta_lower),
+            ("volume", volume_higher, volume_lower),
+            ("dividend", dividend_higher, dividend_lower),
+        ):
+            # The higher bound is the minimum and the lower bound the maximum, so a minimum
+            # above the maximum matches nothing.
+            if higher is not None and lower is not None and higher > lower:
+                raise InvalidArgumentError(
+                    f"{name}_higher ({higher}) is the minimum and {name}_lower ({lower}) the "
+                    f"maximum, so {name}_higher has to be at most {name}_lower."
+                )
+        if sector is not None:
+            check_option("sector", sector, discovery_model.FMP_SECTORS)
 
         stock_screener = discovery_model.get_stock_screener(
             api_key=self._api_key,
@@ -541,6 +623,7 @@ class Discovery:
         | 2026-11-16 00:00:00 |       -0.0105583  |             -0.0261657   |         -0.0172101  |         -0.000317526 | -0.0207931   |          -0.004043   |  -0.0177063  |   -0.0092908  |   0.000393979 |  -0.0123701  | -0.00394424 |
         """
         _validate_arguments(start_date=start_date, end_date=end_date)
+        check_option("exchange", exchange, SECTOR_EXCHANGES)
 
         sectors_performance = discovery_model.get_sectors_performance(
             api_key=self._api_key,
@@ -1547,6 +1630,7 @@ class Discovery:
             start_date=start_date, end_date=end_date, limit=limit, pages=pages
         )
 
+        _check_symbols(symbols)
         if symbols is None:
             return self.get_stock_news(
                 pages=pages, limit=limit, start_date=start_date, end_date=end_date
@@ -1619,6 +1703,7 @@ class Discovery:
             start_date=start_date, end_date=end_date, limit=limit, pages=pages
         )
 
+        _check_symbols(symbols)
         if symbols is None:
             return self.get_press_releases(
                 pages=pages, limit=limit, start_date=start_date, end_date=end_date
@@ -1694,6 +1779,7 @@ class Discovery:
             start_date=start_date, end_date=end_date, limit=limit, pages=pages
         )
 
+        _check_symbols(symbols)
         crypto_news = discovery_model.search_crypto_news(
             api_key=self._api_key,
             symbols=symbols if symbols is not None else ["BTCUSD", "ETHUSD"],
@@ -1764,6 +1850,7 @@ class Discovery:
             start_date=start_date, end_date=end_date, limit=limit, pages=pages
         )
 
+        _check_symbols(symbols)
         forex_news = discovery_model.search_forex_news(
             api_key=self._api_key,
             symbols=(
@@ -2038,14 +2125,17 @@ class Discovery:
         Get the average daily price change of the companies in each sector of an exchange, as a decimal (0.0125 means
         +1.25%).
 
-        Provide exactly one of a date (a snapshot across all sectors on that date) or a sector (the historical time
-        series for one sector).
+        Pass a date (a snapshot across all sectors on that date) or a sector (the historical time series for one
+        sector), not both. Without either, it is the snapshot of the latest business day.
 
         Also known as: sector performance snapshot, sector performance history, sector trend.
 
         Args:
-            date (str, optional): The date to retrieve a snapshot for, e.g. "2024-02-01". Defaults to None.
-            sector (str, optional): The sector to retrieve the history for, e.g. "Energy". Defaults to None.
+            date (str, optional): The date to retrieve a snapshot for, e.g. "2024-02-01". Defaults to None,
+                which uses the latest business day unless a sector is given.
+            sector (str, optional): The sector to retrieve the history for. Options are: "Basic Materials",
+                "Communication Services", "Consumer Cyclical", "Consumer Defensive", "Energy", "Financial Services",
+                "Healthcare", "Industrials", "Real Estate", "Technology", "Utilities". Defaults to None.
             start_date (str, optional): The start of the history of one sector. Defaults to None,
                 which uses the date a year ago.
             end_date (str, optional): The end of the history of one sector. Defaults to None, which
@@ -2088,6 +2178,7 @@ class Discovery:
         | 2026-10-23 00:00:00 | Energy   | NASDAQ     |       0.0308545  |
         """
         _validate_arguments(date=date, start_date=start_date, end_date=end_date)
+        date = _snapshot_date(date, "sector", sector, exchange)
 
         sector_performance = discovery_model.get_sector_performance(
             api_key=self._api_key,
@@ -2114,13 +2205,14 @@ class Discovery:
         Get the average daily price change of the companies in each industry of an exchange, as a decimal (0.0125
         means +1.25%).
 
-        Provide exactly one of a date (a snapshot across all industries on that date) or an industry (the historical
-        time series for one industry).
+        Pass a date (a snapshot across all industries on that date) or an industry (the historical time series for
+        one industry), not both. Without either, it is the snapshot of the latest business day.
 
         Also known as: industry performance snapshot, industry performance history, industry trend.
 
         Args:
-            date (str, optional): The date to retrieve a snapshot for, e.g. "2024-02-01". Defaults to None.
+            date (str, optional): The date to retrieve a snapshot for, e.g. "2024-02-01". Defaults to None,
+                which uses the latest business day unless an industry is given.
             industry (str, optional): The industry to retrieve the history for, e.g. "Biotechnology". Defaults to None.
             start_date (str, optional): The start of the history of one industry. Defaults to None,
                 which uses the date a year ago.
@@ -2164,6 +2256,7 @@ class Discovery:
         | 2026-10-23 00:00:00 | Biotechnology | NASDAQ     |      -0.00890932 |
         """
         _validate_arguments(date=date, start_date=start_date, end_date=end_date)
+        date = _snapshot_date(date, "industry", industry, exchange)
 
         industry_performance = discovery_model.get_industry_performance(
             api_key=self._api_key,
@@ -2190,14 +2283,17 @@ class Discovery:
         Get the price-to-earnings (P/E) ratio of the companies in each sector of an exchange, how richly each sector
         is valued.
 
-        Provide exactly one of a date (a snapshot across all sectors on that date) or a sector (the historical time
-        series for one sector).
+        Pass a date (a snapshot across all sectors on that date) or a sector (the historical time series for one
+        sector), not both. Without either, it is the snapshot of the latest business day.
 
         Also known as: sector P/E snapshot, sector P/E history, sector valuation trend.
 
         Args:
-            date (str, optional): The date to retrieve a snapshot for, e.g. "2024-02-01". Defaults to None.
-            sector (str, optional): The sector to retrieve the history for, e.g. "Energy". Defaults to None.
+            date (str, optional): The date to retrieve a snapshot for, e.g. "2024-02-01". Defaults to None,
+                which uses the latest business day unless a sector is given.
+            sector (str, optional): The sector to retrieve the history for. Options are: "Basic Materials",
+                "Communication Services", "Consumer Cyclical", "Consumer Defensive", "Energy", "Financial Services",
+                "Healthcare", "Industrials", "Real Estate", "Technology", "Utilities". Defaults to None.
             start_date (str, optional): The start of the history of one sector. Defaults to None,
                 which uses the date a year ago.
             end_date (str, optional): The end of the history of one sector. Defaults to None, which
@@ -2240,6 +2336,7 @@ class Discovery:
         | 2026-10-23 00:00:00 | Energy   | NASDAQ     |    14.8163 |
         """
         _validate_arguments(date=date, start_date=start_date, end_date=end_date)
+        date = _snapshot_date(date, "sector", sector, exchange)
 
         sector_pe = discovery_model.get_sector_pe(
             api_key=self._api_key,
@@ -2266,13 +2363,14 @@ class Discovery:
         Get the price-to-earnings (P/E) ratio of the companies in each industry of an exchange, how richly each
         industry is valued.
 
-        Provide exactly one of a date (a snapshot across all industries on that date) or an industry (the historical
-        time series for one industry).
+        Pass a date (a snapshot across all industries on that date) or an industry (the historical time series for
+        one industry), not both. Without either, it is the snapshot of the latest business day.
 
         Also known as: industry P/E snapshot, industry P/E history, industry valuation trend.
 
         Args:
-            date (str, optional): The date to retrieve a snapshot for, e.g. "2024-02-01". Defaults to None.
+            date (str, optional): The date to retrieve a snapshot for, e.g. "2024-02-01". Defaults to None,
+                which uses the latest business day unless an industry is given.
             industry (str, optional): The industry to retrieve the history for, e.g. "Biotechnology". Defaults to None.
             start_date (str, optional): The start of the history of one industry. Defaults to None,
                 which uses the date a year ago.
@@ -2316,6 +2414,7 @@ class Discovery:
         | 2026-10-23 00:00:00 | Biotechnology | NASDAQ     |    15.0327 |
         """
         _validate_arguments(date=date, start_date=start_date, end_date=end_date)
+        date = _snapshot_date(date, "industry", industry, exchange)
 
         industry_pe = discovery_model.get_industry_pe(
             api_key=self._api_key,

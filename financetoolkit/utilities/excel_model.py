@@ -21,6 +21,35 @@ logger = get_logger()
 CALAMINE_AVAILABLE = importlib.util.find_spec("python_calamine") is not None
 CALAMINE = "calamine"
 
+# The first bytes of a workbook: a zip archive (.xlsx) or an OLE2 compound file (.xls).
+WORKBOOK_SIGNATURES = (b"PK\x03\x04", b"\xd0\xcf\x11\xe0")
+
+
+def _check_workbook(source: Any, description: str) -> None:
+    """
+    Checks that downloaded bytes are a workbook, as a source that answers with an error
+    page (HTML, plain text) would otherwise fail with a message about engines and formats.
+
+    Args:
+        source (Any): A path, bytes or a file-like object; only bytes are checked.
+        description (str): What the workbook holds, used in the error message.
+
+    Raises:
+        ValueError: When the bytes are not an Excel workbook.
+    """
+    if isinstance(source, bytes | bytearray):
+        start = bytes(source[:8])
+    elif isinstance(source, io.BytesIO):
+        start = source.getvalue()[:8]
+    else:
+        return
+
+    if not start.startswith(WORKBOOK_SIGNATURES):
+        raise ValueError(
+            f"The {description} file is not an Excel workbook: the source answered with "
+            f"something else (starting with {start!r}), such as an error page."
+        )
+
 
 def _rewind(source: Any) -> Any:
     """
@@ -72,33 +101,49 @@ def _with_fallback(read, source: Any, **kwargs) -> Any:
         return read(_rewind(source), **kwargs)
 
 
-def read_excel(source: Any, **kwargs) -> pd.DataFrame | dict[Any, pd.DataFrame]:
+def read_excel(
+    source: Any, description: str = "downloaded", **kwargs
+) -> pd.DataFrame | dict[Any, pd.DataFrame]:
     """
     Reads a worksheet (or several) of an Excel workbook (.xlsx or .xls), like pd.read_excel.
 
     Args:
         source (Any): A path, bytes or a file-like object, or a pd.ExcelFile of
             excel_file.
+        description (str, optional): What the workbook holds, named when the bytes are not
+            a workbook. Defaults to "downloaded".
         **kwargs: The arguments of pd.read_excel, such as sheet_name and header.
 
     Returns:
         pd.DataFrame | dict[Any, pd.DataFrame]: The worksheet, or a worksheet per name.
+
+    Raises:
+        ValueError: When the bytes are not an Excel workbook.
     """
     # A workbook that is already open is read with the engine it was opened with.
     if isinstance(source, pd.ExcelFile):
         return pd.read_excel(source, **kwargs)
 
+    _check_workbook(source, description)
+
     return _with_fallback(pd.read_excel, source, **kwargs)
 
 
-def excel_file(source: Any) -> pd.ExcelFile:
+def excel_file(source: Any, description: str = "downloaded") -> pd.ExcelFile:
     """
     Opens an Excel workbook to read several of its worksheets, like pd.ExcelFile.
 
     Args:
         source (Any): A path, bytes or a file-like object.
+        description (str, optional): What the workbook holds, named when the bytes are not
+            a workbook. Defaults to "downloaded".
 
     Returns:
         pd.ExcelFile: The workbook.
+
+    Raises:
+        ValueError: When the bytes are not an Excel workbook.
     """
+    _check_workbook(source, description)
+
     return _with_fallback(pd.ExcelFile, source)

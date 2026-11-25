@@ -2,8 +2,12 @@
 
 __docformat__ = "google"
 
+import io
+import logging
 import time
-from collections.abc import Callable, Iterable
+import zipfile
+from collections.abc import Callable, Generator, Iterable
+from contextlib import contextmanager
 
 import pandas as pd
 import requests
@@ -24,6 +28,11 @@ from financetoolkit.cache import frame_model
 from financetoolkit.cache.cache_controller import get_active_cache
 from financetoolkit.cache.request_model import redact_credentials
 from financetoolkit.helpers import split_values
+from financetoolkit.utilities.error_model import (
+    InvalidArgumentError,
+    check_option,
+    join_options,
+)
 from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.sources_model import record_source
 from financetoolkit.utilities.statistics_model import normalize_country_name
@@ -99,13 +108,17 @@ RETRY_DELAY_SECONDS = 2
 STALE_TTL_SECONDS = 100 * 365 * 86400
 
 
-def _fetch_with_retry(fetch: Callable[..., pd.DataFrame], *args: str) -> pd.DataFrame:
+def _fetch_with_retry(
+    fetch: Callable[..., pd.DataFrame], *args: str, source: str = "The source"
+) -> pd.DataFrame:
     """
     Calls a fetch function, retrying when the source is briefly unavailable.
 
     Args:
         fetch (Callable[..., pd.DataFrame]): Retrieves the data from the source.
         *args (str): The arguments to pass to the fetch function.
+        source (str, optional): The source, named when its answer is not JSON. Defaults
+            to "The source".
 
     Returns:
         pd.DataFrame: The data.
@@ -114,10 +127,17 @@ def _fetch_with_retry(fetch: Callable[..., pd.DataFrame], *args: str) -> pd.Data
         requests.exceptions.RequestException: When the last attempt fails as well, or an
             attempt fails for any other reason than a gateway error, timeout or dropped
             connection.
+        ValueError: When the source answers with something other than the JSON asked for.
     """
     for attempt in range(1, RETRY_ATTEMPTS + 1):
         try:
             return fetch(*args)
+        except requests.exceptions.JSONDecodeError as error:
+            # requests counts an unreadable body as a request error, but the source was
+            # reached: it answered in another format (an HTML error page, an empty body).
+            raise ValueError(
+                f"{source} answered with something other than JSON ({error})."
+            ) from error
         except (
             requests.exceptions.HTTPError,
             requests.exceptions.Timeout,
@@ -147,6 +167,7 @@ def collect_cached_data(
     description: str,
     expect_empty: bool = False,
     fallback: str | None = None,
+    quiet: bool = False,
 ) -> pd.DataFrame:
     """
     Retrieves a dataset through the cache, serving the last stored copy when the source
@@ -172,6 +193,9 @@ def collect_cached_data(
             nothing is cached, for data that only adds to another source's series. The
             failure is then logged as information with this note rather than as an error.
             Defaults to None.
+        quiet (bool): Whether a source that cannot be reached, with nothing cached, is
+            logged at debug level only, for a caller that retrieves many parts (such as one
+            file per year) and reports the missing ones in a single line. Defaults to False.
 
     Returns:
         pd.DataFrame: The data, or an empty DataFrame when the source cannot be reached
@@ -186,7 +210,7 @@ def collect_cached_data(
             return cached_data
 
     try:
-        data = _fetch_with_retry(fetch)
+        data = _fetch_with_retry(fetch, source=source)
     except requests.exceptions.RequestException as request_error:
         # A request error names its URL, so a key in it is removed before it is logged.
         error = redact_credentials(str(request_error))
@@ -218,7 +242,7 @@ def collect_cached_data(
             )
             return pd.DataFrame()
 
-        logger.error(
+        (logger.debug if quiet else logger.error)(
             "Could not reach %s for the %s (%s). No data is returned for it.",
             source,
             description,
@@ -300,7 +324,7 @@ def collect_ranged_data(
         fetch_end = fetch_span[1].strftime("%Y-%m-%d")
 
     try:
-        data = _fetch_with_retry(fetch, fetch_start, fetch_end)
+        data = _fetch_with_retry(fetch, fetch_start, fetch_end, source=source)
     except requests.exceptions.RequestException as request_error:
         # A request error names its URL, so a key in it is removed before it is logged.
         error = redact_credentials(str(request_error))
@@ -480,6 +504,48 @@ def require_columns(data: pd.DataFrame, columns: set[str], description: str) -> 
         )
 
 
+@contextmanager
+def quiet_yfinance() -> Generator[None]:
+    """
+    Silences yfinance's own log while a caller retrieves several tickers: it logs every
+    ticker without prices ("possibly delisted"), which the caller reports in one line.
+
+    Yields:
+        None: The block runs with the yfinance logger muted.
+    """
+    yfinance_logger = logging.getLogger("yfinance")
+    level = yfinance_logger.level
+    yfinance_logger.setLevel(logging.CRITICAL + 1)
+    try:
+        yield
+    finally:
+        yfinance_logger.setLevel(level)
+
+
+def open_zip_archive(response: requests.Response, description: str) -> zipfile.ZipFile:
+    """
+    Opens a downloaded zip archive, such as a workbook or a set of CSV files.
+
+    Args:
+        response (requests.Response): The response holding the archive.
+        description (str): What was retrieved, used in the error message.
+
+    Returns:
+        zipfile.ZipFile: The archive.
+
+    Raises:
+        ValueError: When the answer is not a zip archive, such as an HTML error page.
+    """
+    try:
+        return zipfile.ZipFile(io.BytesIO(response.content))
+    except zipfile.BadZipFile as error:
+        content_type = response.headers.get("Content-Type") or "no content type"
+        raise ValueError(
+            f"The {description} is not a zip archive: the source answered with "
+            f"{content_type} instead."
+        ) from error
+
+
 def warn_about_long_run_prices(
     consumer_price_index: pd.DataFrame,
     countries: list[str] | str | None,
@@ -614,7 +680,8 @@ def validate_period(period: str, supported: list[str], indicator: str) -> str:
         str: The period in lower case.
 
     Raises:
-        ValueError: When the indicator is not published at that frequency.
+        InvalidArgumentError: When the indicator is not published at that frequency,
+            naming the periods it is.
     """
     check_period_type(period)
 
@@ -622,9 +689,9 @@ def validate_period(period: str, supported: list[str], indicator: str) -> str:
     period = "yearly" if period.lower() == "annual" else period.lower()
 
     if period not in supported:
-        raise ValueError(
-            f"The {indicator} is not available with period='{period}'. Choose from "
-            f"{', '.join(repr(option) for option in supported)}."
+        raise InvalidArgumentError(
+            f"The {indicator} is not available with period={period!r}: period must be one "
+            f"of {join_options(supported)}. Please pass one of these as period."
         )
 
     return period
@@ -687,18 +754,15 @@ def validate_consumer_price_measure(
         str: The measure in lower case.
 
     Raises:
-        ValueError: When the measure does not exist, or not at that period or source.
+        InvalidArgumentError: When the measure does not exist, or not at that period or
+            source.
     """
     measure = measure.lower()
 
-    if measure not in CONSUMER_PRICE_MEASURES:
-        raise ValueError(
-            f"The measure '{measure}' does not exist. Choose from "
-            f"{', '.join(repr(option) for option in CONSUMER_PRICE_MEASURES)}."
-        )
+    check_option("measure", measure, CONSUMER_PRICE_MEASURES)
 
     if measure != "all" and (period.lower() != "monthly" or oecd_source):
-        raise ValueError(
+        raise InvalidArgumentError(
             f"The measure '{measure}' is monthly only, without oecd_source. Use "
             "period='monthly'."
         )

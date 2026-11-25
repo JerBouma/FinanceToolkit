@@ -10,6 +10,7 @@ import pandas as pd
 from financetoolkit import helpers
 from financetoolkit.cache import policy_model
 from financetoolkit.economics.helpers import collect_cached_data, require_columns
+from financetoolkit.utilities import error_model
 from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.requests_model import get_request
 
@@ -88,6 +89,7 @@ def _get_year(year: int, curve: str) -> pd.DataFrame:
         entity=str(year),
         fetch=fetch,
         description=description,
+        quiet=True,
     )
 
 
@@ -130,8 +132,34 @@ def get_yield_curve(
         )
         return pd.DataFrame()
 
-    frames = helpers.run_in_parallel(_get_year, [(year, curve) for year in years])
-    frames = [frame for frame in frames if not frame.empty]
+    def get_year(year: int) -> tuple[int, pd.DataFrame, str]:
+        # A year that cannot be read is reported with the others rather than on its own.
+        try:
+            return year, _get_year(year, curve), ""
+        except ValueError as error:
+            if error_model.use_strict_errors():
+                raise
+            return year, pd.DataFrame(), str(error)
+
+    results = helpers.run_in_parallel(get_year, [(year,) for year in years])
+    frames = {year: frame for year, frame, _ in results}
+    reasons = list(dict.fromkeys(reason for _, _, reason in results if reason))
+
+    # Each year is a request of its own, so the years without data are reported together.
+    if missing := [str(year) for year, frame in frames.items() if frame.empty]:
+        logger.error(
+            "The Treasury %s par yield curve could not be retrieved for %s: %s",
+            curve,
+            ", ".join(missing),
+            (
+                reasons[0]
+                if reasons
+                else "the Treasury could not be reached or published nothing for "
+                + ("that year." if len(missing) == 1 else "those years.")
+            ),
+        )
+
+    frames = [frame for frame in frames.values() if not frame.empty]
 
     if not frames:
         return pd.DataFrame()

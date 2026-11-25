@@ -53,6 +53,12 @@ def _query(parameters: dict) -> dict:
         f"{QUERY_URL}?{urlencode({**parameters, 'f': 'json'})}", timeout=60
     ).json()
 
+    if not isinstance(response, dict):
+        raise ValueError(
+            "The IMF PortWatch service answered in an unexpected format (a JSON "
+            f"{type(response).__name__} instead of an object), which means it changed."
+        )
+
     if "error" in response:
         error = response["error"]
         message = error.get("message", error)

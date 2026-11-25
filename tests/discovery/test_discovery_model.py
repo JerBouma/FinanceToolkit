@@ -4,6 +4,7 @@ import pandas as pd
 import pytest
 
 from financetoolkit.discovery import discovery_model
+from financetoolkit.utilities.error_model import InvalidArgumentError
 
 
 @pytest.fixture(name="responses")
@@ -52,7 +53,7 @@ def test_an_isin_is_searched_as_an_isin_and_its_primary_listing_comes_first(resp
 
 
 def test_an_unknown_search_method_is_refused(responses):
-    with pytest.raises(ValueError, match="not valid"):
+    with pytest.raises(InvalidArgumentError, match="search_method must be one of"):
         discovery_model.get_instruments(
             api_key="KEY", query="X", search_method="ticker"
         )
@@ -289,7 +290,7 @@ def test_index_constituents(monkeypatch):
 
     assert "dowjones-constituent" in requested[0]
     assert list(constituents.index) == ["AAPL", "MSFT"]
-    with pytest.raises(ValueError, match="not available"):
+    with pytest.raises(InvalidArgumentError, match="index must be one of"):
         discovery_model.get_index_constituents(api_key="KEY", index="DAX")
 
 
@@ -1067,3 +1068,58 @@ def test_a_truncated_country_screen_points_to_the_calendars_own_parameters(
 
     assert "set a (higher) min_market_cap" in caplog.text
     assert "raise the limit" not in caplog.text
+
+
+@pytest.mark.parametrize(
+    ("frame", "message"),
+    [
+        ("NO ERRORS", "Could not reach Financial Modeling Prep for sector-pe-snapshot"),
+        ("LIMIT REACH", "rate limit of Financial Modeling Prep was reached"),
+        ("EXCLUSIVE ENDPOINT", "not available in your plan"),
+    ],
+)
+def test_an_error_frame_is_an_empty_answer_with_its_reason(
+    monkeypatch, caplog, frame, message
+):
+    monkeypatch.setattr(
+        discovery_model,
+        "get_financial_data",
+        lambda **_: pd.DataFrame(columns=[frame]),
+    )
+
+    with caplog.at_level("ERROR"):
+        answer = discovery_model.get_cached_financial_data(
+            "https://financialmodelingprep.com/stable/sector-pe-snapshot?date=2025-01-02&apikey=K"
+        )
+
+    # The error's name is never passed on as a column (and so as an option to choose from).
+    assert answer.empty and list(answer.columns) == []
+    assert message in caplog.text
+
+
+def test_a_failing_sector_stops_the_other_sectors(monkeypatch):
+    requested = []
+
+    def unreachable(url, user_subscription="Free"):  # noqa: ARG001
+        requested.append(url)
+        discovery_model.error_model.report_request_failure()
+        return pd.DataFrame()
+
+    monkeypatch.setattr(discovery_model, "get_cached_financial_data", unreachable)
+
+    assert discovery_model.get_sectors_performance(api_key="KEY").empty
+    assert len(requested) == 1
+
+
+def test_a_failing_earnings_calendar_range_stops_the_others(monkeypatch):
+    requested = []
+
+    def unreachable(url, user_subscription="Free"):  # noqa: ARG001
+        requested.append(url)
+        discovery_model.error_model.report_request_failure()
+        return pd.DataFrame()
+
+    monkeypatch.setattr(discovery_model, "get_cached_financial_data", unreachable)
+
+    assert discovery_model.get_earnings_calendar(api_key="KEY").empty
+    assert len(requested) == 1

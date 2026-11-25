@@ -213,16 +213,12 @@ def test_new_methods_refuse_unknown_options():
     with pytest.raises(InvalidArgumentError, match="curve must be one of"):
         FixedIncome().get_bank_of_england_yield_curve(curve="corporate")
     assert FixedIncome().get_bank_of_england_yield_curve(curve="inflation").empty
-    assert (
-        Economics(gmdb_source=False)
-        .get_life_table(countries="Germany", measure="height")
-        .empty
-    )
-    assert (
-        Economics(gmdb_source=False)
-        .get_life_table(countries="Germany", sex="other")
-        .empty
-    )
+    with pytest.raises(InvalidArgumentError, match="measure must be one of"):
+        Economics(gmdb_source=False).get_life_table(
+            countries="Germany", measure="height"
+        )
+    with pytest.raises(InvalidArgumentError, match="sex must be one of"):
+        Economics(gmdb_source=False).get_life_table(countries="Germany", sex="other")
 
 
 def _daily(columns: dict[str, float], days=("2026-09-29", "2026-09-30")):
@@ -282,7 +278,8 @@ def test_inflation_curves_pick_countries_with_a_column_per_country_and_maturity(
         0.0222
     )
     assert "not available for France" in caplog.text
-    assert economics.get_breakeven_inflation_expectations(period="quarterly").empty
+    with pytest.raises(InvalidArgumentError):
+        economics.get_breakeven_inflation_expectations(period="quarterly")
 
 
 def test_inflation_expectations_hold_each_survey_round_until_the_next(monkeypatch):
@@ -316,7 +313,8 @@ def test_inflation_expectations_hold_each_survey_round_until_the_next(monkeypatc
     assert monthly[("Euro Area", "5Y")].tolist() == [0.0204, 0.0204, 0.0204]
     assert monthly[("Germany", "10Y")].tolist() == [0.0213, 0.0212, 0.0214]
     assert quarterly.loc[pd.Period("2026Q3", "Q"), ("Euro Area", "5Y")] == 0.0204
-    assert economics.get_inflation_expectations(period="daily").empty
+    with pytest.raises(InvalidArgumentError):
+        economics.get_inflation_expectations(period="daily")
 
 
 def test_eiopa_shocked_curves_are_computed_from_the_base_curve_and_the_shocks(
@@ -516,7 +514,8 @@ def test_an_unknown_sector_of_borrowers_gives_no_data(monkeypatch):
         start_date="2025-07-01", end_date="2025-12-31", gmdb_source=False
     )
 
-    assert economics.get_debt_service_ratio(borrowers="banks").empty
+    with pytest.raises(InvalidArgumentError):
+        economics.get_debt_service_ratio(borrowers="banks")
 
 
 def _imf_series(attributes: str, observations: dict[str, float]) -> str:
@@ -745,7 +744,8 @@ def test_real_interest_rate_is_monthly_with_the_policy_rate(monkeypatch):
         -0.015
     )
 
-    assert economics.get_real_interest_rate(rate_type="overnight").empty
+    with pytest.raises(InvalidArgumentError):
+        economics.get_real_interest_rate(rate_type="overnight")
 
 
 def test_us_consumer_prices_add_the_bls_months_after_the_bis(monkeypatch):
@@ -788,8 +788,10 @@ def test_us_consumer_prices_add_the_bls_months_after_the_bis(monkeypatch):
         - 1
     )
 
-    assert economics.get_inflation_rate(measure="core", period="yearly").empty
-    assert economics.get_consumer_price_index(measure="rent").empty
+    with pytest.raises(InvalidArgumentError):
+        economics.get_inflation_rate(measure="core", period="yearly")
+    with pytest.raises(InvalidArgumentError):
+        economics.get_consumer_price_index(measure="rent")
 
 
 def test_inflation_adjusted_retail_sales_deflate_the_level_by_the_consumer_price_index(
@@ -990,7 +992,8 @@ def test_economics_net_international_investment_position_defaults_to_quarterly(
     assert list(level.index) == [pd.Period("2025Q4", "Q")]
     assert level.loc[pd.Period("2025Q4", "Q"), "United States"] == -21_600_000
     assert ratio.loc[pd.Period("2025Q4", "Q"), "Netherlands"] == pytest.approx(0.52)
-    assert economics.get_net_international_investment_position(period="monthly").empty
+    with pytest.raises(InvalidArgumentError):
+        economics.get_net_international_investment_position(period="monthly")
 
 
 def test_imf_gdp_of_zero_or_less_is_missing(monkeypatch):

@@ -482,7 +482,8 @@ class AnalysisConstruction:
         - Rockafellar, R. T. and Uryasev, S. (2002). "Conditional Value-at-Risk for General
           Loss Distributions." Journal of Banking & Finance, 26(7), 1443-1471.
 
-        Also known as: portfolio risk report, risk summary, risk metrics of weights.
+        Also known as: portfolio risk report, risk summary, risk metrics of weights, VaR and CVaR of
+        a weighted portfolio.
 
         Args:
             weights (dict[str, float] | None, optional): The weight per asset. Defaults to

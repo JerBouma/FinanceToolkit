@@ -21,6 +21,7 @@ import time
 import traceback
 import types
 import typing
+from collections import Counter
 from datetime import datetime, timedelta
 from typing import Annotated, Any, NamedTuple
 
@@ -403,7 +404,7 @@ _SCHEMA_PARAM_DESCRIPTIONS: dict[str, str] = {
     "cumulative": "Compound the values over time, starting at 1.",
     "rolling": "A rolling value over this many periods instead of one per period.",
     "trailing": "Sum over the trailing N periods (4 quarters for a TTM figure).",
-    "threshold_percentile": "With distribution='evt', the loss percentile of the fit.",
+    "threshold_percentile": "With method='evt', the loss percentile of the fit.",
     "minimum_acceptable_return": "The return below which returns count as downside.",
     "metrics": "The metric(s) to analyse: a name, a list or a collection.",
     "metric": "The indicator to summarise, e.g. 'get_relative_strength_index'.",
@@ -439,6 +440,25 @@ _SCHEMA_PARAM_DESCRIPTIONS: dict[str, str] = {
     ),
     "changes": "With series: 'percentage', 'log', 'difference' or 'none'.",
     "deflate_with": "With series: the country whose CPI deflates the indicators.",
+    # Parameters whose name alone reads several ways.
+    "risk.weights": "Weight per ticker, e.g. {'AAPL': 0.6, 'MSFT': 0.4}; empty for equal weights.",
+    "portfolio.weights": "Weight per ticker, e.g. {'AAPL': 0.6, 'MSFT': 0.4}; empty for equal weights.",
+    "current_weights": "The weights held now, per ticker, that turnover is measured from.",
+    "show_daily": "true gives a value per trading day (limit=-1 for the latest).",
+    "diluted": "true uses the diluted share count.",
+    "valuation.include_dividends": "true deducts preferred dividends from net income.",
+    "options.volatility": "The annual volatility to use; empty for that of the past year.",
+    "put_option": "true for puts, false for calls.",
+    "risk.alpha": "The tail probability, e.g. 0.05 for the worst 5% (95% confidence).",
+    "portfolio.alpha": "The tail probability, e.g. 0.05 for the worst 5% (95% confidence).",
+    "performance.alpha": "The tail probability, e.g. 0.05 for the worst 5% (95% confidence).",
+    "econometrics.alpha": "The tail probability or size of the test, e.g. 0.05.",
+    "risk.measure": "The range: 'range', 'var', 'cvar', 'tail_gini' or 'evar'.",
+    "jobs.measure": "The life table column, e.g. 'death_probability' or 'life_expectancy'.",
+    "risk.region": "The region of the Fama-French factors, e.g. 'Developed'.",
+    "portfolio.region": "The region of the Fama-French factors, e.g. 'Developed'.",
+    "performance.region": "The region of the Fama-French factors, e.g. 'Developed'.",
+    "rates.maturity": "true per maturity, false per rating.",
     "rank": "true ranks the tickers or countries per period.",
     "rebase_to": "Index to 100 at a base period, e.g. '2020' or '2019-2021'.",
     "show_columns": "Comma-separated fields to keep, e.g. 'Close,Volume'.",
@@ -541,6 +561,11 @@ def _annotate_with_description(
 
     return Annotated[ann, PydanticField(description=desc)]  # type: ignore[valid-type]
 
+
+# A parameter at least this share of a tool's indicators take is named once per tool in the
+# search results instead of in each indicator's call line, for a tool of at least this many.
+COMMON_PARAMETER_SHARE = 2 / 3
+MINIMUM_INDICATORS_FOR_COMMON_PARAMETERS = 3
 
 # The length of an indicator's summary in the search results.
 MAXIMUM_SUMMARY_CHARACTERS = 200
@@ -839,8 +864,9 @@ MAXIMUM_TOOL_CHARACTERS = 12_000
 
 
 def _fit_tool_listing(mcp: Any, tool_name: str, parameters: set[str]) -> None:
-    """Drop the schema descriptions of indicators' parameters, the longest first, while the
-    tool is larger than MAXIMUM_TOOL_CHARACTERS in the tool listing.
+    """Drop the schema descriptions of indicators' parameters, the longest first and those
+    without words of their own before the others, while the tool is larger than
+    MAXIMUM_TOOL_CHARACTERS in the tool listing.
 
     The descriptions that say a parameter is required stay. search_metrics with an
     indicator's name describes each of its parameters in full.
@@ -866,13 +892,19 @@ def _fit_tool_listing(mcp: Any, tool_name: str, parameters: set[str]) -> None:
             }
         )
     )
+    # The descriptions that only name indicators go first, as search_metrics gives each
+    # indicator's parameters; the few words for a name that reads several ways go last.
     optional = sorted(
         (
             name
             for name in parameters
             if "Required" not in properties.get(name, {}).get("description", "Required")
         ),
-        key=lambda name: -len(properties[name]["description"]),
+        key=lambda name: (
+            f"{tool_name}.{name}" in _SCHEMA_PARAM_DESCRIPTIONS
+            or name in _SCHEMA_PARAM_DESCRIPTIONS,
+            -len(properties[name]["description"]),
+        ),
     )
     for name in optional:
         if size <= MAXIMUM_TOOL_CHARACTERS:
@@ -948,7 +980,10 @@ def _summarize_docstring(docstring: str) -> dict[str, str]:
         dict[str, str]: The ``summary`` (at most 200 characters) and the ``aliases``.
     """
     paragraph = " ".join(docstring.split("\n\n", maxsplit=1)[0].split())
-    sentence = re.split(r"(?<=[a-z0-9)])\. ", paragraph)[0].rstrip(".")
+    # "e.g." and "i.e." end no sentence.
+    sentence = re.split(r"(?<=[a-z0-9)])(?<!e\.g)(?<!i\.e)\. ", paragraph)[0].rstrip(
+        "."
+    )
     summary = (
         sentence
         if len(sentence) <= MAXIMUM_SUMMARY_CHARACTERS
@@ -1395,6 +1430,34 @@ def _literal_values(annotation: Any) -> list[Any]:
         value
         for member in typing.get_args(annotation)
         for value in _literal_values(member)
+    ]
+
+
+def _documented_options(text: str, refused: list[Any]) -> list[str]:
+    """The options a parameter's description lists ('Options are: "historic" (the
+    empirical quantile), "gaussian" ...'), for a parameter typed as plain text.
+
+    Args:
+        text (str): The description of the parameter.
+        refused (list[Any]): The values the server refuses.
+
+    Returns:
+        list[str]: The quoted values after "Options are", without the explanations in
+            parentheses and those the server refuses.
+    """
+    listed = re.search(r"Options are:?(.*?)(?:Defaults to|$)", text, re.DOTALL)
+    if listed is None:
+        return []
+    # Explanations in parentheses can quote values of their own.
+    values = re.findall(
+        r"\"([^\"]+)\"|'([^']+)'", re.sub(r"\([^()]*\)", "", listed.group(1))
+    )
+    refused_values = {str(value).lower() for value in refused}
+
+    return [
+        value
+        for value in dict.fromkeys(double or single for double, single in values)
+        if value.lower() not in refused_values
     ]
 
 
@@ -2108,7 +2171,7 @@ class ToolRegistry:
 
     def _describe_parameters(
         self, tool_name: str, method_name: str, method: Any
-    ) -> dict[str, str]:
+    ) -> tuple[dict[str, str], list[dict[str, Any]]]:
         """
         What search_metrics says about each parameter of an indicator: its whole description
         from the docstring, its options, its default (the server's own where config.yaml
@@ -2121,7 +2184,11 @@ class ToolRegistry:
             method (Any): The controller method of the indicator.
 
         Returns:
-            dict[str, str]: Per parameter, in the order of the signature, its description.
+            tuple[dict[str, str], list[dict[str, Any]]]: Per parameter, in the order of the
+                signature, its description, and the same parameters for the call line of a
+                search result: ``name``, ``options``, ``default``, ``required`` and
+                ``conditional`` (its description starts with "Only", e.g. "Only used with
+                the GARCH method").
         """
         documented = _docstring_arguments(
             inspect.getdoc(method) or "", maximum_characters=None, keep_defaults=True
@@ -2134,6 +2201,7 @@ class ToolRegistry:
             if method_name in refusal["methods"]:
                 refused.setdefault(refusal["parameter"], []).extend(refusal["values"])
         described: dict[str, str] = {}
+        call: list[dict[str, Any]] = []
         for parameter in self._inspector.extract_extra_params(method):
             name = parameter.name
             text = documented.get(name) or _PARAM_DESCRIPTIONS.get(name, "")
@@ -2163,8 +2231,19 @@ class ToolRegistry:
                     f"Not available on this server: {', '.join(_readable_value(value) for value in refused[name])}."
                 )
             described[name] = " ".join(parts)
+            call.append(
+                {
+                    "name": name,
+                    "options": options
+                    or _documented_options(text, refused.get(name, [])),
+                    "default": server_defaults.get(name, parameter.default),
+                    "required": name not in server_defaults
+                    and parameter.default is inspect.Parameter.empty,
+                    "conditional": text.startswith("Only"),
+                }
+            )
 
-        return described
+        return described, call
 
     def get_indicator_index(self) -> list[dict[str, Any]]:
         """Return every registered indicator with its tool, summary and aliases.
@@ -3993,11 +4072,24 @@ class ToolRegistry:
                     **_describe_docstring(
                         inspect.getdoc(getattr(owner, method_name, None)) or ""
                     ),
-                    "parameters": self._describe_parameters(
-                        spec.tool_name, method_name, getattr(owner, method_name, None)
-                    ),
                 }
             )
+            entries[-1]["parameters"], entries[-1]["call_parameters"] = (
+                self._describe_parameters(
+                    spec.tool_name, method_name, getattr(owner, method_name, None)
+                )
+            )
+        # The parameters most of the tool's indicators take (growth, lag, period), which a
+        # search result names once per tool rather than in every indicator's call line.
+        taken = Counter(name for entry in entries for name in entry["parameters"])
+        common = [
+            name
+            for name, count in taken.most_common()
+            if len(entries) >= MINIMUM_INDICATORS_FOR_COMMON_PARAMETERS
+            and count >= COMMON_PARAMETER_SHARE * len(entries)
+        ]
+        for entry in entries:
+            entry["common_parameters"] = common
         self._indicator_index.extend(entries)
 
         method_list = ", ".join(group_methods)
@@ -4067,6 +4159,14 @@ class ToolRegistry:
             keep_unknown_arguments(self._mcp, spec.tool_name)
             if compact:
                 _strip_schema_descriptions(self._mcp, spec.tool_name)
+            # search_metrics explains the tool's parameters its schema leaves undescribed and
+            # names the others.
+            tool_manager = getattr(self._mcp, "_tool_manager", None)
+            tool = tool_manager.get_tool(spec.tool_name) if tool_manager else None
+            properties = tool.parameters.get("properties", {}) if tool else {}
+            for name in tool_parameters:
+                if properties.get(name, {}).get("description"):
+                    tool_parameters[name] = ""
             return True
         except Exception as exc:
             logger.warning(f"Failed to register group '{spec.tool_name}': {exc}")

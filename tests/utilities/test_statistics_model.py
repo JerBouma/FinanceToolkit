@@ -1016,3 +1016,57 @@ def test_finalize_dataset_says_where_the_data_has_values(caplog):
     statistics_model.finalize_dataset(dataset, "2024-01-01", "2024-12-31", 4)
 
     assert "The data runs from 2021 to 2022." in caplog.text
+
+
+def test_finalize_dataset_reports_a_window_longer_than_the_data(caplog):
+    data = pd.DataFrame(
+        {"United States": [1.0, 2.0, 3.0]},
+        index=pd.period_range("2021", periods=3, freq="Y"),
+    )
+
+    for name in ("rolling", "trailing"):
+        caplog.clear()
+        result = statistics_model.finalize_dataset(
+            dataset=data,
+            start_date=None,
+            end_date=None,
+            default_rounding=4,
+            axis="rows",
+            row_slice=True,
+            **{name: 4},
+        )
+        assert result.isna().all(axis=None)
+        assert (
+            caplog.text.count(f"The {name} window of 4 periods is longer than the 3")
+            == 1
+        )
+
+    caplog.clear()
+    statistics_model.finalize_dataset(
+        dataset=data,
+        start_date=None,
+        end_date=None,
+        default_rounding=4,
+        axis="rows",
+        row_slice=True,
+        rolling=3,
+    )
+    assert "window" not in caplog.text
+
+
+def test_finalize_dataset_rejects_a_window_below_one():
+    data = pd.DataFrame(
+        {"United States": [1.0, 2.0, 3.0]},
+        index=pd.period_range("2021", periods=3, freq="Y"),
+    )
+
+    for name in ("rolling", "trailing"):
+        with pytest.raises(InvalidArgumentError, match=name):
+            statistics_model.finalize_dataset(
+                dataset=data,
+                start_date=None,
+                end_date=None,
+                default_rounding=4,
+                axis="rows",
+                **{name: 0},
+            )

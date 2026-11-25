@@ -13,6 +13,7 @@ from financetoolkit.cache import policy_model, ticker_model
 from financetoolkit.cache.cache_controller import get_active_cache
 from financetoolkit.fmp_model import get_analyst_estimates as _get_analyst_estimates
 from financetoolkit.helpers import (
+    check_trailing,
     get_goodwill_and_intangible_assets,
     handle_portfolio,
     require_input,
@@ -182,6 +183,7 @@ FACTOR_COLLECTIONS["all"] = [
 # ruff: noqa: E501
 
 
+@check_trailing
 @filter_shown_columns
 @track_sources
 class Ratios:

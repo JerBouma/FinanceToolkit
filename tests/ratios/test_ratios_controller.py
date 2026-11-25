@@ -2780,3 +2780,22 @@ def test_a_ratio_built_on_another_reports_a_window_without_data_once(caplog):
 
     assert caplog.text.count("There are no observations between") == 1
     assert "market cap is not available" in caplog.text
+
+
+def test_a_trailing_window_below_one_is_refused_and_one_too_long_is_reported(
+    ratios_module, caplog
+):
+    from financetoolkit.utilities.error_model import (  # noqa: PLC0415
+        InvalidArgumentError,
+    )
+
+    for trailing in (0, -1, 2.5):
+        with pytest.raises(InvalidArgumentError, match="trailing"):
+            ratios_module.get_asset_growth(trailing=trailing)
+        with pytest.raises(InvalidArgumentError, match="trailing"):
+            ratios_module.collect_efficiency_ratios(trailing=trailing)
+
+    with caplog.at_level("WARNING", logger="financetoolkit"):
+        ratios_module.collect_efficiency_ratios(trailing=100)
+    # The collection calls every ratio with the window, the window is reported once.
+    assert caplog.text.count("The trailing window of 100 periods is longer") == 1

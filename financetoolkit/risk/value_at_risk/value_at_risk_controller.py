@@ -27,6 +27,7 @@ from financetoolkit.utilities.error_model import (
     check_period,
     handle_errors,
     validate_alpha,
+    validate_window,
 )
 from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.sources_model import track_sources
@@ -62,6 +63,43 @@ def _default_window(period: str, method: str) -> int:
         return max(2 * PERIODS_PER_YEAR[period], var_model.MINIMUM_GARCH_OBSERVATIONS)
 
     return max(PERIODS_PER_YEAR[period], 20)
+
+
+def _get_backtest_window(
+    window: int | None, period: str, method: str, alpha: float, returns: pd.DataFrame
+) -> int:
+    """
+    The rolling window of a backtest: the default of `_default_window` for None, else the
+    window, which the caller checked is at least 2 (a window of one return has no tail). A window
+    in which not a single observation falls in the alpha tail (window * alpha < 1), or one
+    as long as the returns (no out-of-sample estimate is left), gives statistics that mean
+    nothing, which is logged once.
+    """
+    if window is None:
+        return _default_window(period, method)
+
+    if window * alpha < 1:
+        logger.warning(
+            "A window of %s %s returns holds no observation in the %s tail (window * alpha < 1), so the VaR "
+            "estimates are the window's extremes and the backtest statistics mean nothing. Use a window of at "
+            "least %s returns.",
+            window,
+            period,
+            alpha,
+            int(np.ceil(1 / alpha)),
+        )
+    if window >= len(returns):
+        logger.warning(
+            "A window of %s %s returns is at least as long as the %s %s returns in the data, so no "
+            "out-of-sample estimate is left to backtest and every statistic is NaN. Use a shorter window "
+            "or a longer date range.",
+            window,
+            period,
+            len(returns),
+            period,
+        )
+
+    return window
 
 
 def _check_garch_options(garch_method: str, garch_distribution: str) -> None:
@@ -319,7 +357,7 @@ class ValueAtRiskRisk:
             calculated over a rolling window of this many periods across the full return history instead
             of per `period` (e.g. a rolling 60-day VaR). Only available for the historic and GARCH
             methods (the number of returns of every fit, at least 100); see `get_var_backtest` for a rolling, out-of-sample VaR path under the other
-            parametric distributions. Defaults to None.
+            parametric distributions. At least 2. Defaults to None.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the VaR values over time. Defaults to False.
@@ -600,7 +638,7 @@ class ValueAtRiskRisk:
             calculated over a rolling window of this many periods across the full return history instead
             of per `period` (e.g. a rolling 60-day CVaR). Only available for the historic and GARCH
             methods (the number of returns of every fit, at least 100); see `get_acerbi_szekely_test` for a rolling, out-of-sample CVaR path under the
-            other parametric distributions. Defaults to None.
+            other parametric distributions. At least 2. Defaults to None.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the CVaR values over time. Defaults to False.
@@ -856,7 +894,7 @@ class ValueAtRiskRisk:
             to "gaussian".
             rolling (int, optional): The rolling window size to use for the calculation. If set, EVaR is
             calculated over a rolling window of this many periods across the full return history instead
-            of per `period`. Defaults to None.
+            of per `period`. At least 2. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -979,7 +1017,7 @@ class ValueAtRiskRisk:
             'daily', since a single day only nests observations when intraday data was fetched.
             rolling (int, optional): The rolling window size to use for the calculation. If set, the ERM is
             calculated over a rolling window of this many periods across the full return history instead
-            of per `period`. Defaults to None.
+            of per `period`. At least 2. Defaults to None.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ERM values over time. Defaults to False.
@@ -1106,7 +1144,7 @@ class ValueAtRiskRisk:
             'daily', since a single day only nests observations when intraday data was fetched.
             rolling (int, optional): The rolling window size to use for the calculation. If set, the HMCR is
             calculated over a rolling window of this many periods across the full return history instead
-            of per `period`. Defaults to None.
+            of per `period`. At least 2. Defaults to None.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the HMCR values over time. Defaults to False.
@@ -1237,7 +1275,7 @@ class ValueAtRiskRisk:
             'daily', since a single day only nests observations when intraday data was fetched.
             rolling (int, optional): The rolling window size to use for the calculation. If set, the EQS is
             calculated over a rolling window of this many periods across the full return history instead
-            of per `period`. Defaults to None.
+            of per `period`. At least 2. Defaults to None.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the EQS values over time. Defaults to False.
@@ -1341,7 +1379,19 @@ class ValueAtRiskRisk:
         compounded into the next shared date (see `helpers.compound_into_shared_dates`), so the portfolio
         return of a Monday combines each constituent's return since the Friday. A column other than a
         return (a price) only keeps the shared dates.
+
+        A constituent without any value leaves no shared date and so empties the result of every
+        constituent, which is logged with its name.
         """
+        without_values = returns.columns[returns.count() == 0]
+        if len(without_values):
+            logger.warning(
+                "%s has no %s values, so no date is shared by all the portfolio constituents and every "
+                "value is NaN. Leave it out of the weights to calculate the others.",
+                ", ".join(map(str, without_values)),
+                column,
+            )
+
         if column.endswith("Return"):
             return compound_into_shared_dates(returns)
 
@@ -1707,7 +1757,8 @@ class ValueAtRiskRisk:
             window (int | None, optional): The rolling window (in number of return observations of
             `period`) used to estimate each VaR value. Defaults to None, which uses a year of observations
             with a minimum of 20 (252 daily, 52 weekly and 20 monthly, quarterly or yearly returns), and two
-            years with a minimum of 100 for "garch" (504 daily, 104 weekly and 100 otherwise).
+            years with a minimum of 100 for "garch" (504 daily, 104 weekly and 100 otherwise). At least 2;
+            a window too short to hold an observation in the alpha tail logs a warning.
             test (str | list[str], optional): Which test(s) to run, one or a list of them. Options are: "kupiec"
             (Kupiec's test), "christoffersen" (Christoffersen's independence test), "conditional_coverage"
             (conditional coverage test), "duration" (duration test), "mcneil_frey" (McNeil-Frey test), "tick_loss"
@@ -1788,14 +1839,15 @@ class ValueAtRiskRisk:
         )
         _check_garch_options(garch_method, garch_distribution)
         validate_alpha(alpha)
+        validate_window("window", window, 2)
         if not tests or any(name not in VAR_BACKTESTS for name in tests):
             raise InvalidArgumentError(
                 f"test must be one of {', '.join(repr(name) for name in VAR_BACKTESTS)}, a list of them, 'both' or 'all', "
                 f"not {test!r}. Please pass one of these as test."
             )
 
-        window = window if window else _default_window(period, method)
         returns = self._historical_data[period]["Return"].dropna(how="all")
+        window = _get_backtest_window(window, period, method, alpha, returns)
         estimates = functools.partial(
             _get_out_of_sample_estimates,
             returns,
@@ -1907,7 +1959,8 @@ class ValueAtRiskRisk:
             window (int | None, optional): The rolling window (in number of return observations
             of `period`) used to estimate each VaR/CVaR value. Defaults to None, which uses a year of
             observations with a minimum of 20 (252 daily, 52 weekly and 20 monthly, quarterly or yearly
-            returns), and two years with a minimum of 100 for "garch".
+            returns), and two years with a minimum of 100 for "garch". At least 2; a window too short to
+            hold an observation in the alpha tail logs a warning.
             refit_every (int, optional): Only used with the "garch" method. The number of returns between
             two fits. Defaults to 21.
             garch_method (str, optional): Only used with the GARCH method. The variance model of `get_garch`.
@@ -1972,9 +2025,10 @@ class ValueAtRiskRisk:
         )
         _check_garch_options(garch_method, garch_distribution)
         validate_alpha(alpha)
+        validate_window("window", window, 2)
 
-        window = window if window else _default_window(period, method)
         returns = self._historical_data[period]["Return"].dropna(how="all")
+        window = _get_backtest_window(window, period, method, alpha, returns)
         rolling_var, rolling_cvar = (
             _get_out_of_sample_estimates(
                 returns,

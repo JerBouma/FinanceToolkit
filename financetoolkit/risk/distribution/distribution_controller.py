@@ -81,7 +81,7 @@ class DistributionRisk:
             single day only nests observations when intraday data was fetched.
             rolling (int, optional): The rolling window size to use for the calculation. If set, the Tail
             Ratio is calculated over a rolling window of this many periods across the full return history
-            instead of per `period`. Defaults to None.
+            instead of per `period`. At least 2. Defaults to None.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the Tail Ratio values over time.
@@ -220,7 +220,7 @@ class DistributionRisk:
             single day only nests observations when intraday data was fetched.
             rolling (int, optional): The rolling window size to use for the calculation. If set, Skewness is
             calculated over a rolling window of this many periods across the full return history instead of
-            per `period`. Defaults to None.
+            per `period`. At least 3. Defaults to None.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the Skewness values over time.
@@ -271,7 +271,7 @@ class DistributionRisk:
         period = period if period else "daily"
 
         check_period(period, ["daily", "weekly", "monthly", "quarterly", "yearly"])
-        check_rolling(rolling, self._historical_data, period)
+        check_rolling(rolling, self._historical_data, period, 3)
         if (
             period == "daily"
             and within_period
@@ -374,7 +374,7 @@ class DistributionRisk:
             for a normal distribution). Defaults to False.
             rolling (int, optional): The rolling window size to use for the calculation. If set, Kurtosis is
             calculated over a rolling window of this many periods across the full return history instead of
-            per `period`. Defaults to None.
+            per `period`. At least 4. Defaults to None.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the Kurtosis values over time.
@@ -425,7 +425,7 @@ class DistributionRisk:
         period = period if period else "daily"
 
         check_period(period, ["daily", "weekly", "monthly", "quarterly", "yearly"])
-        check_rolling(rolling, self._historical_data, period)
+        check_rolling(rolling, self._historical_data, period, 4)
         if (
             period == "daily"
             and within_period
@@ -623,7 +623,7 @@ class DistributionRisk:
             rolling (int, optional): The rolling window size to use for the calculation. If set,
             Variance is calculated over a rolling window of this many periods (e.g. period='monthly'
             and rolling=6 gives the rolling 6-month Variance) instead of one value per `period`.
-            Defaults to None.
+            At least 2. Defaults to None.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the Variance values over time. Defaults to False.
@@ -1075,8 +1075,10 @@ class DistributionRisk:
                 analysis). Defaults to "generalized".
             period (str | None, optional): The data frequency. Options are: "daily", "weekly", "monthly", "quarterly",
                 "yearly". Defaults to None, which uses "daily".
-            rolling (int | None, optional): The number of periods of a rolling window. Defaults to
-                None, which calculates one value over the full history of every asset.
+            rolling (int | None, optional): The number of periods of a rolling window, at least the
+                shortest window with a value: 5 for "generalized", and for the other methods the second
+                smallest window size, 120 with the default window sizes. Defaults to None, which
+                calculates one value over the full history of every asset.
             q (float | list[float], optional): The order of the moment of the generalized method,
                 or a list of orders for a column per order. Defaults to 2.0.
             window_sizes (list[int] | None, optional): The window sizes of the rescaled range and
@@ -1131,7 +1133,22 @@ class DistributionRisk:
         | Benchmark |  0.4396 |
         """
         # The generalized estimator regresses the dispersion of lagged differences on the lag, which only identifies self-affinity on a level series: on log prices, as in Di Matteo et al. (2005), whose lagged differences are log returns over the lag. The rescaled range and the detrended fluctuation sum the changes themselves, so they take the log returns.  # noqa: E501
-        check_rolling(rolling, self._historical_data, period or "daily")
+        # The smallest rolling window with a value: the generalized estimator needs two lags
+        # (of 2 and 3 periods) with two differences each, five prices; the rescaled range and
+        # the detrended fluctuation need two window sizes, which by default (10 and 12, at most
+        # a tenth of the observations) takes 120 returns.
+        if method == "generalized":
+            minimum = 5
+        elif window_sizes is None:
+            minimum = 120
+        else:
+            sizes = sorted(
+                size
+                for size in window_sizes
+                if size > (1 if method == "rescaled_range" else order + 1)
+            )
+            minimum = sizes[1] if len(sizes) > 1 else 2
+        check_rolling(rolling, self._historical_data, period or "daily", minimum)
         log_prices = self._get_log_prices(period)
 
         if method == "generalized":
@@ -1249,8 +1266,9 @@ class DistributionRisk:
                 "petrosian" (Petrosian). Defaults to "higuchi".
             period (str | None, optional): The data frequency. Options are: "daily", "weekly", "monthly", "quarterly",
                 "yearly". Defaults to None, which uses "daily".
-            rolling (int | None, optional): The number of periods of a rolling window. Defaults to
-                None, which calculates one value over the full history of every asset.
+            rolling (int | None, optional): The number of periods of a rolling window, at least kmax + 2
+                for "higuchi" (12 by default) and 3 for the others. Defaults to None, which calculates
+                one value over the full history of every asset.
             kmax (int, optional): The largest step k of the Higuchi dimension. Defaults to 10.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
@@ -1290,7 +1308,14 @@ class DistributionRisk:
         | BTCUSD    |  1.4827 |
         | Benchmark |  1.5085 |
         """
-        check_rolling(rolling, self._historical_data, period or "daily")
+        # The Higuchi dimension needs more observations than its largest step plus one, the
+        # Katz and Petrosian dimensions three.
+        check_rolling(
+            rolling,
+            self._historical_data,
+            period or "daily",
+            kmax + 2 if method == "higuchi" else 3,
+        )
         functions = {
             "higuchi": fractal_model.get_higuchi_fractal_dimension,
             "katz": fractal_model.get_katz_fractal_dimension,
@@ -1647,7 +1672,7 @@ class DistributionRisk:
             single day only nests observations when intraday data was fetched.
             rolling (int, optional): The rolling window size to use for the calculation. If set, the Partial Moment
             is calculated over a rolling window of this many periods across the full return history
-            instead of per `period`. Defaults to None.
+            instead of per `period`. At least 2. Defaults to None.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the Partial Moment values over time.
@@ -1781,7 +1806,7 @@ class DistributionRisk:
             single day only nests observations when intraday data was fetched.
             rolling (int, optional): The rolling window size to use for the calculation. If set, the Central Moment
             is calculated over a rolling window of this many periods across the full return history
-            instead of per `period`. Defaults to None.
+            instead of per `period`. At least 2. Defaults to None.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the Central Moment values over time.
@@ -1903,7 +1928,7 @@ class DistributionRisk:
             single day only nests observations when intraday data was fetched.
             rolling (int, optional): The rolling window size to use for the calculation. If set, the Worst Realization
             is calculated over a rolling window of this many periods across the full return history
-            instead of per `period`. Defaults to None.
+            instead of per `period`. At least 2. Defaults to None.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the Worst Realization values over time.
@@ -2026,7 +2051,7 @@ class DistributionRisk:
             single day only nests observations when intraday data was fetched.
             rolling (int, optional): The rolling window size to use for the calculation. If set, the Gini Mean Difference
             is calculated over a rolling window of this many periods across the full return history
-            instead of per `period`. Defaults to None.
+            instead of per `period`. At least 2. Defaults to None.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the Gini Mean Difference values over time.
@@ -2155,7 +2180,7 @@ class DistributionRisk:
             single day only nests observations when intraday data was fetched.
             rolling (int, optional): The rolling window size to use for the calculation. If set, the Tail Gini
             is calculated over a rolling window of this many periods across the full return history
-            instead of per `period`. Defaults to None.
+            instead of per `period`. At least 2. Defaults to None.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the Tail Gini values over time.
@@ -2304,7 +2329,7 @@ class DistributionRisk:
             single day only nests observations when intraday data was fetched.
             rolling (int, optional): The rolling window size to use for the calculation. If set, the Risk Range
             is calculated over a rolling window of this many periods across the full return history
-            instead of per `period`. Defaults to None.
+            instead of per `period`. At least 2. Defaults to None.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the Risk Range values over time.
@@ -2449,7 +2474,7 @@ class DistributionRisk:
             single day only nests observations when intraday data was fetched.
             rolling (int, optional): The rolling window size to use for the calculation. If set, the L-moment
             is calculated over a rolling window of this many periods across the full return history
-            instead of per `period`. Defaults to None.
+            instead of per `period`. At least 2. Defaults to None.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the L-moment values over time.
@@ -2590,7 +2615,7 @@ class DistributionRisk:
             single day only nests observations when intraday data was fetched.
             rolling (int, optional): The rolling window size to use for the calculation. If set, the
             L-moment Convex Risk Measure is calculated over a rolling window of this many periods across the full return
-            history instead of per `period`. Defaults to None.
+            history instead of per `period`. At least 2. Defaults to None.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the L-moment Convex Risk Measure values over time.
@@ -2720,7 +2745,7 @@ class DistributionRisk:
             single day only nests observations when intraday data was fetched.
             rolling (int, optional): The rolling window size to use for the calculation. If set, the
             Skewness-Kurtosis Ratio is calculated over a rolling window of this many periods across the full return
-            history instead of per `period`. Defaults to None.
+            history instead of per `period`. At least 4. Defaults to None.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the Skewness-Kurtosis Ratio values over time.
@@ -2774,7 +2799,7 @@ class DistributionRisk:
         | 2025 |  0.0563 |  0.0465 |  0.1    |      0.0567 |
         """
         period = period if period else "daily"
-        returns = self._get_measure_returns(period, within_period, rolling, growth)
+        returns = self._get_measure_returns(period, within_period, rolling, growth, 4)
 
         result = dispersion_model.get_skewness_kurtosis_ratio(
             returns, window_size=rolling

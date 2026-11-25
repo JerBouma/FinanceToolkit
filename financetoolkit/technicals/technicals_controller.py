@@ -17,6 +17,7 @@ from financetoolkit.technicals.helpers import (
     FACTOR_PRICE_LINES,
     PERIODS,
     is_factor_listed,
+    report_missing_values,
 )
 from financetoolkit.technicals.labeling.labeling_controller import LabelingTechnicals
 from financetoolkit.technicals.momentum.momentum_controller import MomentumTechnicals
@@ -54,6 +55,7 @@ logger = logger_model.get_logger()
 PRICE_COLUMNS = ("Open", "High", "Low", "Close", "Adj Close")
 
 
+@report_missing_values
 @filter_shown_columns
 @track_sources
 class TechnicalsBase:
@@ -124,9 +126,18 @@ class TechnicalsBase:
         self._portfolio_weights: dict | None = None
         # The historical data with the open, high and low adjusted like the close, per period.
         self._consistent_data: dict[tuple, pd.DataFrame] = {}
-        # The periods and windows reported as longer than the data, so that a collection of
-        # indicators reports each once rather than for every indicator.
+        # The periods and windows reported as longer than the data, so that an indicator
+        # called again reports each once.
         self._reported_windows: set[tuple[str, int]] = set()
+        # The state of report_missing_values (technicals helpers): the depth of the calls
+        # and collections running, whether the window of the current indicator was reported
+        # as longer than the data, and the long windows and the indicators without values a
+        # collection reports in one message.
+        self._collecting = 0
+        self._depth = 0
+        self._window_too_long = False
+        self._long_windows: set[int] = set()
+        self._without_values: dict[str, None] = {}
 
         # Technical Indicators
         self._all_indicators: pd.DataFrame = pd.DataFrame()
@@ -170,7 +181,8 @@ class TechnicalsBase:
                 "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
                 "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
                 to "daily".
-            window (int, optional): The number of periods to use for the calculation. Defaults to 14.
+            window (int, optional): The number of periods to use for the calculation, at least 2 as
+                the Commodity Channel Index and the Choppiness Index need two periods. Defaults to 14.
                 The Bollinger Bands and their %B and BandWidth keep their own window of 20
                 periods (with 2 standard deviations), as defined by Bollinger, and the indicators
                 without a single window, such as the MACD, the True Strength Index, the Coppock
@@ -226,6 +238,7 @@ class TechnicalsBase:
         | 2025-12-31 |                -0.0707 |                      -1 |         2.42688e+09 |          6.65022e+07 |                      4.08531e+09 |          7.5513e+06  | nan      |                      0 |              -0.0357 |            -5.2468 |                 2730.14 |                 790.458 |                -2.31239e+08 |                            -1.68762e+08 |                      7.0467 |                              172.441 |            0.6417 |                 25.8501 |                  -0.005  |              0.0314 |                   0.0688 |              1.00847e+10 |    7.42004e+09 |                   3 |            0.7332 |             0.659  |                             2.44445e+09 |                             2.41711e+09 |                        2.42688e+09 |                        2.45418e+09 |                                   0 |                                    1 |            38.2003 |      -62.8029 |              21.4286 |                42.8571 |           -21.4286 |                  -56.9136 |                -0.0887 |                            -0.1381 |      -4.82705e+06 |               46.4079 |                       -0.0003 |                                    0.0023 |                                 -0.0026 |                     -0.0897 |                        -0.1258 |                                    -0.0512 |                                  -0.0746 |                      -1.5169 |                     18.7176 |                      9.0003 |                      11.3294 |                      16.2589 |                       20.4663 |                      11.4565 |                            24.6539 |                     -37.4456 |                   34.0262 |                    270.248 |              276.821 |                   265.6   |                   250.867 |         37.1971 |         45.0758 |     -0.0897 |             0.628  |          -0.7176 |                   45.6902 |             12.0094 |             27.1964 |               -0.6702 |                            2.8953 |            -0.6218 |                  0.057  |  -0.536  |              -1.6049 |                   0.515  |                 0.9113 |                 1.1148 |                -0.0091 |                -1.9324 |          -0.0248 |    -6.896  |            52.5944 |             0.3745 |                       0.3956 |           -0.0452 |                        0.1157 |         -0.0431 |            -0.1073 |                    -0.4022 |                        -0.6548 | 57.905  | 51.1539 | 71.4071 |                          0.1423 |                     -7.1079 |                                 -1.6769 |                -10.1732 |                   -8.9975 |                  -1.1757 |               0.0026 |    -23.361  |                -20.8876 |                 -0.6816 |      -19.3794 |                    5862.45 | 53.9827 |                  47.7724 |                  43.3308 |                 -9.9432 |       24.882  |   52.0466 | -0.0166 |   99.0847 |   92.3301 |                  -0.3998 |              50      |                     -1.4421 |               0 |                1 |          -1 |                       -0.6071 |                0.0023 |                  0.6255 |                       272.762 |                            272.823 |                                    271.815 | 0.0001 |                     272.2   |                         272.091 |                     271.883 |                                    270.627 |                                       271.745 |                                  272.642 |                                 272.319 |                                    271.777 |                                   271.608 |                                  272.686 |                          275.262 |                               272.102 |                                 272.746 |            271.917 |                                  270.932 |                                   272.383 |                              268.893 |                           272.144 |                           265.643 |                                          272.568 |                                 272.8   |    273.672 |          272.6   |         271.641 |        271.768 |         271.484 |                271.342 |                                272.594 |         273.895 |               274.318 |   266.023 |       272.198 |                    273.062 |                 271.268 |                       272.6   |                       271.048 |                281.366 |                 274.516 |                267.666 |         0.2372 |                0.0499 |       1.9233 |               3.954  |      23.1557 |      268.465 |                            1 |                274.628 |                 279.013 |                 280.039 |                  272.823 |                 265.607 |                  279.177 |                   272.6   |                  266.023 |                          0.0146 |              3.7647 |              -0.3494 |                     52.7331 |                   284.415 |                    274.516 |                   265.137 |                  275.232 |                 269.631 |                     277.662 |                      272.143 |                     266.623 |            276.421 |             272.402 |            268.383 | 263.457 |                      1 |           2.6706 |               0.5281 |                       1.3485 |            -6.9011 |         1 |                         19.6066 |                        33.1912 |            -0.9892 |               3.5114 |         0.5474 |              0.9788 |                    1 |                           274.885 |                               272.887 |                                    273.772 |                    2.3417 |                272.229 |                -0.9772 |                     -0.5599 |               -0.7431 |                    -0.0523 |                        -5.4957 |                     -5.4973 |         0.3273 |
         """
         self._check_arguments(period, close_column, window=window)
+        validate_window("window", window, 2)
         check_period(
             period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
         )
@@ -294,7 +307,8 @@ class TechnicalsBase:
         whole number of at least one period and the close column is a price column of the
         historical data. A window longer than the data of the period leaves the indicator
         without values, which is logged once for that period and window: the window parameter
-        when the indicator has one, else its longest window.
+        when the indicator has one, else its longest window. Within a collection the window is
+        kept for the one message of the collection instead.
 
         Args:
             period (str): The period of the prices, e.g. "daily".
@@ -328,7 +342,13 @@ class TechnicalsBase:
         relevant = [windows["window"]] if "window" in windows else windows.values()
         longest = max((window for window in relevant if window), default=0)
         reported = (period, longest)
-        if longest > len(historical_data) and reported not in self._reported_windows:
+        if longest <= len(historical_data):
+            return
+
+        self._window_too_long = True
+        if self._collecting:
+            self._long_windows.add(longest)
+        elif reported not in self._reported_windows:
             self._reported_windows.add(reported)
             logger.warning(
                 "A window of %s periods is longer than the %s %s periods of data, which leaves the "

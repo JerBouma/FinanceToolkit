@@ -8,7 +8,10 @@ import pandas as pd
 
 from financetoolkit.helpers import handle_portfolio
 from financetoolkit.technicals.cycle import cycle_model
-from financetoolkit.technicals.helpers import calculate_per_ticker
+from financetoolkit.technicals.helpers import (
+    calculate_per_ticker,
+    report_missing_values,
+)
 from financetoolkit.technicals.overlap import overlap_model
 from financetoolkit.technicals.volatility import volatility_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
@@ -48,6 +51,7 @@ MOVING_AVERAGE_WINDOWS = {
 }
 
 
+@report_missing_values
 @filter_shown_columns
 @track_sources
 class OverlapTechnicals:

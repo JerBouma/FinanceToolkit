@@ -10,6 +10,7 @@ import numpy as np
 import pandas as pd
 import requests
 import yfinance as yf
+import yfinance.cache
 import yfinance.exceptions
 
 from financetoolkit import helpers
@@ -30,6 +31,21 @@ FISCAL_PERIOD_ITEM = "period"
 
 # The reporting currency and fiscal year end of a company change almost never, so they are resolved once per ticker per process rather than on every statement request.  # noqa: E501
 COMPANY_INFORMATION_CACHE: dict[str, dict[str, str]] = {}
+
+
+def close_cache_connections() -> None:
+    """
+    Closes the connections the current thread holds to yfinance's caches of time zones,
+    cookies and ISINs. yfinance keeps them in SQLite databases that peewee connects to once
+    per thread and closes only for the main thread when Python exits, so the connection of
+    every thread that downloaded (the Toolkit downloads tickers in parallel) is otherwise
+    left open until it is garbage collected, with a ResourceWarning. The cached values stay
+    in the databases, which the next download in the thread connects to again.
+    """
+    for manager in ("_TzDBManager", "_CookieDBManager", "_ISINDBManager"):
+        database = getattr(getattr(yfinance.cache, manager, None), "_db", None)
+        if database is not None and not database.is_closed():
+            database.close()
 
 
 def get_financial_statement(
@@ -102,6 +118,8 @@ def get_financial_statement(
             else "YFINANCE RATE LIMIT REACHED"
         )
         return pd.DataFrame(columns=[error_code])
+    finally:
+        close_cache_connections()
 
     if not isinstance(financial_statement, pd.DataFrame):
         # yfinance only hands back a dict when asked with as_dict=True, which never
@@ -300,6 +318,8 @@ def get_company_information(ticker: str) -> dict[str, str]:
     ):
         error_model.report_request_failure()
         return {"financialCurrency": "", "lastFiscalYearEnd": ""}
+    finally:
+        close_cache_connections()
 
     record_source(policy_model.YAHOO_FINANCE)
     fiscal_year_end = information.get("lastFiscalYearEnd")
@@ -477,6 +497,8 @@ def get_historical_data(
     except yf.exceptions.YFException:
         # Such as a delisted ticker or one without prices in the range.
         return pd.DataFrame()
+    finally:
+        close_cache_connections()
 
     if historical_data.empty:
         # No prices in the range, such as before the listing.

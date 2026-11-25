@@ -286,7 +286,7 @@ class LiquidityRisk:
                 "quarterly", "yearly". Defaults to "monthly".
             rolling (int, optional): Regress on the days of the last `rolling` periods together instead of one
                 period (e.g. period='monthly' and rolling=3 for a three-month lambda at every month end).
-                Defaults to None.
+                At least 2. Defaults to None.
             method (str, optional): The measure. Options are: "kyle" (Kyle's lambda), "amihud" (Amihud's lambda),
                 "hasbrouck" (Hasbrouck's lambda), "roll" (Roll Impact). Defaults to "kyle".
             scale (float | None, optional): A multiplier applied to the measure for readability. Defaults to
@@ -627,7 +627,7 @@ class LiquidityRisk:
             rolling (int, optional): Estimate the spread from the pairs of the last `rolling` periods together
                 (method="edge"), or average the two-day spreads of the last `rolling` periods
                 (method="corwin_schultz" and "abdi_ranaldo"), instead of one period (e.g. period='monthly' and
-                rolling=3 for a three-month spread at every month end). Defaults to None.
+                rolling=3 for a three-month spread at every month end). At least 2. Defaults to None.
             method (str, optional): The estimator. Options are: "edge" (Ardia, Guidotti and Kroencke, from the
                 Open, High, Low and Close), "corwin_schultz" (from the High and Low), "abdi_ranaldo" (from the
                 Close, High and Low). Defaults to "edge".
@@ -788,7 +788,7 @@ class LiquidityRisk:
                 "weekly", "monthly", "quarterly", "yearly". Defaults to "monthly", as for the Corwin-Schultz spread.
             rolling (int, optional): Average the two-day volatilities of the last `rolling` periods instead of
                 one period (e.g. period='monthly' and rolling=3 for a three-month estimate at every month end).
-                Defaults to None.
+                At least 2. Defaults to None.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the volatility over time. Defaults to False.
@@ -914,7 +914,7 @@ class LiquidityRisk:
             period (str, optional): The period to sum the daily turnover over. Options are: "weekly", "monthly",
                 "quarterly", "yearly". Defaults to "monthly", as in the paper.
             rolling (int, optional): The mean of the turnover of the last `rolling` periods instead of the
-                turnover per period (e.g. rolling=3 for the paper's three-month average). Defaults to None.
+                turnover per period (e.g. rolling=3 for the paper's three-month average). At least 2. Defaults to None.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the turnover over time. Defaults to False.
@@ -1068,7 +1068,7 @@ class LiquidityRisk:
                 "fama_french".
             rolling (int, optional): Regress on the daily returns of the last `rolling` periods instead of one
                 period (e.g. period='monthly' and rolling=12 for a one-year window at every month end).
-                Defaults to None.
+                At least 2. Defaults to None.
             annualize (bool, optional): Whether to scale the daily standard deviation of the residuals to a
                 year (√252) instead of to the period. Defaults to False.
             region (str, optional): The region whose Fama and French factors to use with model="fama_french".

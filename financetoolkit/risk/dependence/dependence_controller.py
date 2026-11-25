@@ -1021,7 +1021,7 @@ class DependenceRisk:
                 5% worst days of the market.
             rolling (int, optional): Use the daily returns of the last `rolling` periods instead of one
                 period (e.g. period='monthly' and rolling=12 for a one-year window at every month end).
-                Defaults to None.
+                At least 2. Defaults to None.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the MES over time. Defaults to False.
@@ -1182,7 +1182,7 @@ class DependenceRisk:
                 firms, whose IFRS balance sheets report more liabilities).
             rolling (int, optional): Estimate the beta from the daily returns of the last `rolling` periods
                 instead of one period (e.g. period='monthly' and rolling=12 for a one-year beta at every
-                month end). Defaults to None.
+                month end). At least 2. Defaults to None.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the results over time. Defaults to False.

@@ -29,44 +29,49 @@ WEEKEND_DAY_SHARE = 0.1
 
 
 def check_rolling(
-    rolling: int | None, historical_data: Mapping[str, pd.DataFrame], period: str
+    rolling: int | None,
+    historical_data: Mapping[str, pd.DataFrame],
+    period: str,
+    minimum: int = 2,
 ) -> None:
     """
     Check the rolling window of a Risk or Performance method: a whole number of at least
-    two, as a window of one has no spread, ratio or regression. A window longer than the
-    periods in the data is allowed but gives NaN throughout, which is logged once.
+    minimum, the smallest window the measure has a value for (two for a spread, ratio or
+    regression, more for the higher moments and the fractal measures). A window at least as
+    long as the periods with a return is allowed but gives at most one value (NaN throughout
+    when longer), which is logged once.
 
     Args:
         rolling (int | None): The rolling window, None for none.
         historical_data (Mapping[str, pd.DataFrame]): The historical data per period, with
             the daily data under "daily" and the intraday data under "intraday".
         period (str): The period the window counts.
+        minimum (int, optional): The smallest window the measure has a value for. Defaults
+            to 2.
 
     Raises:
-        InvalidArgumentError: If rolling is not a whole number of at least 2.
+        InvalidArgumentError: If rolling is not a whole number of at least minimum.
     """
-    validate_window("rolling", rolling, 2)
+    validate_window("rolling", rolling, minimum)
 
     if rolling is None:
         return
 
-    # The periods are counted on the daily (or intraday) data, which every module has,
-    # rather than read from the data of the period, which a module may not have loaded.
-    dates = (
-        historical_data["intraday" if period == "intraday" else "daily"]
-        .dropna(how="all")
-        .index
-    )
-    periods = (
-        dates.asfreq(PERIOD_TRANSLATION[period]).nunique()
-        if period in PERIOD_TRANSLATION and len(dates)
-        else len(dates)
-    )
+    # The window counts returns, so the periods are those with a return: the first period
+    # of the data has a price but no return (a range starting on 2019-12-31 holds four
+    # years and three yearly returns).
+    period_data = historical_data.get(period)
+    if period_data is None:
+        return
 
-    if rolling > periods:
+    returns = period_data.get("Return", period_data)
+    periods = len(returns.dropna(how="all"))
+
+    if rolling >= periods:
         logger.warning(
-            "The rolling window of %s %s periods is longer than the %s %s periods in the "
-            "data, so every value is NaN. Use a shorter rolling window or a longer date range.",  # noqa: E501
+            "The rolling window of %s %s periods is at least as long as the %s %s returns in the "
+            "data, so it gives at most one value (NaN throughout when longer). Use a shorter "
+            "rolling window or a longer date range.",
             rolling,
             period,
             periods,

@@ -5,6 +5,7 @@ __docformat__ = "google"
 import contextlib
 import contextvars
 import inspect
+import numbers
 import os
 from collections.abc import Callable, Iterable
 from concurrent.futures import ThreadPoolExecutor
@@ -17,6 +18,7 @@ import pandas as pd
 
 from financetoolkit.cache.request_model import redact_credentials
 from financetoolkit.utilities import error_model, logger_model
+from financetoolkit.utilities.dataframe_model import FilteredClass
 from financetoolkit.utilities.statistics_model import (
     apply_rounding,
     bounded_ffill,
@@ -1157,6 +1159,63 @@ def trailing_mean(frame: pd.DataFrame, trailing: int | None) -> pd.DataFrame:
         .mean()
         .T.reindex(columns=frame.columns)
     )
+
+
+def check_trailing(cls: FilteredClass) -> FilteredClass:
+    """
+    Class decorator that checks the trailing window of every method of the Ratios and
+    Models classes that has one: a whole number of at least one period, else an
+    InvalidArgumentError. A window longer than the periods of the financial statements
+    leaves every value NaN, which is logged once per call, also when a collection calls
+    the methods of its ratios.
+
+    Args:
+        cls (type): The class.
+
+    Returns:
+        type: The same class.
+    """
+    for name, member in list(vars(cls).items()):
+        if name.startswith("_") or not callable(member):
+            continue
+
+        signature = inspect.signature(member)
+        if "trailing" in signature.parameters:
+            setattr(cls, name, _trailing_checked(member, signature))
+
+    return cls
+
+
+def _trailing_checked(function: Callable, signature: inspect.Signature) -> Callable:
+    """Wraps a method with a trailing window for `check_trailing`."""
+
+    @wraps(function)
+    def wrapper(self, *args, **kwargs):
+        trailing = signature.bind_partial(self, *args, **kwargs).arguments.get(
+            "trailing"
+        )
+        error_model.validate_window("trailing", trailing, 1)
+
+        depth = self.__dict__.get("_trailing_depth", 0)
+        self._trailing_depth = depth + 1
+        try:
+            result = function(self, *args, **kwargs)
+        finally:
+            self._trailing_depth = depth
+
+        periods = len(self._income_statement.columns) if trailing and not depth else 0
+        if periods and isinstance(trailing, numbers.Integral) and trailing > periods:
+            logger.warning(
+                "The trailing window of %s periods is longer than the %s periods of the "
+                "financial statements, so no period has a complete window and every value "
+                "is NaN. Pass a smaller trailing window or an earlier start_date.",
+                trailing,
+                periods,
+            )
+
+        return result
+
+    return wrapper
 
 
 def add_basket_total(

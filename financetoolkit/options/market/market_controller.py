@@ -9,6 +9,7 @@ from financetoolkit.options import options_model
 from financetoolkit.options.helpers import (
     get_days_to_expiration,
     get_time_to_expiration,
+    validate_positive_inputs,
 )
 from financetoolkit.options.market import hedging_model, market_metrics_model
 from financetoolkit.utilities import logger_model
@@ -1686,6 +1687,12 @@ class MarketOptions:
             )
         if moneyness <= 0:
             raise InvalidArgumentError("The moneyness must be positive.")
+        # Checked once for every ticker: a volatility of zero or below has no delta to hedge with.
+        try:
+            validate_positive_inputs(volatility=volatility)
+            validate_positive_inputs(allow_zero=True, transaction_cost=transaction_cost)
+        except ValueError as error:
+            raise InvalidArgumentError(str(error)) from None
 
         dividends = (
             self._daily_historical["Dividends"]
@@ -1893,6 +1900,14 @@ class MarketOptions:
         if moneyness <= 0:
             raise InvalidArgumentError("The moneyness must be positive.")
         validate_window("simulations", simulations)
+        # Checked once for every ticker rather than reported per ticker.
+        try:
+            validate_positive_inputs(
+                volatility=volatility, implied_volatility=implied_volatility
+            )
+            validate_positive_inputs(allow_zero=True, transaction_cost=transaction_cost)
+        except ValueError as error:
+            raise InvalidArgumentError(str(error)) from None
 
         rows = {}
         for ticker in self._tickers:
@@ -1966,6 +1981,13 @@ class MarketOptions:
                 # One ticker the formula cannot value (such as a volatility of zero from constant
                 # prices) is left out rather than emptying the result of every ticker.
                 logger.warning("No delta hedging simulation for %s: %s", ticker, error)
+            except (IndexError, KeyError):
+                # Too few prices for a volatility (or none at all) leaves this ticker out only.
+                logger.warning(
+                    "No delta hedging simulation for %s: it has too few prices for a "
+                    "volatility on the start date.",
+                    ticker,
+                )
 
         if not rows:
             raise ValueError(

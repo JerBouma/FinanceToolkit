@@ -101,6 +101,13 @@ def validate_window(name: str, value: int | None, minimum: int = 1) -> None:
     """
     if value is None:
         return
+    # A float such as 10.0 is a count of observations in value, but not a whole number type.
+    if isinstance(value, float | np.floating):
+        raise InvalidArgumentError(
+            f"{name} is a number of observations of at least {minimum}, so a whole number, "
+            f"not the float {value!r}. "
+            f"Please pass a whole number of {minimum} or more as {name}, or None."
+        )
     if (
         isinstance(value, bool)
         or not isinstance(value, (int, np.integer))

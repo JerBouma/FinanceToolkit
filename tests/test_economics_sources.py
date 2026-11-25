@@ -3806,3 +3806,45 @@ def test_proxies_without_prices_are_reported_in_one_line(monkeypatch, caplog):
 
     assert "possibly delisted" not in caplog.text
     assert caplog.text.count("No prices could be retrieved for the proxies of") == 1
+
+
+def test_an_unreachable_source_is_asked_once_within_a_call(monkeypatch, caplog):
+    from financetoolkit import Economics
+    from financetoolkit.economics.sources import cboe_model
+
+    requested = []
+
+    def unreachable(url, **kwargs):  # noqa: ARG001
+        requested.append(url)
+        raise requests.exceptions.ConnectionError(f"cannot reach {url}")
+
+    monkeypatch.setattr(cboe_model, "get_request", unreachable)
+    monkeypatch.setattr(helpers.time, "sleep", lambda seconds: None)
+    economics = Economics(start_date="2026-01-01", end_date="2026-06-30")
+
+    assert economics.get_implied_volatility(markets="US Equity").empty
+    # The first index is tried with its retries; the other four are not requested.
+    assert len(requested) == helpers.RETRY_ATTEMPTS
+    assert caplog.text.count("Could not reach Cboe") == 1
+
+    # The next call asks again.
+    economics.get_implied_volatility(markets="US Equity")
+    assert len(requested) == 2 * helpers.RETRY_ATTEMPTS
+
+
+def test_a_missing_series_does_not_stop_the_source(monkeypatch):
+    def missing(*args):  # noqa: ARG001
+        response = requests.Response()
+        response.status_code = 404
+        raise requests.exceptions.HTTPError("404 Not Found", response=response)
+
+    with helpers.stop_at_unreachable_sources():
+        for entity in ("first", "second"):
+            assert helpers.collect_cached_data(
+                source="Cboe",
+                dataset="index",
+                entity=entity,
+                fetch=missing,
+                description=f"Cboe {entity} index",
+            ).empty
+        assert "Cboe" not in helpers._UNREACHABLE_SOURCES.get()

@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 from scipy.special import betaincinv, betaln, log_ndtr, ndtr
 
-from financetoolkit.utilities.error_model import check_option
+from financetoolkit.utilities.error_model import InvalidArgumentError, check_option
 
 # The binomial tree variants of calculate_tree_movements.
 BINOMIAL_TREE_METHODS = (
@@ -654,6 +654,10 @@ def get_option_payoff_trees(
     return values, up_movement[:, 0], down_movement[:, 0], probability[:, 0]
 
 
+# The keys a leg of get_strategy_payoff takes.
+LEG_KEYS = ("instrument", "strike_price", "put_option", "position", "premium")
+
+
 def get_strategy_payoff(
     stock_price: float | pd.Series | np.ndarray,
     legs: list[dict[str, float | bool | str]],
@@ -716,8 +720,9 @@ def get_strategy_payoff(
     Raises:
         TypeError: if legs is not a list of dictionaries or if a leg's numeric fields
         are not numeric.
-        ValueError: if legs is empty, or a leg's "position" or "instrument" is invalid,
-        or an option leg is missing "strike_price".
+        InvalidArgumentError: if legs is empty, a leg has a key other than those above, a
+        leg's "position" or "instrument" is invalid, or an option leg is missing
+        "strike_price" (a ValueError).
     """
     if not isinstance(legs, list):
         raise TypeError(
@@ -725,7 +730,7 @@ def get_strategy_payoff(
         )
 
     if not legs:
-        raise ValueError("legs must contain at least one leg.")
+        raise InvalidArgumentError("legs must contain at least one leg.")
 
     total_payoff: float | pd.Series | np.ndarray = 0.0
 
@@ -735,15 +740,21 @@ def get_strategy_payoff(
                 f"Leg {index} must be a dictionary, received {type(leg).__name__}."
             )
 
+        if unknown := [key for key in leg if key not in LEG_KEYS]:
+            raise InvalidArgumentError(
+                f"Leg {index} has the key(s) {', '.join(map(repr, unknown))}, which a leg does "
+                f"not take. Please use the keys {', '.join(map(repr, LEG_KEYS))}."
+            )
+
         instrument = leg.get("instrument", "option")
         if instrument not in ("option", "stock"):
-            raise ValueError(
+            raise InvalidArgumentError(
                 f"Leg {index} 'instrument' must be 'option' or 'stock', received {instrument!r}."
             )
 
         position = leg.get("position", "long")
         if position not in ("long", "short"):
-            raise ValueError(
+            raise InvalidArgumentError(
                 f"Leg {index} 'position' must be 'long' or 'short', received {position!r}."
             )
 
@@ -757,10 +768,12 @@ def get_strategy_payoff(
             leg_value = stock_price
         else:
             strike_price = leg.get("strike_price")
-            if (
-                strike_price is None
-                or not isinstance(strike_price, (int, float))
-                or isinstance(strike_price, bool)
+            if strike_price is None:
+                raise InvalidArgumentError(
+                    f"Leg {index} is an option, which needs a 'strike_price'."
+                )
+            if not isinstance(strike_price, (int, float)) or isinstance(
+                strike_price, bool
             ):
                 raise TypeError(
                     f"Leg {index} must define a numeric 'strike_price' for an option instrument."

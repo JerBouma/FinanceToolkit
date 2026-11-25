@@ -1072,6 +1072,14 @@ def test_finalize_dataset_rejects_a_window_below_one():
             )
 
 
+def test_growth_of_no_data_is_no_data_for_a_list_of_lags():
+    """A source that could not be reached leaves nothing to grow, also with several lags."""
+    from financetoolkit.utilities.statistics_model import calculate_growth
+
+    for axis in ("rows", "columns"):
+        assert calculate_growth(pd.DataFrame(), lag=[1, 4], axis=axis).empty
+
+
 def test_calculate_growth_counts_the_periods_with_a_value(caplog):
     # A rolling window leaves its first periods NaN, which give no earlier value either.
     dataset = pd.DataFrame(

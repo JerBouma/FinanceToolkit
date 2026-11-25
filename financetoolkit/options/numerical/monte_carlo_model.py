@@ -2,6 +2,8 @@
 
 __docformat__ = "google"
 
+import numbers
+
 import numpy as np
 from scipy.special import ndtr
 
@@ -798,7 +800,7 @@ def get_longstaff_schwartz_option_prices(
     )
     _variance_reduction(variance_reduction)
     check_option("basis", basis, LEAST_SQUARES_BASES)
-    if not isinstance(degree, int) or degree < 1:
+    if not isinstance(degree, numbers.Integral) or degree < 1:
         raise ValueError(f"degree must be a positive integer, received {degree!r}.")
 
     # The regression is on the stock price over the strike price.

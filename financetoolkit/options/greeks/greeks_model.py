@@ -383,7 +383,7 @@ def get_epsilon(
     return epsilon
 
 
-@np.errstate(divide="ignore", invalid="ignore")
+@np.errstate(divide="ignore", over="ignore", invalid="ignore")
 def get_lambda(
     stock_price: float,
     strike_price: float,
@@ -408,7 +408,8 @@ def get_lambda(
         put_option (bool): True if it's a put option, False for a call option.
 
     Returns:
-        float: Option Lambda value, NaN where the option is worth nothing.
+        float: Option Lambda value, NaN where the option is worth nothing or so little that
+            the elasticity is not finite.
     """
     delta = get_delta(
         stock_price=stock_price,
@@ -431,12 +432,10 @@ def get_lambda(
     )
 
     # An option worth nothing (out of the money at expiration, or deep out of the money) has
-    # no elasticity, so its lambda is NaN rather than the inf of a division by zero.
-    lambda_value = np.where(
-        np.asarray(option_price) > 0,
-        delta * np.divide(stock_price, option_price),
-        np.nan,
-    )
+    # no elasticity, so its lambda is NaN rather than the inf of a division by zero. A price so
+    # small it underflows (about 1e-300 a day before expiry) overflows the division the same way.
+    lambda_value = np.asarray(delta * np.divide(stock_price, option_price), dtype=float)
+    lambda_value = np.where(np.isfinite(lambda_value), lambda_value, np.nan)
 
     return float(lambda_value) if lambda_value.ndim == 0 else lambda_value
 

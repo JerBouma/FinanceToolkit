@@ -128,12 +128,13 @@ def run_in_parallel(
 
                 # The first argument names the call (a ticker, a year, a series or a
                 # URL); the others can hold an API key, and so can a URL or a message.
+                # A function (one fetch per source) has no readable name to show.
                 logger.error(
                     "No data could be retrieved for %s: %s: %s",
                     (
                         redact_credentials(str(args[0]))
-                        if args
-                        else getattr(worker, "__name__", "a request")
+                        if args and not callable(args[0])
+                        else "one of the requests"
                     ),
                     type(error).__name__,
                     redact_credentials(str(error)),

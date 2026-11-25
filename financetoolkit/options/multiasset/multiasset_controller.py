@@ -368,7 +368,8 @@ class MultiAssetOptions:
             method (str, optional): The approximation. Options are: "bjerksund_stensland" (Bjerksund and Stensland,
             2011, the more accurate), "kirk" (Kirk, 1995). Defaults to "bjerksund_stensland".
             strike_price_range (float): The range of the strike prices around a spread of 0, as a share of the
-            ticker's price, at most 0.5. Defaults to 0.25, which gives strikes from -25 to 25 for a price of 100.
+            ticker's price, at most 0.5 (both approximations take the second asset's forward price plus the strike
+            as a lognormal price, which lower strikes bring close to zero). Defaults to 0.25, which gives strikes from -25 to 25 for a price of 100.
             strike_step_size (float): The step size of the strike prices. Defaults to 5, which gives the strikes
             -25, -20, ..., 20 and 25 for a price of 100.
             expiration_time_range (int): The number of days to use for the time to expiration: the columns are the
@@ -433,13 +434,19 @@ class MultiAssetOptions:
         |             30 |       0.3994 |       1.6094 |       2.9672 |
         """
         check_option("method", method, ("bjerksund_stensland", "kirk"))
-        if (
-            not 0 <= strike_price_range <= MAXIMUM_SPREAD_STRIKE_RANGE
-            or strike_step_size <= 0
-        ):
+        # Tighter than the 0 to 1 of the other methods: both approximations take F2 + K as a lognormal price,
+        # which a strike near minus the price would bring to zero or below, where the formula has no value.
+        if not 0 <= strike_price_range <= MAXIMUM_SPREAD_STRIKE_RANGE:
             raise InvalidArgumentError(
-                "strike_price_range must be between 0 and 0.5 and strike_step_size positive, received "
-                f"{strike_price_range!r} and {strike_step_size!r}."
+                f"strike_price_range must be between 0 and {MAXIMUM_SPREAD_STRIKE_RANGE} for a spread option, not "
+                f"{strike_price_range!r}: the approximations take the second asset's forward price plus the strike "
+                "as a lognormal price, which strikes further below a spread of 0 bring close to zero or below. "
+                f"Please pass a value between 0 and {MAXIMUM_SPREAD_STRIKE_RANGE} as strike_price_range."
+            )
+        if not strike_step_size > 0:
+            raise InvalidArgumentError(
+                f"strike_step_size is the distance between strike prices, above 0, not {strike_step_size!r}. "
+                "Please pass a positive step such as 5 or 2.5 as strike_step_size."
             )
 
         start_date, second, inputs = self._two_asset_inputs(start_date, second_ticker)

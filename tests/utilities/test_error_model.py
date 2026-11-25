@@ -636,3 +636,18 @@ def test_check_period_and_validate_alpha_name_what_to_pass():
             error_model.InvalidArgumentError, match="between 0 and 1 as alpha"
         ):
             error_model.validate_alpha(alpha)
+
+
+def test_a_window_given_as_a_float_is_asked_as_a_whole_number():
+    import numpy as np
+
+    from financetoolkit.utilities.error_model import (
+        InvalidArgumentError,
+        validate_window,
+    )
+
+    with pytest.raises(
+        InvalidArgumentError, match="so a whole number, not the float 10.0"
+    ):
+        validate_window("time_steps", 10.0)
+    validate_window("time_steps", np.int64(10))

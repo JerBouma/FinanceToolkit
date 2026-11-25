@@ -29,7 +29,9 @@ class LoansFixedIncome:
         The weekly 30-year fixed mortgage rate of Freddie Mac's Primary Mortgage Market Survey
         between the start and end date, as a decimal, from FRED when a FRED API key is set and
         from Freddie Mac otherwise (the same figures, see `Economics.get_mortgage_rate_30_year`)
-        -- shared by the loan calculations, which take it as the rate of a new loan.
+        -- shared by the loan calculations, which take it as the rate of a new loan. Empty when
+        the source could not be reached, which the source reports, so the callers return no
+        data without a second message.
         """
         mortgage_rates = (
             economics_fred_model.get_mortgage_rate_30_year(
@@ -38,6 +40,9 @@ class LoansFixedIncome:
             if self._fred_api_key
             else freddie_mac_model.get_mortgage_rate_30_year()
         )
+        if mortgage_rates.empty:
+            return pd.Series(dtype=float, name="Rate")
+
         rates = (
             mortgage_rates["United States"]
             .loc[self._start_date : self._end_date]
@@ -148,6 +153,8 @@ class LoansFixedIncome:
             principal=principal, years=years, payments_per_year=payments_per_year
         )
         rates = self._get_mortgage_rates()
+        if rates.empty:
+            return pd.DataFrame()
         payment = loan_model.get_loan_payment(
             principal, rates, years, payments_per_year
         )
@@ -247,6 +254,8 @@ class LoansFixedIncome:
             payments_per_year=payments_per_year,
         )
         rates = self._get_mortgage_rates()
+        if rates.empty:
+            return pd.DataFrame()
 
         if payment is None:
             payment = loan_model.get_loan_payment(
@@ -346,6 +355,8 @@ class LoansFixedIncome:
             principal=principal, years=years, payments_per_year=payments_per_year
         )
         rates = self._get_mortgage_rates()
+        if rates.empty:
+            return pd.DataFrame()
         if date is not None:
             rates = rates.loc[:date]
             if rates.empty:

@@ -35,7 +35,7 @@ from pydantic import (
 
 from financetoolkit import currencies_model
 from financetoolkit.cache import policy_model
-from financetoolkit.fmp_model import parse_fiscal_period
+from financetoolkit.fmp_model import log_server_errors_once, parse_fiscal_period
 from financetoolkit.helpers import rank_across_tickers
 from financetoolkit.mcp_server.analytics.analytics_model import (
     UsageAnalytics,
@@ -2874,6 +2874,7 @@ class ToolRegistry:
                 with (
                     capture_call_messages() as call_messages,
                     collect_sources() as call_sources,
+                    log_server_errors_once(),
                 ):
                     if raw_series:
                         result = provider.call_econometrics_with_data(

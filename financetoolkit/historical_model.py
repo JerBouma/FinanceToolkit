@@ -220,6 +220,7 @@ def _adjustment_changed(cached_data: pd.DataFrame, new_data: pd.DataFrame) -> bo
     return False
 
 
+@fmp_model.log_server_errors_once()
 def get_historical_data(
     tickers: list[str] | str,
     api_key: str | None = None,
@@ -1055,6 +1056,7 @@ def calculate_period_average(
     return period_average if rounding is None else period_average.round(rounding)
 
 
+@fmp_model.log_server_errors_once()
 def get_historical_statistics(
     tickers: list[str] | str,
     api_key: str | None = None,

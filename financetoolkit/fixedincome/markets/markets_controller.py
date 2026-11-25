@@ -831,13 +831,16 @@ class MarketsFixedIncome(CurvesFixedIncome):
             # duration that to the index rate, which its coupons follow.
             try:
                 notes = self._floating_rate_note_analytics(prices[floating], price_date)
-                cusips = prices.loc[floating, "CUSIP"]
-                prices.loc[floating, "Yield to Maturity"] = cusips.map(
-                    notes["Yield"]
-                ).to_numpy()
-                prices.loc[floating, "Modified Duration"] = cusips.map(
-                    notes["Index Duration"]
-                ).to_numpy()
+                # Without the auctions (TreasuryDirect unreachable, which it reports) there
+                # is no index rate to add, and nothing more to say about it.
+                if not notes.empty:
+                    cusips = prices.loc[floating, "CUSIP"]
+                    prices.loc[floating, "Yield to Maturity"] = cusips.map(
+                        notes["Yield"]
+                    ).to_numpy()
+                    prices.loc[floating, "Modified Duration"] = cusips.map(
+                        notes["Index Duration"]
+                    ).to_numpy()
             except (
                 ValueError,
                 KeyError,
@@ -1175,8 +1178,12 @@ class MarketsFixedIncome(CurvesFixedIncome):
                 treasurydirect_model.get_auctioned_securities.
 
         Returns:
-            pd.DataFrame: One row per CUSIP.
+            pd.DataFrame: One row per CUSIP, empty when TreasuryDirect could not be reached
+            (which it reports).
         """
+        if auctions.empty:
+            return auctions
+
         return (
             auctions.sort_values("Reopening", kind="stable")
             .drop_duplicates("CUSIP")
@@ -1196,7 +1203,8 @@ class MarketsFixedIncome(CurvesFixedIncome):
 
         Returns:
             pd.DataFrame: Per CUSIP the Spread, Index Rate, Accrued Interest, Discount
-            Margin, Yield, Index Duration and Spread Duration.
+            Margin, Yield, Index Duration and Spread Duration, or an empty DataFrame when
+            TreasuryDirect could not be reached for the auctions (which it reports).
 
         Raises:
             ValueError: When the terms of the notes or the 13-week bill auctions are missing.
@@ -1205,6 +1213,11 @@ class MarketsFixedIncome(CurvesFixedIncome):
             treasurydirect_model.get_auctioned_securities("FRN")
         )
         bills = treasurydirect_model.get_auctioned_securities("Bill", "13-Week")
+
+        # TreasuryDirect could not be reached, which it reports, so there is nothing to add.
+        if terms.empty or bills.empty:
+            return pd.DataFrame()
+
         bills = bills[
             ~bills["Cash Management Bill"]
             & bills["High Rate"].notna()
@@ -1397,6 +1410,10 @@ class MarketsFixedIncome(CurvesFixedIncome):
         prices, price_date = self._treasury_prices(date, "FRN", bonds)
         notes = self._floating_rate_note_analytics(prices, price_date)
 
+        # TreasuryDirect could not be reached, which it reports.
+        if notes.empty:
+            return pd.DataFrame()
+
         prices = prices.set_index("CUSIP")
         notes["Maturity"] = prices["Maturity"].dt.strftime("%Y-%m-%d")
         notes["Price"] = prices["Price"]
@@ -1581,6 +1598,11 @@ class MarketsFixedIncome(CurvesFixedIncome):
         terms = self._original_issues(
             treasurydirect_model.get_auctioned_securities("TIPS")
         )
+
+        # TreasuryDirect could not be reached, which it reports.
+        if terms.empty:
+            return pd.DataFrame()
+
         cpi = self._consumer_price_index(
             price_date.replace(day=1)
             - relativedelta(months=inflation_bond_model.REFERENCE_LAG_MONTHS)

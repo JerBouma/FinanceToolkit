@@ -2,15 +2,18 @@
 
 __docformat__ = "google"
 
+import numbers
 import os
+from collections.abc import Callable
 
+import numpy as np
 import pandas as pd
 
 from financetoolkit import fmp_model
 from financetoolkit.cache import cache_controller
 from financetoolkit.discovery import discovery_model
 from financetoolkit.models.valuation import damodaran_model
-from financetoolkit.utilities import logger_model, validation_model
+from financetoolkit.utilities import error_model, logger_model, validation_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
 from financetoolkit.utilities.error_model import (
     InvalidArgumentError,
@@ -67,8 +70,11 @@ def _validate_arguments(
     for name, value in counts.items():
         if value is None:
             continue
-        if isinstance(value, bool) or not isinstance(value, int):
-            raise TypeError(f"The {name} must be a whole number, not {value!r}.")
+        if isinstance(value, bool) or not isinstance(value, numbers.Integral):
+            raise InvalidArgumentError(
+                f"The {name} must be a whole number, not {value!r}. Please pass a whole "
+                f"number as {name}."
+            )
         if value < (0 if name == "page" else 1):
             raise InvalidArgumentError(
                 f"The {name} must be {'zero or more' if name == 'page' else 'one or more'}, not {value}."
@@ -134,6 +140,65 @@ def _snapshot_date(
             f"{pd.offsets.BDay().rollback(pd.Timestamp.today().normalize()):%Y-%m-%d}"
         )
     return date
+
+
+# The business days a default snapshot steps back when the latest has none: FinancialModelingPrep publishes a day's snapshot after the close, and none for a market holiday, so the latest business day can be empty.  # noqa: E501
+SNAPSHOT_LOOKBACK_DAYS = 5
+
+
+def _collect_snapshot(
+    collect: Callable[[str | None], pd.DataFrame],
+    date: str | None,
+    name: str,
+    value: str | None,
+    exchange: str,
+) -> pd.DataFrame:
+    """
+    Collects a sector or industry snapshot (or the history of one), stepping back from the
+    latest business day when no date is given and that day has no snapshot yet.
+
+    Args:
+        collect (Callable[[str | None], pd.DataFrame]): Retrieves the data for a date, or the
+            history when the date is None.
+        date (str | None): The date of the snapshot, kept as given.
+        name (str): "sector" or "industry".
+        value (str | None): The sector or industry of the history.
+        exchange (str): The exchange whose companies are averaged.
+
+    Returns:
+        pd.DataFrame: The snapshot or history, empty (with a warning) when the default date
+        and the business days before it have no snapshot.
+
+    Raises:
+        InvalidArgumentError: When both a date and a sector (industry) are given, or the
+            exchange or sector is not one of the options.
+    """
+    snapshot_date = _snapshot_date(date, name, value, exchange)
+    failures_before = error_model.get_request_failures()
+    data = collect(snapshot_date)
+
+    if date or value or snapshot_date is None:
+        return data
+
+    latest = snapshot_date
+    for _ in range(SNAPSHOT_LOOKBACK_DAYS):
+        # A failed request (logged where it failed) is not a day without a snapshot.
+        if not data.empty or error_model.get_request_failures() != failures_before:
+            return data
+        snapshot_date = str(np.busday_offset(snapshot_date, -1, roll="backward"))
+        data = collect(snapshot_date)
+
+    if data.empty and error_model.get_request_failures() == failures_before:
+        logger.warning(
+            "Financial Modeling Prep has no %s snapshot of %s for the business days from "
+            "%s to %s, such as on market holidays. Please pass another date.",
+            name,
+            exchange,
+            snapshot_date,
+            latest,
+        )
+
+    return data
 
 
 # Used as the Toolkit's default API key when set as an environment variable.
@@ -2126,13 +2191,14 @@ class Discovery:
         +1.25%).
 
         Pass a date (a snapshot across all sectors on that date) or a sector (the historical time series for one
-        sector), not both. Without either, it is the snapshot of the latest business day.
+        sector), not both. Without either, it is the snapshot of the latest business day that has one,
+        looking back up to five business days (a market holiday has none).
 
         Also known as: sector performance snapshot, sector performance history, sector trend.
 
         Args:
             date (str, optional): The date to retrieve a snapshot for, e.g. "2024-02-01". Defaults to None,
-                which uses the latest business day unless a sector is given.
+                which uses the latest business day with a snapshot unless a sector is given.
             sector (str, optional): The sector to retrieve the history for. Options are: "Basic Materials",
                 "Communication Services", "Consumer Cyclical", "Consumer Defensive", "Energy", "Financial Services",
                 "Healthcare", "Industrials", "Real Estate", "Technology", "Utilities". Defaults to None.
@@ -2178,16 +2244,20 @@ class Discovery:
         | 2026-10-23 00:00:00 | Energy   | NASDAQ     |       0.0308545  |
         """
         _validate_arguments(date=date, start_date=start_date, end_date=end_date)
-        date = _snapshot_date(date, "sector", sector, exchange)
-
-        sector_performance = discovery_model.get_sector_performance(
-            api_key=self._api_key,
-            date=date,
-            sector=sector,
-            start_date=start_date,
-            end_date=end_date,
-            user_subscription=self._fmp_plan,
-            exchange=exchange,
+        sector_performance = _collect_snapshot(
+            lambda snapshot_date: discovery_model.get_sector_performance(
+                api_key=self._api_key,
+                date=snapshot_date,
+                sector=sector,
+                start_date=start_date,
+                end_date=end_date,
+                user_subscription=self._fmp_plan,
+                exchange=exchange,
+            ),
+            date,
+            "sector",
+            sector,
+            exchange,
         )
 
         return sector_performance
@@ -2206,13 +2276,14 @@ class Discovery:
         means +1.25%).
 
         Pass a date (a snapshot across all industries on that date) or an industry (the historical time series for
-        one industry), not both. Without either, it is the snapshot of the latest business day.
+        one industry), not both. Without either, it is the snapshot of the latest business day that has one,
+        looking back up to five business days (a market holiday has none).
 
         Also known as: industry performance snapshot, industry performance history, industry trend.
 
         Args:
             date (str, optional): The date to retrieve a snapshot for, e.g. "2024-02-01". Defaults to None,
-                which uses the latest business day unless an industry is given.
+                which uses the latest business day with a snapshot unless an industry is given.
             industry (str, optional): The industry to retrieve the history for, e.g. "Biotechnology". Defaults to None.
             start_date (str, optional): The start of the history of one industry. Defaults to None,
                 which uses the date a year ago.
@@ -2256,16 +2327,20 @@ class Discovery:
         | 2026-10-23 00:00:00 | Biotechnology | NASDAQ     |      -0.00890932 |
         """
         _validate_arguments(date=date, start_date=start_date, end_date=end_date)
-        date = _snapshot_date(date, "industry", industry, exchange)
-
-        industry_performance = discovery_model.get_industry_performance(
-            api_key=self._api_key,
-            date=date,
-            industry=industry,
-            start_date=start_date,
-            end_date=end_date,
-            user_subscription=self._fmp_plan,
-            exchange=exchange,
+        industry_performance = _collect_snapshot(
+            lambda snapshot_date: discovery_model.get_industry_performance(
+                api_key=self._api_key,
+                date=snapshot_date,
+                industry=industry,
+                start_date=start_date,
+                end_date=end_date,
+                user_subscription=self._fmp_plan,
+                exchange=exchange,
+            ),
+            date,
+            "industry",
+            industry,
+            exchange,
         )
 
         return industry_performance
@@ -2284,13 +2359,14 @@ class Discovery:
         is valued.
 
         Pass a date (a snapshot across all sectors on that date) or a sector (the historical time series for one
-        sector), not both. Without either, it is the snapshot of the latest business day.
+        sector), not both. Without either, it is the snapshot of the latest business day that has one,
+        looking back up to five business days (a market holiday has none).
 
         Also known as: sector P/E snapshot, sector P/E history, sector valuation trend.
 
         Args:
             date (str, optional): The date to retrieve a snapshot for, e.g. "2024-02-01". Defaults to None,
-                which uses the latest business day unless a sector is given.
+                which uses the latest business day with a snapshot unless a sector is given.
             sector (str, optional): The sector to retrieve the history for. Options are: "Basic Materials",
                 "Communication Services", "Consumer Cyclical", "Consumer Defensive", "Energy", "Financial Services",
                 "Healthcare", "Industrials", "Real Estate", "Technology", "Utilities". Defaults to None.
@@ -2336,16 +2412,20 @@ class Discovery:
         | 2026-10-23 00:00:00 | Energy   | NASDAQ     |    14.8163 |
         """
         _validate_arguments(date=date, start_date=start_date, end_date=end_date)
-        date = _snapshot_date(date, "sector", sector, exchange)
-
-        sector_pe = discovery_model.get_sector_pe(
-            api_key=self._api_key,
-            date=date,
-            sector=sector,
-            start_date=start_date,
-            end_date=end_date,
-            user_subscription=self._fmp_plan,
-            exchange=exchange,
+        sector_pe = _collect_snapshot(
+            lambda snapshot_date: discovery_model.get_sector_pe(
+                api_key=self._api_key,
+                date=snapshot_date,
+                sector=sector,
+                start_date=start_date,
+                end_date=end_date,
+                user_subscription=self._fmp_plan,
+                exchange=exchange,
+            ),
+            date,
+            "sector",
+            sector,
+            exchange,
         )
 
         return sector_pe
@@ -2364,13 +2444,14 @@ class Discovery:
         industry is valued.
 
         Pass a date (a snapshot across all industries on that date) or an industry (the historical time series for
-        one industry), not both. Without either, it is the snapshot of the latest business day.
+        one industry), not both. Without either, it is the snapshot of the latest business day that has one,
+        looking back up to five business days (a market holiday has none).
 
         Also known as: industry P/E snapshot, industry P/E history, industry valuation trend.
 
         Args:
             date (str, optional): The date to retrieve a snapshot for, e.g. "2024-02-01". Defaults to None,
-                which uses the latest business day unless an industry is given.
+                which uses the latest business day with a snapshot unless an industry is given.
             industry (str, optional): The industry to retrieve the history for, e.g. "Biotechnology". Defaults to None.
             start_date (str, optional): The start of the history of one industry. Defaults to None,
                 which uses the date a year ago.
@@ -2414,16 +2495,20 @@ class Discovery:
         | 2026-10-23 00:00:00 | Biotechnology | NASDAQ     |    15.0327 |
         """
         _validate_arguments(date=date, start_date=start_date, end_date=end_date)
-        date = _snapshot_date(date, "industry", industry, exchange)
-
-        industry_pe = discovery_model.get_industry_pe(
-            api_key=self._api_key,
-            date=date,
-            industry=industry,
-            start_date=start_date,
-            end_date=end_date,
-            user_subscription=self._fmp_plan,
-            exchange=exchange,
+        industry_pe = _collect_snapshot(
+            lambda snapshot_date: discovery_model.get_industry_pe(
+                api_key=self._api_key,
+                date=snapshot_date,
+                industry=industry,
+                start_date=start_date,
+                end_date=end_date,
+                user_subscription=self._fmp_plan,
+                exchange=exchange,
+            ),
+            date,
+            "industry",
+            industry,
+            exchange,
         )
 
         return industry_pe

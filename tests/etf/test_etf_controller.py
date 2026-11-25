@@ -701,3 +701,35 @@ def test_a_holdings_limit_of_zero_is_refused(etf, limit):
 
     # A negative limit keeps the smallest holdings.
     assert not etf.get_holdings(limit=-1).empty
+
+
+def test_return_excluding_without_priced_holdings_is_nan_without_a_warning(etf):
+    import warnings
+
+    # The holdings' prices end long before the holdings' date, so no weight rolls back to
+    # a start weight and there is nothing to divide by.
+    rng = np.random.default_rng(1)
+    dates = pd.bdate_range("2024-11-01", periods=340).to_period("D")
+    prices = pd.DataFrame(
+        {s: 10 * np.exp(np.cumsum(rng.normal(0, 0.01, 340))) for s in ["X", "Y", "Z"]},
+        index=dates,
+    )
+    etf._prices_function = lambda tickers, start, end: prices[
+        [ticker for ticker in tickers if ticker in prices]
+    ]
+    etf._sector_function = lambda tickers: pd.Series({"X": "Tech", "Y": "Energy"})
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", RuntimeWarning)
+        excluding = etf.get_return_excluding("X", rounding=8)
+
+    assert excluding.loc["Priced Holdings Return"].isna().all()
+
+
+def test_funds_without_country_weightings_are_named(etf, caplog):
+    assert etf.get_country_weightings().empty
+    assert "no country weightings for AAA, BBB" in caplog.text
+
+    caplog.clear()
+    assert not etf.get_sector_weightings().empty
+    assert "weightings" not in caplog.text

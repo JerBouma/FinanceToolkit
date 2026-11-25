@@ -89,7 +89,7 @@ def test_ice_bofa_option_adjusted_spread_is_decimal(monkeypatch):
 
     def fake_fred_data(series, start_date, end_date, api_key):
         return pd.DataFrame(
-            [[0.77] * len(series)], index=pd.to_datetime(["2024-01-02"])
+            [[0.77] * len(series)], index=pd.to_datetime(["2024-01-02"]), columns=series
         )
 
     monkeypatch.setattr(fred_model, "get_fred_data", fake_fred_data)
@@ -268,3 +268,25 @@ def test_unreachable_central_banks_are_reported(monkeypatch, caplog):
         assert fixedincome.get_federal_reserve_rates().empty
     assert "Could not reach the European Central Bank" in caplog.text
     assert "Could not reach the Federal Reserve Bank of New York" in caplog.text
+
+
+@pytest.mark.parametrize(
+    "method", ["get_loan_payment", "get_affordable_loan", "get_amortization_schedule"]
+)
+def test_an_unreachable_mortgage_rate_source_is_not_reported_twice(
+    monkeypatch, caplog, method
+):
+    from financetoolkit.economics.sources import freddie_mac_model
+
+    monkeypatch.delenv("FRED_API_KEY", raising=False)
+    # The source logs that it could not be reached and answers with no data.
+    monkeypatch.setattr(
+        freddie_mac_model, "get_mortgage_rate_30_year", lambda: pd.DataFrame()
+    )
+    fixedincome = fixedincome_controller.FixedIncome(
+        start_date="2021-01-01", end_date="2026-11-06", use_cached_data=False
+    )
+
+    assert getattr(fixedincome, method)().empty
+    assert "is missing" not in caplog.text
+    assert "could not be calculated" not in caplog.text

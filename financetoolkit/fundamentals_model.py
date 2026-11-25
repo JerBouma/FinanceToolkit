@@ -14,6 +14,7 @@ from financetoolkit.utilities.statistics_model import apply_rounding
 logger = logger_model.get_logger()
 
 
+@fmp_model.log_server_errors_once()
 def collect_financial_statements(
     tickers: str | list[str],
     statement: str = "",

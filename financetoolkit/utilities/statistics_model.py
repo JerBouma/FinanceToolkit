@@ -1034,6 +1034,10 @@ def calculate_growth(
     for value in lags:
         validate_window("lag", value, 1)
 
+    # No data (a source that could not be reached, which is logged there) has no growth.
+    if dataset.empty:
+        return dataset
+
     # A lag reaching back as far as the data leaves no period with an earlier one to
     # compare with, so the growth is empty rather than wrong; said once, as it is easily
     # mistaken for missing data. Only the periods with a value count, as a rolling window

@@ -479,7 +479,7 @@ def test_a_failed_fred_request_does_not_show_the_api_key(monkeypatch, caplog):
     assert fred_model._request_series(
         "GS10", "2026-01-01", "2026-02-01", "SECRETKEY123"
     ).empty
-    assert "Could not reach FRED for the series GS10" in caplog.text
+    assert "FRED series GS10: FRED could not be reached" in caplog.text
     assert "SECRETKEY123" not in caplog.text
 
 
@@ -545,3 +545,75 @@ def test_treasury_rates_keep_the_maturities_asked_for(monkeypatch):
     assert len(fixedincome.get_treasury_rates().columns) == 5  # noqa: PLR2004
     # A maturity the curve does not have is an error, not every maturity.
     assert fixedincome.get_treasury_rates(maturities="4Y").empty
+
+
+class FredBody:
+    """A FRED answer that is not observations: an HTML page, an empty body or a list."""
+
+    def __init__(self, text):
+        self.text = text
+
+    def json(self):
+        import json
+
+        return json.loads(self.text)
+
+
+@pytest.mark.parametrize("body", ["<!DOCTYPE html><html></html>", "", "[]"])
+def test_a_fred_answer_without_observations_is_reported_as_no_data(
+    monkeypatch, caplog, body
+):
+    from financetoolkit.fixedincome.sources import fred_model
+
+    monkeypatch.setattr(fred_model, "get_request", lambda url, timeout: FredBody(body))
+
+    assert fred_model._request_series(
+        "GS10", "2026-01-01", "2026-02-01", "SECRETKEY123"
+    ).empty
+    assert "No data is returned for the FRED series GS10" in caplog.text
+
+
+def test_an_unreachable_fred_stops_after_the_first_series(monkeypatch, caplog):
+    from financetoolkit.fixedincome.sources import fred_model
+
+    requested = []
+
+    def refused(url, **kwargs):  # noqa: ARG001
+        requested.append(url)
+        raise requests.exceptions.ConnectionError("Connection refused")
+
+    monkeypatch.setattr(fred_model, "get_request", refused)
+
+    spreads = fred_model.get_rating_option_adjusted_spread(
+        "2026-01-01", "2026-02-01", "key"
+    )
+
+    assert spreads.empty
+    assert len(requested) == 1
+    errors = [record for record in caplog.records if record.levelname == "ERROR"]
+    assert len(errors) == 1 and "other 6 series are not requested" in errors[0].message
+
+
+def test_a_missing_ice_bofa_series_keeps_the_others_named(monkeypatch, caplog):
+    from financetoolkit.fixedincome.sources import fred_model
+
+    def partial(url, **kwargs):  # noqa: ARG001
+        if "BAMLC3A0C57YEY" in url:
+            raise requests.exceptions.HTTPError("500 Server Error")
+        return FredBody('{"observations": [{"date": "2026-01-02", "value": "5.0"}]}')
+
+    monkeypatch.setattr(fred_model, "get_request", partial)
+
+    effective_yield = fred_model.get_maturity_effective_yield(
+        "2026-01-01", "2026-02-01", "key"
+    )
+
+    assert list(effective_yield.columns) == [
+        "1-3 Years",
+        "3-5 Years",
+        "7-10 Years",
+        "10-15 Years",
+        "15+ Years",
+    ]
+    assert effective_yield.iloc[0, 0] == pytest.approx(0.05)
+    assert caplog.text.count("BAMLC3A0C57YEY") == 1

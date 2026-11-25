@@ -8,7 +8,10 @@ from financetoolkit.cache import policy_model
 from financetoolkit.economics.helpers import collect_cached_data
 from financetoolkit.utilities.error_model import check_option
 from financetoolkit.utilities.excel_model import read_excel
+from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.requests_model import get_request
+
+logger = get_logger()
 
 # Aswath Damodaran's synthetic rating workbook (NYU Stern), which maps a company's interest
 # coverage ratio to a bond rating and the default spread of that rating. He updates the
@@ -227,7 +230,9 @@ def get_industry_statistics(dataset: str, region: str) -> pd.DataFrame:
         region (str): The region, one of the keys of INDUSTRY_REGIONS.
 
     Returns:
-        pd.DataFrame: One row per industry (and the market totals), indexed by Industry.
+        pd.DataFrame: One row per industry (and the market totals), indexed by Industry, or
+            an empty DataFrame (logged) when the source cannot be reached or answers with
+            something other than the workbook, such as an error page.
 
     Raises:
         ValueError: When the dataset or region is not available, or the workbook's layout
@@ -236,20 +241,34 @@ def get_industry_statistics(dataset: str, region: str) -> pd.DataFrame:
     file_name = get_industry_file_name(dataset, region)
     description = f"Damodaran {dataset.replace('_', ' ')} dataset for {region}"
 
+    unreadable: list[str] = []
+
     def fetch() -> pd.DataFrame:
-        sheet = read_excel(
-            get_request(INDUSTRY_URL.format(file=file_name), timeout=60).content,
-            description,
-            sheet_name="Industry Averages",
-            header=None,
-        )
+        content = get_request(INDUSTRY_URL.format(file=file_name), timeout=60).content
+
+        try:
+            sheet = read_excel(
+                content, description, sheet_name="Industry Averages", header=None
+            )
+        except ValueError as error:
+            # An error page instead of the workbook: the source was reached but sent no
+            # data, reported here rather than raised, as there is nothing to calculate.
+            unreadable.append(str(error))
+            return pd.DataFrame()
 
         return parse_industry_sheet(sheet)
 
-    return collect_cached_data(
+    statistics = collect_cached_data(
         source=policy_model.DAMODARAN,
         dataset="industry_statistics",
         entity=file_name,
         fetch=fetch,
         description=description,
+        # An answer that is not a workbook is reported below; a workbook always holds rows.
+        expect_empty=True,
     )
+
+    if unreadable:
+        logger.error("%s No data is returned for it.", unreadable[0])
+
+    return statistics

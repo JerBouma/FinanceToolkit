@@ -520,13 +520,20 @@ def test_get_strategy_payoff(recorder, options_module):
     )
 
 
-def test_get_strategy_payoff_invalid_legs(options_module, caplog):
-    # Unusable legs are reported and give an empty result, as for every other metric.
-    assert options_module.get_strategy_payoff(legs=[]).empty
-    assert "get_strategy_payoff could not be calculated" in caplog.text
-
-    with pytest.raises(TypeError):
+def test_get_strategy_payoff_invalid_legs(options_module):
+    # Legs that are not a strategy are a mistake in the call, so they raise and say why.
+    with pytest.raises(InvalidArgumentError, match="at least one leg"):
+        options_module.get_strategy_payoff(legs=[])
+    with pytest.raises(InvalidArgumentError, match="strike_price"):
         options_module.get_strategy_payoff(legs=[{"put_option": False}])
+    with pytest.raises(InvalidArgumentError, match="'bogus'"):
+        options_module.get_strategy_payoff(legs=[{"bogus": 1}])
+    with pytest.raises(TypeError):
+        options_module.get_strategy_payoff(legs=[{"strike_price": "100"}])
+    with pytest.raises(InvalidArgumentError, match="stock_price_step_size"):
+        options_module.get_strategy_payoff(stock_price_step_size=-1)
+    with pytest.raises(InvalidArgumentError, match="stock_price_range"):
+        options_module.get_strategy_payoff(stock_price_range=1.5)
 
 
 def test_stock_price_on_a_past_date_is_the_traded_close(options_module):
@@ -2360,3 +2367,92 @@ def test_bjerksund_stensland_warns_about_a_negative_cost_of_carry(
         expiration_time_range=3,
     )
     assert "qd_plus" not in caplog.text
+
+
+@pytest.mark.parametrize(
+    ("method", "arguments", "name"),
+    [
+        ("get_stock_price_simulation", {"time_steps": 2000}, "time_steps"),
+        ("get_stock_price_simulation", {"time_steps": 17}, "time_steps"),
+        ("get_binomial_model", {"time_steps": 2000}, "time_steps"),
+        ("get_delta_hedging_simulation", {"volatility": -0.2}, "volatility"),
+        ("get_delta_hedging_simulation", {"volatility": 0}, "volatility"),
+        (
+            "get_delta_hedging_simulation",
+            {"implied_volatility": 0},
+            "implied_volatility",
+        ),
+        (
+            "get_delta_hedging_simulation",
+            {"transaction_cost": -0.01},
+            "transaction_cost",
+        ),
+        ("get_delta_hedging_backtest", {"volatility": -0.2}, "volatility"),
+        ("get_delta_hedging_backtest", {"transaction_cost": -0.01}, "transaction_cost"),
+    ],
+)
+def test_the_options_refuse_invalid_arguments_once_for_every_ticker(
+    options_module, caplog, method, arguments, name
+):
+    with pytest.raises(InvalidArgumentError, match=name):
+        getattr(options_module, method)(**arguments)
+    # Raised before any ticker is priced, rather than logged per ticker.
+    assert "for AAPL" not in caplog.text and "for MSFT" not in caplog.text
+
+
+def test_the_delta_hedging_simulation_leaves_out_a_ticker_without_prices(
+    test_toolkit, caplog
+):
+    module = test_toolkit.options
+    prices = module._prices.copy()
+    prices["MSFT"] = np.nan
+    module.__dict__["_prices"] = prices
+
+    result = module.get_delta_hedging_simulation(simulations=100)
+
+    assert list(result.index) == ["AAPL"]
+    assert "No delta hedging simulation for MSFT" in caplog.text
+
+
+def test_only_expired_expiries_give_one_warning_for_the_volatility_surface(
+    option_market, monkeypatch, caplog
+):
+    module, labels = option_market
+    # Valued two months on, every expiry of the chains has expired.
+    monkeypatch.setattr(
+        module, "_valuation_time", module._valuation_time + pd.Timedelta(days=60)
+    )
+
+    assert module.get_volatility_surface(expiration_dates=list(labels)).empty
+    assert caplog.text.count("None of the expiries") == 1
+
+
+def test_a_history_too_short_for_a_volatility_is_said_once(test_toolkit, caplog):
+    module = test_toolkit.options
+    module.__dict__["_daily_historical"] = module._daily_historical.iloc[:2]
+
+    values = module.get_black_scholes_model()
+    module.get_delta()
+
+    assert values.isna().all().all()
+    assert caplog.text.count("too few for a volatility") == 1
+
+
+def test_a_ticker_without_a_price_is_said_once_for_all_greeks(test_toolkit, caplog):
+    module = test_toolkit.options
+    prices = module._prices.copy()
+    prices.iloc[-1, prices.columns.get_loc("MSFT")] = np.nan
+    module.__dict__["_prices"] = prices
+
+    module.collect_all_greeks()
+
+    assert caplog.text.count("MSFT has no price on") == 1
+
+
+def test_the_options_take_numpy_whole_numbers(options_module):
+    # Counts read from a DataFrame are numpy integers.
+    assert not options_module.get_monte_carlo_option_price(
+        time_steps=np.int64(3), simulations=np.int64(200)
+    ).empty
+    with pytest.raises(InvalidArgumentError, match="whole number"):
+        options_module.get_binomial_model(time_steps=10.0)

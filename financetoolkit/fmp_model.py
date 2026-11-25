@@ -7,6 +7,9 @@ import hashlib
 import random
 import re
 import time
+from collections.abc import Generator
+from contextlib import contextmanager
+from contextvars import ContextVar
 from datetime import datetime, timedelta
 from http.client import RemoteDisconnected
 from io import StringIO
@@ -51,27 +54,51 @@ RETRY_BASE_DELAY_SECONDS = 2.5
 RETRY_MAX_DELAY_SECONDS = 60.0
 
 # A server error or an answer that is not JSON usually hits every request of a call (each
-# ticker, each page), so it is logged once a minute per kind rather than once per request.
-SERVER_ERROR_LOG_INTERVAL_SECONDS = 60.0
-_server_errors_logged: dict[int | str, float] = {}
+# ticker, each page), so within a call (see log_server_errors_once) it is logged once per
+# kind rather than once per request. Outside such a call every one is logged.
+_server_errors_logged: ContextVar[set[int | str] | None] = ContextVar(
+    "financetoolkit_fmp_server_errors_logged", default=None
+)
+
+
+@contextmanager
+def log_server_errors_once() -> Generator[None]:
+    """
+    Logs each kind of server error once while the block runs, including in the worker
+    threads it starts, for a call that sends many requests (one per ticker or page). A block
+    inside another shares the outer one's record, so an MCP tool call that collects several
+    datasets still logs each kind once, and every new call logs it again.
+
+    Yields:
+        None: Nothing; the server errors are logged once per kind until the block ends.
+    """
+    if _server_errors_logged.get() is not None:
+        yield
+        return
+
+    token = _server_errors_logged.set(set())
+    try:
+        yield
+    finally:
+        _server_errors_logged.reset(token)
 
 
 def _log_server_error(kind: int | str, message: str, *args) -> None:
     """
-    Logs a server error once a minute per kind (a status code, or "not json").
+    Logs a server error, once per kind (a status code, or "not json") within
+    log_server_errors_once.
 
     Args:
-        kind (int | str): What failed, which decides whether it was logged just now.
+        kind (int | str): What failed, which decides whether it was logged in this call.
         message (str): The message, with %s placeholders.
         *args: The values of the placeholders.
     """
-    now = time.monotonic()
-    if (
-        now - _server_errors_logged.get(kind, -np.inf)
-        >= SERVER_ERROR_LOG_INTERVAL_SECONDS
-    ):
-        _server_errors_logged[kind] = now
-        logger.error(message, *args)
+    logged = _server_errors_logged.get()
+    if logged is not None:
+        if kind in logged:
+            return
+        logged.add(kind)
+    logger.error(message, *args)
 
 
 def determine_retry_delay(attempt: int) -> float:
@@ -1214,6 +1241,7 @@ def get_historical_statistics(ticker: str, api_key: str) -> pd.Series:
     return profile_df
 
 
+@log_server_errors_once()
 def get_revenue_segmentation(
     tickers: str | list[str],
     method: str = "",
@@ -1407,6 +1435,7 @@ def get_revenue_segmentation(
     return pd.DataFrame(), no_data
 
 
+@log_server_errors_once()
 def get_analyst_estimates(
     tickers: str | list[str],
     api_key: str = "",
@@ -1588,6 +1617,7 @@ def get_analyst_estimates(
     return pd.DataFrame(), no_data
 
 
+@log_server_errors_once()
 def get_profile(
     tickers: list[str] | str,
     api_key: str,
@@ -1707,6 +1737,7 @@ def get_profile(
     return pd.DataFrame(), no_data
 
 
+@log_server_errors_once()
 def get_quote(
     tickers: list[str] | str,
     api_key: str,
@@ -1811,6 +1842,7 @@ def get_quote(
     return quote_dataframe, no_data
 
 
+@log_server_errors_once()
 def get_rating(
     tickers: list[str] | str,
     api_key: str,
@@ -1895,6 +1927,7 @@ def get_rating(
     return pd.DataFrame(), no_data
 
 
+@log_server_errors_once()
 def get_earnings_calendar(
     tickers: list[str] | str,
     api_key: str,
@@ -2004,6 +2037,7 @@ def get_earnings_calendar(
     return pd.DataFrame(), no_data
 
 
+@log_server_errors_once()
 def get_dividend_calendar(
     tickers: list[str] | str,
     api_key: str,
@@ -2123,6 +2157,7 @@ def get_dividend_calendar(
     return pd.DataFrame(), no_data
 
 
+@log_server_errors_once()
 def get_esg_scores(
     tickers: list[str] | str,
     api_key: str,
@@ -2245,7 +2280,8 @@ def get_market_risk_premium(api_key: str) -> pd.DataFrame:
     Returns:
         pd.DataFrame: the market risk premium by country, indexed by country and including
         the continent, Country Risk Premium and Total Equity Risk Premium (both as decimals,
-        0.0446 for 4.46%).
+        0.0446 for 4.46%). Empty, with the reason logged, when Financial Modeling Prep does
+        not answer with the premiums (a rate limit, a plan restriction, unreachable).
     """
     if not api_key:
         raise ValueError(
@@ -2259,8 +2295,26 @@ def get_market_risk_premium(api_key: str) -> pd.DataFrame:
 
     market_risk_premium = get_financial_data(url=url)
 
+    if error_model.is_error_response(market_risk_premium):
+        # The error frame (a rate limit, an unreachable FMP) is no premium to return.
+        error = str(market_risk_premium.columns[0])
+        logger.error(
+            "The market risk premium could not be retrieved from Financial Modeling Prep: "
+            "%s.",
+            {
+                "NO ERRORS": "it could not be reached",
+                "REQUEST FAILED": "the request failed",
+                "LIMIT REACH": "the rate limit was reached",
+            }.get(error, error.lower()),
+        )
+        return pd.DataFrame()
+
     if "country" not in market_risk_premium.columns:
-        return market_risk_premium
+        logger.error(
+            "Financial Modeling Prep answered the market risk premium without countries, "
+            "so no premium is returned."
+        )
+        return pd.DataFrame()
 
     market_risk_premium = market_risk_premium.rename(
         columns={
@@ -2342,6 +2396,7 @@ def get_sp500_market_value(api_key: str, user_subscription: str = "Free") -> pd.
     return pd.Series({date: total}, dtype=float)
 
 
+@log_server_errors_once()
 def get_commitment_of_traders(
     tickers: list[str] | str,
     api_key: str,
@@ -2531,6 +2586,7 @@ def _record_limit(user_subscription: str) -> str:
     return "99999" if user_subscription != "Free" else "5"
 
 
+@log_server_errors_once()
 def _collect_per_ticker_frames(
     worker,
     ticker_list: list[str],
@@ -3129,6 +3185,7 @@ def get_insider_trade_statistics(
 FORM_13F_FILING_DAYS = 45
 
 
+@log_server_errors_once()
 def get_institutional_ownership(
     tickers: list[str] | str,
     api_key: str,

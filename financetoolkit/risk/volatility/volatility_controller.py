@@ -9,6 +9,7 @@ import pandas as pd
 
 from financetoolkit.helpers import handle_portfolio
 from financetoolkit.risk import risk_model
+from financetoolkit.risk.helpers import check_rolling
 from financetoolkit.risk.volatility import garch_model, realized_volatility_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
 from financetoolkit.utilities.error_model import (
@@ -993,6 +994,8 @@ class VolatilityRisk:
         Notes:
         - Every asset is fitted on its own available returns, see `get_garch_parameters`.
         - The variance is that of a single period of the chosen `period`; its square root is the volatility.
+        - A fit with a persistence of at least 1 - 10^-6 is treated as integrated, as IGARCH, so its curve is NaN:
+          its unconditional variance Omega / (1 - P) is unbounded as the persistence P approaches 1.
 
         As an example:
 
@@ -1440,6 +1443,7 @@ class VolatilityRisk:
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
         check_period(period, ["weekly", "monthly", "quarterly", "yearly"])
+        check_rolling(rolling, self._historical_data, period)
 
         if rolling and method != "close_to_close":
             raise InvalidArgumentError(
@@ -1756,6 +1760,7 @@ class VolatilityRisk:
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
         check_period(period, ["weekly", "monthly", "quarterly", "yearly"])
+        check_rolling(rolling, self._historical_data, period)
 
         if rolling:
             period_returns = self._historical_data[period]["Return"]
@@ -1913,6 +1918,7 @@ class VolatilityRisk:
         period = period if period else "daily"
 
         check_period(period, ["daily", "weekly", "monthly", "quarterly", "yearly"])
+        check_rolling(rolling, self._historical_data, period)
         if (
             period == "daily"
             and within_period

@@ -1214,3 +1214,11 @@ def test_garch_and_gjr_objective_gradients_match_finite_differences(
     analytic = garch_model._log_maximization_gradient(weights, returns, 1100, method)
 
     np.testing.assert_allclose(analytic, numerical, rtol=1e-5)
+
+
+def test_a_nearly_integrated_garch_has_no_news_impact_curve():
+    # Alpha + Beta = 1 - 10^-9 gives Omega / (1 - P) = 10^3 instead of a level of the data.
+    nearly_integrated = [1e-6, 0.05, 0.95 - 1e-9]
+
+    assert garch_model.get_news_impact_curve(nearly_integrated).isna().all()
+    assert garch_model.get_news_impact_curve([1e-6, 0.05, 0.9]).notna().all()

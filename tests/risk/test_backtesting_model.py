@@ -1,5 +1,7 @@
 """VaR Backtesting Model Tests"""
 
+import warnings
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -388,3 +390,18 @@ def test_get_duration_test_keeps_its_size_under_the_null():
     # The χ² distribution rejects about 9% of the time at 5%; the orderings give the exact
     # null distribution given the number of breaches (5% up to 2 pp of simulation error).
     assert np.mean(np.array(p_values) <= SIGNIFICANCE_LEVEL) < 0.1
+
+
+def test_acerbi_szekely_test_without_a_cvar_does_not_warn_per_resample():
+    returns = pd.Series(np.random.default_rng(3).normal(0, 0.01, 300))
+    zero = pd.Series(0.0, index=returns.index)
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        result = backtesting_model.get_acerbi_szekely_test(
+            returns, zero, zero, alpha=0.05, n_bootstrap=50
+        )
+
+    assert np.isnan(result["Standard Error"]) or not np.isfinite(
+        result["Acerbi-Szekely Statistic"]
+    )

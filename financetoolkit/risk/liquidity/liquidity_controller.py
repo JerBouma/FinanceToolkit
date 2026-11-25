@@ -10,6 +10,7 @@ import pandas as pd
 from financetoolkit.helpers import handle_portfolio
 from financetoolkit.performance import performance_model
 from financetoolkit.ratios.helpers import map_period_data_to_daily_data
+from financetoolkit.risk.helpers import check_rolling
 from financetoolkit.risk.liquidity import market_liquidity_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
 from financetoolkit.utilities.error_model import (
@@ -348,6 +349,7 @@ class LiquidityRisk:
         period = period if period else "monthly"
 
         check_period(period, ["weekly", "monthly", "quarterly", "yearly"])
+        check_rolling(rolling, self._historical_data, period)
 
         scale = (
             scale
@@ -694,6 +696,7 @@ class LiquidityRisk:
         period = period if period else "monthly"
 
         check_period(period, ["weekly", "monthly", "quarterly", "yearly"])
+        check_rolling(rolling, self._historical_data, period)
 
         high, low, close = (
             self._get_prices("High"),
@@ -839,6 +842,7 @@ class LiquidityRisk:
         period = period if period else "monthly"
 
         check_period(period, ["weekly", "monthly", "quarterly", "yearly"])
+        check_rolling(rolling, self._historical_data, period)
 
         volatility = market_liquidity_model.get_bekker_parkinson_volatility(
             self._get_prices("High"),
@@ -968,6 +972,7 @@ class LiquidityRisk:
         period = period if period else "monthly"
 
         check_period(period, ["weekly", "monthly", "quarterly", "yearly"])
+        check_rolling(rolling, self._historical_data, period)
         if self._shares_outstanding_function is None:
             raise ValueError(
                 "The Share Turnover needs the shares outstanding of the financial statements, "
@@ -1126,6 +1131,7 @@ class LiquidityRisk:
         period = period if period else "monthly"
 
         check_period(period, ["monthly", "quarterly", "yearly"])
+        check_rolling(rolling, self._historical_data, period)
         check_option("model", model, ["fama_french", "capm"])
 
         returns = self._historical_data["daily"]["Return"]

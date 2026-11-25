@@ -14,6 +14,7 @@ from financetoolkit.mcp_server.registry.provider_model import (
     ToolkitProvider,
     resolve_benchmark_ticker,
 )
+from tests.mcp_server.answers import read_answer
 
 
 class RecordingToolkit:
@@ -412,9 +413,12 @@ def test_the_econometrics_tool_answers_each_order_of_the_tickers(monkeypatch, tm
                     "end_date": "2025-10-31",
                 },
             )
-        )[0][0].text
+        )[0].text
         for tickers in ("AAPL,MSFT", "MSFT,AAPL")
     ]
 
-    assert '"Dependent": "AAPL"' in answers[0] and '"metric": "MSFT"' in answers[0]
-    assert '"Dependent": "MSFT"' in answers[1] and '"metric": "AAPL"' in answers[1]
+    first, second = (read_answer(answer) for answer in answers)
+    assert {row["Dependent"] for row in first} == {"AAPL"}
+    assert "MSFT" in {row["metric"] for row in first}
+    assert {row["Dependent"] for row in second} == {"MSFT"}
+    assert "AAPL" in {row["metric"] for row in second}

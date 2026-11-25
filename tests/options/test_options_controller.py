@@ -1,4 +1,5 @@
 """Options Controller Tests""" ""
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -898,7 +899,7 @@ def test_the_mcp_earnings_move_answers_every_ticker(monkeypatch, option_market):
                 "around_earnings": True,
             },
         )
-    )[0][0].text
+    )[0].text
 
     assert "Invalid input" not in text
     for ticker, earnings_date in zip(module._tickers, expiries, strict=False):
@@ -1459,8 +1460,8 @@ def test_a_ticker_without_options_is_left_out_by_name(
     assert list(nearest.index.get_level_values(0).unique()) == ["AAPL"]
     assert nearest.name == "2026-11-27"
     assert (
-        "No options data is available for MSFT, so it is left out: Yahoo Finance lists no "
-        "options of it." in caplog.text
+        "No options data is available for MSFT, so it is left out: Yahoo Finance lists no options of it."
+        in caplog.text
     )
 
 

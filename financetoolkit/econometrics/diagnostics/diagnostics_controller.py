@@ -429,7 +429,8 @@ class DiagnosticsEconometrics:
         Walks: Evidence from a Simple Specification Test." Review of Financial Studies,
         1(1), 41-66.
 
-        Also known as: Lo-MacKinlay test, VR test.
+        Also known as: Lo-MacKinlay test, VR test, random walk test, mean reversion test,
+        trending or mean-reverting.
 
         Referenced against:
         - arch, VarianceRatio: https://bashtage.github.io/arch/unitroot/generated/arch.unitroot.VarianceRatio.html

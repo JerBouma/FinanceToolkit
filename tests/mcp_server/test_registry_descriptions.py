@@ -7,6 +7,7 @@ import yaml
 
 from financetoolkit.mcp_server import mcp_controller
 from financetoolkit.mcp_server.registry.registry_controller import _rank_result
+from tests.mcp_server.answers import read_answer
 
 
 def test_long_tool_descriptions_are_complete():
@@ -62,7 +63,7 @@ def test_the_categories_count_the_indicators_of_every_tool():
     import re
 
     result = asyncio.run(mcp_controller.mcp.call_tool("search_metric_categories", {}))
-    text = result[0][0].text if isinstance(result, tuple) else result.content[0].text
+    text = result[0].text
 
     rows = [line.split("|") for line in text.splitlines() if line.startswith("| `")]
     indicators = {row[1].strip(" `"): int(row[3]) for row in rows}
@@ -153,24 +154,27 @@ def test_refused_and_estimation_choices_are_no_formula_variants():
     # Pearson, Spearman, Kendall and distance correlation are different measures.
     assert "kendall" in _formula_variants(AnalysisConstruction.get_codependence_matrix)
 
-    tools = {tool.name: tool for tool in asyncio.run(mcp_controller.mcp.list_tools())}
-    description = tools["risk"].inputSchema["properties"]["method"]["description"]
-    assert (
-        "get_garch, get_garch_forecast, get_garch_parameters, get_garch_simulation, "
-        "get_news_impact_curve: 'garch', 'gjr', 'igarch', 'aparch', 'tgarch', 'ngarch', "
-        "'nagarch', 'component', 'figarch';"
-    ) in description
-    assert "egarch" not in description
-    assert "avgarch" not in description
-    assert "'realized'" not in description
+    # search_metrics with an indicator's name lists the values of its method, and the ones
+    # the server refuses as not available.
+    garch = search_indicator("get_garch")
+    method = next(line for line in garch.splitlines() if line.startswith("- `method`"))
+    assert all(f'"{value}"' in method for value in ("garch", "gjr", "figarch"))
+    assert "Not available on this server: 'egarch', 'avgarch', 'realized'." in method
 
     # A method that is free text lists every value it accepts, however long the list.
     from financetoolkit.portfolio.construction.optimization.optimization_model import (
         COVARIANCE_METHODS,
     )
 
-    description = tools["portfolio"].inputSchema["properties"]["method"]["description"]
+    description = search_indicator("get_covariance_estimate")
     assert all(f'"{method}"' in description for method in COVARIANCE_METHODS)
+
+
+def search_indicator(indicator):
+    """What search_metrics answers for an indicator's name."""
+    return asyncio.run(
+        mcp_controller.mcp.call_tool("search_metrics", {"query": indicator})
+    )[0].text
 
 
 def test_a_method_is_known_by_the_class_that_defines_it():
@@ -187,7 +191,7 @@ def test_a_method_is_known_by_the_class_that_defines_it():
 
 
 def test_the_method_description_lists_every_indicators_own_values():
-    """A tool whose indicators take many different methods lists each one's values."""
+    """search_metrics with an indicator's name lists the values of its method."""
     import importlib
 
     from financetoolkit.mcp_server.registry.registry_controller import (
@@ -214,7 +218,6 @@ def test_the_method_description_lists_every_indicators_own_values():
         schema = tools[group["tool_name"]].inputSchema["properties"]
         if "method" not in schema:
             continue
-        description = schema["method"]["description"]
         for indicator in schema["indicator"].get("enum", []):
             module = (group.get("method_to_module") or {}).get(
                 indicator, group.get("module_name")
@@ -224,13 +227,25 @@ def test_the_method_description_lists_every_indicators_own_values():
                 module = module["module"]
             if module not in config["module_class_map"]:
                 continue
-            for value in _formula_variants(getattr(owner(module), indicator)):
-                if (indicator, value) not in refused:
-                    checked += 1
-                    # Quoted either way: a docstring's own words use double quotes.
-                    assert (
-                        f"'{value}'" in description or f'"{value}"' in description
-                    ), f"{group['tool_name']}: {indicator} method {value!r}"
+            variants = [
+                value
+                for value in _formula_variants(getattr(owner(module), indicator))
+                if (indicator, value) not in refused
+            ]
+            if not variants:
+                continue
+            # The section of this tool, as an indicator's name can be part of several.
+            section = next(
+                part
+                for part in search_indicator(indicator).split("### ")
+                if part.startswith(f"`{indicator}` (tool `{group['tool_name']}`)")
+            )
+            for value in variants:
+                checked += 1
+                # Quoted either way: a docstring's own words use double quotes.
+                assert (
+                    f"'{value}'" in section or f'"{value}"' in section
+                ), f"{group['tool_name']}: {indicator} method {value!r}"
 
     assert checked > 100  # noqa: PLR2004
 
@@ -241,7 +256,7 @@ def test_every_stated_number_of_metrics_is_the_same():
     import re
 
     result = asyncio.run(mcp_controller.mcp.call_tool("search_metric_categories", {}))
-    text = result[0][0].text if isinstance(result, tuple) else result.content[0].text
+    text = result[0].text
     total = int(text.split("**Total: ")[1].split(" metrics")[0].replace(",", ""))
     expected = f"{total // 100 * 100}+"
 
@@ -315,14 +330,14 @@ def test_a_large_answer_is_cut_to_its_most_recent_rows():
         index=pd.period_range("2006-01-01", periods=5000, freq="D"),
     )
 
-    answer = json.loads(format_result(prices, max_characters=5000))
+    answer = read_answer(format_result(prices, max_characters=5000))
 
     assert len(json.dumps(answer["data"])) <= 5000  # noqa: PLR2004
     assert answer["data"][-1]["Close"] == 4999  # noqa: PLR2004
     assert "last" in answer["_notes"][0] and "start_date" in answer["_notes"][0]
 
     # A small answer is left as it is.
-    assert "_notes" not in json.loads(
+    assert "_notes" not in read_answer(
         format_result(prices.tail(3), max_characters=5000)
     )
 
@@ -338,7 +353,7 @@ def test_a_very_wide_answer_keeps_its_first_columns():
         [[0.02] * 3000] * 3, columns=[f"{year}Y" for year in range(1, 3001)]
     )
 
-    answer = json.loads(format_result(curve, max_characters=4000))
+    answer = read_answer(format_result(curve, max_characters=4000))
 
     assert len(json.dumps(answer["data"])) <= 4000  # noqa: PLR2004
     assert "columns" in answer["_notes"][0]
@@ -356,7 +371,7 @@ def test_a_long_text_is_shortened_rather_than_dropped():
         index=["AAPL", "MSFT"],
     )
 
-    answer = json.loads(format_result(transcripts, max_characters=10000))
+    answer = read_answer(format_result(transcripts, max_characters=10000))
 
     assert len(json.dumps(answer["data"])) <= 10000  # noqa: PLR2004
     assert all(record["Transcript"].endswith("...") for record in answer["data"])
@@ -364,7 +379,6 @@ def test_a_long_text_is_shortened_rather_than_dropped():
 
 
 def test_columns_of_three_levels_are_joined_into_one_name():
-    import json
 
     import pandas as pd
 
@@ -377,14 +391,13 @@ def test_columns_of_three_levels_are_joined_into_one_name():
         ),
     )
 
-    record = json.loads(format_result(draws))[0]
+    record = read_answer(format_result(draws))[0]
 
     assert record["AAPL | MSFT | AAPL"] == 0.01  # noqa: PLR2004
     assert record["AAPL | MSFT | MSFT"] == 0.02  # noqa: PLR2004
 
 
 def test_limit_and_the_cut_keep_the_latest_periods_of_a_sideways_table():
-    import json
 
     import pandas as pd
 
@@ -402,14 +415,13 @@ def test_limit_and_the_cut_keep_the_latest_periods_of_a_sideways_table():
     assert select_rows(ratios, -2).columns.astype(str).tolist() == ["2025", "2026"]
     assert select_rows(ratios, 1).columns.astype(str).tolist() == ["1997"]
 
-    answer = json.loads(format_result(ratios, max_characters=60))
+    answer = read_answer(format_result(ratios, max_characters=60))
 
     assert "2026" in answer["data"][0] and "1997" not in answer["data"][0]
     assert "last" in answer["_notes"][0] and "periods" in answer["_notes"][0]
 
 
 def test_floats_are_rounded_to_significant_digits_and_infinity_becomes_null():
-    import json
 
     import pandas as pd
 
@@ -421,7 +433,7 @@ def test_floats_are_rounded_to_significant_digits_and_infinity_becomes_null():
 
     # Four decimals, with at least four significant digits for small values such as a
     # daily variance.
-    assert [record["Value"] for record in json.loads(format_result(values))] == [
+    assert [record["Value"] for record in read_answer(format_result(values))] == [
         0.08318,
         0.0001235,
         12345.6789,
@@ -430,7 +442,6 @@ def test_floats_are_rounded_to_significant_digits_and_infinity_becomes_null():
 
 
 def test_a_factor_model_has_a_row_per_ticker_and_the_coefficients_as_keys():
-    import json
 
     import pandas as pd
 
@@ -444,14 +455,13 @@ def test_a_factor_model_has_a_row_per_ticker_and_the_coefficients_as_keys():
         ),
     )
 
-    records = json.loads(format_result(model))
+    records = read_answer(format_result(model))
 
     assert records[0]["ticker"] == "ASML.AS"
     assert records[0]["Mkt-RF Slope"] == 1.2  # noqa: PLR2004
 
 
 def test_an_unnamed_level_of_countries_is_called_country():
-    import json
 
     import pandas as pd
 
@@ -463,7 +473,7 @@ def test_an_unnamed_level_of_countries_is_called_country():
         columns=pd.MultiIndex.from_product([["Japan", "United States"], ["M0", "M1"]]),
     )
 
-    records = json.loads(format_result(money))
+    records = read_answer(format_result(money))
 
     assert records[0]["country"] == "Japan" and records[0]["M1"] == 2.0  # noqa: PLR2004
 
@@ -496,14 +506,74 @@ def test_every_parameter_has_a_real_description():
         sys.modules.pop(module, None)
     mcp_controller = importlib.import_module("financetoolkit.mcp_server.mcp_controller")
 
+    tools = asyncio.run(mcp_controller.mcp.list_tools())
     placeholders = [
         f"{tool.name}.{name}"
-        for tool in asyncio.run(mcp_controller.mcp.list_tools())
+        for tool in tools
         for name, schema in tool.inputSchema.get("properties", {}).items()
-        if schema.get("description", "Value for").startswith("Value for")
+        if schema.get("description", "").startswith("Value for")
     ]
 
     assert placeholders == []
+
+    # A parameter without a description in the schema (left out to keep the tool within
+    # the size of the listing) is described by search_metrics for an indicator that takes it.
+    answers: dict[str, str] = {}
+    for tool in tools:
+        properties = tool.inputSchema.get("properties", {})
+        indicators = properties.get("indicator", {}).get("enum", [])
+        for name, schema in properties.items():
+            if "description" in schema:
+                continue
+            found = False
+            for indicator in indicators:
+                if indicator not in answers:
+                    answers[indicator] = asyncio.run(
+                        mcp_controller.mcp.call_tool(
+                            "search_metrics", {"query": indicator}
+                        )
+                    )[0].text
+                if f"- `{name}`:" in answers[indicator]:
+                    found = True
+                    break
+            assert found, f"{tool.name}.{name}"
+
+
+def test_the_tool_listing_stays_small():
+    """A client that loads every tool reads them all before its first call, and one that
+    loads them on demand reads a tool in full."""
+    import importlib
+    import json
+    import sys
+
+    # Imported afresh, as another test leaves the server modules built on a stub.
+    for module in (
+        "financetoolkit.mcp_server.mcp_controller",
+        "financetoolkit.mcp_server.registry.registry_controller",
+        "financetoolkit.mcp_server.registry.tools_model",
+    ):
+        sys.modules.pop(module, None)
+    mcp_controller = importlib.import_module("financetoolkit.mcp_server.mcp_controller")
+
+    from financetoolkit.mcp_server.registry.registry_controller import (
+        MAXIMUM_TOOL_CHARACTERS,
+    )
+
+    sizes = {
+        tool.name: len(
+            json.dumps(
+                {
+                    "name": tool.name,
+                    "description": tool.description,
+                    "inputSchema": tool.inputSchema,
+                }
+            )
+        )
+        for tool in asyncio.run(mcp_controller.mcp.list_tools())
+    }
+
+    assert max(sizes.values()) <= MAXIMUM_TOOL_CHARACTERS, sizes
+    assert sum(sizes.values()) <= 200_000  # noqa: PLR2004
 
 
 def test_docstring_arguments_are_read_without_their_defaults():
@@ -542,7 +612,6 @@ def test_the_last_rows_of_a_series_are_the_last_ones_with_data():
 
 
 def test_symbols_with_an_exchange_suffix_are_called_tickers():
-    import json
 
     import pandas as pd
 
@@ -554,8 +623,8 @@ def test_symbols_with_an_exchange_suffix_are_called_tickers():
         {"Value at Risk": [-0.18, -0.06]}, index=["BTCUSD", "Benchmark"]
     )
 
-    assert json.loads(format_result(ratios))[0]["ticker"] == "ASML.AS"
-    assert json.loads(format_result(risk))[0]["ticker"] == "BTCUSD"
+    assert read_answer(format_result(ratios))[0]["ticker"] == "ASML.AS"
+    assert read_answer(format_result(risk))[0]["ticker"] == "BTCUSD"
 
 
 def test_the_server_tells_a_client_how_to_use_it():
@@ -697,14 +766,13 @@ def test_rank_true_on_a_single_ticker_says_it_was_not_applied(monkeypatch):
                 "rank": True,
             },
         )
-    )[0][0].text
+    )[0].text
 
     assert "rank=true was not applied" in answer
     assert '"Rank"' not in answer
 
 
 def test_an_answer_without_values_gets_no_notes_on_limit_or_rank(monkeypatch):
-    import json
     import typing
 
     from financetoolkit.mcp_server.registry.provider_model import ToolkitProvider
@@ -726,7 +794,7 @@ def test_an_answer_without_values_gets_no_notes_on_limit_or_rank(monkeypatch):
             },
         )
     )
-    answer = json.loads(typing.cast(tuple, result)[0][0].text)
+    answer = read_answer(typing.cast(list, result)[0].text)
 
     assert answer["reason"].endswith("ValueError: x.")
     assert "_notes" not in answer

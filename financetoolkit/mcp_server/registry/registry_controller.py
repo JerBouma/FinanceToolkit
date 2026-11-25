@@ -21,6 +21,7 @@ import time
 import traceback
 import types
 import typing
+from collections import Counter
 from datetime import datetime, timedelta
 from typing import Annotated, Any, NamedTuple
 
@@ -140,8 +141,7 @@ _PARAM_DESCRIPTIONS: dict[str, str] = {
         "(or the indicator's own window)."
     ),
     "end_date": (
-        "End of the date range in YYYY-MM-DD format; left empty, today (or the indicator's "
-        "own window)."
+        "End of the date range in YYYY-MM-DD format; left empty, today (or the indicator's own window)."
     ),
     "quarterly": "Return quarterly data instead of annual when True.",
     "benchmark_ticker": (
@@ -149,8 +149,7 @@ _PARAM_DESCRIPTIONS: dict[str, str] = {
         "Left empty, SPY, or QQQ when SPY is one of the tickers."
     ),
     "risk_free_rate": (
-        "The US Treasury yield used as the risk-free rate: '13w' (the 13-week bill), '5y', '10y' "
-        "(default) or '30y'."
+        "The US Treasury yield used as the risk-free rate: '13w' (the 13-week bill), '5y', '10y' (default) or '30y'."
     ),
     "basket": (
         "Also analyse the tickers as one company, 'Total': its statements are the sums of "
@@ -196,8 +195,8 @@ _PARAM_DESCRIPTIONS: dict[str, str] = {
     "days": "Number of calendar days used in day-count-based calculations.",
     "metrics": (
         "get_factor_analysis only: the metric(s) to analyse, a method name such as "
-        "'get_price_to_earnings_ratio', a comma-separated list, or a collection of the tool "
-        "(see the tool description), e.g. 'profitability'."
+        "'get_price_to_earnings_ratio', a comma-separated list, or a collection of the tool, "
+        "e.g. 'profitability'."
     ),
     "metric": (
         "get_indicator_summary only: the indicator to summarise, e.g. "
@@ -209,8 +208,7 @@ _PARAM_DESCRIPTIONS: dict[str, str] = {
         "returns after them."
     ),
     "above": (
-        "get_indicator_summary only: the line the indicator rises above, e.g. 70 for an "
-        "overbought RSI."
+        "get_indicator_summary only: the line the indicator rises above, e.g. 70 for an overbought RSI."
     ),
     "forward_periods": (
         "get_indicator_summary only: the trading periods after each crossing to measure the "
@@ -279,8 +277,7 @@ _PARAM_DESCRIPTIONS: dict[str, str] = {
         "output of a metric with several, e.g. 'Signal Line'."
     ),
     "strike_price_range": (
-        "Only strikes within this fraction of the current stock price, e.g. 0.05 for the "
-        "strikes within 5% of it."
+        "Only strikes within this fraction of the current stock price, e.g. 0.05 for the strikes within 5% of it."
     ),
     "legs": (
         "The strategy as a list of legs. An option leg: {'strike_price': 340, "
@@ -389,6 +386,94 @@ _PARAM_DESCRIPTIONS: dict[str, str] = {
     ),
 }
 
+# What the tool schemas say about a parameter whose full description above is long: one
+# short sentence. The server instructions explain the parameters every tool has (limit,
+# rank, rebase_to, sample, show_columns) and search_metrics with an indicator's name gives
+# the full description of each parameter it takes.
+_SCHEMA_PARAM_DESCRIPTIONS: dict[str, str] = {
+    "indicator": "The indicator; search_metrics with its name gives its parameters.",
+    "tickers": "Comma-separated tickers, e.g. 'AAPL,MSFT'.",
+    "start_date": "YYYY-MM-DD; empty for the default range (often five years).",
+    "end_date": "YYYY-MM-DD; empty for today.",
+    "quarterly": "true for quarterly instead of annual data.",
+    "benchmark_ticker": "SPY by default; 'None' for no benchmark.",
+    "risk_free_rate": "The Treasury yield used as the risk-free rate.",
+    "basket": "true adds the tickers together as one company, 'Total'.",
+    "compound": "With growth=true, the compound annual growth rate over lag periods.",
+    "standardize": "Return Z-scores of the values (of the growth with growth=true).",
+    "cumulative": "Compound the values over time, starting at 1.",
+    "rolling": "A rolling value over this many periods instead of one per period.",
+    "trailing": "Sum over the trailing N periods (4 quarters for a TTM figure).",
+    "threshold_percentile": "With method='evt', the loss percentile of the fit.",
+    "minimum_acceptable_return": "The return below which returns count as downside.",
+    "metrics": "The metric(s) to analyse: a name, a list or a collection.",
+    "metric": "The indicator to summarise, e.g. 'get_relative_strength_index'.",
+    "below": "The line the indicator falls below, e.g. 30 for an oversold RSI.",
+    "above": "The line the indicator rises above, e.g. 70 for an overbought RSI.",
+    "forward_periods": "Periods after each crossing to measure the return over.",
+    "signals_only": "true keeps only the periods with a signal.",
+    "show_crossings": "true lists every crossing instead of the summary.",
+    "detail": "One part of the analysis of a single metric instead of the summary.",
+    "group": "'sector' or 'industry', to analyse within groups.",
+    "demeaned": "true compares the returns with the mean of the tickers (or group).",
+    "binning": "How the tickers are sorted into quantiles.",
+    "period": "'daily', 'weekly', 'monthly', 'quarterly' or 'yearly'.",
+    "gmdb_source": "true uses the Global Macro Database instead of the OECD.",
+    "annualize": "true annualizes the ratio.",
+    "primary_only": "true keeps only the most traded listing of each company.",
+    "fiscal_period": "The company's fiscal quarter, e.g. '2025Q4'; empty for the latest.",
+    "column": "The price column to use, e.g. 'Close'.",
+    "strike_price_range": "Strikes within this fraction of the price, e.g. 0.05.",
+    "legs": (
+        "The legs, e.g. [{'strike_price': 340, 'put_option': false, 'position': 'long', "
+        "'premium': 4.2}]; a stock leg has 'instrument': 'stock'."
+    ),
+    "limit": "-5 for the last five rows, 5 for the first five, 0 for all.",
+    "sample": "The last row of each 'weekly', 'monthly', 'quarterly' or 'yearly' period.",
+    "gmdb_forecasts": "true adds the years the Global Macro Database projects.",
+    "usd": "true gives levels in millions of US dollars.",
+    "functions": "Functions of government (COFOG), e.g. 'Defence,Health'.",
+    "government.level": "'consolidated', 'general' or 'central' government.",
+    "series": (
+        "Indicators of other tools instead of prices, as tool:indicator:tickers "
+        "separated by ';', e.g. 'macroeconomics:get_inflation_rate:United States'."
+    ),
+    "changes": "With series: 'percentage', 'log', 'difference' or 'none'.",
+    "deflate_with": "With series: the country whose CPI deflates the indicators.",
+    # Parameters whose name alone reads several ways.
+    "risk.weights": "Weight per ticker, e.g. {'AAPL': 0.6, 'MSFT': 0.4}; empty for equal weights.",
+    "portfolio.weights": "Weight per ticker, e.g. {'AAPL': 0.6, 'MSFT': 0.4}; empty for equal weights.",
+    "current_weights": "The weights held now, per ticker, that turnover is measured from.",
+    "show_daily": "true gives a value per trading day (limit=-1 for the latest).",
+    "diluted": "true uses the diluted share count.",
+    "valuation.include_dividends": "true deducts preferred dividends from net income.",
+    "options.volatility": "The annual volatility to use; empty for that of the past year.",
+    "put_option": "true for puts, false for calls.",
+    "risk.alpha": "The tail probability, e.g. 0.05 for the worst 5% (95% confidence).",
+    "portfolio.alpha": "The tail probability, e.g. 0.05 for the worst 5% (95% confidence).",
+    "performance.alpha": "The tail probability, e.g. 0.05 for the worst 5% (95% confidence).",
+    "econometrics.alpha": "The tail probability or size of the test, e.g. 0.05.",
+    "risk.measure": "The range: 'range', 'var', 'cvar', 'tail_gini' or 'evar'.",
+    "jobs.measure": "The life table column, e.g. 'death_probability' or 'life_expectancy'.",
+    "risk.region": "The region of the Fama-French factors, e.g. 'Developed'.",
+    "portfolio.region": "The region of the Fama-French factors, e.g. 'Developed'.",
+    "performance.region": "The region of the Fama-French factors, e.g. 'Developed'.",
+    "rates.maturity": "true per maturity, false per rating.",
+    "rank": "true ranks the tickers or countries per period.",
+    "rebase_to": "Index to 100 at a base period, e.g. '2020' or '2019-2021'.",
+    "show_columns": "Comma-separated fields to keep, e.g. 'Close,Volume'.",
+}
+
+# The parameters every indicator tool has, which the server instructions explain.
+UNIVERSAL_PARAMETERS = (
+    "indicator",
+    "rank",
+    "rebase_to",
+    "sample",
+    "show_columns",
+    "limit",
+)
+
 
 # The inputs that describe the portfolio of the portfolio_performance tool. They replace the
 # shared descriptions there: its start_date only applies to holdings, weights and presets,
@@ -432,12 +517,16 @@ _PORTFOLIO_PARAM_DESCRIPTIONS: dict[str, str] = {
 }
 
 
-# Beyond this many characters the per-indicator default listing stops helping.
-_DISPUTED_DEFAULT_DETAIL_LIMIT = 320
+# The most indicators a parameter's schema description names; beyond it, it names the first
+# ones and counts the rest.
+MAXIMUM_NAMED_INDICATORS = 2
+
+# The longest shared description the schema gives whole.
+MAXIMUM_SCHEMA_DESCRIPTION_CHARACTERS = 100
 
 
 def _annotate_with_description(
-    name: str, ann: Any, suffix: str = "", documented: str = "", description: str = ""
+    name: str, ann: Any, description: str | None = None
 ) -> Any:
     """Wrap *ann* in ``Annotated[ann, Field(description=...)]`` for JSON schema output.
 
@@ -448,25 +537,18 @@ def _annotate_with_description(
     Args:
         name (str): The parameter name, used to look up the shared description.
         ann (Any): The annotation to wrap.
-        suffix (str): Extra text appended to the description, used to spell out
-            defaults that differ between the indicators of a router group.
-        documented (str): The description the indicators' docstrings give, used when
-            there is no shared description for the parameter.
-        description (str): A description that replaces the shared one, for a parameter
-            that means something else in one tool (the start_date of a Portfolio).
+        description (str | None): A description that replaces the shared one, for a
+            parameter that means something else in one tool (the start_date of a
+            Portfolio) or an indicator's own parameter; empty for none.
 
     Returns:
         Any: The annotated type carrying the description metadata.
     """
     desc = (
         description
-        or _PARAM_DESCRIPTIONS.get(name)
-        or documented
-        or f"Value for {name}."
-    )
-
-    if suffix:
-        desc = f"{desc} {suffix}"
+        if description is not None
+        else _SCHEMA_PARAM_DESCRIPTIONS.get(name) or _PARAM_DESCRIPTIONS.get(name, "")
+    ) or None
 
     # A text argument that reads as JSON reaches validation as a list or object, which
     # is turned back into text (see text_from_parsed_json).
@@ -479,6 +561,11 @@ def _annotate_with_description(
 
     return Annotated[ann, PydanticField(description=desc)]  # type: ignore[valid-type]
 
+
+# A parameter at least this share of a tool's indicators take is named once per tool in the
+# search results instead of in each indicator's call line, for a tool of at least this many.
+COMMON_PARAMETER_SHARE = 2 / 3
+MINIMUM_INDICATORS_FOR_COMMON_PARAMETERS = 3
 
 # The length of an indicator's summary in the search results.
 MAXIMUM_SUMMARY_CHARACTERS = 200
@@ -580,15 +667,14 @@ def _normalise_period(period: Any) -> str:
     return "yearly" if period == "annual" else period
 
 
-# The most distinct docstring descriptions of one parameter that are listed per indicator.
-MAXIMUM_DESCRIPTION_VERSIONS = 3
-
 # The longest parameter description taken from a docstring.
 MAXIMUM_DOCUMENTED_CHARACTERS = 300
 
 
 def _docstring_arguments(
-    docstring: str, maximum_characters: int | None = MAXIMUM_DOCUMENTED_CHARACTERS
+    docstring: str,
+    maximum_characters: int | None = MAXIMUM_DOCUMENTED_CHARACTERS,
+    keep_defaults: bool = False,
 ) -> dict[str, str]:
     """The description of each argument in the Args section of a Google-style docstring.
 
@@ -600,6 +686,8 @@ def _docstring_arguments(
         maximum_characters (int | None, optional): The longest description, cut at a word
             with "..." beyond it. Defaults to MAXIMUM_DOCUMENTED_CHARACTERS; None keeps
             every description whole.
+        keep_defaults (bool, optional): Whether to keep the "Defaults to ..." sentence.
+            Defaults to False.
 
     Returns:
         dict[str, str]: Per argument name, its description on one line.
@@ -612,9 +700,15 @@ def _docstring_arguments(
 
     arguments: dict[str, str] = {}
     name = ""
+    # Every argument starts at the indentation of the first, so a continuation line that
+    # reads "are: ..." stays part of the description before it.
+    indentation = None
     for line in section.group(1).splitlines():
         match = re.match(r"^\s{2,8}(\w+)\s*(?:\([^)]*\))?\s*:\s*(.*)$", line)
-        if match and (not name or len(line) - len(line.lstrip()) <= 8):  # noqa: PLR2004
+        if match and len(line) - len(line.lstrip()) == (
+            indentation if indentation is not None else len(line) - len(line.lstrip())
+        ):
+            indentation = len(line) - len(line.lstrip())
             name = match.group(1)
             arguments[name] = match.group(2).strip()
         elif name and line.strip():
@@ -624,9 +718,13 @@ def _docstring_arguments(
     for argument, raw in arguments.items():
         # Up to the end of its sentence: a full stop followed by a capital or the end, so
         # "Defaults to 0.0, i.e. ..." and "Defaults to 1.5." go as a whole.
-        text = re.sub(
-            r"\s*Defaults to .*?(?:\.(?=\s+[A-Z`(])|\.?$)", "", raw, flags=re.DOTALL
-        ).strip()
+        text = (
+            raw.strip()
+            if keep_defaults
+            else re.sub(
+                r"\s*Defaults to .*?(?:\.(?=\s+[A-Z`(])|\.?$)", "", raw, flags=re.DOTALL
+            ).strip()
+        )
         # Pointers to the rest of the docstring mean nothing in a tool schema.
         text = re.sub(r",? (?:as )?(?:described|listed|see) above", "", text)
         if maximum_characters and len(text) > maximum_characters:
@@ -728,10 +826,13 @@ def name_unknown_arguments(method: Any, tool_name: str) -> Any:
 
 
 def _strip_schema_titles(mcp: Any, tool_name: str) -> None:
-    """Drop the titles pydantic gives every parameter ("Start Date" for start_date).
+    """Drop the titles pydantic gives every parameter ("Start Date" for start_date), and the
+    null option and null default of a parameter that may be left out.
 
-    They repeat the parameter name and add about 14,000 characters to the tool listing
-    every client reads before its first call.
+    The titles repeat the parameter name and the null options say what leaving a parameter
+    out says already (none is required but the indicator), while together they add about a
+    third to the tool listing every client reads before its first call. The server still
+    accepts null for them.
 
     Args:
         mcp (Any): The FastMCP server.
@@ -745,6 +846,72 @@ def _strip_schema_titles(mcp: Any, tool_name: str) -> None:
     tool.parameters.pop("title", None)
     for schema in tool.parameters.get("properties", {}).values():
         schema.pop("title", None)
+        if "default" in schema and schema["default"] is None:
+            del schema["default"]
+        options = [
+            option for option in schema.get("anyOf", []) if option != {"type": "null"}
+        ]
+        if len(options) == 1:
+            del schema["anyOf"]
+            schema.update(options[0])
+        elif options:
+            schema["anyOf"] = options
+
+
+# The most characters of one tool in the tool listing (its name, description and input
+# schema as JSON), which a client that loads tools on demand reads in full.
+MAXIMUM_TOOL_CHARACTERS = 12_000
+
+
+def _fit_tool_listing(mcp: Any, tool_name: str, parameters: set[str]) -> None:
+    """Drop the schema descriptions of indicators' parameters, the longest first and those
+    without words of their own before the others, while the tool is larger than
+    MAXIMUM_TOOL_CHARACTERS in the tool listing.
+
+    The descriptions that say a parameter is required stay. search_metrics with an
+    indicator's name describes each of its parameters in full.
+
+    Args:
+        mcp (Any): The FastMCP server.
+        tool_name (str): The tool whose input schema to trim.
+        parameters (set[str]): The parameters of the tool's indicators, whose descriptions
+            may go (not those of the tool, such as the dates).
+    """
+    tool_manager = getattr(mcp, "_tool_manager", None)
+    tool = tool_manager.get_tool(tool_name) if tool_manager is not None else None
+    if tool is None:
+        return
+
+    properties = tool.parameters.get("properties", {})
+    size = len(
+        json.dumps(
+            {
+                "name": tool_name,
+                "description": tool.description,
+                "inputSchema": tool.parameters,
+            }
+        )
+    )
+    # The descriptions that only name indicators go first, as search_metrics gives each
+    # indicator's parameters; the few words for a name that reads several ways go last.
+    optional = sorted(
+        (
+            name
+            for name in parameters
+            if "Required" not in properties.get(name, {}).get("description", "Required")
+        ),
+        key=lambda name: (
+            f"{tool_name}.{name}" in _SCHEMA_PARAM_DESCRIPTIONS
+            or name in _SCHEMA_PARAM_DESCRIPTIONS,
+            -len(properties[name]["description"]),
+        ),
+    )
+    for name in optional:
+        if size <= MAXIMUM_TOOL_CHARACTERS:
+            break
+        size -= len(json.dumps(properties[name].pop("description"))) + len(
+            ', "description": '
+        )
 
 
 # With FT_MCP_COMPACT_TOOLS=1 a tool's description is its first sentence and its parameters
@@ -813,7 +980,10 @@ def _summarize_docstring(docstring: str) -> dict[str, str]:
         dict[str, str]: The ``summary`` (at most 200 characters) and the ``aliases``.
     """
     paragraph = " ".join(docstring.split("\n\n", maxsplit=1)[0].split())
-    sentence = re.split(r"(?<=[a-z0-9)])\. ", paragraph)[0].rstrip(".")
+    # "e.g." and "i.e." end no sentence.
+    sentence = re.split(r"(?<=[a-z0-9)])(?<!e\.g)(?<!i\.e)\. ", paragraph)[0].rstrip(
+        "."
+    )
     summary = (
         sentence
         if len(sentence) <= MAXIMUM_SUMMARY_CHARACTERS
@@ -848,8 +1018,7 @@ def _describe_docstring(docstring: str) -> dict[str, Any]:
         docstring (str): The cleaned docstring of an indicator.
 
     Returns:
-        dict[str, Any]: The ``description`` (the first paragraph) and the ``parameters``
-            (per argument, its description).
+        dict[str, Any]: The ``description``: the first paragraphs.
     """
     # The description runs from the summary sentence up to the first section (the
     # references, the aliases or Args), so the explanation and the formula come along
@@ -872,10 +1041,7 @@ def _describe_docstring(docstring: str) -> dict[str, Any]:
         paragraphs.append(text)
         length += len(text)
 
-    return {
-        "description": "\n\n".join(paragraphs),
-        "parameters": _docstring_arguments(docstring),
-    }
+    return {"description": "\n\n".join(paragraphs)}
 
 
 def _rank_result(
@@ -1171,54 +1337,138 @@ def _mentions_benchmark(result: object) -> bool:
     )
 
 
-def _describe_disputed_default(per_method: dict[str, Any]) -> str:
-    """Describe a parameter whose default differs between indicators of a group.
-
-    The tool cannot advertise one default for all of them, so the description has
-    to carry what the schema cannot: which indicators require the parameter and
-    what each of the others falls back to when it is left unset.
+def _name_indicators(indicators: list[str], every_indicator: list[str]) -> str:
+    """The indicators of a tool that take a parameter, in a few words.
 
     Args:
-        per_method (dict[str, Any]): Per indicator, the default it declares, with
-            ``inspect.Parameter.empty`` standing for "required".
+        indicators (list[str]): The indicators that take it.
+        every_indicator (list[str]): The indicators of the tool.
 
     Returns:
-        str: A sentence to append to the parameter description.
+        str: Empty when every indicator takes it, else the indicators (or those that do not
+            take it, when that is the shorter list), the first few and a count beyond them.
     """
-    required = sorted(
-        name
-        for name, default in per_method.items()
-        if default is inspect.Parameter.empty
+    if len(indicators) == len(every_indicator):
+        return ""
+    if len(indicators) <= MAXIMUM_NAMED_INDICATORS:
+        return ", ".join(indicators)
+    others = [name for name in every_indicator if name not in indicators]
+    if len(others) <= MAXIMUM_NAMED_INDICATORS:
+        return f"All but {', '.join(others)}"
+
+    return ""
+
+
+def _schema_parameter_description(
+    tool: str,
+    name: str,
+    indicators: list[str],
+    every_indicator: list[str],
+    required: list[str],
+    documented: str,
+) -> str:
+    """The short description of an indicator's parameter in the tool schema: which
+    indicators take it and, for a parameter several tools share, a few words.
+
+    Args:
+        tool (str): The tool, for a description of the parameter in that tool only
+            ("government.level").
+        name (str): The parameter.
+        indicators (list[str]): The indicators of the tool that take it.
+        every_indicator (list[str]): The indicators of the tool.
+        required (list[str]): The indicators that require it.
+        documented (str): The shortest description the indicators' docstrings give, for a
+            parameter every indicator takes that has no shared description.
+
+    Returns:
+        str: The description.
+    """
+    shared = (
+        _SCHEMA_PARAM_DESCRIPTIONS.get(f"{tool}.{name}")
+        or _SCHEMA_PARAM_DESCRIPTIONS.get(name)
+        or _PARAM_DESCRIPTIONS.get(name, "")
     )
+    words = shared if len(shared) <= MAXIMUM_SCHEMA_DESCRIPTION_CHARACTERS else ""
+    named = _name_indicators(indicators, every_indicator)
+    if not words and not named and len(indicators) == len(every_indicator):
+        words = re.split(r"(?<=[a-z0-9)])[.;:] ", documented, maxsplit=1)[0].rstrip(".")
+        if len(words) > MAXIMUM_SCHEMA_DESCRIPTION_CHARACTERS:
+            words = (
+                words[: MAXIMUM_SCHEMA_DESCRIPTION_CHARACTERS - 3].rsplit(" ", 1)[0]
+                + "..."
+            )
+        words = words + "." if words and not words.endswith((".", "...")) else words
+    description = (
+        f"{named}: {words}" if named and words else (f"{named}." if named else words)
+    )
+    if required and required == indicators:
+        description += " Required."
+    elif required:
+        named_required = _name_indicators(required, every_indicator)
+        description += (
+            f" Required by {named_required}."
+            if named_required
+            else f" Required by {len(required)} indicators."
+        )
 
-    grouped: list[tuple[Any, list[str]]] = []
+    return description.strip()
 
-    for name, default in sorted(per_method.items()):
-        if default is inspect.Parameter.empty:
-            continue
 
-        for value, names in grouped:
-            if type(value) is type(default) and value == default:
-                names.append(name)
-                break
-        else:
-            grouped.append((default, [name]))
+def _literal_values(annotation: Any) -> list[Any]:
+    """The values of the Literal types in an annotation (Literal["a", "b"] | None).
 
-    grouped.sort(key=lambda item: (-len(item[1]), str(item[0])))
+    Args:
+        annotation (Any): The annotation of a parameter.
 
-    sentences = ["Leave unset to use the default of the indicator you selected."]
+    Returns:
+        list[Any]: The values, in their order.
+    """
+    if typing.get_origin(annotation) is typing.Literal:
+        return list(typing.get_args(annotation))
 
-    if required:
-        sentences.append(f"Required by: {', '.join(required)}.")
+    return [
+        value
+        for member in typing.get_args(annotation)
+        for value in _literal_values(member)
+    ]
 
-    detail = "; ".join(f"{value!r} for {', '.join(names)}" for value, names in grouped)
 
-    if detail and len(detail) <= _DISPUTED_DEFAULT_DETAIL_LIMIT:
-        sentences.append(f"Defaults are {detail}.")
-    elif detail:
-        sentences.append("Defaults differ between indicators.")
+def _documented_options(text: str, refused: list[Any]) -> list[str]:
+    """The options a parameter's description lists ('Options are: "historic" (the
+    empirical quantile), "gaussian" ...'), for a parameter typed as plain text.
 
-    return " ".join(sentences)
+    Args:
+        text (str): The description of the parameter.
+        refused (list[Any]): The values the server refuses.
+
+    Returns:
+        list[str]: The quoted values after "Options are", without the explanations in
+            parentheses and those the server refuses.
+    """
+    listed = re.search(r"Options are:?(.*?)(?:Defaults to|$)", text, re.DOTALL)
+    if listed is None:
+        return []
+    # Explanations in parentheses can quote values of their own.
+    values = re.findall(
+        r"\"([^\"]+)\"|'([^']+)'", re.sub(r"\([^()]*\)", "", listed.group(1))
+    )
+    refused_values = {str(value).lower() for value in refused}
+
+    return [
+        value
+        for value in dict.fromkeys(double or single for double, single in values)
+        if value.lower() not in refused_values
+    ]
+
+
+def _readable_value(value: Any) -> str:
+    """A default or option as a caller writes it: 'text', true, 0.05 or [1, 2]."""
+    if isinstance(value, str):
+        return f"'{value}'"
+    try:
+        return json.dumps(value)
+    except (TypeError, ValueError):
+        return str(value)
 
 
 def _formula_variants(method: Any) -> tuple[Any, ...]:
@@ -1285,10 +1535,7 @@ def _method_key(owner: type | None, method_name: str) -> str:
         owner,
     )
 
-    return (
-        f"{getattr(defining, '__module__', '')}."
-        f"{getattr(defining, '__qualname__', '')}.{method_name}"
-    )
+    return f"{getattr(defining, '__module__', '')}.{getattr(defining, '__qualname__', '')}.{method_name}"
 
 
 def _simplify_annotation(ann: Any) -> Any:
@@ -1575,8 +1822,7 @@ def _amounts_per_ticker(value: object, name: str) -> dict[str, float]:
         pairs = [item.split(":", 1) for item in value.split(",") if item.strip()]
         if not pairs or any(len(pair) != 2 for pair in pairs):  # noqa: PLR2004
             raise ValueError(
-                f"{name} must be given per ticker, e.g. {{'VTI': 0.6, 'BND': 0.4}} or "
-                "'VTI:0.6, BND:0.4'."
+                f"{name} must be given per ticker, e.g. {{'VTI': 0.6, 'BND': 0.4}} or 'VTI:0.6, BND:0.4'."
             )
         # Kept as pairs until the tickers are cleaned, so "AAPL:2,AAPL:3" adds up as
         # "AAPL:2, AAPL:3" does rather than the last one replacing the first.
@@ -1617,8 +1863,7 @@ def _transactions(value: object) -> list[dict[str, object]]:
         )
     if len(value) > MAX_TRANSACTIONS:
         raise ValueError(
-            f"transactions holds {len(value)} trades; at most {MAX_TRANSACTIONS} can be "
-            "analyzed in one call."
+            f"transactions holds {len(value)} trades; at most {MAX_TRANSACTIONS} can be analyzed in one call."
         )
     trades: list[dict[str, object]] = []
     for number, raw in enumerate(value, start=1):
@@ -1666,8 +1911,7 @@ def _transactions(value: object) -> list[dict[str, object]]:
             currency = str(fields["Currency"]).strip()
             if not CURRENCY_PATTERN.match(currency):
                 raise ValueError(
-                    f"Transaction {number} has an invalid currency {currency!r}; use a "
-                    "three-letter code such as 'USD'."
+                    f"Transaction {number} has an invalid currency {currency!r}; use a three-letter code such as 'USD'."
                 )
             trade["Currency"] = currency
         trades.append(trade)
@@ -1727,8 +1971,7 @@ def _portfolio_inputs(arguments: dict[str, Any]) -> dict[str, Any]:
         tickers = set(inputs[kind])
     if len(tickers) > MAX_ENTITIES:
         raise ValueError(
-            f"The portfolio holds {len(tickers)} tickers; at most {MAX_ENTITIES} can be "
-            "analyzed in one call."
+            f"The portfolio holds {len(tickers)} tickers; at most {MAX_ENTITIES} can be analyzed in one call."
         )
     if options["initial_value"] not in (None, ""):
         initial_value = _finite_number(options["initial_value"], "initial_value")
@@ -1739,8 +1982,7 @@ def _portfolio_inputs(arguments: dict[str, Any]) -> dict[str, Any]:
         rebalancing = str(options["rebalancing"]).strip().lower()
         if rebalancing not in REBALANCING_FREQUENCIES:
             raise ValueError(
-                f"rebalancing must be one of {', '.join(REBALANCING_FREQUENCIES)}, not "
-                f"{options['rebalancing']!r}."
+                f"rebalancing must be one of {', '.join(REBALANCING_FREQUENCIES)}, not {options['rebalancing']!r}."
             )
         inputs["rebalancing"] = rebalancing
     if options["currency"] not in (None, ""):
@@ -1927,6 +2169,82 @@ class ToolRegistry:
             if str(variant).lower() not in refused
         )
 
+    def _describe_parameters(
+        self, tool_name: str, method_name: str, method: Any
+    ) -> tuple[dict[str, str], list[dict[str, Any]]]:
+        """
+        What search_metrics says about each parameter of an indicator: its whole description
+        from the docstring, its options, its default (the server's own where config.yaml
+        method_defaults sets one) and the values the server refuses. The tool schema only
+        names the indicators that take a parameter.
+
+        Args:
+            tool_name (str): The tool of the indicator.
+            method_name (str): The indicator.
+            method (Any): The controller method of the indicator.
+
+        Returns:
+            tuple[dict[str, str], list[dict[str, Any]]]: Per parameter, in the order of the
+                signature, its description, and the same parameters for the call line of a
+                search result: ``name``, ``options``, ``default``, ``required`` and
+                ``conditional`` (its description starts with "Only", e.g. "Only used with
+                the GARCH method").
+        """
+        documented = _docstring_arguments(
+            inspect.getdoc(method) or "", maximum_characters=None, keep_defaults=True
+        )
+        server_defaults = self._method_defaults.get(
+            f"{tool_name}.{method_name}", self._method_defaults.get(method_name, {})
+        )
+        refused: dict[str, list[str]] = {}
+        for refusal in self._parameter_limits.get("refused_values", []):
+            if method_name in refusal["methods"]:
+                refused.setdefault(refusal["parameter"], []).extend(refusal["values"])
+        described: dict[str, str] = {}
+        call: list[dict[str, Any]] = []
+        for parameter in self._inspector.extract_extra_params(method):
+            name = parameter.name
+            text = documented.get(name) or _PARAM_DESCRIPTIONS.get(name, "")
+            parts = [text] if text else []
+            options = [
+                value
+                for value in dict.fromkeys(_literal_values(parameter.annotation))
+                if str(value).lower() not in refused.get(name, ())
+            ]
+            # Listed unless the docstring's own list names them all already.
+            if options and not all(
+                f"'{value}'" in text or f'"{value}"' in text for value in options
+            ):
+                parts.append(
+                    f"Options: {', '.join(_readable_value(value) for value in options)}."
+                )
+            if name in server_defaults:
+                parts.append(
+                    f"Default on this server: {_readable_value(server_defaults[name])}."
+                )
+            elif parameter.default is inspect.Parameter.empty:
+                parts.append("Required.")
+            elif "Defaults to" not in text and parameter.default is not None:
+                parts.append(f"Default: {_readable_value(parameter.default)}.")
+            if name in refused:
+                parts.append(
+                    f"Not available on this server: {', '.join(_readable_value(value) for value in refused[name])}."
+                )
+            described[name] = " ".join(parts)
+            call.append(
+                {
+                    "name": name,
+                    "options": options
+                    or _documented_options(text, refused.get(name, [])),
+                    "default": server_defaults.get(name, parameter.default),
+                    "required": name not in server_defaults
+                    and parameter.default is inspect.Parameter.empty,
+                    "conditional": text.startswith("Only"),
+                }
+            )
+
+        return described, call
+
     def get_indicator_index(self) -> list[dict[str, Any]]:
         """Return every registered indicator with its tool, summary and aliases.
 
@@ -2045,8 +2363,7 @@ class ToolRegistry:
             routes = self._routes[tools[0]]
             if reference.indicator not in routes:
                 raise ValueError(
-                    f"`{reference.indicator}` is not an indicator of `{tools[0]}` (series "
-                    f"'{reference.text}')."
+                    f"`{reference.indicator}` is not an indicator of `{tools[0]}` (series '{reference.text}')."
                 )
             module, category = routes[reference.indicator]
             by_ticker = category in (
@@ -2061,8 +2378,7 @@ class ToolRegistry:
                 ]
             ):
                 raise ValueError(
-                    f"The series '{reference.text[:80]}' has an invalid ticker: "
-                    f"{invalid[0][:40]!r}."
+                    f"The series '{reference.text[:80]}' has an invalid ticker: {invalid[0][:40]!r}."
                 )
             entities = (
                 [entity.upper() for entity in reference.entities]
@@ -2150,8 +2466,7 @@ class ToolRegistry:
                 reference.indicator, given, self._parameter_limits
             ):
                 raise ValueError(
-                    f"`{tools[0]}` (`{reference.indicator}`) in the series "
-                    f"'{reference.text[:80]}': {problem}"
+                    f"`{tools[0]}` (`{reference.indicator}`) in the series '{reference.text[:80]}': {problem}"
                 )
             arguments.update(given)
             prepared.append((reference, arguments, entities, by_ticker, parameters))
@@ -2249,8 +2564,7 @@ class ToolRegistry:
 
             if owner is None:
                 raise ValueError(
-                    f"No controller class is registered for method {method_name!r} "
-                    f"of tool {tool_name!r}."
+                    f"No controller class is registered for method {method_name!r} of tool {tool_name!r}."
                 )
 
             return owner
@@ -2327,8 +2641,7 @@ class ToolRegistry:
             raw_indicator = kwargs.pop("indicator", None)
             if not raw_indicator:
                 return (
-                    f"Please specify an `indicator`. "
-                    f"Available for `{tool_name}`: "
+                    f"Please specify an `indicator`. Available for `{tool_name}`: "
                     + ", ".join(f"`{m}`" for m in all_indicators)
                 )
             candidate = raw_indicator
@@ -2488,8 +2801,7 @@ class ToolRegistry:
                 ]
                 return (
                     (
-                        f"`{misnamed[0]}` is not a parameter of `{method_name}`; pass the "
-                        "ticker symbols as `tickers`. "
+                        f"`{misnamed[0]}` is not a parameter of `{method_name}`; pass the ticker symbols as `tickers`. "
                         if misnamed
                         else ""
                     )
@@ -2836,8 +3148,8 @@ class ToolRegistry:
                 listed = ", ".join(f"`{pname}`" for pname in missing_inputs)
                 return (
                     f"`{tool_name}` (`{method_name}`) requires {listed}. Please provide "
-                    f"{'it' if len(missing_inputs) == 1 else 'them'}; the tool's parameter "
-                    "descriptions explain each one."
+                    f"{'it' if len(missing_inputs) == 1 else 'them'}; search_metrics with "
+                    f"'{method_name}' explains each one."
                 )
 
             # A transcript is of use only in full, and a full one is about as large as an
@@ -3163,8 +3475,7 @@ class ToolRegistry:
                     notes.append(sample_note)
                 elif sample is not None:
                     notes.append(
-                        f"sample={sample!r} was not applied: the answer is not a table "
-                        "with dates as its rows or columns."
+                        f"sample={sample!r} was not applied: the answer is not a table with dates as its rows or columns."
                     )
                 # After the check for missing tickers, which needs every row of a column.
                 if row_selection and isinstance(result, dict):
@@ -3290,8 +3601,7 @@ class ToolRegistry:
                                 ]
                                 notes.append(
                                     (
-                                        f"{', '.join(names)} "
-                                        f"{'has' if len(names) == 1 else 'have'} no "
+                                        f"{', '.join(names)} {'has' if len(names) == 1 else 'have'} no "
                                         if len(names) <= MAXIMUM_NAMED_ROWS
                                         else f"{len(names):,} columns have no "
                                     )
@@ -3322,8 +3632,7 @@ class ToolRegistry:
                             ]
                             notes.append(
                                 (
-                                    f"{', '.join(names)} "
-                                    f"{'has' if len(names) == 1 else 'have'} no "
+                                    f"{', '.join(names)} {'has' if len(names) == 1 else 'have'} no "
                                     if len(names) <= MAXIMUM_NAMED_ROWS
                                     else f"{len(names):,} rows have no "
                                 )
@@ -3485,10 +3794,7 @@ class ToolRegistry:
                     redact(exc),
                     redact(traceback.format_exc()),
                 )
-                return (
-                    f"`{tool_name}` (`{method_name}`) failed with error: "
-                    f"{type(exc).__name__}: {redact(exc)}"
-                )
+                return f"`{tool_name}` (`{method_name}`) failed with error: {type(exc).__name__}: {redact(exc)}"
 
         P = inspect.Parameter
         POS = P.POSITIONAL_OR_KEYWORD
@@ -3546,87 +3852,58 @@ class ToolRegistry:
                     p.name,
                     p.annotation,
                     description=(
-                        _PORTFOLIO_PARAM_DESCRIPTIONS.get(p.name, "")
+                        _PORTFOLIO_PARAM_DESCRIPTIONS.get(p.name)
                         if portfolio_tool
-                        else ""
+                        else None
                     ),
                 ),
             )
             for p in common
         ]
 
-        # What the indicators' own docstrings say about each parameter, for the ones
-        # without a shared description.
-        versions: dict[str, dict[str, list[str]]] = {}
-        for method_name in group_methods:
-            owner = owning_class(method_name)
-            for pname, text in _docstring_arguments(
-                inspect.getdoc(getattr(owner, method_name, None)) or ""
-            ).items():
-                versions.setdefault(pname, {}).setdefault(text, []).append(method_name)
-        # A parameter that means something else per indicator (performance's method is a
-        # regression method for one and a Sharpe ratio variant for another) says so.
-        documented: dict[str, str] = {
-            pname: (
-                " ".join(
-                    f"For {', '.join(methods)}: {text}"
-                    for text, methods in texts.items()
-                )
-                if 1 < len(texts) <= MAXIMUM_DESCRIPTION_VERSIONS
-                # Many versions: the shortest is usually the generic one.
-                else min(texts, key=len)
-            )
-            for pname, texts in versions.items()
-        }
-        # The values of method select a formula and differ per indicator, so with many
-        # versions each indicator's own values are listed (or its own description, for a
-        # method that is free text) rather than one indicator's.
-        if len(versions.get("method", {})) > MAXIMUM_DESCRIPTION_VERSIONS:
-            choices: dict[str, list[str]] = {}
-            for method_name in group_methods:
-                method = getattr(owning_class(method_name), method_name)
-                variants = self._offered_variants(method_name, method)
-                # A method that is free text lists its values in its docstring, whole, so
-                # none of them is cut off (the last of the covariance estimators).
-                choice = (
-                    ", ".join(f"'{variant}'" for variant in variants)
-                    if variants
-                    else _docstring_arguments(
-                        inspect.getdoc(method) or "", maximum_characters=None
-                    )
-                    .get("method", "")
-                    .removesuffix(".")
-                )
-                if choice:
-                    choices.setdefault(choice, []).append(method_name)
-            documented["method"] = (
-                "; ".join(
-                    f"{', '.join(indicators)}: {choice}"
-                    for choice, indicators in choices.items()
-                )
-                + "."
-            )
-
+        # The schema says which indicators take a parameter, in a few words; search_metrics
+        # with an indicator's name gives the full description, options and default of each.
         for p in extra_params:
             ann = (
                 _simplify_annotation(p.annotation)
                 if p.annotation is not P.empty
                 else str
             )
+            takers = [m for m in group_methods if p.name in method_param_names[m]]
+            required = [
+                m
+                for m in takers
+                if parameter_defaults.get(p.name, {}).get(m) is P.empty
+            ]
+            documented = min(
+                (
+                    text
+                    for m in takers
+                    if (
+                        text := _docstring_arguments(
+                            inspect.getdoc(getattr(owning_class(m), m, None)) or ""
+                        ).get(p.name)
+                    )
+                ),
+                key=len,
+                default="",
+            )
+            description = _schema_parameter_description(
+                tool_name, p.name, takers, group_methods, required, documented
+            )
 
             if p.name in disputed_params:
-                # Advertised as unset with the per-indicator defaults spelled out, because no single value is correct for the whole group.  # noqa: E501
+                # Advertised as unset, because no single default is correct for the whole group; search_metrics gives each indicator's own.  # noqa: E501
                 default = None
                 annotation = _annotate_with_description(
                     p.name,
                     typing.Optional[ann],  # noqa: UP045  # ty: ignore[invalid-type-form]  # fmt: skip
-                    suffix=_describe_disputed_default(parameter_defaults[p.name]),
-                    documented=documented.get(p.name, ""),
+                    description=description,
                 )
             else:
                 default = p.default if p.default is not P.empty else ""
                 annotation = _annotate_with_description(
-                    p.name, ann, documented=documented.get(p.name, "")
+                    p.name, ann, description=description
                 )
 
             sig_params.append(P(p.name, POS, default=default, annotation=annotation))
@@ -3772,11 +4049,13 @@ class ToolRegistry:
         }
 
         # Each indicator by name, the first sentence of its docstring and its aliases, so
-        # search_metrics can point at the indicator itself rather than only its tool, and
-        # its formula variants, which search_metric_categories counts as metrics.
+        # search_metrics can point at the indicator itself rather than only its tool, its
+        # formula variants, which search_metric_categories counts as metrics, and its
+        # parameters, which the tool schema only names.
+        entries = []
         for method_name in group_methods:
             owner = (method_to_cls or {}).get(method_name) or cls
-            self._indicator_index.append(
+            entries.append(
                 {
                     "tool": spec.tool_name,
                     "indicator": method_name,
@@ -3795,6 +4074,23 @@ class ToolRegistry:
                     ),
                 }
             )
+            entries[-1]["parameters"], entries[-1]["call_parameters"] = (
+                self._describe_parameters(
+                    spec.tool_name, method_name, getattr(owner, method_name, None)
+                )
+            )
+        # The parameters most of the tool's indicators take (growth, lag, period), which a
+        # search result names once per tool rather than in every indicator's call line.
+        taken = Counter(name for entry in entries for name in entry["parameters"])
+        common = [
+            name
+            for name, count in taken.most_common()
+            if len(entries) >= MINIMUM_INDICATORS_FOR_COMMON_PARAMETERS
+            and count >= COMMON_PARAMETER_SHARE * len(entries)
+        ]
+        for entry in entries:
+            entry["common_parameters"] = common
+        self._indicator_index.extend(entries)
 
         method_list = ", ".join(group_methods)
         # The indicators are the enum of the indicator parameter, so the tool description
@@ -3814,6 +4110,22 @@ class ToolRegistry:
                 method_to_cls=method_to_cls,
                 method_dispatch=method_dispatch,
             )
+            # The tool's own parameters (the dates, growth, rolling), which apply to all of
+            # its indicators, with their full descriptions for search_metrics.
+            indicator_parameters = {p.name for p in extra_params}
+            tool_parameters = {
+                name: (
+                    _PORTFOLIO_PARAM_DESCRIPTIONS.get(name)
+                    if spec.category
+                    == self._inspector.categories.get("portfolio", "portfolio")
+                    else None
+                )
+                or _PARAM_DESCRIPTIONS.get(name, "")
+                for name in fn.__signature__.parameters
+                if name not in indicator_parameters and name not in UNIVERSAL_PARAMETERS
+            }
+            for entry in entries:
+                entry["tool_parameters"] = tool_parameters
             fn.__name__ = spec.tool_name
             fn.__doc__ = description
             self._router_functions[spec.tool_name] = fn
@@ -3832,6 +4144,9 @@ class ToolRegistry:
                     idempotentHint=True,
                     openWorldHint=True,
                 ),
+                # The answer is text only: an output schema would make every answer arrive
+                # twice, as text and as structured content holding the same text.
+                structured_output=False,
             )
             index_cat = spec.index_category or spec.module_name
             if index_cat not in self._tool_index:
@@ -3840,9 +4155,18 @@ class ToolRegistry:
                 {"tool": spec.tool_name, "description": index_description}
             )
             _strip_schema_titles(self._mcp, spec.tool_name)
+            _fit_tool_listing(self._mcp, spec.tool_name, indicator_parameters)
             keep_unknown_arguments(self._mcp, spec.tool_name)
             if compact:
                 _strip_schema_descriptions(self._mcp, spec.tool_name)
+            # search_metrics explains the tool's parameters its schema leaves undescribed and
+            # names the others.
+            tool_manager = getattr(self._mcp, "_tool_manager", None)
+            tool = tool_manager.get_tool(spec.tool_name) if tool_manager else None
+            properties = tool.parameters.get("properties", {}) if tool else {}
+            for name in tool_parameters:
+                if properties.get(name, {}).get("description"):
+                    tool_parameters[name] = ""
             return True
         except Exception as exc:
             logger.warning(f"Failed to register group '{spec.tool_name}': {exc}")

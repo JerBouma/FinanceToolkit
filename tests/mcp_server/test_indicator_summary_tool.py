@@ -32,7 +32,7 @@ def call_momentum(**arguments):
             "momentum",
             {"indicator": "get_indicator_summary", "tickers": "AAPL,MSFT", **arguments},
         )
-    )[0][0].text
+    )[0].text
 
 
 def test_the_momentum_tool_offers_the_indicator_summary():

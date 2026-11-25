@@ -12,6 +12,7 @@ from financetoolkit.mcp_server.registry.formatting_model import (
     rebase_result,
 )
 from financetoolkit.mcp_server.registry.provider_model import ToolkitProvider
+from tests.mcp_server.answers import read_answer
 
 YEARLY = pd.DataFrame(
     {
@@ -40,9 +41,9 @@ def call(**arguments):
             "macroeconomics",
             {"indicator": "get_millennium_of_macroeconomic_data", **arguments},
         )
-    )[0][0].text
+    )[0].text
     try:
-        return json.loads(text)
+        return read_answer(text)
     except json.JSONDecodeError:
         return text
 
@@ -200,7 +201,7 @@ def test_a_ratio_with_periods_as_columns_is_indexed_per_row(monkeypatch):
                 "rebase_to": "2022",
             },
         )
-    )[0][0].text
+    )[0].text
 
     assert "300.0" in text
     assert "25.0" in text

@@ -9,6 +9,7 @@ import pytest
 from financetoolkit.mcp_server import mcp_controller
 from financetoolkit.mcp_server.registry.formatting_model import sample_rows
 from financetoolkit.mcp_server.registry.provider_model import ToolkitProvider
+from tests.mcp_server.answers import read_answer
 
 # Trading days from Monday 1 January to Wednesday 13 March 2024: ten whole weeks and a
 # partial one, two whole months and a partial one.
@@ -40,9 +41,9 @@ def call(tool="overlap", indicator="get_moving_average", **arguments):
         mcp_controller.mcp.call_tool(
             tool, {"indicator": indicator, "tickers": "AAPL,MSFT", **arguments}
         )
-    )[0][0].text
+    )[0].text
     try:
-        return json.loads(text)
+        return read_answer(text)
     except json.JSONDecodeError:
         return text
 
@@ -139,7 +140,7 @@ def test_dates_as_columns_are_sampled_by_column(monkeypatch):
                 "sample": "monthly",
             },
         )
-    )[0][0].text
+    )[0].text
     assert "2024-02-29" in text
     assert "2024-02-28" not in text
     assert "Sampled to the last column of each month" in text

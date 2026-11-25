@@ -13,6 +13,7 @@ from financetoolkit.utilities.sources_model import (
     record_url,
     track_sources,
 )
+from tests.mcp_server.answers import read_answer
 
 
 def test_a_url_is_named_by_its_publisher_and_an_unknown_host_by_itself():
@@ -144,7 +145,7 @@ def test_an_answer_lists_its_sources():
 
     answer = format_result(frame, sources=["FinancialModelingPrep"])
 
-    assert '"_sources": ["FinancialModelingPrep"]' in answer
+    assert read_answer(answer)["_sources"] == ["FinancialModelingPrep"]
     assert "_sources" not in format_result(frame)
 
 

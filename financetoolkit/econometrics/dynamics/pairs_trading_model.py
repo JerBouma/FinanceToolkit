@@ -214,6 +214,13 @@ def get_ornstein_uhlenbeck_fit(levels: pd.Series) -> dict[str, float]:
             "fit an Ornstein-Uhlenbeck process."
         )
 
+    # A constant series makes the regressors collinear, and the residuals of the fit are
+    # exactly zero or rounding noise depending on the linear algebra library.
+    if np.ptp(values) == 0:
+        raise ValueError(
+            "The series is constant, so it has no Ornstein-Uhlenbeck process."
+        )
+
     design = np.column_stack([np.ones(len(values) - 1), values[:-1]])
     (intercept, phi), *_ = np.linalg.lstsq(design, values[1:], rcond=None)
     residuals = values[1:] - design @ np.array([intercept, phi])

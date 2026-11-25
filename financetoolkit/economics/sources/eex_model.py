@@ -37,14 +37,20 @@ PRICE_COLUMN = "Auction Price €/tCO2"
 # The status of a year's report that is not published (yet).
 NOT_PUBLISHED = 404
 
+# The reasons a year has no prices although the EEX answered, reported as a warning rather than an error.  # noqa: E501
+NOT_PUBLISHED_REASON = "the EEX has not published that year's report"
+NO_AUCTIONS_REASON = "the EEX report holds no successful auctions"
 
-def _get_year(year: int) -> pd.DataFrame:
+
+def _get_year(year: int, failures: dict[str, str]) -> pd.DataFrame:
     """
     Retrieves the clearing price of the auctions of general allowances of one year,
     averaged over the auctions held on the same day.
 
     Args:
         year (int): The year.
+        failures (dict[str, str]): Where the reason is recorded, per year, when the year's
+            report could not be retrieved or is not published.
 
     Returns:
         pd.DataFrame: The price in euro per tonne of CO2, indexed by day with a "European
@@ -61,6 +67,7 @@ def _get_year(year: int) -> pd.DataFrame:
                 error.response is not None
                 and error.response.status_code == NOT_PUBLISHED
             ):
+                failures[str(year)] = NOT_PUBLISHED_REASON
                 return pd.DataFrame()
             raise
 
@@ -82,8 +89,9 @@ def _get_year(year: int) -> pd.DataFrame:
         entity=str(year),
         fetch=fetch,
         description=description,
-        # get_carbon_price reports the years the EEX could not be reached for in one line.
-        quiet=True,
+        # get_carbon_price reports every year without prices, with its reason, in one line.
+        expect_empty=True,
+        failures=failures,
     )
 
 
@@ -94,7 +102,8 @@ def get_carbon_price(start_date: str, end_date: str) -> pd.DataFrame:
 
     Only the years between the start and end date are retrieved, one workbook per year. Once
     the EEX cannot be reached, the later years are not requested (they would fail alike, each
-    after its own retries), and the years without prices are reported in one line.
+    after its own retries), and the years without prices are reported in one line with their
+    reasons: an error when a request failed, a warning when the EEX published no results.
 
     Args:
         start_date (str): The start date (YYYY-MM-DD).
@@ -107,18 +116,37 @@ def get_carbon_price(start_date: str, end_date: str) -> pd.DataFrame:
     first = max(pd.Timestamp(start_date).year, FIRST_YEAR)
     last = min(pd.Timestamp(end_date).year, pd.Timestamp.now().year)
 
+    failures: dict[str, str] = {}
+
     with stop_at_unreachable_sources():
-        years = {year: _get_year(year) for year in range(first, last + 1)}
+        years = {year: _get_year(year, failures) for year in range(first, last + 1)}
         unreachable = is_unreachable(policy_model.EEX)
 
-    if unreachable and (
-        missing := [str(year) for year, prices in years.items() if prices.empty]
-    ):
-        logger.error(
-            "Could not reach the EEX for the emission allowance auctions of %s, so no carbon "
-            "price is returned for %s.",
-            ", ".join(missing),
-            "that year" if len(missing) == 1 else "those years",
+    # The years after the one the EEX could not be reached for were not requested, so they share its reason.  # noqa: E501
+    last_failure = max(map(int, failures), default=None)
+    years_per_reason: dict[str, list[str]] = {}
+    for year, prices in years.items():
+        if not prices.empty:
+            continue
+        if str(year) in failures:
+            reason = failures[str(year)]
+        elif unreachable and last_failure is not None and year > last_failure:
+            reason = failures[str(last_failure)]
+        else:
+            reason = NO_AUCTIONS_REASON
+        years_per_reason.setdefault(reason, []).append(str(year))
+
+    if years_per_reason:
+        published_nothing = set(years_per_reason) <= {
+            NOT_PUBLISHED_REASON,
+            NO_AUCTIONS_REASON,
+        }
+        (logger.warning if published_nothing else logger.error)(
+            "No carbon price is returned for the EEX emission allowance auctions of %s.",
+            "; ".join(
+                f"{', '.join(missing)} ({reason})"
+                for reason, missing in years_per_reason.items()
+            ),
         )
 
     frames = [prices for prices in years.values() if not prices.empty]

@@ -2116,3 +2116,21 @@ def test_bull_bear_beta_on_short_periods_says_why_it_is_empty(
 
     assert result.empty
     assert caplog.text.count("need at least 20 days with returns on each side") == 1
+    assert "Use quarterly or yearly periods." in caplog.text
+
+
+@pytest.mark.parametrize("period", ["quarterly", "yearly"])
+def test_bull_bear_beta_on_long_periods_advises_a_longer_date_range(
+    performance_module, period, caplog, monkeypatch
+):
+    # Raising the minimum leaves every quarter and year short of days, as a short date range does.  # noqa: E501
+    monkeypatch.setattr(
+        "financetoolkit.performance.performance_controller.MINIMUM_BULL_BEAR_OBSERVATIONS",
+        10_000,
+    )
+    with caplog.at_level("WARNING", logger="financetoolkit"):
+        result = performance_module.get_bull_bear_beta(period=period)
+
+    assert result.empty
+    assert "Use a longer date range." in caplog.text
+    assert "Use quarterly or yearly periods." not in caplog.text

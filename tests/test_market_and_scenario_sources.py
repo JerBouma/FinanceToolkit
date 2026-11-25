@@ -741,4 +741,49 @@ def test_an_unreachable_eex_is_asked_once_and_reported_in_one_line(monkeypatch, 
     assert all("2021" in url for url in requested)
     errors = [record for record in caplog.records if record.levelname == "ERROR"]
     assert len(errors) == 1
-    assert "auctions of 2021, 2022, 2023" in errors[0].message
+    assert "auctions of 2021, 2022, 2023 (EEX could not be reached" in errors[0].message
+
+
+def test_a_refused_eex_year_is_reported_with_its_reason_in_one_line(
+    monkeypatch, caplog
+):
+    from financetoolkit.economics.sources import eex_model
+
+    def forbidden(url, timeout):  # noqa: ARG001
+        if "2022" in url:
+            raise _not_found(url)
+        response = requests.Response()
+        response.status_code = 403
+        raise requests.exceptions.HTTPError(f"403 for {url}", response=response)
+
+    monkeypatch.setattr(eex_model, "get_request", forbidden)
+
+    with caplog.at_level("DEBUG", logger="financetoolkit"):
+        prices = eex_model.get_carbon_price("2021-01-01", "2023-12-31")
+
+    assert prices.empty
+    # A refusal is not an unreachable source: it is an error, with the year not published
+    # folded into the same line rather than a line of its own.
+    records = [record for record in caplog.records if "2022" in record.getMessage()]
+    assert len(records) == 1
+    assert records[0].levelname == "ERROR"
+    assert records[0].getMessage() == (
+        "No carbon price is returned for the EEX emission allowance auctions of 2021, 2023 "
+        "(EEX answered HTTP 403); 2022 (the EEX has not published that year's report)."
+    )
+    assert "returned no" not in caplog.text
+
+
+def test_an_unpublished_eex_year_is_a_warning(monkeypatch, caplog):
+    from financetoolkit.economics.sources import eex_model
+
+    def not_published(url, timeout):  # noqa: ARG001
+        raise _not_found(url)
+
+    monkeypatch.setattr(eex_model, "get_request", not_published)
+
+    with caplog.at_level("WARNING", logger="financetoolkit"):
+        assert eex_model.get_carbon_price("2021-01-01", "2022-12-31").empty
+
+    assert [record.levelname for record in caplog.records] == ["WARNING"]
+    assert "auctions of 2021, 2022 (the EEX has not published" in caplog.text

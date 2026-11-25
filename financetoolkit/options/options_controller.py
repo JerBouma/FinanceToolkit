@@ -185,13 +185,17 @@ class OptionsBase:
         """
         Names the tickers with too few daily returns for a volatility. Every option value of
         such a ticker is NaN, which says nothing about why on its own, so this is said on every
-        call that uses the volatility, not only the first of an Options instance.
+        call that uses the volatility, not only the first of an Options instance. A ticker
+        without any price is left out: it has a message of its own saying it has no price.
         """
         volatility = self._trailing_volatility
+        prices = self._prices
         if short := [
             str(ticker)
             for ticker in volatility.columns
             if volatility[ticker].isna().all()
+            and ticker in prices
+            and prices[ticker].notna().any()
         ]:
             logger.warning(
                 "%s %s fewer than %d daily returns, too few for a volatility, so %s option "

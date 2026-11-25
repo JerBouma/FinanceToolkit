@@ -690,7 +690,9 @@ def get_historical_data(
     ):
         logger.info("%s from the cache for %d ticker(s)", log_message, len(ticker_list))
 
-    results = helpers.run_in_parallel(worker, [(ticker,) for ticker in ticker_list])
+    # A fault every ticker meets, such as a broken yfinance cache database, is reported once for the call rather than per ticker.  # noqa: E501
+    with logger_model.log_each_message_once():
+        results = helpers.run_in_parallel(worker, [(ticker,) for ticker in ticker_list])
 
     for ticker, historical_data, provider, served_from_cache in results:
         if served_from_cache:

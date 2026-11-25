@@ -512,3 +512,78 @@ def test_a_locked_cache_database_leaves_a_statement_empty(monkeypatch):
     monkeypatch.setattr(yfinance_model.yf, "Ticker", LockedTicker)
 
     assert yfinance_model.get_financial_statement("AAPL", statement="balance").empty
+
+
+@pytest.mark.parametrize(
+    ("message", "retried"),
+    [
+        ("database is busy", True),
+        ("no such table: _kv", False),
+        ("attempt to write a readonly database", False),
+        ("disk I/O error", False),
+    ],
+)
+def test_only_a_locked_cache_database_is_retried(monkeypatch, caplog, message, retried):
+    """
+    A lock or busy database is passing and tried once more; a missing table, a read-only file
+    or a disk error is lasting, so it is reported with yfinance's own text and not retried.
+    """
+    import peewee
+
+    attempts = []
+
+    class BrokenTicker:
+        def __init__(self, ticker):
+            pass
+
+        def history(self, **kwargs):  # noqa: ARG002
+            attempts.append(1)
+            raise peewee.OperationalError(message)
+
+    monkeypatch.setattr(yfinance_model.yf, "Ticker", BrokenTicker)
+
+    with caplog.at_level("WARNING", logger="financetoolkit"):
+        data = yfinance_model.get_historical_data(
+            "ASML.AS", start="2025-01-02", end="2025-01-03"
+        )
+
+    assert data.empty
+    assert len(attempts) == (2 if retried else 1)
+    assert ("yfinance's cache database could not be used" in caplog.text) != retried
+    if not retried:
+        assert message in caplog.text
+
+
+def test_a_broken_cache_database_is_reported_once_per_call(monkeypatch, caplog):
+    import peewee
+
+    from financetoolkit import historical_model
+
+    class BrokenTicker:
+        def __init__(self, ticker):
+            pass
+
+        def history(self, **kwargs):  # noqa: ARG002
+            raise peewee.OperationalError("no such table: _kv")
+
+        def get_balance_sheet(self, freq):  # noqa: ARG002
+            raise peewee.OperationalError("no such table: _kv")
+
+    monkeypatch.setattr(yfinance_model.yf, "Ticker", BrokenTicker)
+
+    with caplog.at_level("WARNING", logger="financetoolkit"):
+        historical_model.get_historical_data(
+            ["ASML.AS", "SAP.DE", "AIR.PA"],
+            enforce_source="YahooFinance",
+            start="2025-01-02",
+            end="2025-01-03",
+            sleep_timer=False,
+        )
+
+    assert caplog.text.count("yfinance's cache database could not be used") == 1
+
+    # A statement reports the same fault.
+    caplog.clear()
+    with caplog.at_level("WARNING", logger="financetoolkit"):
+        assert yfinance_model.get_financial_statement("AAPL", statement="balance").empty
+    assert "no such table: _kv" in caplog.text

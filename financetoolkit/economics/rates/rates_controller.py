@@ -1456,7 +1456,7 @@ class RatesEconomics:
         is itself a decimal fraction (-0.0122 for an inversion of 1.22 percentage points),
         matching the convention used by get_misery_index and get_real_interest_rate.
 
-        Also known as: term spread, 10Y-3M spread, curve inversion.
+        Also known as: term spread, 10Y-3M spread, curve inversion, inverted yield curve.
 
         Args:
             countries (list[str] | str | None, optional): A list of countries or a single country to include in the results. Defaults to None.

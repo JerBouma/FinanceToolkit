@@ -1566,7 +1566,7 @@ class ValueAtRiskRisk:
         - Jorion, P. (2006). "Value at Risk: The New Benchmark for Managing Financial
         Risk." 3rd ed., McGraw-Hill, Chapter 7.
 
-        Also known as: Component VaR, risk contribution.
+        Also known as: Component VaR, risk contribution, portfolio VaR, portfolio value at risk.
 
         Shares similar logic:
         - PerformanceAnalytics (R), VaR: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/VaR.R#L329

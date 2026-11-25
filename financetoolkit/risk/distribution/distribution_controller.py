@@ -1057,7 +1057,8 @@ class DistributionRisk:
           (1994). "Mosaic organization of DNA nucleotides." Physical Review E, 49(2), 1685-1689.
 
         Also known as: generalized Hurst exponent, GHE, R/S analysis, rescaled range, DFA,
-        detrended fluctuation analysis, multifractal Hurst exponent.
+        detrended fluctuation analysis, multifractal Hurst exponent, trending or mean-reverting,
+        mean reversion, persistence, long memory.
 
         Referenced against:
         - nolds, hurst_rs (rescaled range): https://github.com/CSchoel/nolds/blob/0.6.3/nolds/measures.py#L1203

@@ -1279,7 +1279,7 @@ class Performance:
 
         See definition: https://en.wikipedia.org/wiki/Capital_asset_pricing_model
 
-        Also known as: CAPM, expected return model.
+        Also known as: CAPM, expected return model, required return for Jensen's alpha.
 
         Shares similar logic:
         - empyrical, roll_alpha_beta: https://github.com/quantopian/empyrical/blob/0.5.5/empyrical/stats.py#L1058
@@ -1816,7 +1816,8 @@ class Performance:
         how much of the daily excess return the factors explain; a low value leaves most of the return to
         stock-specific news.
 
-        Also known as: Fama-French model, three-factor model, five-factor model, FF3, FF5.
+        Also known as: Fama-French model, three-factor model, five-factor model, FF3, FF5,
+        factor model alpha, multi-factor Jensen's alpha.
 
         Referenced against:
         - pyfolio, rolling_regression: https://github.com/stefan-jansen/pyfolio-reloaded/blob/0.10.2/src/pyfolio/timeseries.py#L550

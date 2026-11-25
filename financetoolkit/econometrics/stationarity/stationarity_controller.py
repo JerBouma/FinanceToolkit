@@ -169,7 +169,8 @@ class StationarityEconometrics:
         Hypothesis." Econometrica, 57(6), 1361-1401.
 
         Also known as: ADF test, augmented Dickey-Fuller test, PP test, Z_t test, ZA test,
-        structural break unit root test, stationarity test.
+        structural break unit root test, stationarity test, mean reversion test, random walk test,
+        trending or mean-reverting.
 
         Referenced against:
         - statsmodels, adfuller (Augmented Dickey-Fuller test): https://www.statsmodels.org/stable/generated/statsmodels.tsa.stattools.adfuller.html

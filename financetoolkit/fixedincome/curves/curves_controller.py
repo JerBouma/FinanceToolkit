@@ -820,7 +820,8 @@ class CurvesFixedIncome:
 
         A positive butterfly means the body yields more than the wings on average.
 
-        Also known as: term spread, yield curve slope, 10Y-2Y spread, fly, 2s5s10s.
+        Also known as: term spread, yield curve slope, 10Y-2Y spread, 2s10s, 2y-10y spread,
+        inverted yield curve, curve inversion, fly, 2s5s10s.
 
         Args:
             long_maturity (float | str | list | None, optional): The longer maturity (or

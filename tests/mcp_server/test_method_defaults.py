@@ -973,7 +973,7 @@ def test_an_indicator_of_another_tool_is_answered_by_that_tool(monkeypatch):
         mcp_controller.mcp.call_tool(
             "solvency", {"indicator": "get_interest_coverage_ratio", "tickers": "TSLA"}
         )
-    )[0][0].text
+    )[0].text
 
     # The interest coverage ratio itself, not solvency's cash interest coverage ratio.
     assert [method for _, method, _ in called] == ["get_interest_coverage_ratio"]
@@ -987,7 +987,7 @@ def test_a_name_with_a_word_more_is_not_read_as_another_measure(captured):
             "macroeconomics",
             {"indicator": "get_real_gross_domestic_product", "countries": "Japan"},
         )
-    )[0][0].text
+    )[0].text
 
     assert not captured
     assert "Unknown indicator `get_real_gross_domestic_product`" in text
@@ -999,7 +999,7 @@ def test_an_unknown_indicator_suggests_close_names_of_other_tools(captured):
         mcp_controller.mcp.call_tool(
             "solvency", {"indicator": "get_interest_coverage", "tickers": "TSLA"}
         )
-    )[0][0].text
+    )[0].text
 
     assert not captured
     assert "get_interest_coverage_ratio (tool `profitability`)" in text

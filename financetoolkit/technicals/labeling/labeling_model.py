@@ -426,6 +426,14 @@ def get_trend_scanning_labels(
         )
     values = prices.to_numpy(dtype=float)
     count = len(values)
+    # No date has a complete longest window, and scanning a window longer than the data costs
+    # its length squared for nothing.
+    if maximum_window > count:
+        return pd.DataFrame(
+            np.nan,
+            index=prices.index,
+            columns=["Label", "t-Value", "Return", "Holding Period"],
+        )
     padded = np.concatenate([values, np.full(maximum_window - 1, np.nan)])
 
     best_absolute = np.full(count, -np.inf)

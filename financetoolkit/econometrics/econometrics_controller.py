@@ -39,7 +39,11 @@ from financetoolkit.risk.helpers import (
     mask_non_trading_days,
 )
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
-from financetoolkit.utilities.error_model import InvalidArgumentError, check_period
+from financetoolkit.utilities.error_model import (
+    InvalidArgumentError,
+    check_option,
+    check_period,
+)
 from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.sources_model import track_sources
 
@@ -227,6 +231,11 @@ class EconometricsBase:
         if key not in self._data_cache:
             # Historical data supplied to the Toolkit can reach beyond its date range.
             frame = self._historical_data[period]
+            # An unknown column is a mistake in the call, not missing data.
+            if not frame.empty:
+                check_option(
+                    "column", column, list(frame.columns.get_level_values(0).unique())
+                )
             data = (
                 mask_non_trading_days(frame, column)
                 if self._fills_non_trading_days
@@ -327,11 +336,15 @@ class EconometricsBase:
         the symmetric pairwise methods below (two-sample t-test, RMSE, MAE), where
         swapping the pair does not change the test.
         """
-        return list(
-            itertools.combinations(
-                self._get_tickers(include_benchmark=include_benchmark), 2
+        tickers = self._get_tickers(include_benchmark=include_benchmark)
+        if len(tickers) < 2:  # noqa: PLR2004
+            raise ValueError(
+                f"A comparison of two series needs at least two series, not only "
+                f"{', '.join(tickers) or 'none'}. Please add a ticker, or pass "
+                "include_benchmark=True to compare with the Benchmark."
             )
-        )
+
+        return list(itertools.combinations(tickers, 2))
 
 
 # ruff: noqa: E501

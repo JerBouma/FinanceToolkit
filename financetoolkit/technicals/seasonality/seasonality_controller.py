@@ -114,6 +114,7 @@ class SeasonalityTechnicals:
         | November  |           0.0306 |          0.0334 |     0.5769 |        1.4177 |             26 |
         | December  |          -0.0061 |          0.0112 |     0.5385 |       -0.4179 |             26 |
         """
+        self._check_arguments("daily", close_column)
         check_option("frequency", frequency, ("month", "weekday"))
         # Per ticker over the days it traded, so a stock in a Toolkit with a cryptocurrency
         # gets no weekend days without a move.
@@ -229,6 +230,7 @@ class SeasonalityTechnicals:
         | 2025-12-30 |     50 |      1 |     74 |     26 |      99 |
         | 2025-12-31 |     50 |      1 |     74 |     26 |      99 |
         """
+        self._check_arguments(period, close_column, window=window)
         if period == "intraday":
             raise InvalidArgumentError(
                 "The relative strength needs daily or longer periods."

@@ -7003,6 +7003,16 @@ class Toolkit:
             if len(within) != len(historical_data):
                 historical_data = within
 
+        # An empty period otherwise surfaces as an empty or all-NaN result of every calculation on it without a reason.  # noqa: E501
+        if historical_data.empty:
+            logger.warning(
+                "There is no %s historical data between %s and %s. Please check the start and end "
+                "date of the Toolkit against the dates the tickers have prices for.",
+                period,
+                self._start_date,
+                self._end_date,
+            )
+
         return historical_data
 
     def _get_lookback_historical_data(self, period: str) -> pd.DataFrame:

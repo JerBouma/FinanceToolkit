@@ -121,6 +121,7 @@ class VolatilityTechnicals:
         | 2025-12-30 |                283.299 |                 275.23  |                267.162 |         0.308  |                0.0586 |       1.7937 |               4.1102 |      23.5003 |      268.465 |                            1 |                274.284 |                 279.357 |                 280.707 |                  273.117 |                 265.526 |                  279.177 |                   272.6   |                  266.023 |                          0.0151 |              3.863  |              -0.3267 |                     54.0398 |                   285.385 |                    275.23  |                   265.399 |                  279.001 |                 269.818 |                     278.457 |                      272.336 |                     266.215 |            276.381 |             272.212 |            268.043 | 263.457 |                      1 |           4.2652 |               0.0698 |                       1.4266 |            -7.2914 |         0 |
         | 2025-12-31 |                281.366 |                 274.516 |                267.666 |         0.2372 |                0.0499 |       1.9233 |               3.954  |      23.1557 |      268.465 |                            1 |                274.628 |                 279.013 |                 280.039 |                  272.823 |                 265.607 |                  279.177 |                   272.6   |                  266.023 |                          0.0146 |              3.7647 |              -0.3494 |                     52.7332 |                   284.415 |                    274.516 |                   265.137 |                  275.232 |                 269.631 |                     277.662 |                      272.143 |                     266.623 |            276.421 |             272.402 |            268.383 | 263.457 |                      1 |           2.6707 |               0.5282 |                       1.3485 |            -6.9011 |         1 |
         """
+        self._check_arguments(period, close_column, window=window)
         check_period(
             period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
         )
@@ -489,6 +490,9 @@ class VolatilityTechnicals:
         | 2025-12-30 | 156.329 |      154.744 |       156.124 |      157.504 |
         | 2025-12-31 | 156.852 |      154.759 |       156.171 |      157.582 |
         """
+        self._check_arguments(
+            period, close_column, window=window, short_window=short_window
+        )
         check_option("method", method, ("standard", "price_bands"))
         check_period(
             period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
@@ -646,6 +650,7 @@ class VolatilityTechnicals:
         | 2025-12-30 | 0.308  |      0.0586 |
         | 2025-12-31 | 0.2372 |      0.0499 |
         """
+        self._check_arguments(period, close_column, window=window)
         check_period(
             period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
         )
@@ -770,6 +775,7 @@ class VolatilityTechnicals:
         | 2025-12-30 |   0.26  |      1.9647 |
         | 2025-12-31 |   0.304 |      5.6062 |
         """
+        self._check_arguments(period, close_column)
         check_period(
             period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
         )
@@ -938,6 +944,7 @@ class VolatilityTechnicals:
         | 2025-12-30 |  1.1558 |  0.3073 |      5.9621 |
         | 2025-12-31 |  1.1697 |  0.3071 |      5.9367 |
         """
+        self._check_arguments(period, close_column, window=window)
         methods = ("standard", "normalized", "day_range")
         check_option("method", method, methods)
         check_period(
@@ -1080,6 +1087,9 @@ class VolatilityTechnicals:
         | 2025-12-30 | 22.6104 | 23.4152 |     22.5802 |
         | 2025-12-31 | 22.4079 | 23.0341 |     22.2524 |
         """
+        self._check_arguments(
+            period, close_column, ema_window=ema_window, sum_window=sum_window
+        )
         check_period(
             period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
         )
@@ -1269,6 +1279,9 @@ class VolatilityTechnicals:
         | 2025-12-30 |      152.113 |                 1 |
         | 2025-12-31 |      152.113 |                 1 |
         """
+        self._check_arguments(
+            period, close_column, window=window, atr_window=atr_window
+        )
         methods = ("standard", "profit_maximizer")
         check_option("method", method, methods)
         check_period(
@@ -1416,6 +1429,7 @@ class VolatilityTechnicals:
         | 2025-12-30 |     446.239 |      474.711 |
         | 2025-12-31 |     447.641 |      473.309 |
         """
+        self._check_arguments(period, close_column, window=window)
         check_period(
             period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
         )
@@ -1588,6 +1602,9 @@ class VolatilityTechnicals:
         | 2025-12-30 |      23710.7 |       24127.5 |      24544.2 |
         | 2025-12-31 |        nan   |         nan   |        nan   |
         """
+        self._check_arguments(
+            period, close_column, window=window, atr_window=atr_window
+        )
         methods = ("exponential", "original", "aberration")
         check_option("method", method, methods)
         check_period(
@@ -1740,6 +1757,7 @@ class VolatilityTechnicals:
         | 2025-12-30 |          5.28   |           5.6018 |          5.9235 |
         | 2025-12-31 |          5.28   |           5.6018 |          5.9235 |
         """
+        self._check_arguments(period, close_column, window=window)
         check_period(
             period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
         )
@@ -1883,6 +1901,7 @@ class VolatilityTechnicals:
         |       90 | 0.2776 |            0.3564 |   0.5356 |            0.7652 | 0.9631 |    0.4132 |
         |      120 | 0.2903 |            0.3656 |   0.5216 |            0.7495 | 0.9164 |    0.3861 |
         """
+        self._check_arguments(period, close_column)
         check_period(
             period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
         )
@@ -2031,6 +2050,9 @@ class VolatilityTechnicals:
         | 2025-12-30 | -0.2501 | -0.3586 |     -0.3925 |
         | 2025-12-31 | -0.1966 | -0.3463 |     -0.3378 |
         """
+        self._check_arguments(
+            period, close_column, window=window, roc_window=roc_window
+        )
         check_period(
             period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
         )
@@ -2179,6 +2201,9 @@ class VolatilityTechnicals:
         | 2025-12-30 | 48.5788 | 62.8379 |     55.7399 |
         | 2025-12-31 | 45.1855 | 59.4845 |     51.3189 |
         """
+        self._check_arguments(
+            period, close_column, window=window, std_window=std_window
+        )
         check_period(
             period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
         )
@@ -2320,6 +2345,7 @@ class VolatilityTechnicals:
         | 2025-12-30 |      427.161 |       463.676 |      501.346 |
         | 2025-12-31 |      429.244 |       464.7   |      501.571 |
         """
+        self._check_arguments(period, close_column, window=window)
         check_period(
             period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
         )
@@ -2460,6 +2486,9 @@ class VolatilityTechnicals:
         | 2025-12-30 |     692.75  |    652.209 |
         | 2025-12-31 |     692.75  |    652.209 |
         """
+        self._check_arguments(
+            period, close_column, window=window, stop_window=stop_window
+        )
         check_period(
             period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
         )
@@ -2598,6 +2627,7 @@ class VolatilityTechnicals:
         | 2025-12-30 |      609.082 |       617.566 |      626.05  |
         | 2025-12-31 |      608.453 |       617.038 |      625.623 |
         """
+        self._check_arguments(period, close_column, window=window)
         check_period(
             period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
         )
@@ -2718,6 +2748,7 @@ class VolatilityTechnicals:
         | 2025-12-30 | 0.9515 | 2.6979 |      3.8896 |
         | 2025-12-31 | 0.3924 | 1.7274 |      6.1619 |
         """
+        self._check_arguments(period, close_column)
         check_period(
             period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
         )
@@ -2844,6 +2875,7 @@ class VolatilityTechnicals:
         | 2025-12-30 |          0.04 |                4.0142 |
         | 2025-12-31 |          2.97 |                3.9234 |
         """
+        self._check_arguments(period, close_column, window=window)
         check_period(
             period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
         )
@@ -2998,6 +3030,7 @@ class VolatilityTechnicals:
         | 2025-12-30 |     0.9902 |         1 |
         | 2025-12-31 |    -0.3707 |         1 |
         """
+        self._check_arguments(period, close_column, window=window)
         check_period(
             period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
         )
@@ -3141,6 +3174,7 @@ class VolatilityTechnicals:
         | 2025-12-30 |             240.577 |        200.623 |        160.67  |        280.53  |        320.483 |
         | 2025-12-31 |             240.675 |        200.722 |        160.769 |        280.628 |        320.582 |
         """
+        self._check_arguments(period, close_column, window=window)
         check_period(
             period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
         )
@@ -3283,6 +3317,7 @@ class VolatilityTechnicals:
         | 2025-12-30 | 0.994  | 0.6213 |      0.9957 |
         | 2025-12-31 | 1.744  | 0.7096 |      0.6057 |
         """
+        self._check_arguments(period, close_column, window=window)
         check_period(
             period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
         )

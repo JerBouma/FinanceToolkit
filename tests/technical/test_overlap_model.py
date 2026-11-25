@@ -835,3 +835,42 @@ def test_guppy_multiple_moving_averages_take_their_own_windows():
         "Long EMA 20",
     ]
     assert result["Group Spread"].first_valid_index() == prices.index[19]
+
+
+def test_pascal_weighted_moving_average_long_window():
+    """The binomial weights of a window beyond about 1,030 exceed the float range; they are scaled instead."""
+    import math
+
+    import numpy as np
+
+    prices = pd.Series(np.linspace(100.0, 200.0, 1300))
+    result = overlap_model.get_pascal_weighted_moving_average(prices, 1100)
+
+    assert result.notna().sum() == 201
+    # Symmetric weights on a straight line give the price in the middle of the window.
+    assert result.iloc[-1] == pytest.approx(prices.iloc[-1100:].mean(), rel=1e-9)
+
+    # Small windows keep the exact binomial coefficients.
+    small = overlap_model.get_pascal_weighted_moving_average(prices, 10)
+    weights = np.array([math.comb(9, i) for i in range(10)], dtype=float)
+    expected = (prices.iloc[-10:].to_numpy() @ weights) / weights.sum()
+    assert small.iloc[-1] == pytest.approx(expected, rel=1e-12)
+
+
+def test_fibonacci_weighted_moving_average_long_window():
+    """The Fibonacci numbers of a window beyond about 1,475 exceed the float range; they are scaled instead."""
+    from fractions import Fraction
+
+    import numpy as np
+
+    prices = pd.Series(np.random.default_rng(0).normal(0, 1, 2100).cumsum() + 100)
+    result = overlap_model.get_fibonacci_weighted_moving_average(prices, 2000)
+
+    fibonacci = [1, 1]
+    while len(fibonacci) < 2000:
+        fibonacci.append(fibonacci[-1] + fibonacci[-2])
+    window = [Fraction(price) for price in prices.iloc[-2000:]]
+    expected = sum(f * p for f, p in zip(fibonacci, window)) / sum(fibonacci)
+
+    assert result.notna().sum() == 101
+    assert result.iloc[-1] == pytest.approx(float(expected), rel=1e-12)

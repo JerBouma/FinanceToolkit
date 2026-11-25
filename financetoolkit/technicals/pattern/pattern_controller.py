@@ -340,6 +340,7 @@ class PatternTechnicals:
         | 2025-12-19 |      1 |      0 |           0 |
         | 2025-12-31 |      0 |     -1 |           0 |
         """
+        self._check_arguments(period, close_column)
         check_period(period, PERIODS)
         if period == "intraday":
             if self._historical_data[period].empty:
@@ -495,6 +496,7 @@ class PatternTechnicals:
         | 2025-12-30 | 272.349 | 273.128 | 271.335 | 272.115 |
         | 2025-12-31 | 272.232 | 272.73  | 270.807 | 271.641 |
         """
+        self._check_arguments(period, close_column)
         check_period(period, PERIODS)
         if period == "intraday":
             if self._historical_data[period].empty:
@@ -636,6 +638,7 @@ class PatternTechnicals:
         | 2025-12-29 |      1 |      1 |           0 |
         | 2025-12-30 |      0 |      0 |           1 |
         """
+        self._check_arguments(period, close_column)
         check_period(period, PERIODS)
         if period == "intraday":
             if self._historical_data[period].empty:
@@ -770,6 +773,7 @@ class PatternTechnicals:
         | 2025-12-30 |           0 |            2 |               0 |                0 |
         | 2025-12-31 |           1 |            0 |               0 |                0 |
         """
+        self._check_arguments(period, close_column)
         check_period(period, PERIODS)
         if period == "intraday":
             if self._historical_data[period].empty:
@@ -893,6 +897,7 @@ class PatternTechnicals:
         | 2025-11-25 |      0 |      1 |           0 |
         | 2025-12-26 |      0 |      0 |          -1 |
         """
+        self._check_arguments(period, close_column, window=window)
         check_period(period, PERIODS)
         if period == "intraday":
             if self._historical_data[period].empty:
@@ -1062,6 +1067,18 @@ class PatternTechnicals:
         | 2025-06-27 |      0 |      0 |           1 |
         | 2025-09-15 |      1 |      0 |           0 |
         """
+        self._check_arguments(
+            period,
+            close_column,
+            short_window=short_window,
+            long_window=long_window,
+            macd_short_window=macd_short_window,
+            macd_long_window=macd_long_window,
+            macd_signal_window=macd_signal_window,
+            rsi_window=rsi_window,
+            bollinger_window=bollinger_window,
+            high_low_window=high_low_window,
+        )
         check_period(period, PERIODS)
         if period == "intraday":
             if self._historical_data[period].empty:
@@ -1247,7 +1264,7 @@ class PatternTechnicals:
         """
         names = factor_model.select_metrics(metric, FACTOR_COLLECTIONS)
         if len(names) != 1:
-            raise ValueError(
+            raise InvalidArgumentError(
                 "Please name a single indicator, e.g. 'get_relative_strength_index'."
             )
         if isinstance(forward_periods, int):

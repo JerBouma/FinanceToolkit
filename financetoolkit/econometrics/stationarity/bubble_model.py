@@ -30,7 +30,14 @@ def get_minimum_window(observations: int) -> int:
 
     Returns:
         int: The minimum window in observations.
+
+    Raises:
+        ValueError: If the series has no observations.
     """
+    if observations < 1:
+        raise ValueError(
+            "The series has no observations in the date range to test for a bubble."
+        )
     # Rounded first, so 0.19 of 100 observations is 19 and not 18 by floating point.
     return int(np.floor(round((0.01 + 1.8 / np.sqrt(observations)) * observations, 9)))
 

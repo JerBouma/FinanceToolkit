@@ -2799,3 +2799,24 @@ def test_a_trailing_window_below_one_is_refused_and_one_too_long_is_reported(
         ratios_module.collect_efficiency_ratios(trailing=100)
     # The collection calls every ratio with the window, the window is reported once.
     assert caplog.text.count("The trailing window of 100 periods is longer") == 1
+
+
+def test_a_trailing_window_as_long_as_the_statements_is_reported_for_averaged_balances(
+    ratios_module, caplog
+):
+    periods = len(ratios_module._income_statement.columns)
+
+    # The averaged equity of a window of every period also needs the period end before it.
+    with caplog.at_level("WARNING", logger="financetoolkit"):
+        return_on_equity = ratios_module.get_return_on_equity(trailing=periods)
+    assert return_on_equity.isna().all().all()
+    assert (
+        caplog.text.count(f"The trailing window of {periods} periods is as long as")
+        == 1
+    )
+
+    caplog.clear()
+    with caplog.at_level("WARNING", logger="financetoolkit"):
+        return_on_equity = ratios_module.get_return_on_equity(trailing=periods - 1)
+    assert return_on_equity.notna().any().any()
+    assert "trailing window" not in caplog.text

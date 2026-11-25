@@ -1894,3 +1894,19 @@ def test_a_series_without_values_is_named(caplog):
     assert johansen.select_dtypes("number").isna().all().all()
     assert "MSFT has no daily Adj Close values" in caplog.text
     assert "also those of the series it is combined with" in caplog.text
+
+
+def test_a_rolling_sample_entropy_without_values_is_logged(econometrics_module, caplog):
+    # Four returns rarely hold two matching templates, so every window is NaN.
+    with caplog.at_level("WARNING", logger="financetoolkit"):
+        entropy = econometrics_module.get_entropy(rolling=4)
+
+    assert entropy.isna().all().all()
+    assert caplog.text.count("leaves the sample entropy NaN throughout") == 1
+
+    caplog.clear()
+    with caplog.at_level("WARNING", logger="financetoolkit"):
+        entropy = econometrics_module.get_entropy(rolling=60)
+
+    assert entropy.notna().any().any()
+    assert "NaN throughout" not in caplog.text

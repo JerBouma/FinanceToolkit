@@ -2,15 +2,16 @@
 
 __docformat__ = "google"
 
+import sqlite3
 import warnings
 from datetime import UTC, datetime, timedelta
 from urllib.parse import quote
 
 import numpy as np
 import pandas as pd
+import peewee
 import requests
 import yfinance as yf
-import yfinance.cache
 import yfinance.exceptions
 
 from financetoolkit import helpers
@@ -33,19 +34,8 @@ FISCAL_PERIOD_ITEM = "period"
 COMPANY_INFORMATION_CACHE: dict[str, dict[str, str]] = {}
 
 
-def close_cache_connections() -> None:
-    """
-    Closes the connections the current thread holds to yfinance's caches of time zones,
-    cookies and ISINs. yfinance keeps them in SQLite databases that peewee connects to once
-    per thread and closes only for the main thread when Python exits, so the connection of
-    every thread that downloaded (the Toolkit downloads tickers in parallel) is otherwise
-    left open until it is garbage collected, with a ResourceWarning. The cached values stay
-    in the databases, which the next download in the thread connects to again.
-    """
-    for manager in ("_TzDBManager", "_CookieDBManager", "_ISINDBManager"):
-        database = getattr(getattr(yfinance.cache, manager, None), "_db", None)
-        if database is not None and not database.is_closed():
-            database.close()
+# yfinance keeps its caches of time zones, cookies and ISINs in SQLite databases shared by every thread. A thread that writes to one while another checkpoints it gets "database is locked" (an OperationalError of peewee, or of sqlite3 underneath), which says nothing about the ticker, so a download is tried once more before it counts as failed.  # noqa: E501
+CACHE_DATABASE_ERRORS = (peewee.OperationalError, sqlite3.OperationalError)
 
 
 def get_financial_statement(
@@ -105,7 +95,7 @@ def get_financial_statement(
                 "Please choose either 'balance', 'income', or "
                 "cashflow' for the statement parameter."
             )
-    except (OSError, IndexError, AttributeError):
+    except (OSError, IndexError, AttributeError, *CACHE_DATABASE_ERRORS):
         # OSError covers the network errors of both urllib and curl_cffi, which yfinance
         # uses in recent versions, such as a timeout or a refused connection.
         error_model.report_request_failure()
@@ -118,8 +108,6 @@ def get_financial_statement(
             else "YFINANCE RATE LIMIT REACHED"
         )
         return pd.DataFrame(columns=[error_code])
-    finally:
-        close_cache_connections()
 
     if not isinstance(financial_statement, pd.DataFrame):
         # yfinance only hands back a dict when asked with as_dict=True, which never
@@ -315,11 +303,10 @@ def get_company_information(ticker: str) -> dict[str, str]:
         TypeError,
         ValueError,
         yf.exceptions.YFException,
+        *CACHE_DATABASE_ERRORS,
     ):
         error_model.report_request_failure()
         return {"financialCurrency": "", "lastFiscalYearEnd": ""}
-    finally:
-        close_cache_connections()
 
     record_source(policy_model.YAHOO_FINANCE)
     fiscal_year_end = information.get("lastFiscalYearEnd")
@@ -425,20 +412,27 @@ def get_historical_data(
             "auto_adjust": False,
         }
 
-        try:
-            historical_data = yf.Ticker(to_yahoo_finance_symbol(ticker)).history(
-                **history_parameters, repair=repair_splits
-            )
-        except ModuleNotFoundError:
-            # The repair needs yfinance's optional "repair" extra (scikit-learn in recent versions), which a plain install lacks; the prices are then taken unrepaired rather than lost.  # noqa: E501
-            logger.info(
-                "yfinance's price repair needs its 'repair' extra (pip install 'yfinance[repair]'), "
-                "so the prices of %s are not repaired.",
-                ticker,
-            )
-            historical_data = yf.Ticker(to_yahoo_finance_symbol(ticker)).history(
-                **history_parameters, repair=False
-            )
+        for attempt in range(2):
+            try:
+                try:
+                    historical_data = yf.Ticker(
+                        to_yahoo_finance_symbol(ticker)
+                    ).history(**history_parameters, repair=repair_splits)
+                except ModuleNotFoundError:
+                    # The repair needs yfinance's optional "repair" extra (scikit-learn in recent versions), which a plain install lacks; the prices are then taken unrepaired rather than lost.  # noqa: E501
+                    logger.info(
+                        "yfinance's price repair needs its 'repair' extra (pip install 'yfinance[repair]'), "
+                        "so the prices of %s are not repaired.",
+                        ticker,
+                    )
+                    historical_data = yf.Ticker(
+                        to_yahoo_finance_symbol(ticker)
+                    ).history(**history_parameters, repair=False)
+                break
+            except CACHE_DATABASE_ERRORS:
+                # A cache database locked by another thread's download is retried once; a second lock counts as a failed download.  # noqa: E501
+                if attempt == 1:
+                    raise
 
         if (
             interval == "1d"
@@ -487,7 +481,7 @@ def get_historical_data(
                 :, "Close"
             ].to_numpy()
 
-    except (OSError, IndexError):
+    except (OSError, IndexError, *CACHE_DATABASE_ERRORS):
         error_model.report_request_failure()
         return pd.DataFrame()
     except yf.exceptions.YFRateLimitError:
@@ -497,8 +491,6 @@ def get_historical_data(
     except yf.exceptions.YFException:
         # Such as a delisted ticker or one without prices in the range.
         return pd.DataFrame()
-    finally:
-        close_cache_connections()
 
     if historical_data.empty:
         # No prices in the range, such as before the listing.

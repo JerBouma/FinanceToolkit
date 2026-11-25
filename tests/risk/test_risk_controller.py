@@ -1996,3 +1996,60 @@ def test_a_portfolio_constituent_without_returns_is_named(caplog):
 
     assert marginal.isna().all()
     assert "MSFT has no Return values" in caplog.text
+
+
+# Robustness round 3: default backtest windows and per-ticker rolling windows.
+
+
+@pytest.mark.parametrize("method", ["get_var_backtest", "get_acerbi_szekely_test"])
+def test_a_default_backtest_window_as_long_as_the_returns_is_logged(
+    risk_module, method, caplog
+):
+    # The default window is 20 yearly returns, while the data holds three.
+    with caplog.at_level("WARNING", logger="financetoolkit"):
+        result = getattr(risk_module, method)(period="yearly")
+
+    assert result.isna().all().all()
+    assert caplog.text.count("A window of 20 yearly returns") == 1
+
+
+def test_a_default_backtest_window_without_a_tail_observation_is_logged(
+    risk_module, caplog
+):
+    # The default window of 20 monthly returns holds no observation in a 1% tail.
+    with caplog.at_level("WARNING", logger="financetoolkit"):
+        risk_module.get_var_backtest(period="monthly", alpha=0.01)
+
+    assert caplog.text.count("holds no observation in the 0.01 tail") == 1
+
+
+def test_a_rolling_window_names_the_tickers_with_fewer_returns(caplog):
+    from financetoolkit import Toolkit
+
+    historical = pd.read_pickle("tests/datasets/historical_dataset.pickle").drop(
+        columns=["Return", "Cumulative Return"], level=0
+    )
+    # MSFT starts in June 2021, while AAPL and the Benchmark have the full range.
+    before = historical.index < pd.Period("2021-06-01", "D")
+    for column in historical.columns.get_level_values(0).unique():
+        historical.loc[before, (column, "MSFT")] = np.nan
+    toolkit = Toolkit(
+        tickers=["AAPL", "MSFT"],
+        historical=historical,
+        convert_currency=False,
+        start_date="2019-12-31",
+        end_date="2023-01-01",
+        sleep_timer=False,
+    )
+    toolkit._daily_risk_free_rate = pd.read_pickle(
+        "tests/datasets/risk_free_rate.pickle"
+    )
+    toolkit._daily_treasury_data = pd.read_pickle("tests/datasets/treasury_data.pickle")
+
+    with caplog.at_level("WARNING", logger="financetoolkit"):
+        volatility = toolkit.risk.get_volatility(period="quarterly", rolling=8)
+
+    assert volatility["MSFT"].isna().all()
+    assert volatility["AAPL"].notna().any()
+    assert caplog.text.count("the quarterly returns of MSFT (") == 1
+    assert "AAPL (" not in caplog.text

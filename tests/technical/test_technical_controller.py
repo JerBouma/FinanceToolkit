@@ -2397,7 +2397,6 @@ def test_trend_scanning_windows_are_checked(technical_module, caplog):
 
 
 def test_a_window_longer_than_the_data_is_logged_once(technical_module, caplog):
-    technical_module._reported_windows.clear()
     with caplog.at_level("WARNING", logger="financetoolkit"):
         technical_module.collect_overlap_indicators(window=1400)
     # Every indicator of the collection gets the window, the collection reports it once.
@@ -2405,12 +2404,13 @@ def test_a_window_longer_than_the_data_is_logged_once(technical_module, caplog):
     assert "the windows of 1400 periods are longer than the data" in caplog.text
     assert "A window of 1400 periods" not in caplog.text
 
-    # A standalone indicator reports its window once per period and window.
-    caplog.clear()
-    with caplog.at_level("WARNING", logger="financetoolkit"):
-        technical_module.get_moving_average(window=1400)
-        technical_module.get_moving_average(window=1400)
-    assert caplog.text.count("A window of 1400 periods is longer than") == 1
+    # A standalone indicator reports its window once per call, also when the same instance
+    # is called again (the MCP server keeps a Toolkit for many requests).
+    for _ in range(2):
+        caplog.clear()
+        with caplog.at_level("WARNING", logger="financetoolkit"):
+            technical_module.get_moving_average(window=1400)
+        assert caplog.text.count("A window of 1400 periods is longer than") == 1
 
 
 @pytest.mark.parametrize(
@@ -2514,3 +2514,30 @@ def test_an_indicator_without_values_says_why(
 
     assert result.isna().all().all()
     assert caplog.text.count(f"{method} has no values for the") == 1
+
+
+def test_the_factor_analysis_of_a_short_history_reports_its_windows_once(caplog):
+    from financetoolkit import Toolkit  # noqa: PLC0415
+
+    historical = pd.read_pickle("tests/datasets/historical_dataset.pickle").drop(
+        columns=["Return", "Cumulative Return"], level=0
+    )
+    toolkit = Toolkit(
+        tickers=["AAPL", "MSFT"],
+        historical=historical.loc[historical.index >= pd.Period("2022-12-29", "D")],
+        convert_currency=False,
+        start_date="2022-12-28",
+        end_date="2023-01-01",
+        sleep_timer=False,
+    )
+    toolkit._daily_risk_free_rate = pd.read_pickle(
+        "tests/datasets/risk_free_rate.pickle"
+    )
+    toolkit._daily_treasury_data = pd.read_pickle("tests/datasets/treasury_data.pickle")
+
+    with caplog.at_level("WARNING", logger="financetoolkit"):
+        toolkit.technicals.get_factor_analysis()
+
+    # One message for the windows of every indicator, counted in the daily periods they use.
+    assert caplog.text.count("get_factor_analysis over 2 daily periods of data") == 1
+    assert "A window of" not in caplog.text

@@ -39,7 +39,8 @@ def check_rolling(
     minimum, the smallest window the measure has a value for (two for a spread, ratio or
     regression, more for the higher moments and the fractal measures). A window at least as
     long as the periods with a return is allowed but gives at most one value (NaN throughout
-    when longer), which is logged once.
+    when longer), which is logged once, naming the tickers whose own returns are fewer when
+    the others have enough.
 
     Args:
         rolling (int | None): The rolling window, None for none.
@@ -59,23 +60,42 @@ def check_rolling(
 
     # The window counts returns, so the periods are those with a return: the first period
     # of the data has a price but no return (a range starting on 2019-12-31 holds four
-    # years and three yearly returns).
+    # years and three yearly returns). Each ticker is rolled over its own returns, so a
+    # ticker listed later is counted on its own, without the Benchmark's longer history.
     period_data = historical_data.get(period)
     if period_data is None:
         return
 
     returns = period_data.get("Return", period_data)
-    periods = len(returns.dropna(how="all"))
+    if isinstance(returns, pd.DataFrame) and returns.columns.nlevels == 1:
+        tickers = returns.drop(columns="Benchmark", errors="ignore")
+        counts = (tickers if not tickers.empty else returns).notna().sum()
+    else:
+        counts = pd.Series({period: len(returns.dropna(how="all"))})
 
-    if rolling >= periods:
+    short = counts[counts <= rolling]
+    if short.empty:
+        return
+
+    if len(short) == len(counts):
         logger.warning(
             "The rolling window of %s %s periods is at least as long as the %s %s returns in the "
             "data, so it gives at most one value (NaN throughout when longer). Use a shorter "
             "rolling window or a longer date range.",
             rolling,
             period,
-            periods,
+            int(counts.max()),
             period,
+        )
+    else:
+        logger.warning(
+            "The rolling window of %s %s periods is at least as long as the %s returns of %s, so "
+            "it gives at most one value for them (NaN throughout when longer). Use a shorter "
+            "rolling window or an earlier start date.",
+            rolling,
+            period,
+            period,
+            ", ".join(f"{ticker} ({count})" for ticker, count in short.items()),
         )
 
 

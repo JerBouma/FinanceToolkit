@@ -449,3 +449,66 @@ def test_futures_without_daily_bars_are_built_from_hourly_bars(monkeypatch):
     assert list(data["High"]) == [32.2, 45.0]
     assert list(data["Low"]) == [30.9, 42.9]
     assert list(data["Volume"]) == [60, 90]
+
+
+@pytest.mark.parametrize("locks", [1, 2])
+def test_a_locked_cache_database_is_retried_once_then_a_failed_download(
+    monkeypatch, locks
+):
+    """
+    yfinance's SQLite caches are shared by the download threads, so one of them can find a
+    database locked by another: the download is tried once more and a second lock counts as
+    a failed download rather than an error that ends the calculation.
+    """
+    import sqlite3
+
+    import pandas as pd
+    import peewee
+
+    attempts = []
+
+    class LockedTicker:
+        def __init__(self, ticker):
+            pass
+
+        def history(self, **kwargs):  # noqa: ARG002
+            attempts.append(1)
+            if len(attempts) <= locks:
+                error = (
+                    peewee.OperationalError if locks == 1 else sqlite3.OperationalError
+                )
+                raise error("database is locked")
+            return pd.DataFrame(
+                {
+                    "Open": 1.0,
+                    "High": 1.0,
+                    "Low": 1.0,
+                    "Close": [1.0, 2.0],
+                    "Volume": 1,
+                },
+                index=pd.to_datetime(["2025-01-02", "2025-01-03"]),
+            )
+
+    monkeypatch.setattr(yfinance_model.yf, "Ticker", LockedTicker)
+
+    data = yfinance_model.get_historical_data(
+        "ASML.AS", start="2025-01-02", end="2025-01-03"
+    )
+
+    assert len(attempts) == 2
+    assert data.empty == (locks == 2)
+
+
+def test_a_locked_cache_database_leaves_a_statement_empty(monkeypatch):
+    import peewee
+
+    class LockedTicker:
+        def __init__(self, ticker):
+            pass
+
+        def get_balance_sheet(self, freq):  # noqa: ARG002
+            raise peewee.OperationalError("database is locked")
+
+    monkeypatch.setattr(yfinance_model.yf, "Ticker", LockedTicker)
+
+    assert yfinance_model.get_financial_statement("AAPL", statement="balance").empty

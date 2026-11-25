@@ -1166,8 +1166,8 @@ def check_trailing(cls: FilteredClass) -> FilteredClass:
     Class decorator that checks the trailing window of every method of the Ratios and
     Models classes that has one: a whole number of at least one period, else an
     InvalidArgumentError. A window longer than the periods of the financial statements
-    leaves every value NaN, which is logged once per call, also when a collection calls
-    the methods of its ratios.
+    leaves the values NaN, which is logged once per call (see `report_long_trailing`),
+    also when a collection calls the methods of its ratios.
 
     Args:
         cls (type): The class.
@@ -1203,19 +1203,50 @@ def _trailing_checked(function: Callable, signature: inspect.Signature) -> Calla
         finally:
             self._trailing_depth = depth
 
-        periods = len(self._income_statement.columns) if trailing and not depth else 0
-        if periods and isinstance(trailing, numbers.Integral) and trailing > periods:
-            logger.warning(
-                "The trailing window of %s periods is longer than the %s periods of the "
-                "financial statements, so no period has a complete window and every value "
-                "is NaN. Pass a smaller trailing window or an earlier start_date.",
-                trailing,
-                periods,
-            )
+        # The statements are only counted with a window, as reading them raises when they could not be retrieved.  # noqa: E501
+        if trailing and not depth:
+            report_long_trailing(trailing, len(self._income_statement.columns), result)
 
         return result
 
     return wrapper
+
+
+def report_long_trailing(
+    trailing: int | None, periods: int, result: pd.Series | pd.DataFrame
+) -> None:
+    """
+    Logs a trailing window that leaves values NaN for want of periods: one longer than the
+    periods of the financial statements, or one as long as them when the result has no
+    values at all, as a ratio of averaged balances also needs the period end that opens
+    its window.
+
+    Args:
+        trailing (int | None): The trailing window, None for none.
+        periods (int): The number of periods of the financial statements.
+        result (pd.Series | pd.DataFrame): The result calculated with the window.
+    """
+    if not trailing or not periods or not isinstance(trailing, numbers.Integral):
+        return
+
+    if isinstance(result, pd.DataFrame):
+        values = result.select_dtypes("number")
+    elif isinstance(result, pd.Series) and pd.api.types.is_numeric_dtype(result):
+        values = result
+    else:
+        values = pd.Series(dtype="float64")
+    without_values = values.size > 0 and not values.notna().to_numpy().any()
+
+    if trailing > periods or (trailing == periods and without_values):
+        logger.warning(
+            "The trailing window of %s periods is %s the %s periods of the financial "
+            "statements, so the values are NaN where no period has a complete window (a ratio "
+            "of averaged balances also needs the period end before the window). Pass a smaller "
+            "trailing window or an earlier start_date.",
+            trailing,
+            "longer than" if trailing > periods else "as long as",
+            periods,
+        )
 
 
 def add_basket_total(

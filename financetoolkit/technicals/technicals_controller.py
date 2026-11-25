@@ -126,9 +126,6 @@ class TechnicalsBase:
         self._portfolio_weights: dict | None = None
         # The historical data with the open, high and low adjusted like the close, per period.
         self._consistent_data: dict[tuple, pd.DataFrame] = {}
-        # The periods and windows reported as longer than the data, so that an indicator
-        # called again reports each once.
-        self._reported_windows: set[tuple[str, int]] = set()
         # The state of report_missing_values (technicals helpers): the depth of the calls
         # and collections running, whether the window of the current indicator was reported
         # as longer than the data, and the long windows and the indicators without values a
@@ -306,9 +303,9 @@ class TechnicalsBase:
         Checks the arguments the indicators share before one is calculated: every window is a
         whole number of at least one period and the close column is a price column of the
         historical data. A window longer than the data of the period leaves the indicator
-        without values, which is logged once for that period and window: the window parameter
-        when the indicator has one, else its longest window. Within a collection the window is
-        kept for the one message of the collection instead.
+        without values, which is logged once per call: the window parameter when the
+        indicator has one, else its longest window. Within a collection the window is kept for
+        the one message of the collection instead.
 
         Args:
             period (str): The period of the prices, e.g. "daily".
@@ -341,15 +338,14 @@ class TechnicalsBase:
         # variants (such as the rank window of Connors' RSI) only matter to the variant using them.
         relevant = [windows["window"]] if "window" in windows else windows.values()
         longest = max((window for window in relevant if window), default=0)
-        reported = (period, longest)
         if longest <= len(historical_data):
             return
 
         self._window_too_long = True
         if self._collecting:
             self._long_windows.add(longest)
-        elif reported not in self._reported_windows:
-            self._reported_windows.add(reported)
+        else:
+            # An indicator built from others checks the same window again; the call logs it once (report_missing_values).  # noqa: E501
             logger.warning(
                 "A window of %s periods is longer than the %s %s periods of data, which leaves the "
                 "indicator without values. Please choose a shorter window or a longer date range.",

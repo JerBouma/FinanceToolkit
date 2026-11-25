@@ -211,15 +211,15 @@ def test_missing_required_inputs_are_named(captured):
     assert captured == []
 
 
-def test_an_indicator_of_another_tool_is_pointed_there(captured):
+def test_an_indicator_of_another_tool_is_answered_there(captured):
     text = asyncio.run(
         mcp_controller.mcp.call_tool(
             "overlap", {"indicator": "get_bollinger_bands", "tickers": "AAPL"}
         )
     )[0].text
 
-    assert "indicator of `volatility`" in text
-    assert captured == []
+    assert "indicator of `volatility`, so `volatility` answered it" in text
+    assert len(captured) == 1
 
 
 def test_the_benchmark_note_is_left_out_without_a_benchmark(monkeypatch):
@@ -958,3 +958,48 @@ def test_missing_data_is_not_called_invalid_input(monkeypatch, error, expected):
     )[0].text
 
     assert expected in text
+
+
+def test_an_indicator_of_another_tool_is_answered_by_that_tool(monkeypatch):
+    called = []
+
+    def ratio(self, module_name, method_name, category, **kwargs):  # noqa: ARG001
+        called.append((category, method_name, kwargs.get("tickers")))
+        return pd.DataFrame({"2024": [20.2]}, index=["TSLA"])
+
+    monkeypatch.setattr(ToolkitProvider, "call_method", ratio)
+
+    text = asyncio.run(
+        mcp_controller.mcp.call_tool(
+            "solvency", {"indicator": "get_interest_coverage_ratio", "tickers": "TSLA"}
+        )
+    )[0][0].text
+
+    # The interest coverage ratio itself, not solvency's cash interest coverage ratio.
+    assert [method for _, method, _ in called] == ["get_interest_coverage_ratio"]
+    assert "is an indicator of `profitability`, so `profitability` answered it" in text
+    assert "was ignored" not in text
+
+
+def test_a_name_with_a_word_more_is_not_read_as_another_measure(captured):
+    text = asyncio.run(
+        mcp_controller.mcp.call_tool(
+            "macroeconomics",
+            {"indicator": "get_real_gross_domestic_product", "countries": "Japan"},
+        )
+    )[0][0].text
+
+    assert not captured
+    assert "Unknown indicator `get_real_gross_domestic_product`" in text
+    assert "get_gross_domestic_product" in text
+
+
+def test_an_unknown_indicator_suggests_close_names_of_other_tools(captured):
+    text = asyncio.run(
+        mcp_controller.mcp.call_tool(
+            "solvency", {"indicator": "get_interest_coverage", "tickers": "TSLA"}
+        )
+    )[0][0].text
+
+    assert not captured
+    assert "get_interest_coverage_ratio (tool `profitability`)" in text

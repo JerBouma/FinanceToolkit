@@ -541,6 +541,10 @@ MISCASED_ARGUMENT = re.compile(r"\s*(?P<name>[A-Za-z_]\w*)\s*=")
 # How alike an unknown indicator name must be to a known one to be read as it.
 NEAR_CERTAIN_MATCH = 0.9
 
+# The note a call answered by another tool carries there (an indicator asked of a tool that
+# doesn't have it), passed under a name no tool parameter has.
+ROUTED_NOTE = "__routed_note__"
+
 # How a portfolio_performance call names the columns of a transaction, in any casing.
 TRANSACTION_FIELDS = {
     "date": "Date",
@@ -1827,6 +1831,9 @@ class ToolRegistry:
         self._inspector = inspector
         self._tool_index: dict[str, list[dict[str, str]]] = {}
         self._indicator_index: list[dict[str, Any]] = []
+        # Each router tool's own function, so a call naming another tool's indicator is
+        # answered by that tool.
+        self._router_functions: dict[str, Any] = {}
         # The module and category of every indicator per tool, for the indicators an
         # econometrics call names as its series.
         self._routes: dict[str, dict[str, tuple[str, str]]] = {}
@@ -2301,7 +2308,16 @@ class ToolRegistry:
             # Arguments that are no parameter of the tool (a misspelt one, or one of another
             # tool, such as benchmark_ticker on a country tool) are taken off before any is
             # read, so none of them is applied, and named in the answer.
+            routed_note = kwargs.pop(ROUTED_NOTE, None)
             tool_parameters = list(wrapper.__signature__.parameters)
+            # What the caller set, for a call answered by another tool: the schema defaults of
+            # this tool's parameters are no arguments to pass on.
+            arguments = {
+                pname: value
+                for pname, value in kwargs.items()
+                if pname not in tool_parameters
+                or value != wrapper.__signature__.parameters[pname].default
+            }
             unknown_arguments = [
                 pname for pname in kwargs if pname not in tool_parameters
             ]
@@ -2321,22 +2337,43 @@ class ToolRegistry:
                 and f"get_{candidate}" in method_param_names
             ):
                 candidate = f"get_{candidate}"
-            # A near-certain match (get_gordon_growth_model for a misspelt get_gorden_growth_model)
-            # is used, with a note.
-            indicator_note = None
-            if candidate not in method_param_names:
-                near = difflib.get_close_matches(
-                    candidate, all_indicators, n=2, cutoff=NEAR_CERTAIN_MATCH
-                )
-                if len(near) == 1:
-                    indicator_note = f"`{raw_indicator}` was read as `{near[0]}`."
-                    candidate = near[0]
-            if candidate not in method_param_names:
-                elsewhere = [
+            indicator_note = routed_note
+            # An indicator of exactly one other tool is answered by that tool (with the same
+            # arguments), before any name of this tool is taken for it: a close name here is
+            # another measure (get_cash_interest_coverage_ratio for get_interest_coverage_ratio).
+            elsewhere = (
+                [
                     entry["tool"]
                     for entry in self._indicator_index
                     if entry["indicator"] == candidate
                 ]
+                if candidate not in method_param_names
+                else []
+            )
+            if len(elsewhere) == 1 and elsewhere[0] in self._router_functions:
+                return self._router_functions[elsewhere[0]](
+                    **{
+                        **arguments,
+                        "indicator": candidate,
+                        ROUTED_NOTE: f"`{candidate}` is an indicator of `{elsewhere[0]}`, "
+                        f"so `{elsewhere[0]}` answered it.",
+                    }
+                )
+            # A near-certain match (get_gordon_growth_model for a misspelt get_gorden_growth_model)
+            # is used, with a note, but only a misspelling: a name with a word more or less
+            # (get_real_gross_domestic_product for get_gross_domestic_product) is another measure.
+            if candidate not in method_param_names and not elsewhere:
+                near = [
+                    name
+                    for name in difflib.get_close_matches(
+                        candidate, all_indicators, n=2, cutoff=NEAR_CERTAIN_MATCH
+                    )
+                    if name.count("_") == candidate.count("_")
+                ]
+                if len(near) == 1:
+                    indicator_note = f"`{raw_indicator}` was read as `{near[0]}`."
+                    candidate = near[0]
+            if candidate not in method_param_names:
                 if elsewhere:
                     return (
                         f"`{candidate}` is not part of `{tool_name}`; it is an indicator of "
@@ -2346,6 +2383,20 @@ class ToolRegistry:
                 close = difflib.get_close_matches(
                     candidate, all_indicators, n=3, cutoff=0.6
                 )
+                # Close names of other tools too, with their tool, as an indicator is often
+                # looked for under a neighbouring tool (interest coverage under solvency).
+                other_tools = {
+                    entry["indicator"]: entry["tool"]
+                    for entry in self._indicator_index
+                    if entry["tool"] != tool_name
+                }
+                close += [
+                    f"{name} (tool `{other_tools[name]}`)"
+                    for name in difflib.get_close_matches(
+                        candidate, list(other_tools), n=2, cutoff=0.75
+                    )
+                    if name not in all_indicators
+                ]
                 suggestion = (
                     (" Did you mean: " + ", ".join(close) + "?") if close else ""
                 )
@@ -3765,6 +3816,7 @@ class ToolRegistry:
             )
             fn.__name__ = spec.tool_name
             fn.__doc__ = description
+            self._router_functions[spec.tool_name] = fn
             fn = run_in_thread(fn)
 
             if self._analytics is not None:

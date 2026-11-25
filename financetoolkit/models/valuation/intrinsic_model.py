@@ -36,7 +36,11 @@ def get_intrinsic_value(
         - Cash Flow Projection_t = Cash Flow_t-1 * (1 + Growth Rate)
         - Terminal Value = Last Cash Flow Projection * (1 + Perpetual Growth Rate) /
         (Weighted Average Cost of Capital — Perpetual Growth Rate)
-        - Enterprise Value = Sum of Present Value of Cash Flow Projections + Terminal Value
+        - Present Value of Cash Flows = Sum of Cash Flow Projection_t / (1 + Weighted Average
+        Cost of Capital)^t for t = 1 to Periods
+        - Present Value of Terminal Value = Terminal Value / (1 + Weighted Average Cost of
+        Capital)^Periods
+        - Enterprise Value = Present Value of Cash Flows + Present Value of Terminal Value
         - Equity Value = Enterprise Value + Cash and Cash Equivalents + Short Term Investments —
         Total Debt — Minority Interest — Preferred Stock
         - Intrinsic Value = Equity Value / Total Shares Outstanding
@@ -61,8 +65,9 @@ def get_intrinsic_value(
         common shareholders. Defaults to 0.0.
 
     Returns:
-        pd.DataFrame: A DataFrame containing the Terminal Value, Cash Flow Projection, Enterprise
-        Value, Equity Value and Intrinsic Value.
+        pd.DataFrame: A DataFrame containing the Terminal Value, Cash Flow Projection (the last
+        projected cash flow), Present Value of Cash Flows, Present Value of Terminal Value,
+        Enterprise Value, Equity Value and Intrinsic Value.
 
     Notes:
     - The results are highly dependent on the input. Therefore, think carefully about each input
@@ -70,6 +75,10 @@ def get_intrinsic_value(
     - The Weighted Average Cost of Capital must be greater than the Perpetual Growth Rate,
     otherwise the Terminal Value formula divides by a non-positive number. A ValueError is
     raised when it is not.
+    - The cash flows are discounted at the end of each period (no mid-year convention), and the
+    Terminal Value at the end of the last projected period. The Present Value of Cash Flows and
+    the Present Value of Terminal Value add up to the Enterprise Value, which shows how much of
+    it comes from the years beyond the projection.
     - The Weighted Average Cost of Capital is the discount rate of the cash flow to all capital
     providers, so the base cash flow should be the Free Cash Flow to the Firm. Debt is subtracted
     from the Enterprise Value afterwards, which counts interest twice when the base cash flow is
@@ -113,12 +122,12 @@ def get_intrinsic_value(
     ]
 
     # The Terminal Value sits at the end of the projection horizon and is therefore discounted over the number of periods, not one period further.  # noqa: E501
-    cash_flow_present_value.append(
+    terminal_value_present_value = (
         terminal_value / (1 + weighted_average_cost_of_capital) ** periods
     )
 
     # Calculate the Enterprise Value, using fsum so the total is correctly rounded rather than accumulation-order dependent (builtin sum only compensates on 3.12+)  # noqa: E501
-    enterprise_value = fsum(cash_flow_present_value)
+    enterprise_value = fsum([*cash_flow_present_value, terminal_value_present_value])
 
     # Calculate the Equity Value: the cash and the marketable securities belong to the shareholders on top of the operating Enterprise Value, while the debt, the minority interest and the preferred stock are claims ahead of them.  # noqa: E501
     equity_value = (
@@ -140,6 +149,8 @@ def get_intrinsic_value(
     components = {
         "Terminal Value": terminal_value,
         "Cash Flow Projection": cash_flow_projection[-1],
+        "Present Value of Cash Flows": fsum(cash_flow_present_value),
+        "Present Value of Terminal Value": terminal_value_present_value,
         "Enterprise Value": enterprise_value,
         "Equity Value": equity_value,
         "Intrinsic Value": intrinsic_value,

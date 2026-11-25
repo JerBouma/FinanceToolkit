@@ -12,9 +12,15 @@ def read_answer(text: str):
     """
     An answer with each table as records: a list of records for a table alone, else the
     answer with the table's records under "data" next to its _notes and _sources, and a
-    table per name for an answer of several tables.
+    table per name for an answer of several tables (or of several indicators, each read the
+    same way).
     """
-    answer = json.loads(text)
+    return _read(json.loads(text))
+
+
+def _read(answer):
+    """An answer, or the answer of one indicator in a call of several, with its tables as
+    records."""
     if not isinstance(answer, dict):
         return answer
     if "columns" in answer and "rows" in answer:
@@ -26,6 +32,6 @@ def read_answer(text: str):
         return {"data": records(answer), **rest} if rest else records(answer)
 
     return {
-        key: records(value) if isinstance(value, dict) and "rows" in value else value
+        key: _read(value) if isinstance(value, dict) else value
         for key, value in answer.items()
     }

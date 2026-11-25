@@ -39,7 +39,10 @@ def test_the_momentum_tool_offers_the_indicator_summary():
     tools = {tool.name: tool for tool in asyncio.run(mcp_controller.mcp.list_tools())}
     properties = tools["momentum"].inputSchema["properties"]
 
-    assert "get_indicator_summary" in str(properties["indicator"])
+    assert (
+        "get_indicator_summary"
+        in tools["momentum"].inputSchema["$defs"]["indicator"]["enum"]
+    )
     assert {"metric", "below", "above", "forward_periods", "show_crossings"} <= set(
         properties
     )

@@ -304,3 +304,21 @@ def test_the_garch_forecast_says_it_is_a_variance(answer):
         "The forecast is the variance of the daily return at each step ahead; its "
         "square root is the daily volatility." in result["_notes"]
     )
+
+
+def test_year_over_year_growth_is_read_once_a_year(answer):
+    answer["result"] = pd.DataFrame(
+        {"United States": [0.02] * 8}, index=QUARTERS, dtype=float
+    )
+
+    result = call(
+        "macroeconomics",
+        {
+            "indicator": "get_gross_domestic_product_growth",
+            "countries": "United States",
+            "year_over_year": True,
+            "sample": "yearly",
+        },
+    )
+
+    assert [row["date"] for row in result["data"]] == ["2024Q4", "2025Q4"]

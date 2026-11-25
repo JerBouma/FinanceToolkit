@@ -130,8 +130,9 @@ MAX_TRANSACTIONS = 1000
 # Injected into each tool's Args docstring so FastMCP can surface them.
 _PARAM_DESCRIPTIONS: dict[str, str] = {
     "indicator": (
-        "Name of the specific metric to calculate, one of the listed values. Required — "
-        "search_metrics finds the indicator (and its tool) for a metric by name."
+        "Name of the specific metric to calculate, one of the listed values, or a list of up "
+        "to five of them, each answered in its own table. Required — search_metrics finds "
+        "the indicator (and its tool) for a metric by name."
     ),
     "tickers": "Comma-separated ticker symbols, e.g. 'AAPL,MSFT,GOOGL'.",
     "countries": (
@@ -392,7 +393,9 @@ _PARAM_DESCRIPTIONS: dict[str, str] = {
 # rank, rebase_to, sample, show_columns) and search_metrics with an indicator's name gives
 # the full description of each parameter it takes.
 _SCHEMA_PARAM_DESCRIPTIONS: dict[str, str] = {
-    "indicator": "The indicator; search_metrics with its name gives its parameters.",
+    "indicator": (
+        "The indicator, or a list of up to five; search_metrics with its name gives its parameters."
+    ),
     "tickers": "Comma-separated tickers, e.g. 'AAPL,MSFT'.",
     "start_date": "YYYY-MM-DD; empty for the default range (often five years).",
     "end_date": "YYYY-MM-DD; empty for today.",
@@ -436,8 +439,7 @@ _SCHEMA_PARAM_DESCRIPTIONS: dict[str, str] = {
     "functions": "Functions of government (COFOG), e.g. 'Defence,Health'.",
     "government.level": "'consolidated', 'general' or 'central' government.",
     "series": (
-        "Indicators of other tools instead of prices, as tool:indicator:tickers "
-        "separated by ';', e.g. 'macroeconomics:get_inflation_rate:United States'."
+        "Indicators of other tools instead of prices: tool:indicator:tickers, ';'-separated."
     ),
     "changes": "With series: 'percentage', 'log', 'difference' or 'none'.",
     "deflate_with": "With series: the country whose CPI deflates the indicators.",
@@ -586,6 +588,10 @@ SHORT_WINDOW_DAYS = 3
 # hundreds would hold a worker for minutes on a server many people share.
 MAX_ENTITIES = 50
 
+# The most indicators of one tool in one call: each is calculated and answered in its own
+# table, so a call holds a worker (and the answer the size of a response) for all of them.
+MAX_INDICATORS = 5
+
 
 def _pseudo_parameters(
     tickers: list[str] | None, start_date: str, end_date: str
@@ -632,6 +638,70 @@ NEAR_CERTAIN_MATCH = 0.9
 # The note a call answered by another tool carries there (an indicator asked of a tool that
 # doesn't have it), passed under a name no tool parameter has.
 ROUTED_NOTE = "__routed_note__"
+
+# The size the answer of one indicator may have in a call of several, which share the size of
+# a response; passed under a name no tool parameter has.
+ANSWER_SIZE = "__answer_size__"
+
+
+def _indicator_count(arguments: dict[str, Any]) -> int:
+    """The indicators a call asks for, which the usage statistics count as a call each; a
+    call of more than MAX_INDICATORS is answered with that limit, and counts once.
+
+    Args:
+        arguments (dict[str, Any]): The arguments of the call.
+
+    Returns:
+        int: The number of different indicators, at least one.
+    """
+    count = len(set(_split_values(arguments.get("indicator") or "")))
+
+    return count if 1 <= count <= MAX_INDICATORS else 1
+
+
+def _combine_answers(answers: dict[str, str]) -> str:
+    """The answers of several indicators of one call as one answer: each under its name,
+    with the notes and sources they all have once, after them.
+
+    Args:
+        answers (dict[str, str]): The answer of each indicator, by the name it was asked as.
+
+    Returns:
+        str: The answer as JSON. An indicator answered with a message instead of data (an
+            unknown name, a missing input) has it under "error".
+    """
+    # A call that fails as a whole (no API key, no tickers) gives every indicator the same
+    # message, which is then given once.
+    if len(answers) > 1 and len(set(answers.values())) == 1:
+        text = next(iter(answers.values()))
+        try:
+            json.loads(text)
+        except ValueError:
+            return text
+
+    combined: dict[str, Any] = {}
+    for name, text in answers.items():
+        try:
+            answer = json.loads(text)
+        except ValueError:
+            answer = {"error": text}
+        combined[name] = answer if isinstance(answer, dict) else {"data": answer}
+
+    entries = list(combined.values())
+    for key in ("_notes", "_sources"):
+        lists = [answer.get(key) or [] for answer in entries]
+        shared = [
+            item for item in lists[0] if all(item in other for other in lists[1:])
+        ]
+        if not shared:
+            continue
+        for answer in entries:
+            if own := [item for item in answer.pop(key) if item not in shared]:
+                answer[key] = own
+        combined[key] = shared
+
+    return json.dumps(combined, default=str, separators=(",", ":"))
+
 
 # How a portfolio_performance call names the columns of a transaction, in any casing.
 TRANSACTION_FIELDS = {
@@ -857,6 +927,33 @@ def _strip_schema_titles(mcp: Any, tool_name: str) -> None:
             schema.update(options[0])
         elif options:
             schema["anyOf"] = options
+
+
+def _offer_indicator_list(mcp: Any, tool_name: str) -> None:
+    """Let the indicator parameter of a tool take a list of its indicators as well as one.
+
+    The names are listed once, under $defs, and both forms refer to them, so the list form
+    adds a few dozen characters to the tool listing rather than every name again.
+
+    Args:
+        mcp (Any): The FastMCP server.
+        tool_name (str): The tool whose input schema to extend.
+    """
+    tool_manager = getattr(mcp, "_tool_manager", None)
+    tool = tool_manager.get_tool(tool_name) if tool_manager is not None else None
+    schema = tool.parameters.get("properties", {}).get("indicator") if tool else None
+    if not schema or "enum" not in schema:
+        return
+
+    tool.parameters.setdefault("$defs", {})["indicator"] = {
+        "type": schema.pop("type", "string"),
+        "enum": schema.pop("enum"),
+    }
+    reference = {"$ref": "#/$defs/indicator"}
+    schema["anyOf"] = [
+        reference,
+        {"type": "array", "items": reference, "maxItems": MAX_INDICATORS},
+    ]
 
 
 # The most characters of one tool in the tool listing (its name, description and input
@@ -2681,6 +2778,46 @@ class ToolRegistry:
             # tool, such as benchmark_ticker on a country tool) are taken off before any is
             # read, so none of them is applied, and named in the answer.
             routed_note = kwargs.pop(ROUTED_NOTE, None)
+            # A client can send the name too (unknown arguments are kept), so it only ever
+            # makes the answer smaller.
+            answer_size = kwargs.pop(ANSWER_SIZE, None)
+            if not (
+                isinstance(answer_size, int)
+                and max_response_characters
+                and 0 < answer_size < max_response_characters
+            ):
+                answer_size = max_response_characters
+            # Several indicators of the tool (comma-separated, or a list) are each answered as
+            # a call of their own with the same arguments, and the answers share the size of a
+            # response.
+            indicators = list(
+                dict.fromkeys(_split_values(kwargs.get("indicator") or ""))
+            )
+            if len(indicators) > MAX_INDICATORS:
+                return (
+                    f"`{tool_name}` received {len(indicators)} indicators; at most "
+                    f"{MAX_INDICATORS} can be calculated in one call. Split them over "
+                    "several calls."
+                )
+            if len(indicators) > 1:
+                return _combine_answers(
+                    {
+                        name: wrapper(
+                            **{
+                                **kwargs,
+                                "indicator": name,
+                                ANSWER_SIZE: (
+                                    answer_size // len(indicators)
+                                    if answer_size
+                                    else None
+                                ),
+                            }
+                        )
+                        for name in indicators
+                    }
+                )
+            if indicators:
+                kwargs["indicator"] = indicators[0]
             tool_parameters = list(wrapper.__signature__.parameters)
             # What the caller set, for a call answered by another tool: the schema defaults of
             # this tool's parameters are no arguments to pass on.
@@ -2728,6 +2865,7 @@ class ToolRegistry:
                         "indicator": candidate,
                         ROUTED_NOTE: f"`{candidate}` is an indicator of `{elsewhere[0]}`, "
                         f"so `{elsewhere[0]}` answered it.",
+                        ANSWER_SIZE: answer_size,
                     }
                 )
             # A near-certain match (get_gordon_growth_model for a misspelt get_gorden_growth_model)
@@ -3382,10 +3520,12 @@ class ToolRegistry:
                 # A growth rate over each row's own period (quarter-on-quarter GDP growth) read
                 # once a year would be the last quarter's growth, not the year's, so such an
                 # answer is not converted or sampled to a longer period.
+                # Year-over-year growth is the growth over the past year in every row, so it
+                # can be read once a year.
                 growth_rates = (
                     method_name.endswith("_growth")
                     or method_kwargs.get("growth") is True
-                )
+                ) and method_kwargs.get("year_over_year") is not True
                 if (
                     requested_period
                     and isinstance(result, pd.DataFrame | pd.Series)
@@ -3969,7 +4109,7 @@ class ToolRegistry:
                     sources=readable_sources(call_sources),
                     reason=summarize_reasons(call_messages)
                     or _short_window_reason(dispatch_category, start_date, end_date),
-                    max_characters=None if full_text else max_response_characters,
+                    max_characters=None if full_text else answer_size,
                 )
                 return formatted
             except KeyError as exc:
@@ -4002,9 +4142,12 @@ class ToolRegistry:
         # The choices are advertised as an enum, but any text is accepted: an indicator of
         # another tool (or a near miss) is then answered with where it is, rather than with
         # a validation error that only lists this tool's indicators.
+        # Several indicators arrive as a list, which becomes comma-separated text.
         indicator_ann = (
             Annotated[
-                str, PydanticField(json_schema_extra={"enum": list(indicator_choices)})
+                str,
+                PydanticField(json_schema_extra={"enum": list(indicator_choices)}),
+                BeforeValidator(text_from_parsed_json),
             ]
             if indicator_choices
             else str
@@ -4332,7 +4475,7 @@ class ToolRegistry:
             fn = run_in_thread(fn)
 
             if self._analytics is not None:
-                fn = self._analytics.counted(spec.tool_name, fn)
+                fn = self._analytics.counted(spec.tool_name, fn, _indicator_count)
 
             self._mcp.add_tool(
                 fn,
@@ -4355,6 +4498,7 @@ class ToolRegistry:
                 {"tool": spec.tool_name, "description": index_description}
             )
             _strip_schema_titles(self._mcp, spec.tool_name)
+            _offer_indicator_list(self._mcp, spec.tool_name)
             _fit_tool_listing(self._mcp, spec.tool_name, indicator_parameters)
             keep_unknown_arguments(self._mcp, spec.tool_name)
             if compact:

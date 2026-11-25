@@ -498,3 +498,31 @@ def test_get_greenwald_maintenance_capital_expenditure():
     # 50 - 0.5 * 40; a fall in revenue requires no growth investment; growth above the
     # capital expenditure leaves no maintenance part rather than a negative one.
     assert list(result) == pytest.approx([30.0, 50.0, 0.0])
+
+
+def test_get_intrinsic_value_present_values_add_up_to_the_enterprise_value():
+    # Grown at 37.99% for five years, discounted at 12.61% with 2.5% perpetual growth:
+    # a terminal value of 4,642.66 is worth 2,563.79 today, the rest of the enterprise
+    # value of 3,441.03 being the present value of the five projected cash flows.
+    growth, perpetual, wacc = 0.3799, 0.025, 0.1261
+    last = 4642.66 * (wacc - perpetual) / (1 + perpetual)
+    result = intrinsic_model.get_intrinsic_value(
+        cash_flow=last / (1 + growth) ** 5,
+        growth_rate=growth,
+        perpetual_growth_rate=perpetual,
+        weighted_average_cost_of_capital=wacc,
+        cash_and_cash_equivalents=0,
+        total_debt=0,
+        shares_outstanding=1,
+        periods=5,
+    ).iloc[:, 0]
+    projections = [last / (1 + growth) ** (5 - t) for t in range(1, 6)]
+    assert result["Present Value of Cash Flows"] == pytest.approx(
+        sum(cf / (1 + wacc) ** t for t, cf in enumerate(projections, 1)), rel=1e-12
+    )
+    assert result["Present Value of Terminal Value"] == pytest.approx(2563.79, abs=0.01)
+    assert result["Enterprise Value"] == pytest.approx(3441.03, abs=0.01)
+    assert result["Present Value of Cash Flows"] == pytest.approx(877.25, abs=0.01)
+    assert result["Present Value of Cash Flows"] + result[
+        "Present Value of Terminal Value"
+    ] == pytest.approx(result["Enterprise Value"], rel=1e-12)

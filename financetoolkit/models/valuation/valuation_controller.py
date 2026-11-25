@@ -1916,8 +1916,11 @@ class ValuationModels:
             - Cash Flow Projection_t = Cash Flow_t-1 * (1 + Growth Rate)
             - Terminal Value = Last Cash Flow Projection * (1 + Perpetual Growth Rate) /
             (Weighted Average Cost of Capital — Perpetual Growth Rate)
-            - Enterprise Value = Sum of Present Value of Cash Flow Projections + Terminal Value /
-            (1 + Weighted Average Cost of Capital)^Periods
+            - Present Value of Cash Flows = Sum of Cash Flow Projection_t / (1 + Weighted Average
+            Cost of Capital)^t for t = 1 to Periods
+            - Present Value of Terminal Value = Terminal Value / (1 + Weighted Average Cost of
+            Capital)^Periods
+            - Enterprise Value = Present Value of Cash Flows + Present Value of Terminal Value
             - Equity Value = Enterprise Value + Cash and Cash Equivalents + Short Term Investments —
             Total Debt — Minority Interest — Preferred Stock
             - Intrinsic Value = Equity Value / Weighted Average Shares Diluted
@@ -1973,9 +1976,11 @@ class ValuationModels:
                 exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
-            pd.DataFrame: DataFrame containing the intrinsic value and its components for each
-            ticker, or for the historical valuation the intrinsic value per share for each
-            ticker (rows) and period (columns).
+            pd.DataFrame: DataFrame containing per ticker the Terminal Value, the Cash Flow
+            Projection (the last projected cash flow), the Present Value of Cash Flows, the
+            Present Value of Terminal Value, the Enterprise Value, the Equity Value and the
+            Intrinsic Value, or for the historical valuation the intrinsic value per share for
+            each ticker (rows) and period (columns).
 
         Notes:
         - The results are highly dependent on the input. Therefore, think carefully about each input parameter to
@@ -1988,6 +1993,10 @@ class ValuationModels:
         - The WACC must be greater than the perpetual growth rate; otherwise the terminal value is infinite
         and the valuation is not calculated. Within 2 percentage points of it the valuation is calculated
         with a warning, as a tenth of a percentage point on either rate then moves it by about 5%.
+        - The cash flows are discounted at the end of each period and the Terminal Value at the end
+        of the last projected period, so the Present Value of Cash Flows and the Present Value of
+        Terminal Value add up to the Enterprise Value and show how much of it the terminal value
+        carries.
         - The Total Debt, Cash and Cash Equivalents and Short Term Investments are those of the most
         recent period. Short Term Investments are added back with the cash, the same cash and marketable
         securities `get_enterprise_value_breakdown` deducts, and count as 0 when the balance sheet has no
@@ -4199,7 +4208,9 @@ class ValuationModels:
             Average Cost of Capital, the Perpetual Growth Rate, the Implied Growth Rate and,
             for comparison, the Historical Growth Rate (the compound annual growth of the
             cash flow as used, so summed over `trailing` periods where set, from the first
-            to the latest reported period).
+            to the latest reported period) with the Historical Growth Period it covers, the
+            first and latest period such as "2021-2025" (or "2024Q1-2025Q3" with quarterly
+            data).
 
         Notes:
         - A negative cash flow, or a discount rate at or below the perpetual growth rate,
@@ -4207,7 +4218,8 @@ class ValuationModels:
         - The Historical Growth Rate counts four quarters as a year with quarterly data and
           is NaN when the first or latest cash flow is not positive. The years are those
           between the first and the latest cash flow on the calendar, and a trailing sum
-          that includes a missing period is NaN rather than one over more periods.
+          that includes a missing period is NaN rather than one over more periods. The
+          Historical Growth Period is empty (NaN) where the Historical Growth Rate is.
 
         As an example:
 
@@ -4226,11 +4238,11 @@ class ValuationModels:
 
         Which returns:
 
-        |      |   Share Price |   Cash Flow |   Weighted Average Cost of Capital |   Perpetual Growth Rate |   Implied Growth Rate |   Historical Growth Rate |
-        |:-----|--------------:|------------:|-----------------------------------:|------------------------:|----------------------:|-------------------------:|
-        | AAPL |        271.86 | 8.62639e+10 |                               0.09 |                   0.025 |                0.3068 |                   0.0545 |
-        | MSFT |        483.62 | 7.0121e+10  |                               0.09 |                   0.025 |                0.328  |                   0.1183 |
-        | NVDA |        186.5  | 5.98933e+10 |                               0.09 |                   0.025 |                0.4431 |                   1.0031 |
+        |      |   Share Price |   Cash Flow |   Weighted Average Cost of Capital |   Perpetual Growth Rate |   Implied Growth Rate |   Historical Growth Rate | Historical Growth Period   |
+        |:-----|--------------:|------------:|-----------------------------------:|------------------------:|----------------------:|-------------------------:|:---------------------------|
+        | AAPL |        271.86 | 8.62639e+10 |                               0.09 |                   0.025 |                0.3068 |                   0.0545 | 2020-2025                  |
+        | MSFT |        483.62 | 7.0121e+10  |                               0.09 |                   0.025 |                0.328  |                   0.1183 | 2020-2025                  |
+        | NVDA |        186.5  | 5.98933e+10 |                               0.09 |                   0.025 |                0.4431 |                   1.0031 | 2020-2024                  |
         """
         validate_window("periods", periods, 1)
 
@@ -4290,6 +4302,12 @@ class ValuationModels:
                 "Perpetual Growth Rate": perpetual[ticker],
                 "Implied Growth Rate": implied,
                 "Historical Growth Rate": historical,
+                # The first and latest period the Historical Growth Rate is measured over.
+                "Historical Growth Period": (
+                    f"{history.index[0]}-{history.index[-1]}"
+                    if not np.isnan(historical)
+                    else np.nan
+                ),
             }
 
         # A date range after the prices (or without them) still has the statements of the
@@ -4304,8 +4322,10 @@ class ValuationModels:
                 self._end_date,
             )
 
+        # Built per row so that the numbers keep a float dtype next to the period labels.
         return apply_rounding(
-            pd.DataFrame(rows).T, rounding if rounding is not None else self._rounding
+            pd.DataFrame.from_dict(rows, orient="index"),
+            rounding if rounding is not None else self._rounding,
         )
 
     @handle_errors

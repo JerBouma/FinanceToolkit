@@ -10,7 +10,7 @@ from financetoolkit.economics.sources import (
 )
 from financetoolkit.fixedincome.loans import loan_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
-from financetoolkit.utilities.error_model import handle_errors
+from financetoolkit.utilities.error_model import InvalidArgumentError, handle_errors
 from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import apply_rounding
 
@@ -53,6 +53,21 @@ class LoansFixedIncome:
 
         return rates
 
+    @staticmethod
+    def _check_loan_terms(**terms: float | None) -> None:
+        """
+        Refuse a loan term that is not above zero (a principal, term, number of payments or
+        payment of zero or below has no annuity), naming it. A term of None is left out.
+
+        Raises:
+            InvalidArgumentError: If a term is not above zero.
+        """
+        for name, value in terms.items():
+            if value is not None and not value > 0:
+                raise InvalidArgumentError(
+                    f"{name} must be above 0, not {value!r}. Please pass a positive {name}."
+                )
+
     @handle_errors
     def get_loan_payment(
         self,
@@ -94,10 +109,10 @@ class LoansFixedIncome:
         loan calculator, cost of a mortgage.
 
         Args:
-            principal (float, optional): The amount borrowed. Defaults to 400,000.
-            years (float, optional): The term of the loan in years. The rate stays the 30-year
+            principal (float, optional): The amount borrowed, above 0. Defaults to 400,000.
+            years (float, optional): The term of the loan in years, above 0. The rate stays the 30-year
                 fixed mortgage rate for another term. Defaults to 30.
-            payments_per_year (int, optional): The number of payments per year. Defaults to 12.
+            payments_per_year (int, optional): The number of payments per year, at least 1. Defaults to 12.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the rounding of the class.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -129,6 +144,9 @@ class LoansFixedIncome:
         | 2021-01-07 | 0.0265 |   1611.86 |           180268 |                  883.333 |   0      |
         | 2026-11-05 | 0.0718 |   2709.74 |           575506 |                 2393.33  |   0.6811 |
         """
+        self._check_loan_terms(
+            principal=principal, years=years, payments_per_year=payments_per_year
+        )
         rates = self._get_mortgage_rates()
         payment = loan_model.get_loan_payment(
             principal, rates, years, payments_per_year
@@ -187,13 +205,13 @@ class LoansFixedIncome:
         capacity, loan amount from payment.
 
         Args:
-            payment (float | None, optional): The payment per period. Defaults to None, the
+            payment (float | None, optional): The payment per period, above 0. Defaults to None, the
                 payment of a loan of principal at the first rate between the start and end date.
-            principal (float, optional): The loan whose payment at the first rate is used when
+            principal (float, optional): The loan, above 0, whose payment at the first rate is used when
                 no payment is given. Defaults to 400,000.
-            years (float, optional): The term of the loan in years. The rate stays the 30-year
+            years (float, optional): The term of the loan in years, above 0. The rate stays the 30-year
                 fixed mortgage rate for another term. Defaults to 30.
-            payments_per_year (int, optional): The number of payments per year. Defaults to 12.
+            payments_per_year (int, optional): The number of payments per year, at least 1. Defaults to 12.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the rounding of the class.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -222,6 +240,12 @@ class LoansFixedIncome:
         | 2021-01-07 | 0.0265 | 1611.8552 |       400000.0000 |   0.0000 |
         | 2026-11-05 | 0.0718 | 1611.8552 |       237935.0883 |  -0.4052 |
         """
+        self._check_loan_terms(
+            payment=payment,
+            principal=principal,
+            years=years,
+            payments_per_year=payments_per_year,
+        )
         rates = self._get_mortgage_rates()
 
         if payment is None:
@@ -280,10 +304,10 @@ class LoansFixedIncome:
         principal per payment, remaining balance.
 
         Args:
-            principal (float, optional): The amount borrowed. Defaults to 400,000.
-            years (float, optional): The term of the loan in years. The rate stays the 30-year
+            principal (float, optional): The amount borrowed, above 0. Defaults to 400,000.
+            years (float, optional): The term of the loan in years, above 0. The rate stays the 30-year
                 fixed mortgage rate for another term. Defaults to 30.
-            payments_per_year (int, optional): The number of payments per year. Defaults to 12.
+            payments_per_year (int, optional): The number of payments per year, at least 1. Defaults to 12.
             date (str | None, optional): The date of the rate (YYYY-MM-DD). Defaults to None, the
                 latest rate up to the end date.
             rounding (int | None, optional): The number of decimals to round the results to.
@@ -318,6 +342,9 @@ class LoansFixedIncome:
         |              240 | 0.0718 | 2709.7393 |  1393.1739 |   1316.5655 | 231525.8632 |
         |              360 | 0.0718 | 2709.7393 |    16.1168 |   2693.6225 |      0.0000 |
         """
+        self._check_loan_terms(
+            principal=principal, years=years, payments_per_year=payments_per_year
+        )
         rates = self._get_mortgage_rates()
         if date is not None:
             rates = rates.loc[:date]

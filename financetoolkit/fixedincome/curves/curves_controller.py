@@ -33,7 +33,13 @@ from financetoolkit.fixedincome.helpers import maturity_key, parse_maturities
 from financetoolkit.fixedincome.sources import eiopa_model, fmp_model
 from financetoolkit.utilities import logger_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
-from financetoolkit.utilities.error_model import check_option, handle_errors
+from financetoolkit.utilities.error_model import (
+    InvalidArgumentError,
+    check_option,
+    check_period,
+    handle_errors,
+    validate_window,
+)
 from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import apply_rounding, finalize_dataset
 
@@ -289,6 +295,13 @@ class CurvesFixedIncome:
         )
         near = parse_maturities(near_maturity, range(1, 6))
         far = parse_maturities(far_maturity, range(5, 11))
+        if not any(far_years > near_years for near_years in near for far_years in far):
+            raise InvalidArgumentError(
+                f"A forward rate runs from the near to a later far maturity, while far_maturity "
+                f"({', '.join(f'{years:g}' for years in far)}) is nowhere above near_maturity "
+                f"({', '.join(f'{years:g}' for years in near)}). Please pass a far_maturity above "
+                "the near_maturity."
+            )
 
         def zero_rate(maturity: float) -> float:
             discount = interpolation_model.get_discount_factors(
@@ -1571,7 +1584,13 @@ class CurvesFixedIncome:
 
         Returns:
             dict[str, pd.DataFrame]: The curve per country that has one.
+
+        Raises:
+            InvalidArgumentError: If the period is not daily, weekly or monthly.
         """
+        # Checked here rather than reported by get_government_bond_yield_curve, whose empty
+        # answer would read as a country without a curve.
+        check_period(str(period).lower(), ("daily", "weekly", "monthly"))
         requested = [countries] if isinstance(countries, str) else list(countries)
         # The yields are published to a basis point or finer, so the curve is not rounded
         # before the models use it.
@@ -1963,6 +1982,11 @@ class CurvesFixedIncome:
         for country, curve in self._yield_curves(countries, period).items():
             zero_curve = self._to_zero_coupon(curve, country)
             if zero_curve.empty:
+                logger.warning(
+                    "The %s yield curve has no maturity of a year or less to bootstrap "
+                    "zero-coupon rates from.",
+                    country,
+                )
                 continue
             zero_curve.columns = [
                 curve_model.maturity_in_years(label) for label in zero_curve.columns
@@ -2091,8 +2115,8 @@ class CurvesFixedIncome:
                 as "3M" or "1Y". Defaults to 0.25 (three months).
             maturities (list[float | str] | str | None, optional): The maturities of the
                 bonds, in years or as labels such as "2Y" (a list or a comma-separated
-                string). A maturity shorter than the horizon is NaN. Defaults to None, every
-                maturity of the curve longer than the horizon.
+                string), at least one longer than the horizon; a maturity shorter than the horizon
+                is NaN. Defaults to None, every maturity of the curve longer than the horizon.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
@@ -2129,7 +2153,17 @@ class CurvesFixedIncome:
         """
         horizon_years = fixedincome_helpers.maturity_in_years(horizon)
         if horizon_years <= 0:
-            raise ValueError(f"The horizon must be longer than zero, not {horizon!r}.")
+            raise InvalidArgumentError(
+                f"The horizon must be longer than zero, not {horizon!r}."
+            )
+        if maturities is not None and not any(
+            maturity > horizon_years for maturity in parse_maturities(maturities, [])
+        ):
+            raise InvalidArgumentError(
+                f"A bond is held over the horizon of {horizon!r}, so at least one of the maturities "
+                f"must be longer than it, not {maturities!r}. Please pass longer maturities or a "
+                "shorter horizon."
+            )
 
         results = {}
         for country, curve in self._yield_curves(countries, period).items():
@@ -2222,7 +2256,8 @@ class CurvesFixedIncome:
                 Defaults to "United States".
             period (str, optional): The frequency of the curves. Options are: "daily", "weekly", "monthly". Defaults to
                 "daily".
-            components (int, optional): The number of components. Defaults to 3.
+            components (int, optional): The number of components, at least 1 and at most the number of
+                maturities of the curve. Defaults to 3.
             changes (bool, optional): Whether to analyze the changes of the yields, the usual
                 choice as yields themselves are not stationary, or their levels. Defaults to True.
             scores (bool, optional): Whether to return the value of every component per date
@@ -2264,12 +2299,19 @@ class CurvesFixedIncome:
         | 30Y                | 0.2855 |  0.1773 |  0.4831 |
         | Explained Variance | 0.732  |  0.1938 |  0.0501 |
         """
+        validate_window("components", components)
         curve = self._yield_curves(country, period)[country]
 
         # A maturity published for only part of the period would cut the analysis short,
         # as only the dates with every maturity can be used.
         coverage = curve.notna().sum()
         curve = curve.loc[:, coverage >= CURVE_COVERAGE * coverage.max()]
+        # A curve of one maturity has no components whatever is asked, which the model reports.
+        if 1 < curve.shape[1] < components:
+            raise InvalidArgumentError(
+                f"The {country} yield curve has {curve.shape[1]} maturities, so at most "
+                f"{curve.shape[1]} components, not {components}. Please pass fewer components."
+            )
 
         loadings, component_scores, explained = curve_model.get_principal_components(
             curve, components=components, changes=changes

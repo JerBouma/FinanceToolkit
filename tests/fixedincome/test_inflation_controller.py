@@ -152,3 +152,17 @@ def test_inflation_swap_rate_needs_positive_maturities(fixedincome, monkeypatch)
     monkeypatch.setenv("FINANCETOOLKIT_STRICT_ERRORS", "1")
     with pytest.raises(ValueError, match="must be positive"):
         fixedincome.get_inflation_swap_rate(maturities="0")
+
+
+def test_a_real_curve_without_maturities_says_why(fixedincome, monkeypatch, caplog):
+    # A real curve whose columns are no maturities has nothing to bootstrap from.
+    def without_real_maturities(curve, start_date, end_date):
+        curves = yield_curve(curve, start_date, end_date)
+        return curves.rename(columns=str.lower) if curve == "real" else curves
+
+    monkeypatch.setattr(treasury_model, "get_yield_curve", without_real_maturities)
+
+    with caplog.at_level("WARNING"):
+        assert fixedincome.get_inflation_swap_rate().empty
+    assert "no maturity with a yield to bootstrap from" in caplog.text
+    assert "zero-size array" not in caplog.text

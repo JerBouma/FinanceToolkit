@@ -82,6 +82,11 @@ class InflationFixedIncome(MarketsFixedIncome):
         latest = latest[
             [column for column in latest.index if isinstance(column, float)]
         ].dropna()
+        if latest.empty:
+            raise ValueError(
+                f"The real yield curve of {country} on {pd.Period(real.index[-1], 'D')} has no "
+                "maturity with a yield to bootstrap from."
+            )
         latest.name = str(pd.Period(real.index[-1], "D"))
 
         return latest.sort_index()

@@ -2,12 +2,16 @@
 
 import numpy as np
 import pandas as pd
+import requests
 
 from financetoolkit import helpers
 from financetoolkit.cache import frame_model, policy_model
 from financetoolkit.cache.cache_controller import get_active_cache
 from financetoolkit.cache.request_model import redact_credentials
+from financetoolkit.utilities import logger_model
 from financetoolkit.utilities.requests_model import get_request
+
+logger = logger_model.get_logger()
 
 FRED_API_BASE_URL = "https://api.stlouisfed.org/fred/series/observations"
 
@@ -32,10 +36,11 @@ def fetch_single_series(
     Returns:
         pd.DataFrame: A DataFrame indexed by a daily PeriodIndex with the series ID as the column name.
             Missing values (reported as "." by FRED) are converted to NaN. Returns an empty DataFrame
-            if no observations are found for the given date range.
+            if no observations are found for the given date range or FRED cannot be reached
+            (which is logged).
 
     Raises:
-        RuntimeError: If the HTTP request to the FRED API fails or returns an unexpected response.
+        RuntimeError: If FRED answers with a response that is not JSON.
     """
     cache = get_active_cache()
     cached_data = None
@@ -91,10 +96,11 @@ def _request_series(
 
     Returns:
         pd.DataFrame: A DataFrame indexed by a daily PeriodIndex with the series ID as
-            the column name, or an empty DataFrame when there are no observations.
+            the column name, or an empty DataFrame when there are no observations or FRED
+            cannot be reached (which is logged).
 
     Raises:
-        RuntimeError: If the HTTP request to the FRED API fails or returns an unexpected response.
+        RuntimeError: If FRED answers with a response that is not JSON.
     """
     url = (
         f"{FRED_API_BASE_URL}"
@@ -107,11 +113,21 @@ def _request_series(
 
     try:
         response = get_request(url, timeout=30)
+    except requests.exceptions.RequestException as error:
+        # The request error names the URL, which carries the API key, so it is redacted.
+        logger.error(
+            "Could not reach FRED for the series %s (%s). No data is returned for it.",
+            series_id,
+            redact_credentials(str(error)),
+        )
+        return pd.DataFrame()
+
+    try:
         payload = response.json()
-    except Exception as e:
-        # The request error names the URL, which carries the API key, so the cause is not chained.
+    except ValueError as error:
         raise RuntimeError(
-            f"Error fetching data from FRED: {redact_credentials(str(e))}"
+            f"FRED answered the series {series_id} with a response that is not JSON: "
+            f"{redact_credentials(str(error))}"
         ) from None
 
     observations = payload.get("observations", [])

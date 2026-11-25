@@ -408,7 +408,7 @@ def get_lambda(
         put_option (bool): True if it's a put option, False for a call option.
 
     Returns:
-        float: Option Lambda value.
+        float: Option Lambda value, NaN where the option is worth nothing.
     """
     delta = get_delta(
         stock_price=stock_price,
@@ -430,11 +430,15 @@ def get_lambda(
         put_option=put_option,
     )
 
-    # An option worth nothing (out of the money at expiration) has no finite elasticity;
-    # np.divide gives inf or NaN for it instead of raising for a float price of 0.
-    lambda_value = delta * np.divide(stock_price, option_price)
+    # An option worth nothing (out of the money at expiration, or deep out of the money) has
+    # no elasticity, so its lambda is NaN rather than the inf of a division by zero.
+    lambda_value = np.where(
+        np.asarray(option_price) > 0,
+        delta * np.divide(stock_price, option_price),
+        np.nan,
+    )
 
-    return lambda_value
+    return float(lambda_value) if lambda_value.ndim == 0 else lambda_value
 
 
 @np.errstate(divide="ignore", invalid="ignore")
@@ -908,6 +912,8 @@ def get_second_order_partial_derivative(
         float: The second order partial derivative of the Black-Scholes model with
         respect to the strike price.
     """
+    # The density is per unit of strike and in logarithms of both prices.
+    helpers.validate_positive_inputs(stock_price=stock_price, strike_price=strike_price)
     # The variance up to expiration as a NumPy value, so that a time to expiration or a
     # volatility of 0.0 divides to inf (and the limit below) instead of raising.
     variance = np.multiply(volatility**2, time_to_expiration)

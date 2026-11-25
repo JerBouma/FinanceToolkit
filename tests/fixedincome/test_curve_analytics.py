@@ -9,6 +9,7 @@ from financetoolkit.economics.sources import ecb_model as economics_ecb_model
 from financetoolkit.fixedincome.curves import curve_model, yieldcurve_model
 from financetoolkit.fixedincome.fixedincome_controller import FixedIncome
 from financetoolkit.fixedincome.sources import fiscaldata_model, fred_model
+from financetoolkit.utilities.error_model import InvalidArgumentError
 
 LABELS = ["1M", "3M", "6M", "1Y", "2Y", "3Y", "5Y", "7Y", "10Y", "20Y", "30Y"]
 
@@ -168,7 +169,8 @@ def test_carry_and_roll_down_horizon_and_maturities(fixedincome):
     # A six-month bill is repaid before the year is out; the 1-year bill is the financing.
     assert yearly["Total"]["6M"].isna().all()
     assert yearly["Total"]["1Y"].to_numpy() == pytest.approx(0, abs=1e-12)
-    assert fixedincome.get_carry_and_roll_down(horizon=0).empty
+    with pytest.raises(InvalidArgumentError, match="horizon must be longer than zero"):
+        fixedincome.get_carry_and_roll_down(horizon=0)
 
 
 def test_carry_and_roll_down_horizon_beyond_the_curve(fixedincome, caplog):
@@ -380,3 +382,66 @@ def test_treasury_auctions(fixedincome, monkeypatch):
     monkeypatch.setenv("FINANCETOOLKIT_STRICT_ERRORS", "1")
     with pytest.raises(ValueError, match="does not exist"):
         fixedincome.get_treasury_auctions(security_type="Strip")
+
+
+def test_curve_arguments_that_cannot_give_an_answer_are_refused(fixedincome):
+    # A far maturity nowhere above the near one has no forward rate at all.
+    with pytest.raises(InvalidArgumentError, match="far_maturity"):
+        fixedincome.get_forward_rate(near_maturity=10, far_maturity=2)
+    # No maturity outlasts the horizon, so no bond is held over it.
+    with pytest.raises(InvalidArgumentError, match="longer than it"):
+        fixedincome.get_carry_and_roll_down(horizon="5Y", maturities="1Y,2Y")
+    with pytest.raises(InvalidArgumentError, match="components"):
+        fixedincome.get_yield_curve_principal_components(components=0)
+    with pytest.raises(InvalidArgumentError, match="at most 11 components"):
+        fixedincome.get_yield_curve_principal_components(components=12)
+    with pytest.raises(InvalidArgumentError, match="period"):
+        fixedincome.get_carry_and_roll_down(period="yearly")
+
+
+def test_principal_components_need_two_maturities():
+    curve = pd.DataFrame({"10Y": [0.04, 0.041, 0.042]})
+
+    with pytest.raises(ValueError, match="at least two maturities"):
+        curve_model.get_principal_components(curve, components=1)
+    with pytest.raises(ValueError, match="components"):
+        curve_model.get_principal_components(
+            simulated_curves().iloc[:50], components=12
+        )
+
+
+def test_nelson_siegel_svensson_reports_a_curve_without_short_maturities(
+    fixedincome, caplog
+):
+    # The Australian curve starts at two years, so there is no zero-coupon curve to fit.
+    with caplog.at_level("WARNING"):
+        result = fixedincome.get_nelson_siegel_svensson(countries="Australia")
+
+    assert result.empty
+    assert "no maturity of a year or less" in caplog.text
+
+
+def test_short_rate_model_reports_a_flat_curve(monkeypatch, caplog):
+    clear_active_cache()
+    flat = simulated_curves() * 0 + 0.03
+    monkeypatch.setattr(
+        FixedIncome,
+        "_get_country_yield_curves",
+        lambda self, start_date: {"United States": lambda: flat},
+    )
+    monkeypatch.setattr(
+        economics_ecb_model,
+        "get_long_term_convergence_yields",
+        lambda start_date, end_date: pd.DataFrame(),
+    )
+    fixedincome = FixedIncome(
+        start_date="2015-01-01", end_date="2024-12-31", rounding=None
+    )
+
+    with caplog.at_level("WARNING"):
+        result = fixedincome.get_short_rate_model()
+
+    assert result["Market"].notna().any()
+    assert result.drop(columns="Market").isna().all().all()
+    assert "does not move" in caplog.text
+    clear_active_cache()

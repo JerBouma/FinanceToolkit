@@ -312,3 +312,28 @@ def test_a_grid_of_more_option_values_than_the_cap_is_refused(monkeypatch):
         ValueError, match="41 strike prices with 25 values each, 1,025 option values"
     ):
         helpers.define_strike_prices(["AAPL"], prices, 1, 0.1, values_per_strike=25)
+
+
+@pytest.mark.parametrize(
+    ("volatility", "time_delta"),
+    [(0.2, -0.1), (0.2, 0.0), (0.2, np.nan), (0.0, 0.1), (-0.2, 0.1), (np.nan, 0.1)],
+)
+def test_the_movements_need_a_positive_volatility_and_step(volatility, time_delta):
+    with pytest.raises(ValueError, match="finite number above 0"):
+        binomial_trees_model.calculate_up_and_down_movements(volatility, time_delta)
+
+
+@pytest.mark.timeout(10)
+def test_listing_every_path_ends_whatever_the_movements():
+    # NaN movements (from a negative time step) never equal themselves, on which the
+    # listing of every path used to loop without end.
+    paths = binomial_trees_model.calculate_stock_prices(
+        100, np.nan, np.nan, 3, show_unique_combinations=False
+    )
+    assert paths.shape == (8, 4)
+    assert list(paths.index[[0, -1]]) == ["UUU", "DDD"]
+
+    paths = binomial_trees_model.calculate_stock_prices(
+        100, 1.1, 0.9, 2, show_unique_combinations=False
+    )
+    assert paths.loc["UD"].tolist() == pytest.approx([100, 110, 99])

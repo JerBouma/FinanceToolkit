@@ -10,6 +10,7 @@ from scipy.special import ndtr
 from financetoolkit.options.helpers import (
     bivariate_normal_cdf,
     validate_numeric_inputs,
+    validate_positive_inputs,
 )
 from financetoolkit.options.options_model import (
     MAX_SIMULATED_VALUES,
@@ -201,6 +202,9 @@ def get_exchange_option(
     )
     _validate_two_assets(
         first_volatility, second_volatility, correlation, time_to_expiration
+    )
+    validate_positive_inputs(
+        first_stock_price=first_stock_price, second_stock_price=second_stock_price
     )
     volatility = _ratio_volatility(first_volatility, second_volatility, correlation)
 

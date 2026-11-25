@@ -11,7 +11,11 @@ from financetoolkit.options import helpers
 from financetoolkit.options.multiasset import multi_asset_model
 from financetoolkit.utilities import logger_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
-from financetoolkit.utilities.error_model import check_option, handle_errors
+from financetoolkit.utilities.error_model import (
+    InvalidArgumentError,
+    check_option,
+    handle_errors,
+)
 from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import apply_rounding
 
@@ -204,7 +208,7 @@ class MultiAssetOptions:
             share of the ticker's price: below 1 the option is in the money, above 1 out of the money. Defaults
             to 1.0, at the money.
             expiration_time_range (int): The number of days to use for the time to expiration: the columns are the
-            expirations 1 up to expiration_time_range - 1 days after the start date. Defaults to 30, which gives
+            expirations 1 up to expiration_time_range - 1 days after the start date, so at least 2. Defaults to 30, which gives
             expirations of 1 to 29 days.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
@@ -219,7 +223,8 @@ class MultiAssetOptions:
             expiration dates as the columns.
 
         Raises:
-            ValueError: If exchange_ratio is not positive or the second asset is not in the historical data.
+            InvalidArgumentError: If exchange_ratio is not positive.
+            ValueError: If the second asset is not in the historical data.
 
         As an example:
 
@@ -246,32 +251,39 @@ class MultiAssetOptions:
         | MSFT     |       9.5013 |      13.351  |      16.2696 |
         """
         if exchange_ratio <= 0:
-            raise ValueError(
+            raise InvalidArgumentError(
                 f"exchange_ratio must be positive, received {exchange_ratio!r}."
             )
 
         start_date, second, inputs = self._two_asset_inputs(start_date, second_ticker)
 
-        time_to_expiration_list = [
-            time / 365 for time in range(0, expiration_time_range)
-        ]
+        time_to_expiration_list = helpers.define_times_to_expiration(
+            expiration_time_range
+        )
 
         exchange_option: dict[str, dict[float, float]] = {}
 
         for ticker, values in inputs.items():
-            # The units of the second asset delivered are worth exchange_ratio times the ticker today.
-            pair = {
-                **values,
-                "second_stock_price": exchange_ratio * values["first_stock_price"],
-            }
-            exchange_option[ticker] = {
-                time_to_expiration: multi_asset_model.get_exchange_option(
-                    **pair,
-                    time_to_expiration=time_to_expiration,
-                    american_option=american_option,
-                )
-                for time_to_expiration in time_to_expiration_list
-            }
+            try:
+                # The units of the second asset delivered are worth exchange_ratio times the ticker today.
+                pair = {
+                    **values,
+                    "second_stock_price": exchange_ratio * values["first_stock_price"],
+                }
+                exchange_option[ticker] = {
+                    time_to_expiration: multi_asset_model.get_exchange_option(
+                        **pair,
+                        time_to_expiration=time_to_expiration,
+                        american_option=american_option,
+                    )
+                    for time_to_expiration in time_to_expiration_list
+                }
+            except InvalidArgumentError:
+                raise
+            except ValueError as error:
+                # One ticker the formula cannot value (such as a volatility of zero from constant
+                # prices) is left out rather than emptying the result of every ticker.
+                logger.warning("No exchange option value for %s: %s", ticker, error)
 
         exchange_option_df = helpers.create_expiration_dataframe(
             value_dictionary=exchange_option, start_date=start_date
@@ -360,7 +372,7 @@ class MultiAssetOptions:
             strike_step_size (float): The step size of the strike prices. Defaults to 5, which gives the strikes
             -25, -20, ..., 20 and 25 for a price of 100.
             expiration_time_range (int): The number of days to use for the time to expiration: the columns are the
-            expirations 1 up to expiration_time_range - 1 days after the start date. Defaults to 30, which gives
+            expirations 1 up to expiration_time_range - 1 days after the start date, so at least 2. Defaults to 30, which gives
             expirations of 1 to 29 days.
             risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None, which
             uses the Toolkit's risk-free rate on the pricing date: the 10-year Treasury yield unless the Toolkit's
@@ -379,8 +391,9 @@ class MultiAssetOptions:
             index and the expiration dates as the columns.
 
         Raises:
-            ValueError: If strike_price_range is above 0.5, the method is not one of the two or the second asset
-            is not in the historical data.
+            InvalidArgumentError: If strike_price_range is not between 0 and 0.5, strike_step_size is not above 0 or
+            the method is not one of the two.
+            ValueError: If the second asset is not in the historical data.
 
         As an example:
 
@@ -424,7 +437,7 @@ class MultiAssetOptions:
             not 0 <= strike_price_range <= MAXIMUM_SPREAD_STRIKE_RANGE
             or strike_step_size <= 0
         ):
-            raise ValueError(
+            raise InvalidArgumentError(
                 "strike_price_range must be between 0 and 0.5 and strike_step_size positive, received "
                 f"{strike_price_range!r} and {strike_step_size!r}."
             )
@@ -437,46 +450,56 @@ class MultiAssetOptions:
             else self._risk_free_rate.loc[start_date]
         )
 
-        time_to_expiration_list = [
-            time / 365 for time in range(0, expiration_time_range)
-        ]
+        time_to_expiration_list = helpers.define_times_to_expiration(
+            expiration_time_range
+        )
 
         spread_option: dict[str, dict[float, dict[float, float]]] = {}
 
         for ticker, values in inputs.items():
-            price = values["first_stock_price"]
-            if 2 * strike_price_range * price / strike_step_size > helpers.MAX_STRIKES:
-                raise ValueError(
-                    f"The strike prices of {ticker} would be more than {helpers.MAX_STRIKES:,} prices. Please use "
-                    "a larger strike_step_size or a smaller strike_price_range."
-                )
-            # The strikes are the multiples of the step from strike_price_range below to strike_price_range
-            # above a spread of 0, so the grid covers the whole range and always holds a strike of 0.
-            steps = np.arange(
-                np.floor(-strike_price_range * price / strike_step_size + 1e-9),
-                np.ceil(strike_price_range * price / strike_step_size - 1e-9) + 1,
-            )
-            strike_prices = (
-                [int(step * strike_step_size) for step in steps]
-                if float(strike_step_size).is_integer()
-                else [round(float(step * strike_step_size), 10) for step in steps]
-            )
-            # The units of the second asset are worth one share of the ticker today.
-            pair = {**values, "second_stock_price": price}
-            spread_option[ticker] = {
-                strike_price: {
-                    time_to_expiration: multi_asset_model.get_spread_option(
-                        **pair,
-                        strike_price=float(strike_price),
-                        risk_free_rate=float(risk_free_rate),
-                        time_to_expiration=time_to_expiration,
-                        put_option=put_option,
-                        method=method,
+            try:
+                price = values["first_stock_price"]
+                if (
+                    2 * strike_price_range * price / strike_step_size
+                    > helpers.MAX_STRIKES
+                ):
+                    raise InvalidArgumentError(
+                        f"The strike prices of {ticker} would be more than {helpers.MAX_STRIKES:,} prices. Please use "
+                        "a larger strike_step_size or a smaller strike_price_range."
                     )
-                    for time_to_expiration in time_to_expiration_list
+                # The strikes are the multiples of the step from strike_price_range below to strike_price_range
+                # above a spread of 0, so the grid covers the whole range and always holds a strike of 0.
+                steps = np.arange(
+                    np.floor(-strike_price_range * price / strike_step_size + 1e-9),
+                    np.ceil(strike_price_range * price / strike_step_size - 1e-9) + 1,
+                )
+                strike_prices = (
+                    [int(step * strike_step_size) for step in steps]
+                    if float(strike_step_size).is_integer()
+                    else [round(float(step * strike_step_size), 10) for step in steps]
+                )
+                # The units of the second asset are worth one share of the ticker today.
+                pair = {**values, "second_stock_price": price}
+                spread_option[ticker] = {
+                    strike_price: {
+                        time_to_expiration: multi_asset_model.get_spread_option(
+                            **pair,
+                            strike_price=float(strike_price),
+                            risk_free_rate=float(risk_free_rate),
+                            time_to_expiration=time_to_expiration,
+                            put_option=put_option,
+                            method=method,
+                        )
+                        for time_to_expiration in time_to_expiration_list
+                    }
+                    for strike_price in strike_prices
                 }
-                for strike_price in strike_prices
-            }
+            except InvalidArgumentError:
+                raise
+            except ValueError as error:
+                # One ticker the formula cannot value (such as a volatility of zero from constant
+                # prices) is left out rather than emptying the result of every ticker.
+                logger.warning("No spread option value for %s: %s", ticker, error)
 
         spread_option_df = helpers.create_greek_dataframe(
             greek_dictionary=spread_option, start_date=start_date

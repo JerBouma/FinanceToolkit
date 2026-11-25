@@ -16,6 +16,7 @@ from financetoolkit.utilities.error_model import (
     check_period,
     handle_errors,
 )
+from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import (
     PERIODS_PER_YEAR,
@@ -24,6 +25,8 @@ from financetoolkit.utilities.statistics_model import (
     calculate_standardization,
     finalize_dataset,
 )
+
+logger = get_logger()
 
 # The examples' output tables are wider than the line length.
 # ruff: noqa: E501
@@ -109,6 +112,7 @@ class BreadthTechnicals:
         | 2025-12-30 |                -0.0195 |                      -1 |         2.45418e+09 |          6.66241e+07 |                      4.10949e+09 |          1.83379e+07 |   1.5877 |                      0 |               0.0249 |            -5.2835 |                 2730.14 |                 794.004 |                -2.06929e+08 |                            -1.58349e+08 |                      8.1019 |                              174.256 |            0.506  |                 25.8195 |                   0.0467 |              0.06   |                   0.1863 |              1.0091e+10  |    6.04588e+09 |                   4 |            0.8069 |             0.6714 |                             2.45616e+09 |                             2.41534e+09 |                        2.45418e+09 |                        2.47632e+09 |                                   1 |                                    0 |
         | 2025-12-31 |                -0.0707 |                      -1 |         2.42688e+09 |          6.65022e+07 |                      4.08531e+09 |          7.5513e+06  | nan      |                      0 |              -0.0357 |            -5.2467 |                 2730.14 |                 790.457 |                -2.31239e+08 |                            -1.68762e+08 |                      7.0467 |                              172.442 |            0.6417 |                 25.8501 |                  -0.005  |              0.0314 |                   0.0688 |              1.00847e+10 |    7.42004e+09 |                   3 |            0.7332 |             0.659  |                             2.44445e+09 |                             2.41711e+09 |                        2.42688e+09 |                        2.45418e+09 |                                   0 |                                    1 |
         """
+        self._check_arguments(period, close_column)
         check_period(
             period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
         )
@@ -372,6 +376,12 @@ class BreadthTechnicals:
         | 2025-12-30 | -0.0832 | 0.1111 | -0.0275 | -0.0049 | 0.0703 |     -0.1116 |
         | 2025-12-31 | -0.1272 | 0.037  | -0.0839 |  0.0402 | 0.0097 |     -0.1552 |
         """
+        self._check_arguments(
+            period,
+            close_column,
+            short_ema_window=short_ema_window,
+            long_ema_window=long_ema_window,
+        )
         check_period(
             period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
         )
@@ -487,6 +497,7 @@ class BreadthTechnicals:
         | 2025-12-30 |    -1 |     1 |     1 |      1 |     1 |          -1 |
         | 2025-12-31 |    -1 |    -1 |    -1 |      1 |    -1 |          -1 |
         """
+        self._check_arguments(period, close_column)
         check_period(
             period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
         )
@@ -611,6 +622,7 @@ class BreadthTechnicals:
         | 2025-12-30 | -1.14929e+12 |   1.27363e+09 |
         | 2025-12-31 | -1.18312e+12 |   1.19948e+09 |
         """
+        self._check_arguments(period, close_column)
         check_period(
             period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
         )
@@ -740,6 +752,7 @@ class BreadthTechnicals:
         | 2025-12-30 | 6.66449e+07 | 2.02012e+07 | -9.74998e+06 |
         | 2025-12-31 | 6.65229e+07 | 2.00776e+07 | -1.02993e+07 |
         """
+        self._check_arguments(period, close_column)
         check_period(
             period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
         )
@@ -865,6 +878,7 @@ class BreadthTechnicals:
         | 2025-12-30 | 7.82463e+08 | 7.98763e+09 |
         | 2025-12-31 | 7.75502e+08 | 7.919e+09   |
         """
+        self._check_arguments(period, close_column)
         check_period(
             period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
         )
@@ -998,6 +1012,9 @@ class BreadthTechnicals:
         | 2025-12-30 |  1.62538e+06 | 3.30466e+07 |
         | 2025-12-31 | -1.44174e+07 | 2.89497e+06 |
         """
+        self._check_arguments(
+            period, close_column, short_window=short_window, long_window=long_window
+        )
         check_period(
             period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
         )
@@ -1153,6 +1170,7 @@ class BreadthTechnicals:
         | 2025-12-30 |  -0.1279 |  -0.0749 |      0.0614 |
         | 2025-12-31 |  -0.1646 |  -0.1521 |      0.017  |
         """
+        self._check_arguments(period, close_column, window=window)
         methods = ("standard", "twiggs")
         check_option("method", method, methods)
         check_period(
@@ -1295,6 +1313,7 @@ class BreadthTechnicals:
         | 2025-12-30 |  0.6371 |      2.7794 |
         | 2025-12-31 | -4.2755 |      0.4354 |
         """
+        self._check_arguments(period, close_column, window=window)
         check_period(
             period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
         )
@@ -1439,6 +1458,7 @@ class BreadthTechnicals:
         | 2025-12-30 | 5433.84 | 4468.59 |
         | 2025-12-31 | 5433.84 | 4468.59 |
         """
+        self._check_arguments(period, close_column)
         methods = ("negative", "positive")
         check_option("method", method, methods)
         check_period(
@@ -1578,6 +1598,7 @@ class BreadthTechnicals:
         | 2025-12-30 |   0.6376 |
         | 2025-12-31 | nan      |
         """
+        self._check_arguments(period, close_column)
         check_period(
             period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
         )
@@ -1605,6 +1626,19 @@ class BreadthTechnicals:
             closes[constituents],
             historical_data["Volume"][constituents],
         ).loc[self._start_date : self._end_date]
+
+        # The ratios divide by the declining tickers and their volume, so a date without both
+        # an advancing and a declining ticker has no TRIN.
+        if not trin_series.empty and trin_series.isna().all():
+            logger.warning(
+                "The TRIN has no values: it needs a ticker that advances and one that declines on "
+                "the same date (the Benchmark is not counted), %s.",
+                (
+                    "which fewer than two tickers cannot give"
+                    if len(constituents) < 2  # noqa: PLR2004
+                    else "and no date has both, as with a constant price"
+                ),
+            )
 
         trin = pd.DataFrame(
             {ticker: trin_series for ticker in historical_data[close_column].columns},
@@ -1726,6 +1760,7 @@ class BreadthTechnicals:
         | 2025-12-30 |     2 |
         | 2025-12-31 |     0 |
         """
+        self._check_arguments(period, close_column, window=window)
         check_period(
             period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
         )
@@ -1891,6 +1926,13 @@ class BreadthTechnicals:
         | 2025-12-30 |                -2.06931e+08 |  -1.58352e+08 |
         | 2025-12-31 |                -2.31241e+08 |  -1.68765e+08 |
         """
+        self._check_arguments(
+            period,
+            close_column,
+            short_window=short_window,
+            long_window=long_window,
+            signal_window=signal_window,
+        )
         check_period(
             period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
         )
@@ -2029,6 +2071,7 @@ class BreadthTechnicals:
         | 2025-12-30 |  8.102  | 29.7295 |      4.1659 |
         | 2025-12-31 |  7.0467 | 30.7675 |      7.5612 |
         """
+        self._check_arguments(period, close_column)
         check_period(
             period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
         )
@@ -2162,6 +2205,7 @@ class BreadthTechnicals:
         | 2025-12-30 | 174.256 | 316.797 |     363.007 |
         | 2025-12-31 | 172.442 | 312.315 |     357.61  |
         """
+        self._check_arguments(period, close_column)
         check_period(
             period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
         )
@@ -2288,6 +2332,7 @@ class BreadthTechnicals:
         | 2025-12-30 | 0.5726 | 0.7756 |      0.6145 |
         | 2025-12-31 | 0.7232 | 0.6418 |      0.975  |
         """
+        self._check_arguments(period, window=window)
         check_period(
             period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
         )
@@ -2440,6 +2485,9 @@ class BreadthTechnicals:
         | 2025-12-30 | 25.8204 | -8.4473 |     17.6238 |
         | 2025-12-31 | 25.851  | -9.7919 |     16.2389 |
         """
+        self._check_arguments(
+            period, close_column, window=window, smooth_window=smooth_window
+        )
         check_period(
             period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
         )
@@ -2582,6 +2630,7 @@ class BreadthTechnicals:
         | 2025-12-30 |  0.0467 | 0.244  |     -0.0367 |
         | 2025-12-31 | -0.005  | 0.183  |     -0.1106 |
         """
+        self._check_arguments(period, close_column, window=window)
         check_period(
             period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
         )
@@ -2714,6 +2763,7 @@ class BreadthTechnicals:
         | 2025-12-30 | 0.1863 | 0.2429 |     -0.046  |
         | 2025-12-31 | 0.0688 | 0.1082 |     -0.1791 |
         """
+        self._check_arguments(period, close_column, window=window)
         check_period(
             period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
         )
@@ -2842,6 +2892,7 @@ class BreadthTechnicals:
         | 2025-12-30 | 6.04589e+09 | 6.79767e+09 | 3.23999e+10 |
         | 2025-12-31 | 7.42005e+09 | 7.54525e+09 | 5.05608e+10 |
         """
+        self._check_arguments(period, close_column)
         check_period(
             period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
         )
@@ -2969,6 +3020,7 @@ class BreadthTechnicals:
         | 2025-12-30 |      4 |      1 |           4 |
         | 2025-12-31 |      3 |      3 |           3 |
         """
+        self._check_arguments(period, close_column)
         check_period(
             period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
         )
@@ -3109,6 +3161,9 @@ class BreadthTechnicals:
         | 2025-12-30 |            0.8069 |             0.6714 |
         | 2025-12-31 |            0.7332 |             0.659  |
         """
+        self._check_arguments(
+            period, close_column, window=window, smooth_window=smooth_window
+        )
         check_period(
             period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
         )
@@ -3256,6 +3311,14 @@ class BreadthTechnicals:
         | 2025-12-30 |    2.45445e+09 |          1 |         2.45246e+09 |           0 |    2.41362e+09 |
         | 2025-12-31 |    2.44273e+09 |          0 |         2.42517e+09 |           1 |    2.41539e+09 |
         """
+        self._check_arguments(
+            period,
+            close_column,
+            short_window=short_window,
+            long_window=long_window,
+            extreme_window=extreme_window,
+            run_window=run_window,
+        )
         check_period(
             period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
         )
@@ -3394,6 +3457,7 @@ class BreadthTechnicals:
         |           9 |   7.25819e+08 |      273.8   |     262.404 |    1.47212e+09 | 7.46301e+08 |
         |          10 |   2.38447e+08 |      285.196 |     273.8   |    6.23551e+08 | 3.85104e+08 |
         """
+        self._check_arguments(period, close_column)
         check_period(
             period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
         )
@@ -3527,6 +3591,13 @@ class BreadthTechnicals:
         | 2025-12-30 |           9 |          21 |           0 |            -12 |                    954 |                  0.4286 |                -3.642  |                    -745.019 |                               0.7    |                                   0.8 |           0 |          0 |
         | 2025-12-31 |           3 |          27 |           0 |            -24 |                    930 |                  0.1111 |               -46.2902 |                    -791.309 |                               0.5667 |                                   0.8 |           0 |          0 |
         """
+        self._check_arguments(
+            period,
+            close_column,
+            short_window=short_window,
+            long_window=long_window,
+            high_low_window=high_low_window,
+        )
         # The Advance-Decline Line and McClellan Summation Index start at the start date.
         # NaN on the dates a constituent did not trade, so a stock is not counted as unchanged on the weekends of a cryptocurrency.  # noqa: E501
         prices = self._close_prices(period, close_column, traded_only=True).loc[

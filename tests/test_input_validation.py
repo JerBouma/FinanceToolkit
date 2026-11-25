@@ -219,3 +219,30 @@ def test_mcp_accepts_countries_as_a_list(monkeypatch):
 
     assert received["countries"] == ["Japan", "Germany"]
     assert json.loads(text)[0]["Japan"] == 0.02
+
+
+def test_a_date_range_without_prices_explains_itself(caplog):
+    from financetoolkit import Toolkit
+
+    toolkit = Toolkit(
+        tickers=["AAPL", "MSFT"],
+        historical=pd.read_pickle("tests/datasets/historical_dataset.pickle"),
+        convert_currency=False,
+        start_date="2023-06-01",
+        end_date="2023-12-31",
+        sleep_timer=False,
+        progress_bar=False,
+    )
+    toolkit._daily_risk_free_rate = pd.read_pickle(
+        "tests/datasets/risk_free_rate.pickle"
+    )
+    toolkit._daily_treasury_data = pd.read_pickle("tests/datasets/treasury_data.pickle")
+
+    with caplog.at_level(logging.WARNING, logger="financetoolkit"):
+        result = toolkit.technicals.get_relative_strength_index()
+
+    assert result.empty
+    assert (
+        "There is no daily historical data between 2023-06-01 and 2023-12-31"
+        in caplog.text
+    )

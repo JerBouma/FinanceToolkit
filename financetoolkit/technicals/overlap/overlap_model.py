@@ -7,6 +7,7 @@ import math
 import numpy as np
 import pandas as pd
 from numpy.lib.stride_tricks import sliding_window_view
+from scipy.special import gammaln
 
 from financetoolkit.technicals.helpers import apply_variable_smoothing
 from financetoolkit.utilities.error_model import InvalidArgumentError, check_option
@@ -970,6 +971,10 @@ def get_sine_weighted_moving_average(prices: pd.Series, window: int) -> pd.Serie
     )
 
 
+# The Fibonacci weight above which the weights so far are scaled down, well below the largest float.
+LARGEST_FIBONACCI_WEIGHT = 1e300
+
+
 def get_fibonacci_weighted_moving_average(prices: pd.Series, window: int) -> pd.Series:
     """
     Calculate the Fibonacci Weighted Moving Average (FWMA): an average with Fibonacci numbers as weights, which
@@ -1002,6 +1007,10 @@ def get_fibonacci_weighted_moving_average(prices: pd.Series, window: int) -> pd.
     weights = np.ones(window)
     for i in range(2, window):
         weights[i] = weights[i - 1] + weights[i - 2]
+        # The numbers pass the largest float from a window of about 1,475; the recurrence is
+        # linear, so scaling every weight so far keeps their ratios.
+        if weights[i] > LARGEST_FIBONACCI_WEIGHT:
+            weights[: i + 1] /= weights[i]
 
     return apply_to_rolling_windows(
         prices, window, lambda windows: windows @ weights / weights.sum()
@@ -1036,7 +1045,12 @@ def get_pascal_weighted_moving_average(prices: pd.Series, window: int) -> pd.Ser
     Returns:
         pd.Series: PWMA values.
     """
-    weights = np.array([math.comb(window - 1, i) for i in range(window)], dtype=float)
+    # The binomial coefficients exceed the float range from a window of about 1,030, so they are built as
+    # logarithms (ln C(n, i) = ln n! - ln i! - ln (n - i)!) and scaled by the largest before leaving log space;
+    # the average divides by the sum, so the scale drops out.  # noqa: E501
+    positions = np.arange(window)
+    log_weights = gammaln(window) - gammaln(positions + 1) - gammaln(window - positions)
+    weights = np.exp(log_weights - log_weights.max())
 
     return apply_to_rolling_windows(
         prices, window, lambda windows: windows @ weights / weights.sum()

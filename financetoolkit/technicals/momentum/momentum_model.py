@@ -1258,16 +1258,16 @@ def get_moving_average_convergence_divergence(
         pd.DataFrame: The MACD Line, Signal Line and Histogram as columns.
 
     Raises:
-        ValueError: If a moving average is not one of `MOVING_AVERAGES` or
-            `VOLUME_MOVING_AVERAGES`, a volume weighted one has no `volumes`, or `fixed` is
+        InvalidArgumentError: If a moving average is not one of `MOVING_AVERAGES` or
+            `VOLUME_MOVING_AVERAGES` (a ValueError).
+        ValueError: If a volume weighted moving average has no `volumes`, or `fixed` is
             combined with another moving average or other windows than 12 and 26.
     """
-    for name in (moving_average, signal_moving_average):
-        if name not in MOVING_AVERAGES and name not in VOLUME_MOVING_AVERAGES:
-            raise ValueError(
-                f"moving_average must be one of "
-                f"{', '.join([*MOVING_AVERAGES, *VOLUME_MOVING_AVERAGES])}, not {name}."
-            )
+    for parameter, name in (
+        ("moving_average", moving_average),
+        ("signal_moving_average", signal_moving_average),
+    ):
+        check_option(parameter, name, [*MOVING_AVERAGES, *VOLUME_MOVING_AVERAGES])
         if name in VOLUME_MOVING_AVERAGES and volumes is None:
             raise ValueError(f"The {name} moving average needs the volumes.")
 
@@ -1929,16 +1929,14 @@ def get_know_sure_thing(
 
     Raises:
         TypeError: If `prices_close` is not a pandas Series.
-        ValueError: If `roc_windows`, `sma_windows` and `weights` are not all length 4, or a
-            moving average is not one of `MOVING_AVERAGES`.
+        InvalidArgumentError: If a moving average is not one of `MOVING_AVERAGES` (a
+            ValueError).
+        ValueError: If `roc_windows`, `sma_windows` and `weights` are not all length 4.
     """
     if not isinstance(prices_close, pd.Series):
         raise TypeError("prices_close must be a pandas Series.")
-    for name in (moving_average, signal_moving_average):
-        if name not in MOVING_AVERAGES:
-            raise ValueError(
-                f"moving_average must be one of {', '.join(MOVING_AVERAGES)}, not {name}."
-            )
+    check_option("moving_average", moving_average, list(MOVING_AVERAGES))
+    check_option("signal_moving_average", signal_moving_average, list(MOVING_AVERAGES))
 
     if roc_windows is None:
         roc_windows = [10, 15, 20, 30]

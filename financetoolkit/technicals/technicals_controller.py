@@ -28,12 +28,14 @@ from financetoolkit.technicals.seasonality.seasonality_controller import (
 from financetoolkit.technicals.volatility.volatility_controller import (
     VolatilityTechnicals,
 )
-from financetoolkit.utilities import factor_model
+from financetoolkit.utilities import factor_model, logger_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
 from financetoolkit.utilities.error_model import (
     InvalidArgumentError,
+    check_option,
     check_period,
     handle_errors,
+    validate_window,
 )
 from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import (
@@ -43,8 +45,13 @@ from financetoolkit.utilities.statistics_model import (
     calculate_standardization,
 )
 
+logger = logger_model.get_logger()
+
 # The examples' output tables are wider than the line length.
 # ruff: noqa: E501
+
+# The columns of the historical data an indicator can be calculated on.
+PRICE_COLUMNS = ("Open", "High", "Low", "Close", "Adj Close")
 
 
 @filter_shown_columns
@@ -117,6 +124,9 @@ class TechnicalsBase:
         self._portfolio_weights: dict | None = None
         # The historical data with the open, high and low adjusted like the close, per period.
         self._consistent_data: dict[tuple, pd.DataFrame] = {}
+        # The periods and windows reported as longer than the data, so that a collection of
+        # indicators reports each once rather than for every indicator.
+        self._reported_windows: set[tuple[str, int]] = set()
 
         # Technical Indicators
         self._all_indicators: pd.DataFrame = pd.DataFrame()
@@ -215,6 +225,7 @@ class TechnicalsBase:
         | 2025-12-30 |                -0.0195 |                      -1 |         2.45418e+09 |          6.66241e+07 |                      4.10949e+09 |          1.83379e+07 |   1.5877 |                      0 |               0.0249 |            -5.2836 |                 2730.14 |                 794.005 |                -2.06929e+08 |                            -1.58349e+08 |                      8.1019 |                              174.255 |            0.506  |                 25.8195 |                   0.0467 |              0.06   |                   0.1863 |              1.0091e+10  |    6.04588e+09 |                   4 |            0.8069 |             0.6714 |                             2.45616e+09 |                             2.41534e+09 |                        2.45418e+09 |                        2.47632e+09 |                                   1 |                                    0 |            43.4593 |      -53.5607 |              28.5714 |                50      |           -21.4286 |                  -35.5284 |                -0.1288 |                            -0.1608 | -464807           |               54.1042 |                        0.0003 |                                    0.003  |                                 -0.0027 |                      0.0788 |                        -0.1122 |                                    -0.0325 |                                  -0.0797 |                      -2.3582 |                     19.2762 |                      9.6926 |                      11.6321 |                      16.8441 |                       20.2146 |                       9.095  |                            25.712  |                     -21.7389 |                   38.6752 |                    270.612 |              276.183 |                   265.068 |                   250.519 |         46.4393 |         48.9647 |      0.0788 |             0.8074 |          -0.7285 |                   48.4209 |             29.5551 |             34.7338 |                0.6843 |                            4.0838 |             0.15   |                  0.4444 |  -0.3773 |              -1.9448 |                   0.3866 |                 0.9145 |                 1.1096 |                 0.0857 |                -1.708  |          -0.0148 |    -4.0858 |            53.5704 |             0.2174 |                       0.4141 |           -0.0182 |                        0.1612 |         -0.0465 |            -0.4022 |                    -0.8195 |                        -0.6065 | 57.9069 | 47.7783 | 78.1641 |                          0.0877 |                     -6.3714 |                                 -0.3191 |                 -7.7102 |                   -8.4097 |                   0.6995 |               0.0051 |    -20.2725 |                -20.6589 |                 -0.7486 |       -3.2998 |                    5881.83 | 53.9827 |                  48.8135 |                  50.5959 |                  3.8001 |       36.7617 |   50.4639 | -0.0122 |  113.905  |  105.452  |                  -0.2379 |              58.3333 |                     -1.0873 |               0 |                1 |           1 |                       -0.6718 |                0.0069 |                  0.7814 |                       273.254 |                            273.117 |                                    272.247 | 0.0002 |                     272.531 |                         272.403 |                     271.798 |                                    271.015 |                                       271.736 |                                  272.774 |                                 272.681 |                                    272.315 |                                   271.738 |                                  272.849 |                          275.78  |                               272.173 |                                 273.113 |            271.995 |                                  270.932 |                                   272.442 |                              269.554 |                           272.853 |                           266.256 |                                          272.648 |                                 273.181 |    273.921 |          272.6   |         272.115 |        272.232 |         272.198 |                272.182 |                                272.911 |         274.769 |               274.771 |   266.023 |       272.541 |                    273.676 |                 271.673 |                       272.6   |                       271.048 |                283.299 |                 275.23  |                267.162 |         0.308  |                0.0586 |       1.7937 |               4.1102 |      23.5003 |      268.465 |                            1 |                274.284 |                 279.357 |                 280.707 |                  273.117 |                 265.526 |                  279.177 |                   272.6   |                  266.023 |                          0.0151 |              3.863  |              -0.3267 |                     54.0398 |                   285.385 |                    275.23  |                   265.399 |                  279.001 |                 269.818 |                     278.457 |                      272.336 |                     266.215 |            276.381 |             272.212 |            268.043 | 263.457 |                      1 |           4.2652 |               0.0698 |                       1.4266 |            -7.2914 |         0 |                         19.3292 |                        29.9642 |            -1.2127 |               1.7906 |         0.4995 |              0.9658 |                    1 |                           275.284 |                               272.991 |                                    273.794 |                    2.1545 |                272.316 |                -0.9522 |                     -0.423  |               -0.6187 |                    -0.993  |                        -5.4973 |                     -5.5043 |         0.2628 |
         | 2025-12-31 |                -0.0707 |                      -1 |         2.42688e+09 |          6.65022e+07 |                      4.08531e+09 |          7.5513e+06  | nan      |                      0 |              -0.0357 |            -5.2468 |                 2730.14 |                 790.458 |                -2.31239e+08 |                            -1.68762e+08 |                      7.0467 |                              172.441 |            0.6417 |                 25.8501 |                  -0.005  |              0.0314 |                   0.0688 |              1.00847e+10 |    7.42004e+09 |                   3 |            0.7332 |             0.659  |                             2.44445e+09 |                             2.41711e+09 |                        2.42688e+09 |                        2.45418e+09 |                                   0 |                                    1 |            38.2003 |      -62.8029 |              21.4286 |                42.8571 |           -21.4286 |                  -56.9136 |                -0.0887 |                            -0.1381 |      -4.82705e+06 |               46.4079 |                       -0.0003 |                                    0.0023 |                                 -0.0026 |                     -0.0897 |                        -0.1258 |                                    -0.0512 |                                  -0.0746 |                      -1.5169 |                     18.7176 |                      9.0003 |                      11.3294 |                      16.2589 |                       20.4663 |                      11.4565 |                            24.6539 |                     -37.4456 |                   34.0262 |                    270.248 |              276.821 |                   265.6   |                   250.867 |         37.1971 |         45.0758 |     -0.0897 |             0.628  |          -0.7176 |                   45.6902 |             12.0094 |             27.1964 |               -0.6702 |                            2.8953 |            -0.6218 |                  0.057  |  -0.536  |              -1.6049 |                   0.515  |                 0.9113 |                 1.1148 |                -0.0091 |                -1.9324 |          -0.0248 |    -6.896  |            52.5944 |             0.3745 |                       0.3956 |           -0.0452 |                        0.1157 |         -0.0431 |            -0.1073 |                    -0.4022 |                        -0.6548 | 57.905  | 51.1539 | 71.4071 |                          0.1423 |                     -7.1079 |                                 -1.6769 |                -10.1732 |                   -8.9975 |                  -1.1757 |               0.0026 |    -23.361  |                -20.8876 |                 -0.6816 |      -19.3794 |                    5862.45 | 53.9827 |                  47.7724 |                  43.3308 |                 -9.9432 |       24.882  |   52.0466 | -0.0166 |   99.0847 |   92.3301 |                  -0.3998 |              50      |                     -1.4421 |               0 |                1 |          -1 |                       -0.6071 |                0.0023 |                  0.6255 |                       272.762 |                            272.823 |                                    271.815 | 0.0001 |                     272.2   |                         272.091 |                     271.883 |                                    270.627 |                                       271.745 |                                  272.642 |                                 272.319 |                                    271.777 |                                   271.608 |                                  272.686 |                          275.262 |                               272.102 |                                 272.746 |            271.917 |                                  270.932 |                                   272.383 |                              268.893 |                           272.144 |                           265.643 |                                          272.568 |                                 272.8   |    273.672 |          272.6   |         271.641 |        271.768 |         271.484 |                271.342 |                                272.594 |         273.895 |               274.318 |   266.023 |       272.198 |                    273.062 |                 271.268 |                       272.6   |                       271.048 |                281.366 |                 274.516 |                267.666 |         0.2372 |                0.0499 |       1.9233 |               3.954  |      23.1557 |      268.465 |                            1 |                274.628 |                 279.013 |                 280.039 |                  272.823 |                 265.607 |                  279.177 |                   272.6   |                  266.023 |                          0.0146 |              3.7647 |              -0.3494 |                     52.7331 |                   284.415 |                    274.516 |                   265.137 |                  275.232 |                 269.631 |                     277.662 |                      272.143 |                     266.623 |            276.421 |             272.402 |            268.383 | 263.457 |                      1 |           2.6706 |               0.5281 |                       1.3485 |            -6.9011 |         1 |                         19.6066 |                        33.1912 |            -0.9892 |               3.5114 |         0.5474 |              0.9788 |                    1 |                           274.885 |                               272.887 |                                    273.772 |                    2.3417 |                272.229 |                -0.9772 |                     -0.5599 |               -0.7431 |                    -0.0523 |                        -5.4957 |                     -5.4973 |         0.3273 |
         """
+        self._check_arguments(period, close_column, window=window)
         check_period(
             period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
         )
@@ -274,6 +285,58 @@ class TechnicalsBase:
                 )
 
         return self._all_indicators_growth if growth else self._all_indicators
+
+    def _check_arguments(
+        self, period: str, close_column: str | None = None, **windows: int | None
+    ) -> None:
+        """
+        Checks the arguments the indicators share before one is calculated: every window is a
+        whole number of at least one period and the close column is a price column of the
+        historical data. A window longer than the data of the period leaves the indicator
+        without values, which is logged once for that period and window: the window parameter
+        when the indicator has one, else its longest window.
+
+        Args:
+            period (str): The period of the prices, e.g. "daily".
+            close_column (str | None, optional): The close column the indicator uses, or None for
+                an indicator without one. Defaults to None.
+            **windows (int | None): The windows of the indicator by parameter name, None for a
+                window the indicator chooses itself.
+
+        Raises:
+            InvalidArgumentError: For a window below one period or a close column the historical
+                data does not have (a ValueError).
+        """
+        for name, window in windows.items():
+            validate_window(name, window, 1)
+
+        # Intraday indicators always use the traded close; an unknown period is reported by the indicator.
+        if period not in PERIODS or period == "intraday":
+            return
+
+        historical_data = self._historical_data[period]
+        if close_column is not None and not historical_data.empty:
+            columns = historical_data.columns.get_level_values(0)
+            check_option(
+                "close_column",
+                close_column,
+                [column for column in PRICE_COLUMNS if column in columns],
+            )
+
+        # The window parameter is the indicator's own; the other windows of an indicator with
+        # variants (such as the rank window of Connors' RSI) only matter to the variant using them.
+        relevant = [windows["window"]] if "window" in windows else windows.values()
+        longest = max((window for window in relevant if window), default=0)
+        reported = (period, longest)
+        if longest > len(historical_data) and reported not in self._reported_windows:
+            self._reported_windows.add(reported)
+            logger.warning(
+                "A window of %s periods is longer than the %s %s periods of data, which leaves the "
+                "indicator without values. Please choose a shorter window or a longer date range.",
+                longest,
+                len(historical_data),
+                period,
+            )
 
     def _get_historical_data(self, period: str, close_column: str) -> pd.DataFrame:
         """

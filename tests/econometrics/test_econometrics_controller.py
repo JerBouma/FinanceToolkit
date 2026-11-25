@@ -701,9 +701,23 @@ def test_get_fixed_effects_time_effects(recorder, econometrics_module):
     )
 
 
-def test_get_fixed_effects_missing_regressor_args(econometrics_module):
-    with pytest.raises(InvalidArgumentError, match="Provide exactly one"):
-        econometrics_module.get_fixed_effects(period="weekly")
+def test_get_fixed_effects_defaults_to_the_benchmark(econometrics_module):
+    # Without a regressor the market factor is used, as in the other regressions.
+    pd.testing.assert_frame_equal(
+        econometrics_module.get_fixed_effects(period="weekly"),
+        econometrics_module.get_fixed_effects(
+            independent_tickers="Benchmark", period="weekly"
+        ),
+    )
+
+
+def test_random_effects_and_hausman_test_need_a_regressor(econometrics_module):
+    # A common factor such as the Benchmark has no between-ticker variation, so these two
+    # have no default and say what to pass.
+    with pytest.raises(InvalidArgumentError, match="have no default"):
+        econometrics_module.get_random_effects(period="weekly")
+    with pytest.raises(InvalidArgumentError, match="have no default"):
+        econometrics_module.get_hausman_test(period="weekly")
 
 
 def test_get_fixed_effects_both_regressor_args(econometrics_module):
@@ -1614,3 +1628,227 @@ def test_move_significance_of_the_toolkit_measures_each_return(econometrics_modu
         atol=1e-4,
     )
     assert (significance[("Largest Since", ticker)].dropna() < "9999").all()
+
+
+# Robustness: invalid arguments raise, one unusable ticker does not empty the others, and an
+# empty or all-NaN result says why.
+
+
+@pytest.fixture(scope="module")
+def prices_with_a_constant_series():
+    rng = np.random.default_rng(1)
+    index = pd.period_range("2015-01-01", periods=400, freq="D")
+    return pd.DataFrame(
+        {
+            "A": 100 * np.exp(np.cumsum(rng.normal(0, 0.01, 400))),
+            "B": 100 * np.exp(np.cumsum(rng.normal(0, 0.01, 400))),
+            "C": np.full(400, 50.0),
+        },
+        index=index,
+    )
+
+
+@pytest.mark.parametrize(
+    ("method", "arguments"),
+    [
+        ("get_change_points", {}),
+        ("get_structural_breaks", {}),
+        ("get_time_varying_beta", {"independent_ticker": "B"}),
+        ("get_optimal_trading_rule", {"simulations": 100, "grid_size": 3}),
+        ("get_markov_regime_switching", {}),
+        ("get_berkowitz_test", {"window": 200, "refit_every": 100}),
+    ],
+)
+def test_one_unusable_ticker_leaves_the_others(
+    prices_with_a_constant_series, caplog, method, arguments
+):
+    from financetoolkit import Econometrics
+
+    econometrics = Econometrics(data=prices_with_a_constant_series)
+    with caplog.at_level("WARNING", logger="financetoolkit"):
+        result = getattr(econometrics, method)(**arguments)
+
+    # The constant series is skipped with its reason, the others keep their result.
+    assert not result.empty
+    assert "A" in str(result.columns.tolist() + result.index.tolist())
+    assert "for C:" in caplog.text
+
+
+def test_model_confidence_set_validates_its_windows_and_names_a_constant_series(
+    prices_with_a_constant_series, caplog
+):
+    from financetoolkit import Econometrics
+
+    econometrics = Econometrics(data=prices_with_a_constant_series)
+    with pytest.raises(InvalidArgumentError, match="garch_window"):
+        econometrics.get_model_confidence_set(garch_window=2)
+    with pytest.raises(InvalidArgumentError, match="window"):
+        econometrics.get_model_confidence_set(window=0)
+
+    with caplog.at_level("WARNING", logger="financetoolkit"):
+        result = econometrics.get_model_confidence_set(
+            models=["ewma", "rolling"], n_bootstrap=50
+        )
+    assert "C has constant returns" in caplog.text
+    assert set(result.index.get_level_values(0)) == {"A", "B"}
+
+
+@pytest.mark.parametrize(
+    "method",
+    [
+        "get_diebold_mariano_test",
+        "get_berkowitz_test",
+        "get_hong_li_test",
+        "get_directional_accuracy_test",
+        "get_move_significance",
+    ],
+)
+def test_a_window_of_zero_is_rejected(econometrics_module, method):
+    # A window of 0 used to fall back to the default without a word.
+    with pytest.raises(InvalidArgumentError, match="window"):
+        getattr(econometrics_module, method)(window=0)
+
+
+@pytest.mark.parametrize(
+    ("method", "minimum"),
+    [
+        ("get_correlation", 2),
+        ("get_z_score", 2),
+        ("get_standard_error", 2),
+        ("get_entropy", 2),
+        ("get_hjorth_parameters", 2),
+        ("get_lempel_ziv_complexity", 2),
+        ("get_percentile", 1),
+        ("get_percent_rank", 1),
+        ("get_mean_absolute_deviation", 1),
+        ("get_pairs_trading", 2),
+    ],
+)
+def test_rolling_below_its_minimum_is_rejected(econometrics_module, method, minimum):
+    with pytest.raises(InvalidArgumentError, match=f"at least {minimum}"):
+        getattr(econometrics_module, method)(rolling=minimum - 1)
+
+
+def test_unknown_columns_and_options_are_rejected(econometrics_module):
+    with pytest.raises(InvalidArgumentError, match="column must be one of"):
+        econometrics_module.get_change_points(column="Bogus")
+    with pytest.raises(InvalidArgumentError, match="column must be one of"):
+        econometrics_module.get_fixed_effects(column="Bogus")
+    with pytest.raises(InvalidArgumentError, match="independent_column must be one of"):
+        econometrics_module.get_random_effects(independent_column="Bogus")
+    # The entropy checks its estimator and encoding also for a method that does not use them.
+    with pytest.raises(InvalidArgumentError, match="estimator"):
+        econometrics_module.get_entropy(estimator="bogus")
+    with pytest.raises(InvalidArgumentError, match="encoding"):
+        econometrics_module.get_entropy(encoding="bogus")
+
+
+def test_f_and_likelihood_ratio_tests_fit_both_models_on_the_same_dates():
+    from financetoolkit import Econometrics
+
+    rng = np.random.default_rng(3)
+    index = pd.period_range("2015-01-01", periods=300, freq="D")
+    x = rng.normal(0, 0.01, 300)
+    z = rng.normal(0, 0.01, 300)
+    y = 0.8 * x + 0.3 * z + rng.normal(0, 0.005, 300)
+    data = pd.DataFrame({"Y": y, "X": x, "Z": z}, index=index)
+    # The regressor of only the unrestricted model has a gap.
+    data.iloc[100:120, 2] = np.nan
+    econometrics = Econometrics(data=data, changes="difference")
+
+    arguments = {
+        "dependent_ticker": "Y",
+        "restricted_independent_tickers": ["X"],
+        "unrestricted_independent_tickers": ["X", "Z"],
+        "column": "Level",
+    }
+    f_test = econometrics.get_f_test(**arguments)
+    likelihood_ratio = econometrics.get_likelihood_ratio_test(**arguments)
+
+    # 280 shared dates less the three parameters of the unrestricted model.
+    assert f_test["Df Denominator"] == 277  # noqa: PLR2004
+    assert not likelihood_ratio.empty
+
+
+def test_pairs_trading_has_no_signal_without_a_z_score(econometrics_module):
+    series = econometrics_module.get_pairs_trading(rolling=60, time_series=True)
+    pair = series.columns.get_level_values(0)[0]
+    warm_up = series[pair]["Z-Score"].isna()
+    assert warm_up.any()
+    assert series[pair]["Signal"][warm_up].isna().all()
+
+    # A window longer than the data leaves no z-score, so no signal and no trades either.
+    summary = econometrics_module.get_pairs_trading(rolling=5000)
+    assert summary["Signal"].isna().all()
+    assert summary["Number of Trades"].isna().all()
+
+
+def test_fractional_difference_says_how_long_the_window_is(econometrics_module, caplog):
+    with caplog.at_level("WARNING", logger="financetoolkit"):
+        result = econometrics_module.get_fractional_difference()
+    assert result.isna().all().all()
+    assert "fixed-width window of d = 0.4 needs at least" in caplog.text
+
+
+@pytest.mark.parametrize(
+    "method",
+    [
+        "get_engle_granger_cointegration",
+        "get_granger_causality",
+        "get_two_sample_t_test",
+    ],
+)
+def test_pairwise_tests_need_two_series(method, monkeypatch):
+    from financetoolkit import Econometrics
+
+    rng = np.random.default_rng(4)
+    index = pd.period_range("2015-01-01", periods=200, freq="D")
+    econometrics = Econometrics(
+        data=pd.DataFrame({"A": 100 + np.cumsum(rng.normal(size=200))}, index=index)
+    )
+    monkeypatch.setenv("FINANCETOOLKIT_STRICT_ERRORS", "1")
+    with pytest.raises(ValueError, match="needs at least two series"):
+        getattr(econometrics, method)()
+
+
+def test_bubble_test_without_data_says_so():
+    from financetoolkit.econometrics.stationarity import bubble_model
+
+    with pytest.raises(ValueError, match="no observations"):
+        bubble_model.get_bubble_test(pd.Series(dtype=float))
+
+
+def test_two_sample_t_test_without_data_is_quiet():
+    import warnings
+
+    from financetoolkit.econometrics.testing import hypothesis_testing_model
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        result = hypothesis_testing_model.get_two_sample_t_test(
+            pd.Series([1.0]), pd.Series(dtype=float)
+        )
+    assert result.isna()[["t-Statistic", "P-Value", "Mean B"]].all()
+    assert result["Mean A"] == 1.0
+
+
+def test_model_confidence_set_is_quiet_about_zero_forecasts(econometrics_module):
+    import warnings
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", RuntimeWarning)
+        result = econometrics_module.get_model_confidence_set(n_bootstrap=50)
+    assert not result.empty
+
+
+def test_fixed_effects_default_is_meaningful(econometrics_module):
+    result = econometrics_module.get_fixed_effects(period="weekly")
+    assert result.loc["Benchmark", "Coefficient"] > 0
+
+
+def test_a_mistake_in_the_call_is_not_skipped_per_ticker(econometrics_module):
+    # The per-ticker fits skip a ticker without data, never an invalid option.
+    with pytest.raises(InvalidArgumentError, match="cost"):
+        econometrics_module.get_change_points(cost="bogus")
+    with pytest.raises(InvalidArgumentError, match="method"):
+        econometrics_module.get_berkowitz_test(garch_method="bogus")

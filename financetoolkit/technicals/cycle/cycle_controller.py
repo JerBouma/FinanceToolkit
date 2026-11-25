@@ -120,6 +120,7 @@ class CycleTechnicals:
         | 2025-12-30 |                         19.3292 |                        29.9641 |            -1.2128 |               1.7906 |         0.4995 |              0.9658 |                    1 |                           275.284 |                               272.991 |                                    273.794 |                    2.1545 |                272.316 |                -0.9522 |                     -0.423  |               -0.6187 |                    -0.993  |                        -5.4973 |                     -5.5043 |         0.2628 |
         | 2025-12-31 |                         19.6066 |                        33.1911 |            -0.9892 |               3.5115 |         0.5474 |              0.9788 |                    1 |                           274.885 |                               272.887 |                                    273.772 |                    2.3417 |                272.229 |                -0.9772 |                     -0.5599 |               -0.7431 |                    -0.0523 |                        -5.4957 |                     -5.4973 |         0.3273 |
         """
+        self._check_arguments(period, close_column, window=window)
         check_period(
             period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
         )
@@ -333,6 +334,7 @@ class CycleTechnicals:
         | 2025-12-30 | 19.3292 | 15.4975 |     18.9697 |
         | 2025-12-31 | 19.6066 | 15.3876 |     18.9366 |
         """
+        self._check_arguments(period, close_column)
         check_period(
             period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
         )
@@ -474,6 +476,7 @@ class CycleTechnicals:
         | 2025-12-30 | 29.9641 | 136.968  |     97.2947 |
         | 2025-12-31 | 33.1911 | 164.331  |    115.377  |
         """
+        self._check_arguments(period, close_column)
         check_period(
             period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
         )
@@ -603,6 +606,7 @@ class CycleTechnicals:
         | 2025-12-30 |    -1.2128 |       1.7906 |
         | 2025-12-31 |    -0.9892 |       3.5115 |
         """
+        self._check_arguments(period, close_column)
         check_period(
             period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
         )
@@ -777,6 +781,7 @@ class CycleTechnicals:
         | 2025-12-30 |      0.9658 | 0.4995 |
         | 2025-12-31 |      0.9788 | 0.5474 |
         """
+        self._check_arguments(period, close_column, window=window)
         methods = ("standard", "mesa")
         check_option("method", method, methods)
         check_period(
@@ -921,6 +926,7 @@ class CycleTechnicals:
         | 2025-12-30 |      1 |      0 |           0 |
         | 2025-12-31 |      1 |      0 |           0 |
         """
+        self._check_arguments(period, close_column)
         check_period(
             period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
         )
@@ -1070,6 +1076,7 @@ class CycleTechnicals:
         | 2025-12-30 | 273.794 | 272.991 |
         | 2025-12-31 | 273.772 | 272.887 |
         """
+        self._check_arguments(period, close_column)
         check_period(
             period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
         )
@@ -1226,6 +1233,7 @@ class CycleTechnicals:
         | 2025-12-30 | 2.1545 | 2.5467 |      3.9497 |
         | 2025-12-31 | 2.3417 | 2.4341 |      4.4016 |
         """
+        self._check_arguments(period, close_column, window=window)
         check_period(
             period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
         )
@@ -1365,6 +1373,9 @@ class CycleTechnicals:
         | 2025-12-30 | -0.9522 | 0.9992 |      0.9989 |
         | 2025-12-31 | -0.9772 | 0.9868 |      0.9863 |
         """
+        self._check_arguments(
+            period, close_column, window=window, smooth_window=smooth_window
+        )
         check_period(
             period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
         )
@@ -1491,6 +1502,7 @@ class CycleTechnicals:
         | 2025-12-30 | -0.423  | 1.231  |      2.0333 |
         | 2025-12-31 | -0.5599 | 0.5235 |      0.8791 |
         """
+        self._check_arguments(period, close_column, window=window)
         check_period(
             period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
         )
@@ -1623,6 +1635,7 @@ class CycleTechnicals:
         | 2025-12-30 |             -5.4973 |   -5.5043 |
         | 2025-12-31 |             -5.4957 |   -5.4973 |
         """
+        self._check_arguments(period, close_column, window=window)
         check_period(
             period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
         )

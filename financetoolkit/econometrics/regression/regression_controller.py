@@ -973,16 +973,31 @@ class RegressionEconometrics:
             `independent_column` are given, the period is invalid, or no dependent
             (entity) tickers remain.
         """
-        if (independent_tickers is None) == (independent_column is None):
+        if independent_tickers is not None and independent_column is not None:
             raise InvalidArgumentError(
                 "Provide exactly one of independent_tickers (a common factor "
                 "broadcast to every entity) or independent_column (a per-entity "
                 "regressor taken from each dependent ticker's own data)."
             )
+        if independent_tickers is None and independent_column is None:
+            raise InvalidArgumentError(
+                "Random Effects and the Hausman test need a regressor that differs between the "
+                "tickers, so they have no default: a common factor such as the Benchmark is the "
+                "same for every ticker and leaves the between-ticker regression without a slope. "
+                "Please pass independent_column (each ticker's own column, such as 'Volume') or "
+                "independent_tickers."
+            )
 
         period = period if period else "daily"
 
         check_period(period, ["daily", "weekly", "monthly", "quarterly", "yearly"])
+
+        columns = list(
+            self._historical_data[period].columns.get_level_values(0).unique()
+        )
+        check_option("column", column, columns)
+        if independent_column is not None:
+            check_option("independent_column", independent_column, columns)
 
         # The raw slice: panel methods need each entity's own NaN pattern on the full date index.
         prices = self._historical_data[period][column].loc[
@@ -1114,10 +1129,11 @@ class RegressionEconometrics:
         Args:
             independent_tickers (str | list[str] | None, optional): The factor
             ticker(s), whose `column` values are broadcast identically to every
-            entity at each date. Mutually exclusive with `independent_column`, one of the two is required. Defaults to None.
+            entity at each date. Mutually exclusive with `independent_column`. Defaults to None,
+            which uses the Benchmark unless `independent_column` is given.
             independent_column (str | None, optional): A different historical data
             column, taken per-entity from each of `dependent_tickers`' own data, to
-            use as the regressor. Mutually exclusive with `independent_tickers`, one of the two is required. Defaults to None.
+            use as the regressor. Mutually exclusive with `independent_tickers`. Defaults to None.
             dependent_tickers (str | list[str] | None, optional): The panel of
             entity tickers to explain. Defaults to None, meaning every ticker in
             the `Toolkit` instance (other than `independent_tickers`, if given).
@@ -1145,8 +1161,8 @@ class RegressionEconometrics:
             additional rows (only the Coefficient column is populated for those).
 
         Raises:
-            ValueError: If both or neither of `independent_tickers`/
-            `independent_column` are given, or (see `panel_data_model.
+            ValueError: If both `independent_tickers` and `independent_column` are
+            given, or (see `panel_data_model.
             get_fixed_effects`) if there are not enough observations for the
             requested fixed effects, or the fixed effects absorb the regressor: the
             common factor of `independent_tickers` is identical for every entity at
@@ -1181,6 +1197,10 @@ class RegressionEconometrics:
         | Entity Effect: TTE  |        0.0004 |         nan      |      nan      |       nan |
         | Entity Effect: XOM  |        0.0008 |         nan      |      nan      |       nan |
         """
+        # The market factor, as in the other regressions, unless a regressor is given.
+        if independent_tickers is None and independent_column is None:
+            independent_tickers = [BENCHMARK_TICKER]
+
         y_panel, x_panel, dependent_tickers = self._get_panel_data(
             independent_tickers,
             independent_column,

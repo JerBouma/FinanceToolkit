@@ -6,6 +6,7 @@ from scipy import stats
 
 from financetoolkit.risk import risk_model
 from financetoolkit.risk.value_at_risk import var_model
+from financetoolkit.utilities.error_model import validate_window
 from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.statistics_model import by_own_trading_days
 
@@ -40,7 +41,7 @@ def get_cvar_historic(
     Args:
         returns (pd.Series | pd.DataFrame): A Series or Dataframe of returns.
         alpha (float): The tail probability (e.g., 0.05 for the 95% confidence level).
-        window (int | None, optional): The number of observations of a rolling window. Defaults
+        window (int | None, optional): The number of observations of a rolling window, at least 1. Defaults
             to None, which calculates the CVaR over all returns (per period for a 'within
             period' index).
 
@@ -48,6 +49,7 @@ def get_cvar_historic(
         pd.Series | pd.DataFrame: CVaR values as float if returns is a pd.Series,
         otherwise as pd.Series or pd.DataFrame with time as index.
     """
+    validate_window("window", window, 1)
     if window is not None:
 
         def _cvar(windows):

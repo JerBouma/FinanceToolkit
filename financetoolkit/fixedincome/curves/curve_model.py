@@ -466,9 +466,9 @@ def bootstrap_zero_rates(
     - QuantLib, FixedRateBondHelper: https://www.quantlib.org/reference/class_quant_lib_1_1_fixed_rate_bond_helper.html
 
     Args:
-        maturities (np.ndarray): The maturities in years, ascending.
-        par_yields (np.ndarray): The par yields, as decimals.
-        frequency (int, optional): The coupons per year. Defaults to 2.
+        maturities (np.ndarray): The maturities in years, at least one.
+        par_yields (np.ndarray): The par yields, as decimals, one for each maturity.
+        frequency (int, optional): The coupons per year, at least 1. Defaults to 2.
         bill_convention (str | None, optional): How the bill yields (up to a year) are
             quoted, see bill_yields_to_annual. Options are: "bond-equivalent" (the US
             Treasury), "act/365" (Canada), "act/360" (Sweden), None (yields compounded
@@ -481,9 +481,22 @@ def bootstrap_zero_rates(
         np.ndarray | tuple[np.ndarray, np.ndarray]: The zero rates (annually compounded) at the
         given maturities, or the maturities and zero rates of the grid when `return_grid` is
         True.
+
+    Raises:
+        ValueError: If there is not one par yield for each maturity or the frequency is
+            below 1.
     """
     maturities = np.asarray(maturities, dtype=float)
     par_yields = np.asarray(par_yields, dtype=float)
+    if maturities.size == 0 or maturities.shape != par_yields.shape:
+        raise ValueError(
+            f"The curve needs a par yield for each maturity, got {maturities.size} "
+            f"maturities and {par_yields.size} par yields."
+        )
+    if not frequency >= 1:
+        raise ValueError(
+            f"The frequency must be at least 1 coupon a year, got {frequency}."
+        )
     order = np.argsort(maturities)
     maturities, par_yields = maturities[order], par_yields[order]
 
@@ -549,7 +562,8 @@ def get_principal_components(
 
     Args:
         curves (pd.DataFrame): The yields by date (rows) and maturity (columns).
-        components (int, optional): The number of components. Defaults to 3.
+        components (int, optional): The number of components, at least 1 and at most the
+            number of maturities. Defaults to 3.
         changes (bool, optional): Whether to analyze the changes of the yields (the usual
             choice, as yields themselves are not stationary) or their levels. Defaults to True.
 
@@ -557,6 +571,13 @@ def get_principal_components(
         tuple[pd.DataFrame, pd.DataFrame, pd.Series]: The loadings (maturities by component),
         the scores (dates by component) and the share of the variance each component explains.
     """
+    # The covariance of a single maturity is a number, which has no eigenvectors to rank.
+    if not 1 <= components <= curves.shape[1] or curves.shape[1] <= 1:
+        raise ValueError(
+            f"A principal component analysis needs at least two maturities and between 1 and "
+            f"as many components as maturities, received {curves.shape[1]} maturities and "
+            f"{components} components."
+        )
     data = curves.dropna(how="any")
     if changes:
         data = data.diff().dropna(how="any")

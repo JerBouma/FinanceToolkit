@@ -164,20 +164,25 @@ def get_years_to_maturity(
     Args:
         settlement (date): The date the price applies to.
         maturity (date): The maturity date.
-        frequency (int): The number of coupons per year. Defaults to 2.
+        frequency (int): The number of coupons per year: 1, 2, 3, 4, 6 or 12. Defaults to 2.
         day_count (str): The day count convention. Options are: "act/act" (actual/actual, the
             Treasury's), "30/360" (the 30/360 Bond Basis of corporate bonds). Defaults to
             "act/act".
 
     Returns:
-        float: The years to maturity, or NaN when the bond has matured.
+        float: The years to maturity, above 0.
 
     Raises:
-        ValueError: If the day count convention is not "act/act" or "30/360".
+        ValueError: If the day count convention is not "act/act" or "30/360", the
+            settlement is on or after maturity (a matured bond has no years left) or the
+            frequency is not one of 1, 2, 3, 4, 6 or 12.
     """
     check_option("day_count", day_count, DAY_COUNTS)
     if maturity <= settlement:
-        return np.nan
+        raise ValueError(
+            f"The settlement date {settlement} is on or after the maturity date {maturity}: "
+            "a matured bond has no years to maturity left."
+        )
 
     previous_coupon, coupons = get_coupon_dates(settlement, maturity, frequency)
     periods = len(coupons)
@@ -211,12 +216,20 @@ def get_coupon_dates(
     Args:
         settlement (date): The settlement date, before maturity.
         maturity (date): The maturity date.
-        frequency (int): The number of coupons per year. Defaults to 2.
+        frequency (int): The number of coupons per year: 1, 2, 3, 4, 6 or 12. Defaults to 2.
 
     Returns:
         tuple[date, list[date]]: The previous coupon date and the remaining coupon dates in
         order, the last one being the maturity date.
+
+    Raises:
+        ValueError: If the frequency does not divide the year into whole months (1, 2, 3,
+            4, 6 or 12).
     """
+    if frequency not in (1, 2, 3, 4, 6, 12):
+        raise ValueError(
+            f"The frequency must be 1, 2, 3, 4, 6 or 12 coupons a year, got {frequency}."
+        )
     months = 12 // frequency
     end_of_month = maturity == maturity + relativedelta(day=31)
 
@@ -248,11 +261,12 @@ def get_accrued_interest(coupon: float, settlement: date, maturity: date) -> flo
         maturity (date): The maturity date.
 
     Returns:
-        float: The accrued interest per 100 of par, 0 on a coupon date and NaN once matured.
+        float: The accrued interest per 100 of par, 0 on a coupon date.
+
+    Raises:
+        ValueError: If the settlement is on or after maturity.
     """
     years = get_years_to_maturity(settlement, maturity)
-    if not np.isfinite(years):
-        return np.nan
 
     return bond_model.get_accrued_interest(100, coupon, years, FREQUENCY)
 
@@ -271,7 +285,7 @@ def get_bond_analytics(
         coupon (float): The annual coupon rate (decimal).
         years_to_maturity (float): The years to maturity, see get_years_to_maturity.
         price (float): The clean price per 100 of par.
-        frequency (int): The number of coupons per year. Defaults to 2.
+        frequency (int): The number of coupons per year, at least 1. Defaults to 2.
 
     Returns:
         tuple[float, float]: The yield to maturity (nominal, compounded `frequency` times a

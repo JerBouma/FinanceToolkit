@@ -636,3 +636,94 @@ def test_arithmetic_asian_approximations_on_strikes_equal_the_price_per_option(
             rtol=0,
             atol=1e-10,
         )
+
+
+@pytest.mark.parametrize("fixings", [None, 12])
+def test_the_curran_price_is_never_negative_far_from_the_money(fixings):
+    # Far out of the money the first-order expansion of Curran's threshold breaks down,
+    # which gave the forward minus the strike: -951,133 for a strike of 1,000,000.
+    arguments = {
+        "risk_free_rate": 0.05,
+        "volatility": 0.2,
+        "time_to_expiration": 1.0,
+        "dividend_yield": 0.02,
+        "fixings": fixings,
+    }
+    strikes = np.array([300.0, 1_000.0, 1e6])
+    calls = path_dependent_model.get_curran(100.0, strikes, **arguments)
+    np.testing.assert_allclose(calls, 0.0, atol=1e-12)
+    assert (calls >= 0).all()
+    for stock_price in (1e-8, 1.0, 10.0):
+        assert path_dependent_model.get_curran(
+            stock_price, 100.0, **arguments
+        ) == pytest.approx(0.0, abs=1e-12)
+        # The put is then the discounted strike minus the discounted average.
+        assert path_dependent_model.get_curran(
+            stock_price, 100.0, put_option=True, **arguments
+        ) == pytest.approx(
+            path_dependent_model.get_turnbull_wakeman(
+                stock_price, 100.0, put_option=True, **arguments
+            )
+        )
+    # Deep in the money the call is the discounted average minus the strike, as before.
+    assert path_dependent_model.get_curran(100.0, 1e-6, **arguments) == pytest.approx(
+        path_dependent_model.get_turnbull_wakeman(100.0, 1e-6, **arguments)
+    )
+    assert (
+        path_dependent_model.get_curran(100.0, 1.0, put_option=True, **arguments) >= 0
+    )
+
+
+@pytest.mark.parametrize(
+    ("function", "arguments"),
+    [
+        (exotics_model.get_barrier_option, {"stock_price": 0.0}),
+        (exotics_model.get_barrier_option, {"stock_price": -10.0}),
+        (exotics_model.get_barrier_option, {"strike_price": 0.0}),
+        (exotics_model.get_barrier_option, {"barrier": 0.0}),
+        (path_dependent_model.get_partial_time_barrier_option, {"stock_price": 0.0}),
+        (path_dependent_model.get_partial_time_barrier_option, {"barrier": 0.0}),
+        (path_dependent_model.get_touch_option, {"stock_price": 0.0}),
+        (path_dependent_model.get_turnbull_wakeman, {"strike_price": 0.0}),
+        (exotics_model.get_asian_option, {"strike_price": 0.0}),
+    ],
+)
+def test_the_barrier_and_average_formulas_refuse_prices_of_zero(function, arguments):
+    import inspect
+
+    base = {
+        "stock_price": 100.0,
+        "strike_price": 100.0,
+        "barrier": 90.0,
+        "risk_free_rate": 0.05,
+        "volatility": 0.2,
+        "time_to_expiration": 1.0,
+    }
+    parameters = inspect.signature(function).parameters
+    call = {name: value for name, value in base.items() if name in parameters}
+    with pytest.raises(ValueError, match="must be above 0"):
+        function(**{**call, **arguments})
+
+
+@pytest.mark.parametrize(
+    ("function", "name"),
+    [
+        (path_dependent_model.get_double_barrier_option, "lower_barrier"),
+        (path_dependent_model.get_double_touch_option, "lower_barrier"),
+    ],
+)
+def test_the_double_barriers_refuse_a_lower_barrier_of_zero(function, name):
+    import inspect
+
+    base = {
+        "stock_price": 100.0,
+        "strike_price": 100.0,
+        "lower_barrier": 0.0,
+        "upper_barrier": 120.0,
+        "risk_free_rate": 0.05,
+        "volatility": 0.2,
+        "time_to_expiration": 1.0,
+    }
+    parameters = inspect.signature(function).parameters
+    with pytest.raises(ValueError, match=f"{name} must be above 0"):
+        function(**{key: value for key, value in base.items() if key in parameters})

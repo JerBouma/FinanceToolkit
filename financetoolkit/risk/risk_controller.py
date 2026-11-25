@@ -12,6 +12,7 @@ from financetoolkit.risk.dependence.dependence_controller import DependenceRisk
 from financetoolkit.risk.distribution.distribution_controller import DistributionRisk
 from financetoolkit.risk.drawdown.drawdown_controller import DrawdownRisk
 from financetoolkit.risk.helpers import (
+    check_rolling,
     determine_within_historical_data,
     get_risk_free_rate_per_ticker,
     mask_non_trading_days,
@@ -26,7 +27,7 @@ from financetoolkit.utilities.error_model import (
     check_period,
     handle_errors,
 )
-from financetoolkit.utilities.logger_model import get_logger
+from financetoolkit.utilities.logger_model import get_logger, log_each_message_once
 from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import apply_rounding, finalize_dataset
 
@@ -215,6 +216,7 @@ class RiskBase:
                 "Set within_period=True to calculate growth."
             )
 
+        check_rolling(rolling, self._historical_data, period)
         if rolling:
             return self._historical_data[period]["Return"]
 
@@ -317,6 +319,7 @@ class Risk(
     """
 
     @handle_errors
+    @log_each_message_once()
     def collect_all_metrics(
         self,
         period: str | None = None,

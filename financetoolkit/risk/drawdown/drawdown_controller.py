@@ -9,6 +9,7 @@ import pandas as pd
 from financetoolkit.helpers import handle_portfolio
 from financetoolkit.risk import risk_model
 from financetoolkit.risk.drawdown import drawdown_model
+from financetoolkit.risk.helpers import check_rolling
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
 from financetoolkit.utilities.error_model import (
     InvalidArgumentError,
@@ -147,6 +148,7 @@ class DrawdownRisk:
         period = period if period else "daily"
 
         check_period(period, ["daily", "weekly", "monthly", "quarterly", "yearly"])
+        check_rolling(rolling, self._historical_data, period)
         if (
             period == "daily"
             and within_period

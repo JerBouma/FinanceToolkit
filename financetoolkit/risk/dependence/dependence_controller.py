@@ -12,6 +12,7 @@ import pandas as pd
 from financetoolkit.ratios import valuation_model
 from financetoolkit.ratios.helpers import map_period_data_to_daily_data
 from financetoolkit.risk.dependence import copula_model, covar_model
+from financetoolkit.risk.helpers import check_rolling
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
 from financetoolkit.utilities.error_model import (
     InvalidArgumentError,
@@ -1081,6 +1082,7 @@ class DependenceRisk:
         period = period if period else "yearly"
 
         check_period(period, ["monthly", "quarterly", "yearly"])
+        check_rolling(rolling, self._historical_data, period)
 
         tickers, market = self._market_pairs(ticker, market_ticker)
         returns = self._add_other_returns(
@@ -1250,6 +1252,7 @@ class DependenceRisk:
         period = period if period else "yearly"
 
         check_period(period, ["monthly", "quarterly", "yearly"])
+        check_rolling(rolling, self._historical_data, period)
         if self._capital_shortfall_function is None:
             raise ValueError(
                 "SRISK needs the Total Liabilities and share count of the financial statements, "
@@ -1266,7 +1269,11 @@ class DependenceRisk:
         )
         if beta.dropna(how="all").empty:
             raise ValueError(
-                f"The rolling window of {rolling} {period} returns is longer than the data."
+                f"The data holds fewer than the {rolling} {period} periods of daily returns the "
+                "rolling market beta needs."
+                if rolling
+                else f"The data holds no {period} period with daily returns of both the "
+                f"tickers and {market} between {self._start_date} and {self._end_date}."
             )
         long_run_marginal_expected_shortfall = (
             covar_model.get_long_run_marginal_expected_shortfall(beta, decline)

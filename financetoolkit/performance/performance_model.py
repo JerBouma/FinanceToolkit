@@ -32,7 +32,11 @@ from financetoolkit.risk.risk_model import (
     get_wealth_and_peak,
 )
 from financetoolkit.risk.value_at_risk import cvar_model, evar_model, var_model
-from financetoolkit.utilities.error_model import InvalidArgumentError, check_option
+from financetoolkit.utilities.error_model import (
+    InvalidArgumentError,
+    check_option,
+    validate_window,
+)
 from financetoolkit.utilities.requests_model import TOOLKIT_HEADERS, get_request
 from financetoolkit.utilities.sources_model import record_url
 from financetoolkit.utilities.statistics_model import (
@@ -49,6 +53,9 @@ MULTI_PERIOD_INDEX_LEVELS = 2
 
 # A Sortino ratio of a single observation only reports its sign, so two are required.
 MIN_SORTINO_OBSERVATIONS = 2
+
+# A regression of the returns on the benchmark needs three returns to leave a residual.
+MINIMUM_REGRESSION_WINDOW = 3
 
 # The Euler-Mascheroni constant, used by the Deflated Sharpe Ratio.
 EULER_MASCHERONI_CONSTANT = 0.5772156649015329
@@ -128,7 +135,7 @@ def get_beta(
         returns (pd.Series | pd.DataFrame): The asset returns, either a flat index or a
             'within period' MultiIndex (period, date) to get one beta per period.
         benchmark_returns (pd.Series): The benchmark returns on the same index.
-        window (int | None, optional): The number of observations of a rolling window. Defaults
+        window (int | None, optional): The number of observations of a rolling window, at least 2. Defaults
             to None, which estimates one beta over all returns (per period for a 'within period'
             index).
 
@@ -139,6 +146,7 @@ def get_beta(
         of every window with time as index. Assets with fewer than two dates shared with
         the benchmark get NaN.
     """
+    validate_window("window", window, 2)
     if not isinstance(returns, pd.DataFrame | pd.Series):
         raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
 
@@ -154,10 +162,11 @@ def get_beta(
             # on which the asset has a return: over every date it would mix in benchmark
             # volatility from days the asset did not trade (e.g. before a later listing).
             benchmark = benchmark_returns.where(frame[column].notna())
-            rolling_beta.loc[:, column] = (
-                get_covariance(frame[column].rolling(window=window), benchmark)
-                / benchmark.rolling(window=window).var()
-            )
+            # A window in which the benchmark did not move (two equal returns) has no beta.
+            variance = benchmark.rolling(window=window).var()
+            rolling_beta.loc[:, column] = get_covariance(
+                frame[column].rolling(window=window), benchmark
+            ) / variance.where(variance > 0)
 
         return rolling_beta
 
@@ -220,7 +229,7 @@ def get_standard_deviation(
         returns (pd.Series | pd.DataFrame): Asset returns.
         benchmark_returns (pd.Series | None, optional): Benchmark returns whose dates the
             returns are taken on. Defaults to None, which uses every date of the column.
-        window (int | None, optional): The number of observations of a rolling window. Defaults
+        window (int | None, optional): The number of observations of a rolling window, at least 2. Defaults
             to None, which calculates the standard deviation over all returns.
 
     Returns:
@@ -228,6 +237,7 @@ def get_standard_deviation(
         Series), or with a window the standard deviation at the end of every window with time
         as index.
     """
+    validate_window("window", window, 2)
     if benchmark_returns is not None:
         returns = returns.where(benchmark_returns.notna(), axis=0)
 
@@ -1242,12 +1252,13 @@ def get_alpha(
     Args:
         asset_returns (pd.Series | float): The asset's or portfolio's return.
         benchmark_returns (pd.Series | float): The benchmark's return over the same period.
-        window (int | None, optional): The number of observations of a rolling window. Defaults
+        window (int | None, optional): The number of observations of a rolling window, at least 2. Defaults
             to None, which gives the difference of every return.
 
     Returns:
         pd.Series | pd.DataFrame: Alpha values with time as index and assets as columns.
     """
+    validate_window("window", window, 2)
     if window is not None:
         return (
             asset_returns.sub(benchmark_returns, axis=0).rolling(window=window).mean()
@@ -1468,8 +1479,8 @@ def get_sharpe_ratio(
     Args:
         excess_returns (pd.Series | pd.DataFrame): A Series or DataFrame of returns with
         the risk-free rate subtracted.
-        window (int | None, optional): The number of observations of a rolling window, in
-            observations of `excess_returns` (e.g. 12 for a year of monthly returns). Defaults
+        window (int | None, optional): The number of observations of a rolling window, at least 2,
+            in observations of `excess_returns` (e.g. 12 for a year of monthly returns). Defaults
             to None, which calculates the ratio over all returns (per period for a 'within
             period' index).
 
@@ -1480,6 +1491,7 @@ def get_sharpe_ratio(
         one overall, for a Series). With a window, the ratio at the end of every window with
         time as index.
     """
+    validate_window("window", window, 2)
     if window is not None:
         return remove_undefined_ratios(
             excess_returns.rolling(window=window).mean()
@@ -1754,13 +1766,14 @@ def get_sortino_ratio(
     Args:
         excess_returns (pd.Series | pd.DataFrame): A Series or DataFrame of returns with risk-free
         rate already subtracted.
-        window (int | None, optional): The number of observations of a rolling window. Defaults
+        window (int | None, optional): The number of observations of a rolling window, at least 2. Defaults
             to None, which calculates the ratio over all returns (per period for a 'within
             period' index).
 
     Returns:
         pd.Series: A Series of Sortino ratios with time as index and assets as columns.
     """
+    validate_window("window", window, 2)
     if window is not None:
         # A window of a single observation only yields its sign, see above.
         if window < MIN_SORTINO_OBSERVATIONS:
@@ -1843,7 +1856,7 @@ def get_autocorrelation_penalty(
     Args:
         returns (np.ndarray | pd.Series | pd.DataFrame): The (excess) returns. A "within
         period" (period, date) Multi Index gives one penalty per period and column.
-        window (int | None, optional): The number of observations of a rolling window. Defaults
+        window (int | None, optional): The number of observations of a rolling window, at least 2. Defaults
             to None, which calculates the penalty over all returns (per period for a 'within
             period' index).
 
@@ -1852,6 +1865,7 @@ def get_autocorrelation_penalty(
         column for a DataFrame and one per period and column for a "within period" index. With
         a window, the penalty at the end of every full window.
     """
+    validate_window("window", window, 2)
     if window is not None:
         return returns.rolling(window, min_periods=window).apply(
             get_autocorrelation_penalty, raw=True
@@ -1875,7 +1889,9 @@ def get_autocorrelation_penalty(
     if n_observations < 2 or values.max() == values.min():  # noqa: PLR2004
         return np.nan
 
-    with np.errstate(divide="ignore", invalid="ignore"):
+    # Two returns give one pair, whose correlation numpy reports as a warning per window.
+    with np.errstate(divide="ignore", invalid="ignore"), warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
         autocorrelation = abs(np.corrcoef(values[:-1], values[1:])[0, 1])
 
     if np.isnan(autocorrelation):
@@ -1963,7 +1979,7 @@ def get_safety_first_ratio(
         returns (pd.Series | pd.DataFrame): A Series or DataFrame of returns.
         minimum_acceptable_return (float | pd.Series, optional): The threshold return per observation, a
         number or one per column. Defaults to 0.0.
-        window (int | None, optional): The number of observations of a rolling window. Defaults
+        window (int | None, optional): The number of observations of a rolling window, at least 2. Defaults
             to None, which calculates the ratio over all returns (per period for a 'within
             period' index).
 
@@ -1973,6 +1989,7 @@ def get_safety_first_ratio(
         per column (or one for a Series). With a window, the ratio at the end of every window
         with time as index.
     """
+    validate_window("window", window, 2)
     # Subtracting a constant leaves the standard deviation as it is, so this is the
     # Sharpe ratio of the returns in excess of the threshold.
     return get_sharpe_ratio(returns - minimum_acceptable_return, window=window)
@@ -2019,7 +2036,7 @@ def get_upside_potential_ratio(
     Args:
         excess_returns (pd.Series | pd.DataFrame): A Series or DataFrame of returns with the
         minimum acceptable return (the risk-free rate) subtracted.
-        window (int | None, optional): The number of observations of a rolling window. Defaults
+        window (int | None, optional): The number of observations of a rolling window, at least 1. Defaults
             to None, which calculates the ratio over all returns (per period for a 'within
             period' index).
 
@@ -2029,6 +2046,7 @@ def get_upside_potential_ratio(
         otherwise one per column (or one for a Series). With a window, the ratio at the end of
         every window with time as index.
     """
+    validate_window("window", window, 1)
     if window is not None:
         # A window of a single observation has one of the two moments at 0.
         if window < MIN_SORTINO_OBSERVATIONS:
@@ -2156,13 +2174,14 @@ def get_m2_ratio(
         benchmark_returns (pd.Series | None, optional): The benchmark returns, aligned to the same
         period as the returns, from which the rolling benchmark standard deviation is derived.
         Required with a window, not used without one. Defaults to None.
-        window (int | None, optional): The number of observations of a rolling window. Defaults
+        window (int | None, optional): The number of observations of a rolling window, at least 2. Defaults
             to None, which calculates the ratio of every period from the given standard
             deviations.
 
     Returns:
         pd.Series: A Series of M2 ratios with time as index and assets as columns.
     """
+    validate_window("window", window, 2)
     if window is not None:
         if benchmark_returns is None:
             raise ValueError("A rolling M2 Ratio needs the benchmark_returns.")
@@ -2296,7 +2315,7 @@ def get_tracking_error(
     Args:
         asset_returns (pd.Series | pd.DataFrame): A Series or DataFrame of asset returns.
         benchmark_returns (pd.Series): The benchmark's returns over the same period.
-        window (int | None, optional): The number of observations of a rolling window. Defaults
+        window (int | None, optional): The number of observations of a rolling window, at least 2. Defaults
             to None, which calculates the Tracking Error over all returns (per period for a
             'within period' index).
 
@@ -2306,6 +2325,7 @@ def get_tracking_error(
         plain DataFrame one value per asset (a Series) and for a Series a float. With a
         window, the Tracking Error at the end of every window with time as index.
     """
+    validate_window("window", window, 2)
     if window is not None:
         return asset_returns.sub(benchmark_returns, axis=0).rolling(window=window).std()
 
@@ -2362,7 +2382,7 @@ def get_information_ratio(
     Args:
         asset_returns (pd.Series | pd.DataFrame): A Series or DataFrame of asset returns.
         benchmark_returns (pd.Series): The benchmark's returns over the same period.
-        window (int | None, optional): The number of observations of a rolling window. Defaults
+        window (int | None, optional): The number of observations of a rolling window, at least 2. Defaults
             to None, which calculates the ratio over all returns (per period for a 'within
             period' index).
 
@@ -2372,6 +2392,7 @@ def get_information_ratio(
         plain DataFrame one value per asset (a Series) and for a Series a float. With a
         window, the ratio at the end of every window with time as index.
     """
+    validate_window("window", window, 2)
     if window is not None:
         difference = asset_returns.sub(benchmark_returns, axis=0)
 
@@ -2960,15 +2981,14 @@ def get_capture_ratio(
     - empyrical, roll_up_down_capture: https://github.com/quantopian/empyrical/blob/0.5.5/empyrical/stats.py#L2070
 
     Args:
-        asset_returns (pd.Series | pd.DataFrame): Asset returns, one column per asset (a
-            DataFrame with a window).
+        asset_returns (pd.Series | pd.DataFrame): Asset returns, one column per asset.
         benchmark_returns (pd.Series): Benchmark returns on the same dates.
         method (str, optional): The average of the returns. Options are: "geometric" (geometric
             averages), "annualized" (annualized geometric averages), "arithmetic" (the ratio of the
             sums). Defaults to "geometric".
         periods_per_year (float | pd.Series, optional): The observations in a year of the
             annualized method, or one value per asset. Defaults to 252.
-        window (int | None, optional): The number of observations of a rolling window. Defaults
+        window (int | None, optional): The number of observations of a rolling window, at least 1. Defaults
             to None, which calculates the ratio over all returns (per period for a 'within
             period' index).
         side (str, optional): The capture ratio of every window; only applies with a window.
@@ -2980,10 +3000,22 @@ def get_capture_ratio(
         pd.Series | pd.DataFrame: Capture Ratio values. With a window, the capture ratio at the
         end of every window, NaN before the first full window.
     """
+    validate_window("window", window, 1)
     if window is None:
         return _get_capture_ratio(
             asset_returns, benchmark_returns, None, method, periods_per_year
         )
+
+    # A Series is calculated as a one-column frame and returned as a Series again.
+    if isinstance(asset_returns, pd.Series):
+        return get_capture_ratio(
+            asset_returns.to_frame(),
+            benchmark_returns,
+            method=method,
+            periods_per_year=periods_per_year,
+            window=window,
+            side=side,
+        ).iloc[:, 0]
 
     # A name of its own, as the window is no longer None inside the function below.
     window_size = window
@@ -3244,7 +3276,7 @@ def get_omega_ratio(
         returns (pd.Series | pd.DataFrame): A Series or Dataframe of returns.
         minimum_acceptable_return (float, optional): The minimum acceptable return (MAR) used
         as the threshold between gains and losses. Defaults to 0.0.
-        window (int | None, optional): The number of observations of a rolling window. Defaults
+        window (int | None, optional): The number of observations of a rolling window, at least 1. Defaults
             to None, which calculates the ratio over all returns (per period for a 'within
             period' index).
 
@@ -3254,6 +3286,7 @@ def get_omega_ratio(
         the minimum acceptable return (in the sample or the window) there are no losses to
         divide by and the ratio is undefined (NaN).
     """
+    validate_window("window", window, 1)
     if window is not None:
 
         def _omega(windows):
@@ -3819,7 +3852,7 @@ def get_kelly_criterion(
             (Kelly's discrete bet), "continuous" (Thorp's continuous form). Defaults to "discrete".
         fraction (float, optional): The share of the full Kelly bet, e.g. 0.5 for half
             Kelly. Defaults to 1.0.
-        window (int | None, optional): The number of observations of a rolling window. Defaults
+        window (int | None, optional): The number of observations of a rolling window, at least 2. Defaults
             to None, which calculates the Kelly Criterion over all returns (per period for a
             'within period' index).
 
@@ -3829,6 +3862,7 @@ def get_kelly_criterion(
         a window at the end of every window with time as index. NaN when it is undefined: the
         discrete form without wins or losses, the continuous form without variance.
     """
+    validate_window("window", window, 2)
     check_option("method", method, ("discrete", "continuous"))
 
     if window is not None:
@@ -4274,8 +4308,9 @@ def get_appraisal_ratio(
         benchmark_excess_returns (pd.Series | None, optional): The excess returns of the
         benchmark. Required with a window, not used without one. Defaults to None.
         window (int | None, optional): The number of observations of a rolling window, the
-            window of `jensens_alpha`. Defaults to None, which divides by the standard deviation
-            of `capm_residuals`.
+            window of `jensens_alpha`. A window of fewer than 3 observations leaves the
+            regression no residual degrees of freedom and gives NaN. Defaults to None, which
+            divides by the standard deviation of `capm_residuals`.
 
     Returns:
         pd.Series | pd.DataFrame: Appraisal Ratio values.
@@ -4296,12 +4331,18 @@ def get_appraisal_ratio(
     root of the number of residual observations in that period, mirroring how
     `financetoolkit.risk.risk_model.get_volatility` scales daily volatility to a period.
     """
+    validate_window("window", window, 2)
     if window is not None:
         if excess_returns is None or benchmark_excess_returns is None:
             raise ValueError(
                 "A rolling Appraisal Ratio needs the excess_returns and the "
                 "benchmark_excess_returns."
             )
+
+        # A regression line through two returns fits them exactly: without residual
+        # degrees of freedom the residual risk is 0 or rounding noise, so there is no ratio.
+        if window < MINIMUM_REGRESSION_WINDOW:
+            return jensens_alpha * np.nan
 
         return remove_undefined_ratios(
             jensens_alpha
@@ -4407,13 +4448,14 @@ def get_residual_standard_deviation(
         excess_returns (pd.Series | pd.DataFrame): The excess returns of the assets.
         benchmark_excess_returns (pd.Series): The excess returns of the benchmark, on the
             same dates.
-        window (int | None, optional): The number of observations of a rolling window. Defaults
+        window (int | None, optional): The number of observations of a rolling window, at least 2. Defaults
             to None, which calculates the residual standard deviation over all returns.
 
     Returns:
         pd.Series | pd.DataFrame: The residual standard deviation per asset, or with a window
         at the end of every full window, one column per asset.
     """
+    validate_window("window", window, 2)
     excess_returns = (
         excess_returns.to_frame()
         if isinstance(excess_returns, pd.Series)
@@ -5090,8 +5132,8 @@ def get_style_analysis(
             same dates as `returns`.
         periods_per_year (int, optional): The returns per year, to annualize the (in-sample)
             selection return and the tracking error. Defaults to 12.
-        window (int | None, optional): The number of observations of a rolling window, the
-            periods every estimate uses. Defaults to None, which estimates the style mix over
+        window (int | None, optional): The number of observations of a rolling window, at least 2,
+            the periods every estimate uses. Defaults to None, which estimates the style mix over
             all returns.
 
     Returns:
@@ -5102,6 +5144,7 @@ def get_style_analysis(
         (the last date of a window) and the Out-of-Sample Selection Return, which is NaN for
         the first window, as it has no earlier estimate.
     """
+    validate_window("window", window, 2)
     styles = list(style_returns.columns)
     columns = [*styles, "R Squared", "Selection Return", "Tracking Error"]
 
@@ -5251,7 +5294,7 @@ def get_morningstar_risk_adjusted_return(
         gamma (float, optional): The risk aversion. Defaults to 2.0, Morningstar's choice.
         periods_per_year (int, optional): The number of periods in a year, to annualize.
             Defaults to 12 for monthly returns.
-        window (int | None, optional): The number of observations of a rolling window. Defaults
+        window (int | None, optional): The number of observations of a rolling window, at least 1. Defaults
             to None, which calculates the MRAR over all returns.
 
     Returns:
@@ -5260,6 +5303,7 @@ def get_morningstar_risk_adjusted_return(
         values. With a window, the MRAR at the end of every window with time as index, NaN
         until a window is full of returns.
     """
+    validate_window("window", window, 1)
     if gamma < 0:
         raise ValueError("The risk aversion gamma cannot be negative.")
 
@@ -5378,7 +5422,7 @@ def get_lo_sharpe_ratio(
         252 for daily and 12 for monthly returns. Rounded to a whole number.
         lags (int | None, optional): The number of autocorrelation lags in the sum.
         Defaults to None, the Newey and West (1994) rule on the number of returns.
-        window (int | None, optional): The number of observations of a rolling window. Defaults
+        window (int | None, optional): The number of observations of a rolling window, at least 2. Defaults
             to None, which calculates the ratio over all returns (per period for a 'within
             period' index).
 
@@ -5387,6 +5431,7 @@ def get_lo_sharpe_ratio(
         Index), per column (DataFrame) or a single value (Series), or with a window at the end
         of every full window. NaN with fewer than 30 observations.
     """
+    validate_window("window", window, 2)
     if window is not None:
         return excess_returns.rolling(window, min_periods=window).apply(
             lambda values: get_lo_sharpe_ratio(values, periods_per_year, lags)
@@ -5969,7 +6014,7 @@ def get_r_squared(
         returns (pd.Series | pd.DataFrame): The asset returns, either a flat index or a
             'within period' (period, date) Multi Index to get one value per period.
         benchmark_returns (pd.Series): The benchmark returns on the same index.
-        window (int | None, optional): The number of observations of a rolling window. Defaults
+        window (int | None, optional): The number of observations of a rolling window, at least 2. Defaults
             to None, which calculates the R-squared over all returns (per period for a 'within
             period' index).
 
@@ -5978,6 +6023,7 @@ def get_r_squared(
         (DataFrame) or a single value (Series), or with a window at the end of every window.
         Fewer than three shared dates, or returns without variation, give NaN.
     """
+    validate_window("window", window, 2)
     if window is not None:
         return (returns.rolling(window).corr(benchmark_returns) ** 2).replace(
             [np.inf, -np.inf], np.nan
@@ -6096,6 +6142,7 @@ def get_bull_bear_beta(
     benchmark_excess_returns: pd.Series,
     market_returns: pd.Series | None = None,
     periods_per_year: float = 252.0,
+    minimum_observations: int = 3,
 ) -> dict:
     """
     Calculate the bull and bear market Betas and Alphas and the Timing Ratio: how strongly the
@@ -6141,11 +6188,19 @@ def get_bull_bear_beta(
             and bear observations. Defaults to None, the benchmark excess returns.
         periods_per_year (float, optional): The observations in a year, to annualize the
             Alphas with. Defaults to 252.
+        minimum_observations (int, optional): The fewest observations a side is fitted on;
+            a regression needs at least 3. Defaults to 3.
 
     Returns:
         dict: The Bull Alpha, Bull Beta, Bear Alpha, Bear Beta and Timing Ratio. A side with
-        fewer than three observations, or without variation, gives NaN.
+        fewer than minimum_observations observations, or without variation, gives NaN.
+
+    Notes:
+    - The Alpha is annualized by compounding it P times, so the Alpha of a few observations
+      is amplified to extremes: three daily returns in a week give an annualized Alpha in the
+      trillions. A larger minimum, such as the 20 days the Toolkit uses, avoids that.
     """
+    validate_window("minimum_observations", minimum_observations, 3)
     market = benchmark_excess_returns if market_returns is None else market_returns
     pairs = pd.concat(
         [excess_returns, benchmark_excess_returns, market], axis=1, keys=[0, 1, 2]
@@ -6156,7 +6211,7 @@ def get_bull_bear_beta(
         asset, benchmark = pairs.loc[observations, 0], pairs.loc[observations, 1]
         variance = ((benchmark - benchmark.mean()) ** 2).sum()
 
-        if len(asset) < 3 or variance == 0:  # noqa: PLR2004
+        if len(asset) < minimum_observations or variance == 0:
             results[f"{side} Alpha"], results[f"{side} Beta"] = np.nan, np.nan
             continue
 
@@ -7636,6 +7691,7 @@ def get_factor_regression(
         Squared Error (MSE) and the R Squared of each window, indexed by its last date. Without
         a window a single row, indexed by the last date of the observations.
     """
+    validate_window("window", window, 2)
     factors = list(factor_dataset.columns)
     columns = (
         ["Intercept"]

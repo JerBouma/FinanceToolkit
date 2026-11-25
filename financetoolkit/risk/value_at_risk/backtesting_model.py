@@ -304,14 +304,17 @@ def get_acerbi_szekely_test(
         ) -> float:
             return float(np.sum(r_values * breach_mask / cvar_values) / (n * alpha) - 1)
 
-        z2_statistic = _z2(breach, r, cvar)
-
         rng = np.random.default_rng(seed)
         bootstrap_indices = rng.integers(0, n, size=(n_bootstrap, n))
-        bootstrap_z2 = np.array(
-            [_z2(breach[idx], r[idx], cvar[idx]) for idx in bootstrap_indices]
-        )
-        standard_error = float(np.std(bootstrap_z2, ddof=1))
+
+        # A CVaR of 0 (an asset whose price did not move) gives no statistic; numpy would
+        # warn about it once for every resample.
+        with np.errstate(divide="ignore", invalid="ignore"):
+            z2_statistic = _z2(breach, r, cvar)
+            bootstrap_z2 = np.array(
+                [_z2(breach[idx], r[idx], cvar[idx]) for idx in bootstrap_indices]
+            )
+            standard_error = float(np.std(bootstrap_z2, ddof=1))
 
         if standard_error == 0:
             p_value = np.nan if z2_statistic == 0 else float(z2_statistic < 0)

@@ -3994,6 +3994,10 @@ def get_garch_family_diagnostics(
     return diagnostics
 
 
+# The persistence from which a news impact curve treats a model as integrated, see get_news_impact_curve.  # noqa: E501
+NEAR_INTEGRATED_PERSISTENCE = 1 - 1e-6
+
+
 def get_news_impact_curve(
     weights,
     method: str = "garch",
@@ -4045,12 +4049,26 @@ def get_news_impact_curve(
 
     Returns:
         pd.Series: The variance of the next period, indexed by the shock z.
+
+    Notes:
+    - A model with a persistence of at least 1 - 10^-6 is treated as integrated, as IGARCH: its
+      unconditional variance Omega / (1 - P) is unbounded as P approaches 1 (a variance in the
+      hundreds of millions for P = 1 - 10^-9), so its curve is NaN.
     """
     shocks = np.linspace(-5, 5, 21) if shocks is None else np.asarray(shocks, float)
     variance_weights, _, distribution_weights = _split_weights(weights, method, mean)
     variance = get_garch_family_unconditional_variance(
         variance_weights, method, distribution, distribution_weights
     )
+
+    # A fit on the edge of stationarity (Alpha + Beta = 0.9999999) has an unconditional variance that only reflects how close P is to 1, so it is read as integrated.  # noqa: E501
+    if (
+        get_garch_family_persistence(
+            variance_weights, method, distribution, distribution_weights
+        )
+        >= NEAR_INTEGRATED_PERSISTENCE
+    ):
+        variance = math.nan
 
     with np.errstate(over="ignore", invalid="ignore", divide="ignore"):
         if method == "realized":

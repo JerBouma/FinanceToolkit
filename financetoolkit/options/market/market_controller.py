@@ -13,7 +13,11 @@ from financetoolkit.options.helpers import (
 from financetoolkit.options.market import hedging_model, market_metrics_model
 from financetoolkit.utilities import logger_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
-from financetoolkit.utilities.error_model import InvalidArgumentError, handle_errors
+from financetoolkit.utilities.error_model import (
+    InvalidArgumentError,
+    handle_errors,
+    validate_window,
+)
 from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import (
     apply_rounding,
@@ -45,6 +49,7 @@ class MarketOptions:
         number_of_expirations: int,
     ) -> list[str]:
         """The expiries of a ticker to use: as given, otherwise the nearest ones."""
+        validate_window("number_of_expirations", number_of_expirations)
         available = options_model.get_option_expiry_dates(ticker)
         if expiration_dates is not None:
             invalid = [date for date in expiration_dates if date not in available]
@@ -207,7 +212,7 @@ class MarketOptions:
             expiration_dates (list[str] | None, optional): The expiries to use. Defaults to
                 None, the nearest `number_of_expirations` expiries.
             number_of_expirations (int, optional): The number of nearest expiries to use when
-                no dates are given. Defaults to 6.
+                no dates are given, at least 1. Defaults to 6.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -292,7 +297,7 @@ class MarketOptions:
             expiration_dates (list[str] | None, optional): The expiries to use. Defaults to
                 None, the nearest `number_of_expirations` expiries.
             number_of_expirations (int, optional): The number of nearest expiries to use when
-                no dates are given. Defaults to 6.
+                no dates are given, at least 1. Defaults to 6.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -372,7 +377,7 @@ class MarketOptions:
             expiration_dates (list[str] | None, optional): The expiries to include. Defaults
                 to None, the nearest `number_of_expirations` expiries.
             number_of_expirations (int, optional): The number of nearest expiries to include
-                when no dates are given. Defaults to 6.
+                when no dates are given, at least 1. Defaults to 6.
             by_strike (bool, optional): Whether to return the exposure per strike instead of
                 the totals. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to.
@@ -492,7 +497,7 @@ class MarketOptions:
             expiration_dates (list[str] | None, optional): The expiries to use. Defaults to
                 None, the nearest `number_of_expirations` expiries.
             number_of_expirations (int, optional): The number of nearest expiries to use when
-                no dates are given. Defaults to 10.
+                no dates are given, at least 1. Defaults to 10.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -582,7 +587,7 @@ class MarketOptions:
             expiration_dates (list[str] | None, optional): The expiries to use. Defaults to
                 None, the nearest `number_of_expirations` expiries.
             number_of_expirations (int, optional): The number of nearest expiries to use when
-                no dates are given. Defaults to 6.
+                no dates are given, at least 1. Defaults to 6.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -661,7 +666,7 @@ class MarketOptions:
             expiration_dates (list[str] | None, optional): The expiries to use. Defaults to
                 None, the nearest `number_of_expirations` expiries.
             number_of_expirations (int, optional): The number of nearest expiries to use when
-                no dates are given. Defaults to 4.
+                no dates are given, at least 1. Defaults to 4.
             around_earnings (bool, optional): Whether to use the first expiry after the next
                 earnings date instead. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to.
@@ -865,7 +870,7 @@ class MarketOptions:
         Also known as: VIX methodology, model-free volatility, variance swap volatility.
 
         Args:
-            days (int, optional): The constant maturity in calendar days. Defaults to 30.
+            days (int, optional): The constant maturity in calendar days, at least 1. Defaults to 30.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -910,6 +915,7 @@ class MarketOptions:
         | ^SPX | 2026-12-16             | 2026-12-17             |                 0.2274 |                 0.2284 |        7436.64  |                          0.2276 |
         | AAPL | 2026-12-11             | 2026-12-18             |                 0.2655 |                 0.2724 |         353.871 |                          0.2709 |
         """
+        validate_window("days", days)
         self._warn_if_history_is_stale("the risk free rate comes from that date")
         rows, errors = {}, []
         for ticker in self._tickers:
@@ -968,7 +974,7 @@ class MarketOptions:
         Also known as: VRP, implied minus realized volatility, variance risk premium.
 
         Args:
-            days (int, optional): The horizon in calendar days of both volatilities.
+            days (int, optional): The horizon in calendar days of both volatilities, at least 1.
                 Defaults to 30.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
@@ -1008,6 +1014,7 @@ class MarketOptions:
         | AAPL |               0.2709 |                0.2745 |                   -0.0036 |                 -0.002  |                      0.9867 |
         | TSLA |               0.5498 |                0.5943 |                   -0.0445 |                 -0.0509 |                      0.9251 |
         """
+        validate_window("days", days)
         self._warn_if_history_is_stale(
             "the realized volatility covers the days up to that date instead of the days "
             "up to today, and the risk free rate comes from that date"
@@ -1105,7 +1112,7 @@ class MarketOptions:
             expiration_dates (list[str] | None, optional): The expiries to use. Defaults to
                 None, the nearest `number_of_expirations` expiries.
             number_of_expirations (int, optional): The number of nearest expiries to use when
-                no dates are given. Defaults to 4.
+                no dates are given, at least 1. Defaults to 4.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -1272,7 +1279,7 @@ class MarketOptions:
         Also known as: Cboe SKEW, tail risk index, black swan index, implied skewness index.
 
         Args:
-            days (int, optional): The constant maturity in calendar days. Defaults to 30.
+            days (int, optional): The constant maturity in calendar days, at least 1. Defaults to 30.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -1322,6 +1329,7 @@ class MarketOptions:
         | ^SPX | 2026-12-18             | 2026-12-21             |    -4.2626 |      142.626 |
         | AAPL | 2026-12-18             | 2026-12-24             |    -1.7288 |      117.288 |
         """
+        validate_window("days", days)
         self._warn_if_history_is_stale("the risk free rate comes from that date")
         rows, errors = {}, []
         for ticker in self._tickers:
@@ -1400,7 +1408,7 @@ class MarketOptions:
             expiration_dates (list[str] | None, optional): The expiries to use, the maturities
                 of the swaps. Defaults to None, the nearest `number_of_expirations` expiries.
             number_of_expirations (int, optional): The number of nearest expiries to use when
-                no dates are given. Defaults to 4.
+                no dates are given, at least 1. Defaults to 4.
             strike (float | None, optional): The volatility strike of the swap as a decimal
                 (0.25 for 25%), whose square is the variance strike. Defaults to None, which
                 gives the fair strike only.
@@ -1459,12 +1467,12 @@ class MarketOptions:
         | ('^SPX', '2026-11-25') |         7255    |          0.1055 |            0.3248 |          0.1055 |                0.0155 |
         """
         if trade_date is not None and strike is None:
-            raise ValueError(
+            raise InvalidArgumentError(
                 "A swap traded on an earlier date needs its strike: the option chains of that "
                 "date are not available to find its fair strike."
             )
         if strike is not None and strike <= 0:
-            raise ValueError("The strike must be a positive volatility.")
+            raise InvalidArgumentError("The strike must be a positive volatility.")
 
         prices = self._daily_historical["Adj Close"]
 
@@ -1608,7 +1616,7 @@ class MarketOptions:
         realized hedging error.
 
         Args:
-            days (int, optional): The trading days from the sale to expiration. Defaults to 63,
+            days (int, optional): The trading days from the sale to expiration, at least 1. Defaults to 63,
                 about three months.
             start_date (str | None, optional): The date the option is sold, or the last
                 trading day before it. Defaults to None, `days` trading days before the end
@@ -1673,9 +1681,11 @@ class MarketOptions:
         | MSFT |       0.2574 |                0.1516 |        25.7479 |    43.15 |              0.3291 |            5.2927 |
         """
         if days < 1 or rebalancing_days < 1:
-            raise ValueError("The days and rebalancing days must be at least 1.")
+            raise InvalidArgumentError(
+                "The days and rebalancing days must be at least 1."
+            )
         if moneyness <= 0:
-            raise ValueError("The moneyness must be positive.")
+            raise InvalidArgumentError("The moneyness must be positive.")
 
         dividends = (
             self._daily_historical["Dividends"]
@@ -1811,7 +1821,7 @@ class MarketOptions:
         - FinancePy, simulate_hedge_paths: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/models/black_scholes_hedging_sim.py#L592
 
         Args:
-            days (int, optional): The trading days to expiration. Defaults to 63, about three
+            days (int, optional): The trading days to expiration, at least 1. Defaults to 63, about three
                 months.
             start_date (str | None, optional): The date of the stock price, volatility, risk
                 free rate and dividend yield, or the last trading day before it. Defaults to
@@ -1828,7 +1838,7 @@ class MarketOptions:
                 (0.001 is 10 basis points). Defaults to 0.0.
             rebalancing_days (int, optional): The trading days between rebalances. Defaults to
                 1, daily.
-            simulations (int, optional): The number of simulated paths. Defaults to 10,000.
+            simulations (int, optional): The number of simulated paths, at least 1. Defaults to 10,000.
             seed (int | None, optional): The seed of the random numbers, None for a different
                 draw on every call. Defaults to 0.
             rounding (int | None, optional): The number of decimals to round the results to.
@@ -1877,74 +1887,90 @@ class MarketOptions:
         | MSFT |        25.3213 |                -0.3942 |               5.4501 |                           5.6839 |
         """
         if days < 1 or rebalancing_days < 1:
-            raise ValueError("The days and rebalancing days must be at least 1.")
+            raise InvalidArgumentError(
+                "The days and rebalancing days must be at least 1."
+            )
         if moneyness <= 0:
-            raise ValueError("The moneyness must be positive.")
+            raise InvalidArgumentError("The moneyness must be positive.")
+        validate_window("simulations", simulations)
 
         rows = {}
         for ticker in self._tickers:
-            history = self._prices[ticker].dropna()
-            if start_date is None:
-                date = history.index[-1]
-            else:
-                position = (
-                    history.index.searchsorted(
-                        pd.Period(start_date, freq="D"), side="right"
+            try:
+                history = self._prices[ticker].dropna()
+                if start_date is None:
+                    date = history.index[-1]
+                else:
+                    position = (
+                        history.index.searchsorted(
+                            pd.Period(start_date, freq="D"), side="right"
+                        )
+                        - 1
                     )
-                    - 1
+                    if position < 0:
+                        logger.warning(
+                            "%s has no price on or before %s, so it is left out.",
+                            ticker,
+                            start_date,
+                        )
+                        continue
+                    date = history.index[position]
+                stock_price = float(history.loc[date])
+                sigma, rate, dividend_yield = self._hedge_inputs(
+                    ticker, date, volatility
                 )
-                if position < 0:
-                    logger.warning(
-                        "%s has no price on or before %s, so it is left out.",
-                        ticker,
-                        start_date,
-                    )
-                    continue
-                date = history.index[position]
-            stock_price = float(history.loc[date])
-            sigma, rate, dividend_yield = self._hedge_inputs(ticker, date, volatility)
-            implied = sigma if implied_volatility is None else implied_volatility
-            strike_price = moneyness * stock_price
-            simulation = hedging_model.get_delta_hedging_simulation(
-                stock_price=stock_price,
-                strike_price=strike_price,
-                time_to_expiration=days / 252,
-                risk_free_rate=rate,
-                volatility=sigma,
-                implied_volatility=implied,
-                dividend_yield=dividend_yield,
-                put_option=put_option,
-                transaction_cost=transaction_cost,
-                steps=days,
-                rebalancing_interval=rebalancing_days,
-                simulations=simulations,
-                seed=seed,
-            )
-            profit = simulation["Profit and Loss"]
-            rows[ticker] = {
-                "Stock Price": stock_price,
-                "Strike Price": strike_price,
-                "Volatility": sigma,
-                "Implied Volatility": implied,
-                "Option Value": float(simulation["Option Value"].iloc[0]),
-                "Mean Profit and Loss": float(profit.mean()),
-                "Standard Deviation": float(profit.std()),
-                "5% Quantile": float(profit.quantile(0.05)),
-                "95% Quantile": float(profit.quantile(0.95)),
-                "Mean Transaction Costs": float(simulation["Transaction Costs"].mean()),
-                "Approximate Standard Deviation": hedging_model.get_hedging_error_approximation(
+                implied = sigma if implied_volatility is None else implied_volatility
+                strike_price = moneyness * stock_price
+                simulation = hedging_model.get_delta_hedging_simulation(
                     stock_price=stock_price,
                     strike_price=strike_price,
                     time_to_expiration=days / 252,
                     risk_free_rate=rate,
                     volatility=sigma,
-                    rebalances=int(np.ceil(days / rebalancing_days)),
+                    implied_volatility=implied,
                     dividend_yield=dividend_yield,
-                ),
-            }
+                    put_option=put_option,
+                    transaction_cost=transaction_cost,
+                    steps=days,
+                    rebalancing_interval=rebalancing_days,
+                    simulations=simulations,
+                    seed=seed,
+                )
+                profit = simulation["Profit and Loss"]
+                rows[ticker] = {
+                    "Stock Price": stock_price,
+                    "Strike Price": strike_price,
+                    "Volatility": sigma,
+                    "Implied Volatility": implied,
+                    "Option Value": float(simulation["Option Value"].iloc[0]),
+                    "Mean Profit and Loss": float(profit.mean()),
+                    "Standard Deviation": float(profit.std()),
+                    "5% Quantile": float(profit.quantile(0.05)),
+                    "95% Quantile": float(profit.quantile(0.95)),
+                    "Mean Transaction Costs": float(
+                        simulation["Transaction Costs"].mean()
+                    ),
+                    "Approximate Standard Deviation": hedging_model.get_hedging_error_approximation(
+                        stock_price=stock_price,
+                        strike_price=strike_price,
+                        time_to_expiration=days / 252,
+                        risk_free_rate=rate,
+                        volatility=sigma,
+                        rebalances=int(np.ceil(days / rebalancing_days)),
+                        dividend_yield=dividend_yield,
+                    ),
+                }
+            except InvalidArgumentError:
+                raise
+            except ValueError as error:
+                # One ticker the formula cannot value (such as a volatility of zero from constant
+                # prices) is left out rather than emptying the result of every ticker.
+                logger.warning("No delta hedging simulation for %s: %s", ticker, error)
 
         if not rows:
-            raise ValueError("No ticker has a price to simulate the hedge from.")
+            raise ValueError(
+                "No ticker has a price and volatility to simulate the hedge from."
+            )
 
         return apply_rounding(
             pd.DataFrame(rows).T, rounding if rounding is not None else self._rounding

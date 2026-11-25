@@ -7,7 +7,7 @@ import pandas as pd
 from numpy.lib.stride_tricks import sliding_window_view
 
 from financetoolkit.risk.helpers import get_days_per_period, get_observed_span
-from financetoolkit.utilities.error_model import check_option
+from financetoolkit.utilities.error_model import check_option, validate_window
 from financetoolkit.utilities.statistics_model import (
     PERIOD_TRANSLATION,
     by_own_trading_days,
@@ -556,7 +556,7 @@ def get_skewness(
 
     Args:
         returns (pd.Series | pd.Dataframe): A single index dataframe or series
-        window (int | None, optional): The number of observations of a rolling window. Defaults
+        window (int | None, optional): The number of observations of a rolling window, at least 2. Defaults
             to None, which calculates the skewness over all returns (per period for a 'within
             period' index).
 
@@ -565,6 +565,7 @@ def get_skewness(
         end of every window with time as index. NaN for a series or window without variation
         (e.g. a constant price), whose shape is undefined, or with fewer than three returns.
     """
+    validate_window("window", window, 2)
     if window is not None:
         windows = returns.rolling(window=window)
 
@@ -614,7 +615,7 @@ def get_kurtosis(
         definition (normal distribution equals 3.0). The two differ by exactly 3,
         since both are computed from the same bias-corrected (sample) estimator that
         `get_skewness` also uses. Defaults to True.
-        window (int | None, optional): The number of observations of a rolling window. Defaults
+        window (int | None, optional): The number of observations of a rolling window, at least 2. Defaults
             to None, which calculates the kurtosis over all returns (per period for a 'within
             period' index).
 
@@ -623,6 +624,7 @@ def get_kurtosis(
         end of every window with time as index. NaN for a series or window without variation
         (e.g. a constant price), whose shape is undefined, or with fewer than four returns.
     """
+    validate_window("window", window, 2)
     if window is not None:
         windows = returns.rolling(window=window)
         rolling_kurtosis = windows.kurt().mask(windows.max() == windows.min())
@@ -694,14 +696,15 @@ def get_variance(
         `returns.index` via `.asfreq()`. Use this when `returns` does not have a
         DatetimeIndex/PeriodIndex (e.g. a plain Series of simulated outcomes). Only applies
         without a window. Defaults to None, which requires a DatetimeIndex/PeriodIndex on `returns`.
-        window (int | None, optional): The number of observations of a rolling window, in
-            periods. Defaults to None, which calculates the Variance per period from the daily
+        window (int | None, optional): The number of observations of a rolling window, at least 2,
+            in periods. Defaults to None, which calculates the Variance per period from the daily
             returns.
 
     Returns:
         pd.Series | pd.DataFrame: Variance values with time (or `groups`) as the
         index.
     """
+    validate_window("window", window, 2)
     validate_period(period)
 
     if window is not None:
@@ -760,14 +763,15 @@ def get_volatility(
         `returns.index` via `.asfreq()`. Use this when `returns` does not have a
         DatetimeIndex/PeriodIndex (e.g. a plain Series of simulated outcomes). Only applies
         without a window. Defaults to None, which requires a DatetimeIndex/PeriodIndex on `returns`.
-        window (int | None, optional): The number of observations of a rolling window, in
-            periods. Defaults to None, which calculates the Volatility per period from the daily
+        window (int | None, optional): The number of observations of a rolling window, at least 2,
+            in periods. Defaults to None, which calculates the Volatility per period from the daily
             returns.
 
     Returns:
         pd.Series | pd.DataFrame: Volatility values with time (or `groups`) as the
         index.
     """
+    validate_window("window", window, 2)
     validate_period(period)
 
     if window is not None:
@@ -881,7 +885,7 @@ def get_conditional_drawdown_at_risk(
         compound_returns (bool, optional): Only for method="return". Whether to compound the
         returns; without compounding the drawdowns are the absolute declines of the summed
         returns from their peak (Riskfolio-Lib's CDaR_Abs). Defaults to True.
-        window (int | None, optional): The number of observations of a rolling window. Defaults
+        window (int | None, optional): The number of observations of a rolling window, at least 1. Defaults
             to None, which calculates the CDaR over all returns (per period for a 'within
             period' index).
 
@@ -892,6 +896,7 @@ def get_conditional_drawdown_at_risk(
     Raises:
         ValueError: If `method` is not one of "return" or "level".
     """
+    validate_window("window", window, 1)
     check_option("method", method, ("return", "level"))
 
     if window is not None:
@@ -988,13 +993,14 @@ def get_tail_ratio(
         returns (pd.Series | pd.DataFrame): A Series or Dataframe of returns.
         alpha (float): The percentile used to define each tail (e.g., 0.05 uses the 5th and
         95th percentile).
-        window (int | None, optional): The number of observations of a rolling window. Defaults
+        window (int | None, optional): The number of observations of a rolling window, at least 1. Defaults
             to None, which calculates the Tail Ratio over all returns.
 
     Returns:
         pd.Series | pd.DataFrame: Tail Ratio values as float if returns is a pd.Series,
         otherwise as pd.Series or pd.DataFrame with time as index.
     """
+    validate_window("window", window, 1)
     if window is not None:
         rolling = returns.rolling(window=window)
         right_tail = rolling.quantile(1 - alpha, interpolation="linear")
@@ -1504,7 +1510,7 @@ def get_downside_deviation(
         minimum_acceptable_return (float | str, optional): The minimum acceptable return (MAR) used as
         the threshold below which returns are considered downside, or "mean" for the semi-deviation
         below the mean. Defaults to 0.0.
-        window (int | None, optional): The number of observations of a rolling window. Defaults
+        window (int | None, optional): The number of observations of a rolling window, at least 2. Defaults
             to None, which calculates the Downside Deviation over all returns (per period for a
             'within period' index).
 
@@ -1512,6 +1518,7 @@ def get_downside_deviation(
         pd.Series | pd.DataFrame: Downside Deviation values as float if returns is a pd.Series,
         otherwise as pd.Series or pd.DataFrame with time as index.
     """
+    validate_window("window", window, 2)
     if window is not None:
         if minimum_acceptable_return == "mean":
             return apply_to_stacked_windows(
@@ -1741,14 +1748,15 @@ def get_excess_volatility(
         of its own calendar).
         period (str): The period to calculate the Excess Volatility for. Options are: "weekly", "monthly",
         "quarterly", "yearly".
-        window (int | None, optional): The number of observations of a rolling window, in
-            periods. Defaults to None, which calculates the Excess Volatility per period from
+        window (int | None, optional): The number of observations of a rolling window, at least 2,
+            in periods. Defaults to None, which calculates the Excess Volatility per period from
             the daily returns.
 
     Returns:
         pd.Series | pd.DataFrame: Excess Volatility values with time as the index, resampled
         to the given period without a window.
     """
+    validate_window("window", window, 2)
     excess_returns = (
         returns - risk_free_rate
         if isinstance(risk_free_rate, pd.DataFrame)
@@ -2107,7 +2115,7 @@ def get_move_significance(
     Args:
         returns (pd.Series): The returns of a single asset.
         window (int, optional): The number of earlier returns the volatility and the
-            percentile need at least. The volatility uses exactly the last `window`
+            percentile need at least, 2 or more. The volatility uses exactly the last `window`
             returns; the percentile uses all earlier returns. Defaults to 252.
         alpha (float, optional): The tail probability of the trailing Value at Risk.
             Defaults to 0.05.
@@ -2116,6 +2124,7 @@ def get_move_significance(
         pd.DataFrame: Return, Volatility Multiple, VaR Multiple, Percentile and Largest
         Since (the date as text, YYYY-MM-DD for daily data) per date.
     """
+    validate_window("window", window, 2)
     observed = returns.dropna()
     values = observed.to_numpy(dtype=float)
     labels = observed.index.astype(str)

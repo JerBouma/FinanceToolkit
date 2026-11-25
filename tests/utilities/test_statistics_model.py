@@ -10,6 +10,7 @@ import pandas as pd
 import pytest
 
 from financetoolkit.utilities import statistics_model
+from financetoolkit.utilities.error_model import InvalidArgumentError
 
 
 def test_calculate_growth_basic():
@@ -682,7 +683,7 @@ def test_convert_annualized_rate_to_period_compounds_geometrically():
     )
     assert ((1 + quarterly) ** 4 - 1).tolist() == pytest.approx([0.04, -0.2])
 
-    with pytest.raises(ValueError, match="not valid"):
+    with pytest.raises(InvalidArgumentError, match="period must be one of"):
         statistics_model.convert_annualized_rate_to_period(0.1, "hourly")
 
 

@@ -5,6 +5,8 @@ __docformat__ = "google"
 import logging
 import re
 import sys
+from collections.abc import Generator
+from contextlib import contextmanager
 
 # Credentials that can appear in a logged URL or message: the value after a parameter named
 # key, apikey, api_key, token, secret or password, or one of those after a prefix and an
@@ -151,3 +153,30 @@ def get_logger():
         logging.Logger: Logger instance
     """
     return setup_logger()
+
+
+@contextmanager
+def log_each_message_once() -> Generator[None]:
+    """
+    Write each distinct message of the Finance Toolkit's logger once while the block runs,
+    for a method that calls many others which report the same thing (such as a date range
+    without data) each time. It can also decorate a function, for every call of it.
+
+    Yields:
+        None: Nothing; the messages are filtered until the block ends.
+    """
+    logger = logging.getLogger("financetoolkit")
+    written: set[tuple[int, str]] = set()
+
+    def first_time(record: logging.LogRecord) -> bool:
+        message = (record.levelno, record.getMessage())
+        if message in written:
+            return False
+        written.add(message)
+        return True
+
+    logger.addFilter(first_time)
+    try:
+        yield
+    finally:
+        logger.removeFilter(first_time)

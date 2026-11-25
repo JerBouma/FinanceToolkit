@@ -393,3 +393,69 @@ def test_parity_garman_kohlhagen_and_binary_options_on_a_grid(put_option):
             rtol=0,
             atol=1e-12,
         )
+
+
+@pytest.mark.parametrize(
+    ("function", "arguments"),
+    [
+        (black_scholes_model.get_black_scholes, {"volatility": -0.2}),
+        (black_scholes_model.get_black_scholes, {"stock_price": -1.0}),
+        (black_scholes_model.get_black_scholes, {"strike_price": -5.0}),
+        (black_scholes_model.get_black_scholes, {"time_to_expiration": -0.1}),
+        (black_scholes_model.get_garman_kohlhagen, {"volatility": -0.2}),
+        (black_scholes_model.get_black_76, {"volatility": -0.2}),
+        (black_scholes_model.get_black_76, {"forward_price": -70.0}),
+    ],
+)
+def test_the_black_scholes_family_refuses_negative_inputs(function, arguments):
+    # A negative volatility gave a negative option value instead of an error.
+    import inspect
+
+    base = {
+        "stock_price": 100.0,
+        "forward_price": 100.0,
+        "strike_price": 100.0,
+        "risk_free_rate": 0.05,
+        "foreign_risk_free_rate": 0.02,
+        "volatility": 0.2,
+        "time_to_expiration": 1.0,
+    }
+    parameters = inspect.signature(function).parameters
+    call = {name: value for name, value in base.items() if name in parameters}
+    with pytest.raises(ValueError, match="must be 0 or above"):
+        function(**{**call, **arguments})
+
+
+def test_the_lambda_of_a_worthless_option_is_nan():
+    from financetoolkit.options.greeks import greeks_model
+
+    # Far out of the money the call is worth 0.0, which gave a lambda of inf.
+    assert black_scholes_model.get_black_scholes(100, 1e6, 0.05, 0.2, 1) == 0
+    assert np.isnan(greeks_model.get_lambda(100, 1e6, 1, 0.05, 0.2))
+    values = greeks_model.get_lambda(100, np.array([100.0, 1e6]), 1, 0.05, 0.2)
+    assert np.isfinite(values[0])
+    assert np.isnan(values[1])
+
+
+def test_bjerksund_stensland_falls_to_the_european_value_with_a_negative_rate():
+    # The limitation the documentation and the controller's warning describe.
+    arguments = (100.0, 100.0, -0.02, 0.01, 1.0, -0.03, True)
+    european = black_scholes_model.get_black_scholes(
+        100.0, 100.0, -0.02, 0.01, 1.0, -0.03, put_option=True
+    )
+    assert black_scholes_model.get_bjerksund_stensland(*arguments) == pytest.approx(
+        european
+    )
+    from financetoolkit.options.pricing.american_model import get_qd_plus
+
+    assert get_qd_plus(*arguments) == pytest.approx(0.1669, abs=1e-3)
+
+
+def test_the_strike_density_refuses_prices_of_zero():
+    from financetoolkit.options.greeks import greeks_model
+
+    for stock_price, strike_price in ((0.0, 100.0), (100.0, 0.0)):
+        with pytest.raises(ValueError, match="must be above 0"):
+            greeks_model.get_second_order_partial_derivative(
+                stock_price, strike_price, 1.0, 0.05, 0.2, 0.0
+            )

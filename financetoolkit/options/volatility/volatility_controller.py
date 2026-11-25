@@ -24,7 +24,11 @@ from financetoolkit.options.volatility import (
 )
 from financetoolkit.utilities import logger_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
-from financetoolkit.utilities.error_model import check_option, handle_errors
+from financetoolkit.utilities.error_model import (
+    check_option,
+    handle_errors,
+    validate_window,
+)
 from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import (
     apply_rounding,
@@ -1243,7 +1247,7 @@ class VolatilityOptions:
                 direction. Defaults to 0.5, i.e. from 50% to 150% of the forward
                 price.
             number_of_strikes (int, optional): The number of strikes in the
-                evaluation grid. Defaults to 200.
+                evaluation grid, at least 3. Defaults to 200.
             outlier_threshold (float, optional): The number of median absolute
                 deviations from the median implied volatility beyond which a quote
                 is treated as an outlier and dropped before fitting. Defaults to
@@ -1357,6 +1361,9 @@ class VolatilityOptions:
         |        810.321 | 0      |
         |        812.171 | 0      |
         """
+        # The density at a strike is a second difference, which needs a strike on either side.
+        validate_window("number_of_strikes", number_of_strikes, minimum=3)
+
         if expiration_date is not None:
             candidate_dates = [expiration_date]
         else:
@@ -1837,12 +1844,12 @@ class VolatilityOptions:
             to None, which uses the last date of the historical data.
             put_option (bool, optional): Whether to calculate the put option price. Defaults to False which means
             it will calculate the call option price.
-            strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which
+            strike_price_range (float): The percentage range to use for the strike prices, between 0 and 1. Defaults to 0.25 which
             equals 25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
-            strike_step_size (float): The step size to use for the strike prices. Defaults to 5 which means that
+            strike_step_size (float): The step size to use for the strike prices, above 0. Defaults to 5 which means that
             the strike prices will be 75, 80, 85, ..., 120 and 125 if the current stock price is 100.
             expiration_time_range (int): The number of days to use for the time to expiration: the columns are the
-            expirations 1 up to expiration_time_range - 1 calendar days after the start date. Defaults to 30,
+            expirations 1 up to expiration_time_range - 1 calendar days after the start date, so at least 2. Defaults to 30,
             which gives expirations of 1 to 29 days.
             risk_free_rate (float, optional): The risk free rate to use for the pricing. Defaults to None, which
             uses the Toolkit's risk-free rate on the pricing date: the 10-year Treasury yield unless the Toolkit's
@@ -1903,6 +1910,8 @@ class VolatilityOptions:
         |            310 |      37.2321 |      37.313  |      38.2669 |
         |            320 |      47.1053 |      46.5792 |      46.7986 |
         """
+        validate_window("expiration_time_range", expiration_time_range, minimum=2)
+
         start_date = self._pricing_date(start_date)
         stock_price = self._prices.loc[start_date]
 

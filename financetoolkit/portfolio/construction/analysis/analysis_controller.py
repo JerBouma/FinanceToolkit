@@ -1578,6 +1578,10 @@ class AnalysisConstruction:
         | JNJ  | 0.0044 | 0.0021 | 0.028  | 0.0041 |
         | XOM  | 0.0054 | 0.0015 | 0.0041 | 0.073  |
         """
+        # Checked whichever method is chosen, as only the factor estimate uses it.
+        check_option(
+            "factor_selection", factor_selection, estimation_model.FACTOR_SELECTIONS
+        )
         returns = self._get_returns(period, include_benchmark)
         if method == "detoned":
             matrix = estimation_model.get_detoned_covariance(returns, components)
@@ -1932,6 +1936,10 @@ class AnalysisConstruction:
         | JNJ  | 0.1659 | 0.1173 | 1      | 0.1513 |
         | XOM  | 0.1473 | 0.0876 | 0.1513 | 1      |
         """
+        # Checked whichever method is chosen, as only some of them use them.
+        validate_alpha(alpha)
+        if isinstance(bins, str):
+            check_option("bins", bins, estimation_model.BIN_METHODS)
         returns = self._get_returns(period, include_benchmark)
         covariance_matrix = optimization_model.get_covariance_matrix(
             returns,
@@ -2992,6 +3000,8 @@ class AnalysisConstruction:
         """
         outputs = ("moments", "covariance", "probabilities", "summary")
         check_option("output", output, outputs)
+        # Checked also for a single opinion, which is not pooled.
+        check_option("pooling", pooling, estimation_model.POOLING_METHODS)
         returns = self._get_returns(period, include_benchmark)
         periods_per_year = self._get_periods_per_year(period, returns.index)
 

@@ -471,3 +471,22 @@ def test_the_standard_error_of_independent_paths_is_that_of_their_payoffs():
             assert error == pytest.approx(
                 payoffs.std(ddof=1) / np.sqrt(payoffs.size), abs=1e-10
             )
+
+
+def test_least_squares_monte_carlo_refuses_a_strike_of_zero():
+    # The regression on the stock price over the strike failed to converge at zero.
+    with pytest.raises(ValueError, match="must be above 0"):
+        monte_carlo_model.get_longstaff_schwartz_option(
+            100.0, 0.0, 0.05, 0.2, 1.0, simulations=1_000
+        )
+    with pytest.raises(ValueError, match="must be above 0"):
+        monte_carlo_model.get_longstaff_schwartz_basket_option(
+            stock_prices=[100.0, 95.0],
+            strike_price=0.0,
+            risk_free_rate=0.05,
+            volatilities=[0.2, 0.3],
+            correlation_matrix=[[1, 0.5], [0.5, 1]],
+            weights=[0.5, 0.5],
+            time_to_expiration=1.0,
+            simulations=1_000,
+        )

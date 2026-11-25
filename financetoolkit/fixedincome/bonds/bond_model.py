@@ -24,15 +24,19 @@ def get_number_of_periods(years_to_maturity: float, frequency: int) -> int:
 
     Args:
         years_to_maturity (float): The number of years until the bond matures.
-        frequency (int): The number of coupon payments per year.
+        frequency (int): The number of coupon payments per year, at least 1.
 
     Returns:
         int: The number of coupon periods.
 
     Raises:
         ValueError: If the years to maturity are not positive, as a bond that has matured
-            has no cash flows left to price.
+            has no cash flows left to price, or the frequency is below 1.
     """
+    if not frequency >= 1:
+        raise ValueError(
+            f"The frequency must be at least 1 payment a year, got {frequency}."
+        )
     if not years_to_maturity > 0:
         raise ValueError(
             f"The years to maturity must be positive, got {years_to_maturity}: a matured bond has no "
@@ -61,11 +65,18 @@ def get_accrued_fraction(years_to_maturity: float, frequency: int) -> float:
 
     Args:
         years_to_maturity (float): The number of years until the bond matures.
-        frequency (int): The number of coupon payments per year.
+        frequency (int): The number of coupon payments per year, at least 1.
 
     Returns:
         float: The elapsed fraction of the current coupon period, from 0 up to (not including) 1.
+
+    Raises:
+        ValueError: If the frequency is below 1.
     """
+    if not frequency >= 1:
+        raise ValueError(
+            f"The frequency must be at least 1 payment a year, got {frequency}."
+        )
     periods = years_to_maturity * frequency
 
     # Floating point noise on a coupon date (28.999999999999996 periods) is not a partial period.  # noqa: E501
@@ -90,7 +101,7 @@ def get_cash_flow_periods(years_to_maturity: float, frequency: int) -> np.ndarra
 
     Args:
         years_to_maturity (float): The number of years until the bond matures.
-        frequency (int): The number of coupon payments per year.
+        frequency (int): The number of coupon payments per year, at least 1.
 
     Returns:
         np.ndarray: The payment times in periods, the last one being years_to_maturity * frequency.
@@ -124,7 +135,7 @@ def _get_dirty_bond_price(
         coupon_rate (float): The annual coupon rate (in decimal).
         years_to_maturity (float): The number of years until the bond matures.
         yield_to_maturity (float): The yield to maturity of the bond (in decimal).
-        frequency (int): The number of coupon payments per year.
+        frequency (int): The number of coupon payments per year, at least 1.
         years_to_redemption (float | None): The number of years until the bond is
             redeemed. Defaults to None, at maturity.
         redemption_price (float | None): The amount paid at redemption. Defaults to None,
@@ -133,8 +144,8 @@ def _get_dirty_bond_price(
     Returns:
         float: The dirty price of the bond.
     """
-    coupon_payment = (par_value * coupon_rate) / frequency
     periods = get_cash_flow_periods(years_to_maturity, frequency)
+    coupon_payment = (par_value * coupon_rate) / frequency
 
     if years_to_redemption is None:
         redemption_period = periods[-1]
@@ -180,17 +191,14 @@ def get_accrued_interest(
         par_value (float): The face value of the bond.
         coupon_rate (float): The annual coupon rate (in decimal).
         years_to_maturity (float): The number of years until the bond matures.
-        frequency (int): The number of coupon payments per year.
+        frequency (int): The number of coupon payments per year, at least 1.
 
     Returns:
         float: The accrued interest, in the same currency units as par_value.
     """
-    return (
-        par_value
-        * coupon_rate
-        / frequency
-        * get_accrued_fraction(years_to_maturity, frequency)
-    )
+    accrued_fraction = get_accrued_fraction(years_to_maturity, frequency)
+
+    return par_value * coupon_rate / frequency * accrued_fraction
 
 
 def solve_with_secant_method(
@@ -358,7 +366,7 @@ def get_effective_yield(coupon_rate: float, frequency: int) -> float:
 
     Args:
         coupon_rate (float): The annual coupon rate (in decimal).
-        frequency (int): The number of coupon payments per year.
+        frequency (int): The number of coupon payments per year, at least 1.
 
     Returns:
         float: The effective yield of the bond.
@@ -396,7 +404,7 @@ def get_yield_to_maturity(
         coupon_rate (float): The annual coupon rate (in decimal).
         years_to_maturity (float): The number of years until the bond matures.
         bond_price (float): The current clean (quoted) market price of the bond.
-        frequency (int): The number of coupon payments per year.
+        frequency (int): The number of coupon payments per year, at least 1.
         guess (float): Initial guess for the yield to maturity.
         tolerance (float): The desired level of accuracy.
         max_iterations (int): Maximum number of iterations to perform.
@@ -480,7 +488,7 @@ def get_yield_to_call(
         call_price (float): The price the issuer pays on the call date, in the same units as
             par_value (e.g. 102 for a call at 102% of a par value of 100).
         bond_price (float): The current clean (quoted) market price of the bond.
-        frequency (int): The number of coupon payments per year.
+        frequency (int): The number of coupon payments per year, at least 1.
         guess (float): Initial guess for the yield to call. Defaults to 0.05.
         tolerance (float): The desired level of accuracy. Defaults to 0.0001.
         max_iterations (int): Maximum number of iterations to perform. Defaults to 100.
@@ -606,7 +614,7 @@ def get_yield_to_worst(
             maturity in the bond's day count, so that the call falls on the bond's own
             coupon schedule.
         bond_price (float): The current clean (quoted) market price of the bond.
-        frequency (int): The number of coupon payments per year.
+        frequency (int): The number of coupon payments per year, at least 1.
         guess (float): Initial guess for the yields. Defaults to 0.05.
         tolerance (float): The desired level of accuracy. Defaults to 0.0001.
         max_iterations (int): Maximum number of iterations to perform. Defaults to 100.
@@ -715,7 +723,7 @@ def get_macaulays_duration(
         coupon_rate (float): The annual coupon rate (in decimal).
         years_to_maturity (float): The number of years until the bond matures.
         yield_to_maturity (float): The yield to maturity of the bond (in decimal).
-        frequency (int): The number of coupon payments per year.
+        frequency (int): The number of coupon payments per year, at least 1.
 
     Returns:
         float: The Macaulay's duration of the bond.
@@ -772,7 +780,7 @@ def get_modified_duration(
         coupon_rate (float): The annual coupon rate (in decimal).
         years_to_maturity (float): The number of years until the bond matures.
         yield_to_maturity (float): The yield to maturity of the bond (in decimal).
-        frequency (int): The number of coupon payments per year.
+        frequency (int): The number of coupon payments per year, at least 1.
 
     Returns:
         float: The modified duration of the bond.
@@ -832,7 +840,7 @@ def get_effective_duration(
         yield_to_maturity (float): The initial yield to maturity of the bond (in decimal).
         yield_change (float): The size of the shift applied to the yield, up and down
             (in decimal). Defaults to 0.01 (100 basis points).
-        frequency (int): The number of coupon payments per year.
+        frequency (int): The number of coupon payments per year, at least 1.
 
     Returns:
         float: The effective duration of the bond.
@@ -883,7 +891,7 @@ def get_dollar_duration(
         coupon_rate (float): The annual coupon rate (in decimal).
         years_to_maturity (float): The number of years until the bond matures.
         yield_to_maturity (float): The yield to maturity of the bond (in decimal).
-        frequency (int): The number of coupon payments per year.
+        frequency (int): The number of coupon payments per year, at least 1.
 
     Returns:
         float: The dollar duration of the bond.
@@ -935,7 +943,7 @@ def get_dv01(par_value, coupon_rate, years_to_maturity, yield_to_maturity, frequ
         coupon_rate (float): The annual coupon rate (in decimal).
         years_to_maturity (float): The number of years until the bond matures.
         yield_to_maturity (float): The yield to maturity of the bond (in decimal).
-        frequency (int): The number of coupon payments per year.
+        frequency (int): The number of coupon payments per year, at least 1.
 
     Returns:
         float: The DV01 of the bond, in the same currency units as par_value.
@@ -998,7 +1006,7 @@ def get_convexity(
         coupon_rate (float): The annual coupon rate (in decimal).
         years_to_maturity (float): The number of years until the bond matures.
         yield_to_maturity (float): The yield to maturity of the bond (in decimal).
-        frequency (int): The number of coupon payments per year.
+        frequency (int): The number of coupon payments per year, at least 1.
 
     Returns:
         float: The convexity of the bond.
@@ -1056,7 +1064,7 @@ def get_bond_price_from_curve(
         years_to_maturity (float): The number of years until the bond matures.
         spot_rates (pd.Series): The zero-coupon (spot) yield curve, indexed by
             maturity in years (in decimal).
-        frequency (int): The number of coupon payments per year.
+        frequency (int): The number of coupon payments per year, at least 1.
         clean (bool): Whether to return the clean price, without the accrued interest
             (see `get_accrued_interest`), as `get_bond_price` does. Defaults to True.
 
@@ -1390,7 +1398,7 @@ def get_taylor_price_change(
         coupon_rate (float): The annual coupon rate (in decimal).
         years_to_maturity (float): The number of years until the bond matures.
         yield_to_maturity (float): The current yield to maturity of the bond (in decimal).
-        frequency (int): The number of coupon payments per year.
+        frequency (int): The number of coupon payments per year, at least 1.
         yield_change (float): The hypothetical change in yield to maturity (in decimal),
             e.g. 0.01 for a 100 basis point increase or -0.005 for a 50 basis point decrease.
 

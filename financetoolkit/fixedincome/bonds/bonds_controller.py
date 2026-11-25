@@ -292,11 +292,18 @@ class BondsFixedIncome(MarketsFixedIncome):
                 # Treasury's bond-equivalent yield does.
                 (pd.Timestamp(maturity) - pd.Timestamp(price_date)).days / 365
                 if security_type == "Bill"
-                else bond_data_model.get_years_to_maturity(
-                    pd.Timestamp(price_date).date(),
-                    pd.Timestamp(maturity).date(),
-                    # Treasuries count actual days, US corporate bonds 30/360.
-                    day_count="30/360" if security_type == "Corporate" else "act/act",
+                # A bond that matured by its price date has no years left.
+                else (
+                    np.nan
+                    if pd.Timestamp(maturity) <= pd.Timestamp(price_date)
+                    else bond_data_model.get_years_to_maturity(
+                        pd.Timestamp(price_date).date(),
+                        pd.Timestamp(maturity).date(),
+                        # Treasuries count actual days, US corporate bonds 30/360.
+                        day_count=(
+                            "30/360" if security_type == "Corporate" else "act/act"
+                        ),
+                    )
                 )
             )
             for security_type, maturity, price_date in zip(

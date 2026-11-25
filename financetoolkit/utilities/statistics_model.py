@@ -12,7 +12,11 @@ import numpy as np
 import pandas as pd
 
 from financetoolkit.utilities import logger_model
-from financetoolkit.utilities.error_model import InvalidArgumentError, validate_window
+from financetoolkit.utilities.error_model import (
+    InvalidArgumentError,
+    check_period,
+    validate_window,
+)
 
 logger = logger_model.get_logger()
 
@@ -130,13 +134,9 @@ def validate_period(period: str) -> None:
         period (str): The period, weekly, monthly, quarterly or yearly.
 
     Raises:
-        ValueError: If the period is not weekly, monthly, quarterly or yearly.
+        InvalidArgumentError: If the period is not weekly, monthly, quarterly or yearly.
     """
-    if period not in PERIOD_TRANSLATION:
-        raise ValueError(
-            f"Period {period} is not valid. It should be either "
-            "weekly, monthly, quarterly or yearly."
-        )
+    check_period(period, list(PERIOD_TRANSLATION))
 
 
 def newey_west_long_run_variance(residuals: np.ndarray, lags: int) -> float:
@@ -240,17 +240,13 @@ def convert_annualized_rate_to_period(
             monthly, quarterly or yearly.
 
     Raises:
-        ValueError: If the period is not one of the supported frequencies.
+        InvalidArgumentError: If the period is not one of the supported frequencies.
 
     Returns:
         pd.Series | pd.DataFrame | float: the rate expressed per single period. A yearly
         period returns the rate unchanged.
     """
-    if period not in PERIODS_PER_YEAR:
-        raise ValueError(
-            f"Period {period} is not valid. It should be one of "
-            f"{', '.join(PERIODS_PER_YEAR)}."
-        )
+    check_period(period, list(PERIODS_PER_YEAR))
 
     return (1 + annualized_rate) ** (1 / PERIODS_PER_YEAR[period]) - 1
 

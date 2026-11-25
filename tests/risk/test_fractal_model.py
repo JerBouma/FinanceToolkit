@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from financetoolkit.helpers import delay_embedding
 from financetoolkit.risk.distribution import fractal_model
 
 
@@ -195,3 +196,35 @@ def test_memory_measures_are_nan_without_variation():
     # A series without values has no Lyapunov exponent rather than an FFT error.
     assert fractal_model.get_mean_period(np.array([np.nan, np.nan])) == 1
     assert np.isnan(fractal_model.get_largest_lyapunov_exponent(np.full(300, np.nan)))
+
+
+def _rosenstein_by_every_pair(values, embedding, separation, trajectory_length=20):
+    """The largest Lyapunov exponent with the nearest neighbours from every pair."""
+    vectors = delay_embedding(values, embedding, 1)
+    starts = len(vectors) - trajectory_length + 1
+    followed = vectors[:starts]
+    distances = ((followed[:, None, :] - followed[None, :, :]) ** 2).sum(axis=2)
+    origins = np.arange(starts)
+    distances[np.abs(origins[:, None] - origins[None, :]) <= separation] = np.inf
+    neighbours = distances.argmin(axis=1)
+    divergence = [
+        np.mean(np.log(gaps[gaps > 0]))
+        for gaps in (
+            np.linalg.norm(vectors[origins + k] - vectors[neighbours + k], axis=1)
+            for k in range(trajectory_length)
+        )
+    ]
+    return np.polyfit(np.arange(trajectory_length), divergence, 1)[0]
+
+
+def test_the_lyapunov_neighbours_of_the_tree_are_those_of_every_pair():
+    rng = np.random.default_rng(5)
+    # Half of the values are 0, so many vectors are equally near each other.
+    repeated = np.where(rng.random(1500) < 0.5, 0.0, rng.normal(size=1500))
+    for values in (returns(), rng.normal(size=1500), repeated):
+        for embedding, separation in ((2, 3), (4, 5), (10, 0)):
+            assert fractal_model.get_largest_lyapunov_exponent(
+                values, embedding=embedding, min_separation=separation
+            ) == pytest.approx(
+                _rosenstein_by_every_pair(values, embedding, separation), abs=1e-12
+            )

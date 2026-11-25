@@ -561,3 +561,15 @@ def test_amortizing_bond_weighted_average_life(recorder):
     )
     assert measures["Weighted Average Life"] < 10
     recorder.capture(measures.round(8))
+
+
+@pytest.mark.parametrize("frequency", [0, -1])
+def test_bond_functions_refuse_a_frequency_below_one(frequency):
+    for function, arguments in [
+        (bond_model.get_accrued_interest, (100, 0.05, 2.75, frequency)),
+        (bond_model.get_convexity, (100, 0.05, 5, 0.05, frequency)),
+        (bond_model.get_effective_duration, (100, 0.05, 5, 0.05, frequency)),
+        (bond_model.get_yield_to_call, (100, 0.05, 5, 3, 100, 98, frequency)),
+    ]:
+        with pytest.raises(ValueError, match="frequency must be at least 1"):
+            function(*arguments)

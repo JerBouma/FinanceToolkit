@@ -432,6 +432,22 @@ def finalize_dataset(
             )
         )
 
+    validate_window("rolling", rolling, 1)
+    validate_window("trailing", trailing, 1)
+    # A window longer than the data leaves every period without a complete window, which is
+    # easily mistaken for missing data, so it is said once.
+    for name, window in (("rolling", rolling), ("trailing", trailing)):
+        if window and len(dataset.index) and window > len(dataset.index):
+            logger.warning(
+                "The %s window of %s periods is longer than the %s periods of data, so no "
+                "period has a complete window and the result is empty. Pass a smaller %s "
+                "window or an earlier start_date.",
+                name,
+                window,
+                len(dataset.index),
+                name,
+            )
+
     if rolling:
         dataset = dataset.rolling(window=rolling).mean()
 

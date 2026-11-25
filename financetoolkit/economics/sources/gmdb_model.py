@@ -196,7 +196,8 @@ def collect_global_macro_database_dataset(
             to False.
 
     Returns:
-        pd.DataFrame: A transformed DataFrame indexed by 'year' with country-wise columns.
+        pd.DataFrame: A transformed DataFrame indexed by 'year' with country-wise columns, or
+            an empty DataFrame when the Global Macro Database cannot be reached.
     """
     # The quarterly releases are cached apart from the January 2025 file read before,
     # since they have variables that file lacks.
@@ -216,23 +217,32 @@ def collect_global_macro_database_dataset(
     # so the next run tries the release again.
     cacheable = True
 
-    if gmd_location is None:
-        try:
-            version = get_latest_version()
-            response = get_request(RELEASE_URL.format(version=version), timeout=300)
+    try:
+        if gmd_location is None:
+            try:
+                version = get_latest_version()
+                response = get_request(RELEASE_URL.format(version=version), timeout=300)
+                response.raise_for_status()
+            except (requests.exceptions.RequestException, ValueError) as error:
+                logger.warning(
+                    "Could not retrieve the latest Global Macro Database release (%s), so "
+                    "the January 2025 release is used instead.",
+                    error,
+                )
+                response = get_request(GMD_LOCATION, timeout=300)
+                response.raise_for_status()
+                cacheable = False
+        else:
+            response = get_request(gmd_location, timeout=300)
             response.raise_for_status()
-        except (requests.exceptions.RequestException, ValueError) as error:
-            logger.warning(
-                "Could not retrieve the latest Global Macro Database release (%s), so the "
-                "January 2025 release is used instead.",
-                error,
-            )
-            response = get_request(GMD_LOCATION, timeout=300)
-            response.raise_for_status()
-            cacheable = False
-    else:
-        response = get_request(gmd_location, timeout=300)
-        response.raise_for_status()
+    except requests.exceptions.RequestException as error:
+        # Offline or the host is down: reported like the other sources, with no data
+        # rather than an exception, so the metrics built on it report it as missing.
+        logger.error(
+            "Could not reach the Global Macro Database (%s). No data is returned for it.",
+            error,
+        )
+        return pd.DataFrame()
 
     gmd_dataset = _parse_dataset(response.content, include_forecasts)
 
@@ -262,12 +272,17 @@ def get_series(
             divided by 100 to return a decimal fraction. Defaults to False.
 
     Returns:
-        pd.DataFrame: The variable, indexed by year with a column per country.
+        pd.DataFrame: The variable, indexed by year with a column per country, or an empty
+        DataFrame when the dataset is empty (the database could not be reached).
 
     Raises:
         ValueError: When the dataset has no such variable, which is the case for the
             variables added after the January 2025 release when that is used instead.
     """
+    # Already reported where the database could not be reached.
+    if gmd_dataset.empty:
+        return pd.DataFrame()
+
     if variable not in gmd_dataset.columns.get_level_values(0):
         raise ValueError(
             f"The Global Macro Database release in use has no variable '{variable}'."

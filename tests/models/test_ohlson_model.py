@@ -136,3 +136,24 @@ def test_log_of_total_assets_is_deflated_by_the_price_level_index():
     assert ohlson_model.get_log_of_total_assets(1e9, 600.0) == np.log(1e9 / 600)
     # Without an index, the total assets are not deflated.
     assert ohlson_model.get_log_of_total_assets(1e9) == np.log(1e9)
+
+
+def test_get_ohlson_o_score_keeps_a_missing_negative_equity_indicator_missing():
+    ones = pd.Series([1.0, 1.0, 1.0])
+    indicator = pd.Series([0.0, float("nan"), 1.0])
+
+    result = ohlson_model.get_ohlson_o_score(
+        log_of_total_assets=ones,
+        total_liabilities_to_total_assets_ratio=ones,
+        working_capital_to_total_assets_ratio=ones,
+        current_liabilities_to_current_assets_ratio=ones,
+        negative_equity_indicator=indicator,
+        net_income_to_total_assets_ratio=ones,
+        funds_from_operations_to_total_liabilities_ratio=ones,
+        negative_income_indicator=pd.Series([0.0, 0.0, 0.0]),
+        change_in_net_income_ratio=ones,
+    )
+
+    assert result.notna().tolist() == [True, False, True]
+    # The indicator of 1 lowers the score by its coefficient of 1.72.
+    assert round(result[0] - result[2], 2) == 1.72

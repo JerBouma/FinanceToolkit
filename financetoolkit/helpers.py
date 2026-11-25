@@ -932,6 +932,25 @@ def require_api_key(api_key: str | None, data: str) -> None:
         )
 
 
+def require_input(data: pd.Series | pd.DataFrame, name: str) -> None:
+    """
+    Raises when a metric another one builds on could not be calculated, so that the
+    composite reports which input is missing instead of failing on the empty result.
+
+    Args:
+        data (pd.Series | pd.DataFrame): The input metric, an empty Series when it failed
+            (the reason is logged where it failed).
+        name (str): The name of the input, completing "... is not available".
+
+    Raises:
+        ValueError: When the input is empty.
+    """
+    if data.empty:
+        raise ValueError(
+            f"The {name} is not available, so this metric cannot be calculated from it."
+        )
+
+
 def require_fred_api_key(fred_api_key: str | None, data: str) -> None:
     """
     Warns and raises when data from FRED (Federal Reserve Economic Data) is requested
@@ -958,6 +977,65 @@ def require_fred_api_key(fred_api_key: str | None, data: str) -> None:
             "https://fred.stlouisfed.org/docs/api/api_key.html and pass it via the "
             "fred_api_key argument or set the FRED_API_KEY environment variable."
         )
+
+
+def fill_diluted_shares(income_statement: pd.DataFrame) -> pd.DataFrame:
+    """
+    Uses the Weighted Average Shares where an income statement lacks the Weighted Average
+    Shares Diluted, so that the per-share figures, the market cap and everything built on
+    them can still be calculated.
+
+    Some data providers report only the basic share count (or leave the diluted one out in
+    some periods). Without dilution the two are equal, and otherwise the basic count is
+    lower by the options and convertibles not yet exercised, so it is the closest figure
+    reported. The tickers this applies to are logged once.
+
+    Args:
+        income_statement (pd.DataFrame): The income statement, with the tickers and the line
+            items as its index and the periods as its columns.
+
+    Returns:
+        pd.DataFrame: The income statement with the Weighted Average Shares Diluted filled
+        in, or the statement itself when nothing is missing.
+    """
+    basic_name, diluted_name = (
+        "Weighted Average Shares",
+        "Weighted Average Shares Diluted",
+    )
+
+    if income_statement.empty or basic_name not in income_statement.index.unique(
+        level=1
+    ):
+        return income_statement
+
+    basic = income_statement.xs(basic_name, level=1)
+    diluted = (
+        income_statement.xs(diluted_name, level=1)
+        if diluted_name in income_statement.index.unique(level=1)
+        else pd.DataFrame(index=[], columns=income_statement.columns, dtype=float)
+    ).reindex(basic.index)
+
+    missing = diluted.isna() & basic.notna()
+    tickers = list(missing.index[missing.any(axis=1)])
+
+    if not tickers:
+        return income_statement
+
+    logger.warning(
+        "The income statement has no Weighted Average Shares Diluted for %s (in all or "
+        "some periods), so the Weighted Average Shares are used there.",
+        ", ".join(map(str, tickers)),
+    )
+
+    filled = diluted.loc[tickers].fillna(basic.loc[tickers]).astype(float)
+    filled.index = pd.MultiIndex.from_product([tickers, [diluted_name]])
+
+    statement = pd.concat(
+        [income_statement.drop(index=filled.index, errors="ignore"), filled]
+    )
+
+    # The rows of each ticker together again, in the order of the statement.
+    return statement.loc[income_statement.index.unique(level=0)]
 
 
 def get_goodwill_and_intangible_assets(balance_sheet: pd.DataFrame) -> pd.DataFrame:

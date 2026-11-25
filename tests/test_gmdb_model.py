@@ -213,3 +213,17 @@ def test_countries_carry_the_names_of_the_other_sources(monkeypatch):
         "Russia",
         "Swaziland",
     ]
+
+
+def test_an_unreachable_database_returns_no_data(monkeypatch, caplog):
+    def unreachable(url, **kwargs):
+        raise requests.exceptions.ConnectionError(f"no route to {url}")
+
+    monkeypatch.setattr(gmdb_model, "get_request", unreachable)
+
+    dataset = gmdb_model.collect_global_macro_database_dataset()
+
+    assert dataset.empty
+    assert "Could not reach the Global Macro Database" in caplog.text
+    # The variables built on it are empty as well, rather than a missing variable.
+    assert gmdb_model.get_series(dataset, "nGDP_USD").empty

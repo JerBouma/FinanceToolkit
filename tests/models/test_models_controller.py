@@ -2836,3 +2836,123 @@ def test_get_earnings_attributes(recorder):
     models = long_history_models()
     recorder.capture(models.get_earnings_attributes())
     recorder.capture(models.get_earnings_attributes(window=5))
+
+
+def _offline_toolkit(income=None, cash=None):
+    """The offline Toolkit of the fixtures, with statements changed by the test."""
+    from financetoolkit import Toolkit  # noqa: PLC0415
+
+    def read(name):
+        return pd.read_pickle(f"tests/datasets/{name}_dataset.pickle")
+
+    toolkit = Toolkit(
+        tickers=["AAPL", "MSFT"],
+        historical=read("historical"),
+        balance=read("balance"),
+        income=read("income") if income is None else income,
+        cash=read("cash") if cash is None else cash,
+        convert_currency=False,
+        start_date="2019-12-31",
+        end_date="2023-01-01",
+        sleep_timer=False,
+        use_cached_data=False,
+    )
+    toolkit._daily_risk_free_rate = pd.read_pickle(
+        "tests/datasets/risk_free_rate.pickle"
+    )
+    toolkit._daily_treasury_data = pd.read_pickle("tests/datasets/treasury_data.pickle")
+    return toolkit
+
+
+def test_zero_shares_leave_the_value_per_share_out_for_that_ticker_only():
+    income = pd.read_pickle("tests/datasets/income_dataset.pickle")
+    for row in ("Weighted Average Shares", "Weighted Average Shares Diluted"):
+        income.loc[("MSFT", row)] = 0.0
+    models = _offline_toolkit(income=income).models
+
+    earnings_power_value = models.get_earnings_power_value()
+    assert earnings_power_value.loc["AAPL"].notna().all()
+    assert np.isnan(earnings_power_value.loc["MSFT", "Earnings Power Value per Share"])
+
+    intrinsic_value = models.get_intrinsic_valuation().xs("Intrinsic Value", level=1)
+    assert np.isfinite(intrinsic_value.loc["AAPL"]).all()
+    assert intrinsic_value.loc["MSFT"].isna().all()
+
+    growth_opportunities = models.get_present_value_of_growth_opportunities()
+    assert not np.isinf(growth_opportunities.to_numpy(dtype=float)).any()
+    assert growth_opportunities["AAPL"].notna().any()
+
+    simulated = models.get_monte_carlo_intrinsic_valuation(simulations=100)
+    assert not np.isinf(simulated.to_numpy(dtype=float)).any()
+    assert simulated.loc["AAPL"].notna().all()
+
+
+def test_a_period_without_revenue_has_no_margin():
+    income = pd.read_pickle("tests/datasets/income_dataset.pickle")
+    income.loc[("MSFT", "Revenue"), pd.Period("2023", "Y")] = 0.0
+    models = _offline_toolkit(income=income).models
+
+    dupont = models.get_dupont_analysis()
+    assert not np.isinf(dupont.to_numpy(dtype=float)).any()
+    assert np.isnan(dupont.loc[("MSFT", "Net Profit Margin"), "2023"])
+
+    margin = models.get_earnings_power_value()["Average Operating Margin"]
+    assert np.isfinite(margin).all()
+
+
+def test_get_intrinsic_valuation_names_the_missing_free_cash_flow_to_firm(caplog):
+    cash = pd.read_pickle("tests/datasets/cash_dataset.pickle")
+    models = _offline_toolkit(
+        cash=cash.drop(index="Capital Expenditure", level=1)
+    ).models
+
+    assert models.get_intrinsic_valuation().empty
+    assert "free cash flow to firm is not available" in caplog.text
+
+
+@pytest.mark.parametrize(
+    ("method", "arguments"),
+    [
+        ("get_intrinsic_valuation", {"periods": 0}),
+        ("get_monte_carlo_intrinsic_valuation", {"periods": -1}),
+        ("get_monte_carlo_intrinsic_valuation", {"growth_rate_volatility": -0.5}),
+        (
+            "get_monte_carlo_intrinsic_valuation",
+            {"weighted_average_cost_of_capital_volatility": -0.01},
+        ),
+        ("get_reverse_discounted_cash_flow", {"periods": 0}),
+        ("get_earnings_power_value", {"periods": 0}),
+        ("get_accrual_quality", {"window": 4}),
+        ("get_accrual_quality", {"method": "mcnichols", "window": 6}),
+        ("get_earnings_attributes", {"window": 2}),
+        ("get_discretionary_accruals", {"min_observations": 2}),
+        ("get_discretionary_accruals", {"min_observations": 3, "intercept": True}),
+        ("get_mohanram_g_score", {"variance_periods": 1}),
+        ("get_capitalized_research_and_development", {"amortization_years": 0}),
+        ("get_return_on_incremental_invested_capital", {"years": 0}),
+        ("get_factor_analysis", {"metrics": "bogus"}),
+    ],
+)
+def test_arguments_outside_their_range_are_refused(models_module, method, arguments):
+    with pytest.raises(InvalidArgumentError):
+        getattr(models_module, method)(**arguments)
+
+
+def test_measures_without_enough_years_say_so(models_module, caplog):
+    assert models_module.get_earnings_attributes().empty
+    assert "The Earnings Attributes could not be calculated" in caplog.text
+
+    models_module.get_accrual_quality()
+    assert "The Accrual Quality needs 10 years of statements" in caplog.text
+
+
+def test_get_capitalized_research_and_development_without_research_says_so(caplog):
+    income = pd.read_pickle("tests/datasets/income_dataset.pickle")
+    models = _offline_toolkit(
+        income=income.drop(index="Research and Development Expenses", level=1)
+    ).models
+
+    models.get_capitalized_research_and_development()
+    assert "No Research and Development Expenses are reported for AAPL, MSFT" in (
+        caplog.text
+    )

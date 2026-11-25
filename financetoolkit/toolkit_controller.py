@@ -59,6 +59,7 @@ from financetoolkit.helpers import (
     add_basket_total,
     determine_availability_dates,
     determine_period_end_dates,
+    fill_diluted_shares,
     prepare_supplied_historical_data,
     trailing_sum,
 )
@@ -599,7 +600,9 @@ class Toolkit:
             income=income,
             cash=cash,
             format_location=format_location,
-            start_date=self._start_date,
+            # From the lookback start, as downloaded statements are, so that the first
+            # periods have the prior ones their growth and averages need.
+            start_date=self._lookback_start_date,
             end_date=self._end_date,
             quarterly=self._quarterly,
             tickers=self._tickers,
@@ -6934,6 +6937,12 @@ class Toolkit:
                     "calculate this. This is usually because no tickers are equities, you have "
                     "reached the API limit or entered an invalid API key."
                 )
+
+        # The Ratios and Models read the diluted share count wherever they need shares, so
+        # a provider that reports only the basic count gets it there; the statement itself
+        # is shown as reported.
+        if statement == "income_statement":
+            return fill_diluted_shares(self._income_statement)
 
         return getattr(self, f"_{statement}")
 

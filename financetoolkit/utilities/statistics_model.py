@@ -12,7 +12,11 @@ import numpy as np
 import pandas as pd
 
 from financetoolkit.utilities import logger_model
-from financetoolkit.utilities.error_model import check_period
+from financetoolkit.utilities.error_model import (
+    InvalidArgumentError,
+    check_period,
+    validate_window,
+)
 
 logger = logger_model.get_logger()
 
@@ -389,10 +393,16 @@ def finalize_dataset(
             the missing-country warning message. Defaults to "".
 
     Returns:
-        pd.Series | pd.DataFrame: The processed metric values.
+        pd.Series | pd.DataFrame: The processed metric values; an empty Series (a metric
+        that could not be calculated) is returned as it is.
     """
     # Explicitly compare to None so that rounding=0 is honoured rather than treated as "not supplied", and so that rounding=None disables rounding altogether.  # noqa: E501
     rounding = rounding if rounding is not None else default_rounding
+
+    # A metric without data (an empty Series from a calculation that could not be done) has
+    # no periods to slice and is returned as it is, already reported where it failed.
+    if isinstance(dataset, pd.Series) and dataset.empty:
+        return dataset
 
     # A zero denominator (no equity, no drawdown, no losses, a beta of 0) leaves the
     # metric undefined: NaN like any other missing value, also so that one such period
@@ -439,7 +449,14 @@ def finalize_dataset(
 
     if apply_slice:
         had_data = not dataset.empty
-        periods = dataset.index if row_slice else dataset.columns
+        # Where the data runs is where it has values: periods of only NaN would point to a
+        # window that holds nothing either.
+        has_value = dataset.notna()
+        if isinstance(has_value, pd.DataFrame):
+            has_value = has_value.any(axis="columns" if row_slice else "index")
+        periods = (dataset.index if row_slice else dataset.columns)[
+            has_value.to_numpy()
+        ]
         available = (
             f" The data runs from {periods.min()} to {periods.max()}."
             if had_data and len(periods)
@@ -988,17 +1005,34 @@ def calculate_growth(
         pd.Series | pd.DataFrame: the period over period growth of the dataset.
 
     Raises:
-        ValueError: When a lag is not a positive whole number: a lag of 0 compares a period
-            with itself and a negative lag with a later period. Also when compound=True and the
-            periods are not yearly, quarterly, monthly or weekly.
+        InvalidArgumentError: When a lag is not a positive whole number (a ValueError): a lag
+            of 0 compares a period with itself and a negative lag with a later period.
+        ValueError: When compound=True and the periods are not yearly, quarterly, monthly or
+            weekly.
     """
     lags = lag if isinstance(lag, list) else [lag]
-    if not lags or any(
-        isinstance(value, bool) or not isinstance(value, int | np.integer) or value < 1
-        for value in lags
-    ):
-        raise ValueError(
-            f"The lag must be a positive whole number or a list of them, not {lag}."
+    if not lags or any(value is None for value in lags):
+        raise InvalidArgumentError(
+            f"The lag is a whole number of at least 1 or a list of them, not {lag!r}."
+        )
+    for value in lags:
+        validate_window("lag", value, 1)
+
+    # A lag reaching back as far as the data leaves no period with an earlier one to
+    # compare with, so the growth is empty rather than wrong; said once, as it is easily
+    # mistaken for missing data.
+    periods = (
+        dataset.shape[1]
+        if axis == "columns" and isinstance(dataset, pd.DataFrame)
+        else len(dataset)
+    )
+    if periods and min(lags) >= periods:
+        logger.warning(
+            "The lag of %s periods is at least as long as the %s periods of data, so there "
+            "is no earlier period to compare with and the growth is empty. Pass a smaller "
+            "lag or an earlier start_date.",
+            min(lags),
+            periods,
         )
 
     years_per_period = 1 / periods_per_year(dataset, axis) if compound else 1.0

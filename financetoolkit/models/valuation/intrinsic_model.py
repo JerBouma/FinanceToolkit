@@ -130,8 +130,11 @@ def get_intrinsic_value(
         - preferred_stock
     )
 
-    # Calculate the Intrinsic Value
-    intrinsic_value = equity_value / shares_outstanding
+    # Calculate the Intrinsic Value; without shares (none reported, or 0) there is no value
+    # per share rather than an infinite one.
+    intrinsic_value = (
+        equity_value / shares_outstanding if shares_outstanding > 0 else np.nan
+    )
 
     # Combine the components into a dictionary
     components = {
@@ -774,6 +777,10 @@ def _equity_value_per_share(
     present_value = (projections / (1 + wacc[..., None]) ** years).sum(axis=-1)
     terminal = projections[..., -1] * (1 + perpetual) / (wacc - perpetual)
     enterprise_value = present_value + terminal / (1 + wacc) ** periods
+    # Without shares (0 reported) there is no value per share rather than an infinite one.
+    if not shares_outstanding > 0:
+        return np.full(np.shape(enterprise_value), np.nan)
+
     return (enterprise_value + net_cash) / shares_outstanding
 
 
@@ -913,11 +920,25 @@ def get_earnings_power_value(
     - Maintenance capital expenditure is assumed to equal depreciation, so operating income
       stands in for the cash the business can distribute without shrinking.
     """
-    margin = float((operating_income / revenue).mean())
+    # A period without revenue has no margin and one without income before tax no tax
+    # rate: left out of the averages rather than turning them infinite.
+    margin = float((operating_income / revenue.where(revenue > 0)).mean())
     normalized_operating_income = margin * float(revenue.iloc[-1])
-    tax_rate = float(np.clip((income_tax_expense / income_before_tax).mean(), 0, 1))
+    tax_rate = float(
+        np.clip(
+            (
+                income_tax_expense / income_before_tax.where(income_before_tax != 0)
+            ).mean(),
+            0,
+            1,
+        )
+    )
     nopat = normalized_operating_income * (1 - tax_rate)
-    earnings_power_value = nopat / weighted_average_cost_of_capital
+    earnings_power_value = (
+        nopat / weighted_average_cost_of_capital
+        if weighted_average_cost_of_capital > 0
+        else np.nan
+    )
     # The Equity Value as in get_intrinsic_value: the cash and marketable securities added,
     # the claims ahead of the common shareholders deducted.
     equity_value = (
@@ -937,7 +958,9 @@ def get_earnings_power_value(
             "Normalized NOPAT": nopat,
             "Earnings Power Value": earnings_power_value,
             "Equity Value": equity_value,
-            "Earnings Power Value per Share": equity_value / shares_outstanding,
+            "Earnings Power Value per Share": (
+                equity_value / shares_outstanding if shares_outstanding > 0 else np.nan
+            ),
         }
     )
 

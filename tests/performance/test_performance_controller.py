@@ -1974,3 +1974,116 @@ def test_get_sharpe_ratio_difference_test(recorder, performance_module):
     )
     with pytest.raises(InvalidArgumentError, match="'memmel' or 'ledoit_wolf'"):
         performance_module.get_sharpe_ratio_difference_test(method="other")
+
+
+def _toolkit_between(start_date, end_date):
+    """The offline Toolkit over another date range."""
+    from financetoolkit import Toolkit
+
+    toolkit = Toolkit(
+        tickers=["AAPL", "MSFT"],
+        historical=pd.read_pickle("tests/datasets/historical_dataset.pickle"),
+        convert_currency=False,
+        start_date=start_date,
+        end_date=end_date,
+        sleep_timer=False,
+    )
+    toolkit._daily_risk_free_rate = pd.read_pickle(
+        "tests/datasets/risk_free_rate.pickle"
+    )
+    toolkit._daily_treasury_data = pd.read_pickle("tests/datasets/treasury_data.pickle")
+
+    return toolkit
+
+
+def test_return_statistics_of_a_range_without_data_are_empty(caplog):
+    # The test data ends in 2022, so a range in 2023 has no returns.
+    after_the_data = _toolkit_between("2023-06-01", "2023-12-31").performance
+
+    with caplog.at_level("WARNING"):
+        assert after_the_data.get_return_statistics().empty
+        assert after_the_data.get_strategy_risk().empty
+
+    assert "There are no daily returns between 2023-06-01" in caplog.text
+
+
+def test_bull_bear_beta_of_a_week_is_nan(performance_module):
+    weekly = performance_module.get_bull_bear_beta(period="weekly")
+
+    assert weekly.empty or weekly.isna().all().all()
+    assert performance_module.get_bull_bear_beta().notna().all().all()
+
+
+def test_a_matrix_of_too_few_returns_is_logged(performance_module, caplog):
+    short_range = _toolkit_between("2022-11-15", "2022-12-30").performance
+
+    with caplog.at_level("WARNING"):
+        performance_module.get_covariance_matrix()
+    assert "too few for a covariance" not in caplog.text
+
+    with caplog.at_level("WARNING"):
+        short_range.get_correlation_matrix()
+        short_range.get_covariance_matrix()
+    assert caplog.text.count("too few for a covariance") == 2  # noqa: PLR2004
+    assert short_range.get_covariance_matrix(period="daily").notna().all().all()
+
+
+@pytest.mark.parametrize(
+    "method",
+    ["get_sharpe_ratio", "get_beta", "get_covariance_matrix", "get_smoothing_index"],
+)
+def test_an_unknown_period_raises(performance_module, method):
+    with pytest.raises(InvalidArgumentError, match="period must be one of"):
+        getattr(performance_module, method)(period="hourly")
+
+
+def test_an_empty_minimum_track_record_length_is_logged(caplog):
+    # AAPL and MSFT fell from mid-November to the end of 2022: both Sharpe ratios are negative.
+    falling = _toolkit_between("2022-11-15", "2022-12-30").performance
+
+    with caplog.at_level("WARNING"):
+        assert falling.get_minimum_track_record_length().empty
+
+    assert "does not exceed the benchmark Sharpe ratio" in caplog.text
+
+
+@pytest.mark.parametrize(
+    "method",
+    [
+        "get_beta",
+        "get_sharpe_ratio",
+        "get_ulcer_performance_index",
+        "get_morningstar_risk",
+        "get_minimum_track_record_length",
+    ],
+)
+def test_a_rolling_window_needs_two_periods(performance_module, method):
+    for rolling in (1, 0, 2.5):
+        with pytest.raises(InvalidArgumentError, match="rolling is a number"):
+            getattr(performance_module, method)(rolling=rolling)
+
+
+def test_a_rolling_window_longer_than_the_data_is_logged_once(
+    performance_module, caplog
+):
+    with caplog.at_level("WARNING"):
+        sharpe_ratio = performance_module.get_sharpe_ratio(
+            period="monthly", rolling=1000
+        )
+
+    assert sharpe_ratio.empty or sharpe_ratio.isna().all().all()
+    assert caplog.text.count("is longer than the") == 1
+
+
+def test_an_unknown_metric_of_the_factor_analysis_raises(performance_module):
+    with pytest.raises(InvalidArgumentError, match="not a metric of the Performance"):
+        performance_module.get_factor_analysis(metrics="bogus")
+
+
+def test_collect_all_metrics_logs_a_repeated_message_once(caplog):
+    after_the_data = _toolkit_between("2023-06-01", "2023-12-31").performance
+
+    with caplog.at_level("WARNING"):
+        after_the_data.collect_all_metrics()
+
+    assert caplog.text.count("There are no observations between 2023-06-01") == 1

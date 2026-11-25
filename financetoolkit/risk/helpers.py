@@ -7,6 +7,8 @@ from collections.abc import Mapping
 import numpy as np
 import pandas as pd
 
+from financetoolkit.utilities.error_model import check_period, validate_window
+from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.statistics_model import (
     PERIOD_TRANSLATION,
     PERIODS_PER_YEAR,
@@ -16,12 +18,60 @@ from financetoolkit.utilities.statistics_model import (
     to_period_index,
 )
 
+logger = get_logger()
+
 # The day of the week of a Saturday and a Sunday in pandas (Monday is 0).
 SATURDAY = 5
 SUNDAY = 6
 
 # The share of the dates that Saturdays and Sundays must each exceed for daily dates to be calendar days rather than trading days: one in seven (about 14%) for a cryptocurrency, none or a fraction of a percent for a stock exchange.  # noqa: E501
 WEEKEND_DAY_SHARE = 0.1
+
+
+def check_rolling(
+    rolling: int | None, historical_data: Mapping[str, pd.DataFrame], period: str
+) -> None:
+    """
+    Check the rolling window of a Risk or Performance method: a whole number of at least
+    two, as a window of one has no spread, ratio or regression. A window longer than the
+    periods in the data is allowed but gives NaN throughout, which is logged once.
+
+    Args:
+        rolling (int | None): The rolling window, None for none.
+        historical_data (Mapping[str, pd.DataFrame]): The historical data per period, with
+            the daily data under "daily" and the intraday data under "intraday".
+        period (str): The period the window counts.
+
+    Raises:
+        InvalidArgumentError: If rolling is not a whole number of at least 2.
+    """
+    validate_window("rolling", rolling, 2)
+
+    if rolling is None:
+        return
+
+    # The periods are counted on the daily (or intraday) data, which every module has,
+    # rather than read from the data of the period, which a module may not have loaded.
+    dates = (
+        historical_data["intraday" if period == "intraday" else "daily"]
+        .dropna(how="all")
+        .index
+    )
+    periods = (
+        dates.asfreq(PERIOD_TRANSLATION[period]).nunique()
+        if period in PERIOD_TRANSLATION and len(dates)
+        else len(dates)
+    )
+
+    if rolling > periods:
+        logger.warning(
+            "The rolling window of %s %s periods is longer than the %s %s periods in the "
+            "data, so every value is NaN. Use a shorter rolling window or a longer date range.",  # noqa: E501
+            rolling,
+            period,
+            periods,
+            period,
+        )
 
 
 def determine_within_historical_data(
@@ -44,15 +94,16 @@ def determine_within_historical_data(
             look up the outer resampling symbol of the intraday period.
 
     Raises:
+        InvalidArgumentError: For a period that is not a key of WITHIN_PERIOD_TRANSLATION.
         KeyError: For the intraday period without an intraday_period, and for the daily
             period without intraday data, which have no within period data.
 
     Returns:
         pd.DataFrame: The historical data with a (period, observation) multi-index.
     """
-    if period not in WITHIN_PERIOD_TRANSLATION or (
-        period == "intraday" and not intraday_period
-    ):
+    # An unknown period is a mistake in the call; a known one without data is missing data.
+    check_period(period, list(WITHIN_PERIOD_TRANSLATION))
+    if period == "intraday" and not intraday_period:
         raise KeyError(period)
 
     intraday_historical_data = (
@@ -176,7 +227,13 @@ def get_observations_per_year(returns: pd.Series | pd.DataFrame) -> float | pd.S
         float | pd.Series: The observations per year, a float for a Series and indexed by
         column for a DataFrame.
     """
-    dates = to_period_index(returns.index)
+    # A range without data can lose its PeriodIndex on the way (an empty frame gets a
+    # RangeIndex), and without returns there are no weekend dates either.
+    dates = (
+        to_period_index(returns.index)
+        if len(returns.index)
+        else pd.PeriodIndex([], freq="D")
+    )
 
     def per_year(column_returns: pd.Series) -> float:
         return (

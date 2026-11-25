@@ -13,6 +13,8 @@ from financetoolkit.risk.helpers import (
     get_risk_free_rate_per_observation,
     get_risk_free_rate_per_ticker,
 )
+from financetoolkit.risk.value_at_risk import cvar_model, var_model
+from financetoolkit.utilities.error_model import InvalidArgumentError
 
 
 def test_get_max_drawdown(recorder):
@@ -637,7 +639,7 @@ def test_get_mean_absolute_deviation_per_period():
     assert result.tolist() == pytest.approx([1.0, 0.0])
     assert [str(period) for period in result.index] == ["2024-01", "2024-02"]
 
-    with pytest.raises(ValueError, match="not valid"):
+    with pytest.raises(InvalidArgumentError, match="period must be one of"):
         risk_model.get_mean_absolute_deviation(returns, "daily")
     with pytest.raises(TypeError):
         risk_model.get_mean_absolute_deviation(returns.tolist(), "monthly")
@@ -653,7 +655,7 @@ def test_get_coefficient_of_variation_per_group():
     assert result.loc["first", "A"] == pytest.approx(0.5)
     assert result.loc["second", "A"] == pytest.approx(0.0)
 
-    with pytest.raises(ValueError, match="not valid"):
+    with pytest.raises(InvalidArgumentError, match="period must be one of"):
         risk_model.get_coefficient_of_variation(returns, "hourly", groups=groups)
 
 
@@ -1190,3 +1192,17 @@ def test_get_compounded_volatility_by_hand():
     assert risk_model.get_compounded_volatility(small, "monthly").iloc[
         0
     ] == pytest.approx(small.std() * np.sqrt(days), rel=0.01)
+
+
+def test_a_window_of_no_observations_raises():
+    returns = pd.Series(np.random.default_rng(1).normal(0, 0.01, 50))
+
+    for window in (0, -1, 2.5):
+        with pytest.raises(InvalidArgumentError, match="window is a number"):
+            cvar_model.get_cvar_historic(returns, 0.05, window=window)
+        with pytest.raises(InvalidArgumentError, match="window is a number"):
+            risk_model.get_conditional_drawdown_at_risk(returns, 0.05, window=window)
+    # A value at risk of one return is that return; a skewness needs more.
+    assert var_model.get_var_historic(returns, 0.05, window=1).notna().all()
+    with pytest.raises(InvalidArgumentError, match="at least 2"):
+        risk_model.get_skewness(returns, window=1)

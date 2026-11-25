@@ -1201,6 +1201,7 @@ def get_covariance_matrix(
     Returns:
         pd.DataFrame: The covariance matrix per period.
     """
+    check_option("covariance", method, COVARIANCE_METHODS)
     if method == "sample":
         return performance_model.get_covariance_matrix(returns)
     if method == "ledoit_wolf":
@@ -1262,12 +1263,8 @@ def get_covariance_matrix(
         return estimation_model.get_nercome_covariance(returns, seed=seed)
     if method == "ccc_garch":
         return estimation_model.get_ccc_garch_covariance(returns)[0]
-    if method in ("mm", "rocke"):
-        return estimation_model.get_robust_covariance(returns, method, seed=seed)[1]
-    raise ValueError(
-        f"The covariance must be one of {', '.join(COVARIANCE_METHODS)}, not "
-        f"'{method}'."
-    )
+    # The robust estimators, "mm" and "rocke", the options that are left.
+    return estimation_model.get_robust_covariance(returns, method, seed=seed)[1]
 
 
 def get_expected_returns(
@@ -5510,6 +5507,7 @@ def get_hierarchical_order(
             )
         )
         np.fill_diagonal(matrix, 0)
+    check_option("linkage_method", linkage_method, LINKAGE_METHODS)
     if linkage_method == "dbht":
         return leaves_list(
             get_dbht_linkage(

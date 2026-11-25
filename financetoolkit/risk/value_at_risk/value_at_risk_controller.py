@@ -8,7 +8,11 @@ import numpy as np
 import pandas as pd
 
 from financetoolkit.helpers import handle_portfolio
-from financetoolkit.risk.helpers import as_float, compound_into_shared_dates
+from financetoolkit.risk.helpers import (
+    as_float,
+    check_rolling,
+    compound_into_shared_dates,
+)
 from financetoolkit.risk.value_at_risk import (
     backtesting_model,
     cvar_model,
@@ -58,6 +62,21 @@ def _default_window(period: str, method: str) -> int:
         return max(2 * PERIODS_PER_YEAR[period], var_model.MINIMUM_GARCH_OBSERVATIONS)
 
     return max(PERIODS_PER_YEAR[period], 20)
+
+
+def _check_garch_options(garch_method: str, garch_distribution: str) -> None:
+    """
+    Check the GARCH model and distribution also when another method is chosen, which does
+    not use them: a misspelled option is a mistake in the call either way.
+    """
+    check_option(
+        "garch_method", garch_method, list(garch_model.GARCH_FAMILY_VARIANCE_PARAMETERS)
+    )
+    check_option(
+        "garch_distribution",
+        garch_distribution,
+        list(garch_model.GARCH_FAMILY_DISTRIBUTION_PARAMETERS),
+    )
 
 
 def _get_out_of_sample_estimates(
@@ -379,6 +398,7 @@ class ValueAtRiskRisk:
         period = period if period else "daily"
 
         check_period(period, ["daily", "weekly", "monthly", "quarterly", "yearly"])
+        check_rolling(rolling, self._historical_data, period)
         if (
             period == "daily"
             and within_period
@@ -408,6 +428,7 @@ class ValueAtRiskRisk:
                 "garch",
             ],
         )
+        _check_garch_options(garch_method, garch_distribution)
         validate_alpha(alpha)
         if rolling and method not in ("historic", "garch"):
             raise InvalidArgumentError(
@@ -659,6 +680,7 @@ class ValueAtRiskRisk:
         period = period if period else "daily"
 
         check_period(period, ["daily", "weekly", "monthly", "quarterly", "yearly"])
+        check_rolling(rolling, self._historical_data, period)
         if (
             period == "daily"
             and within_period
@@ -703,6 +725,7 @@ class ValueAtRiskRisk:
         }
 
         check_option("method", method, list(estimators))
+        _check_garch_options(garch_method, garch_distribution)
 
         alphas = alpha if isinstance(alpha, list | tuple) else [alpha]
         for tail in alphas:
@@ -1763,6 +1786,7 @@ class ValueAtRiskRisk:
         check_option(
             "method", method, ["historic", "gaussian", "studentt", "evt", "garch"]
         )
+        _check_garch_options(garch_method, garch_distribution)
         validate_alpha(alpha)
         if not tests or any(name not in VAR_BACKTESTS for name in tests):
             raise InvalidArgumentError(
@@ -1946,6 +1970,7 @@ class ValueAtRiskRisk:
         check_option(
             "method", method, ["historic", "gaussian", "studentt", "evt", "garch"]
         )
+        _check_garch_options(garch_method, garch_distribution)
         validate_alpha(alpha)
 
         window = window if window else _default_window(period, method)

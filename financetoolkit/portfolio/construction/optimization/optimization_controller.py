@@ -132,6 +132,11 @@ class OptimizationConstruction:
                 index=with_cash, columns=with_cash, fill_value=0.0
             )
         volatility = pd.Series(np.sqrt(np.diag(covariance)), index=covariance.index)
+        # An asset without volatility (cash, a constant price) has no Sharpe ratio rather
+        # than an infinite one, as the Portfolio row has none without volatility.
+        risky_volatility = volatility.where(
+            volatility > optimization_model.ZERO_VOLATILITY_TOLERANCE
+        )
         statistics = optimization_model.get_portfolio_statistics(
             weights, expected_returns, covariance, risk_free_rate
         )
@@ -148,7 +153,7 @@ class OptimizationConstruction:
                 "Weight": weights,
                 "Expected Return": expected_returns,
                 "Volatility": volatility,
-                "Sharpe Ratio": (expected_returns - risk_free_rate) / volatility,
+                "Sharpe Ratio": (expected_returns - risk_free_rate) / risky_volatility,
                 "Risk Contribution": shares,
             }
         )
@@ -1918,16 +1923,9 @@ class OptimizationConstruction:
                 method.strip() for method in methods.split(",") if method.strip()
             ]
         methods = list(methods or DEFAULT_STACKING_METHODS)
-        unknown = [
-            method
-            for method in [*methods, final_method]
-            if method not in STACKING_METHODS
-        ]
-        if unknown:
-            raise ValueError(
-                f"Unknown methods: {', '.join(unknown)}; choose from "
-                f"{', '.join(STACKING_METHODS)}."
-            )
+        for method in methods:
+            check_option("methods", method, STACKING_METHODS)
+        check_option("final_method", final_method, STACKING_METHODS)
         returns, expected, covariance_matrix, risk_free_rate = self._get_inputs(
             period,
             include_benchmark,
@@ -3149,7 +3147,8 @@ class OptimizationConstruction:
         excess = expected_per_period - risk_free_per_period
         excess[PORTFOLIO_TICKER] = excess @ weights
         table[name] = measure
-        table[f"{name} Ratio"] = excess / measure
+        # A risk measure of zero (or a gain as the measure) gives no ratio, not ±inf.
+        table[f"{name} Ratio"] = excess / measure.where(measure > 0)
         return self._round(self._add_turnover(table, weights, current), rounding)
 
     @handle_errors
@@ -3603,7 +3602,9 @@ class OptimizationConstruction:
         if "Cash" in table.index:
             worst["Cash"] = risk_free_rate
         table["Worst-Case Return"] = worst
-        table["Worst-Case Sharpe Ratio"] = (worst - risk_free_rate) / volatility
+        table["Worst-Case Sharpe Ratio"] = (worst - risk_free_rate) / volatility.where(
+            volatility > optimization_model.ZERO_VOLATILITY_TOLERANCE
+        )
         return self._round(self._add_turnover(table, weights, current), rounding)
 
     @handle_errors

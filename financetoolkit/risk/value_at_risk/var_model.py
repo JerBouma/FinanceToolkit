@@ -8,7 +8,7 @@ from scipy.optimize import brentq
 from financetoolkit.risk import risk_model
 from financetoolkit.risk.helpers import as_float
 from financetoolkit.risk.volatility import garch_model
-from financetoolkit.utilities.error_model import InvalidArgumentError
+from financetoolkit.utilities.error_model import InvalidArgumentError, validate_window
 from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.statistics_model import by_own_trading_days
 
@@ -58,7 +58,7 @@ def get_var_historic(
     Args:
         returns (pd.Series | pd.DataFrame): A Series or Dataframe of returns.
         alpha (float): The tail probability (e.g., 0.05 for the 95% confidence level).
-        window (int | None, optional): The number of observations of a rolling window. Defaults
+        window (int | None, optional): The number of observations of a rolling window, at least 1. Defaults
             to None, which calculates the VaR over all returns (per period for a 'within
             period' index).
 
@@ -70,6 +70,7 @@ def get_var_historic(
     - The VaR is the alpha quantile of the returns with linear interpolation; Riskfolio-Lib and
       skfolio take an observed return instead and report the loss as a positive number.
     """
+    validate_window("window", window, 1)
     if window is not None:
         # Linear interpolation, as np.percentile, in one pass instead of a call per window.
         return returns.rolling(window=window).quantile(alpha, interpolation="linear")

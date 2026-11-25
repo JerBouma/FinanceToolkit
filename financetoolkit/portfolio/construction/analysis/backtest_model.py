@@ -7,8 +7,11 @@ from collections.abc import Callable
 import numpy as np
 import pandas as pd
 
+from financetoolkit.portfolio.construction.optimization.optimization_model import (
+    ZERO_VOLATILITY_TOLERANCE,
+)
 from financetoolkit.risk import risk_model
-from financetoolkit.utilities.error_model import check_option
+from financetoolkit.utilities.error_model import InvalidArgumentError, check_option
 from financetoolkit.utilities.logger_model import get_logger
 
 logger = get_logger()
@@ -158,6 +161,9 @@ def get_walk_forward_backtest(
                 )
                 if not np.all(np.isfinite(target)):
                     raise ValueError("The weights are not finite.")
+            except InvalidArgumentError:
+                # A mistake in the call fails every date alike, so it is not a failed date.
+                raise
             except ValueError as error:
                 failures += 1
                 reason = reason or str(error)
@@ -276,8 +282,9 @@ def get_backtest_statistics(
         {
             "Annualized Return": annualized_return,
             "Annualized Volatility": volatility,
+            # A strategy without volatility (all cash) has no Sharpe ratio, not ±inf.
             "Sharpe Ratio": (returns.mean() * periods_per_year - risk_free_rate)
-            / volatility,
+            / volatility.where(volatility > ZERO_VOLATILITY_TOLERANCE),
             "Maximum Drawdown": risk_model.get_max_drawdown(returns),
             "Average Turnover": average_turnover,
             "Annualized Costs": turnover.reindex(columns=returns.columns).sum(

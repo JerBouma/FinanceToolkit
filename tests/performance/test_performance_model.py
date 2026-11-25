@@ -1,6 +1,7 @@
 """Performance Model Tests"""
 
 import io
+import warnings
 import zipfile
 
 import numpy as np
@@ -15,6 +16,7 @@ from financetoolkit.risk.helpers import (
     get_observations_per_year,
 )
 from financetoolkit.risk.value_at_risk import cvar_model
+from financetoolkit.utilities.error_model import InvalidArgumentError
 
 RESIDUAL_STD_TOLERANCE = 0.002
 
@@ -749,9 +751,10 @@ def test_get_sortino_ratio_needs_two_observations():
         np.mean([0.02, -0.01, 0.005]) / np.sqrt(0.01**2 / 3)
     )
     assert np.isnan(performance_model.get_sortino_ratio(pd.Series([-0.01])))
-    assert (
-        performance_model.get_sortino_ratio(excess_returns["A"], window=1).isna().all()
-    )
+    with pytest.raises(
+        InvalidArgumentError, match="window is a number of observations"
+    ):
+        performance_model.get_sortino_ratio(excess_returns["A"], window=1)
 
 
 def test_get_tracking_error_and_information_ratio_per_column():
@@ -2911,3 +2914,78 @@ def test_sharpe_ratio_difference_is_nan_without_variation():
     for method in ("memmel", "ledoit_wolf"):
         result = performance_model.get_sharpe_ratio_difference(constant, other, method)
         assert result.isna().all()
+
+
+def test_rolling_capture_ratio_of_a_series_is_a_series():
+    returns = pd.read_pickle("tests/datasets/historical_dataset.pickle")["Return"].iloc[
+        1:
+    ]
+
+    single = performance_model.get_capture_ratio(
+        returns["AAPL"], returns["Benchmark"], window=63
+    )
+    as_frame = performance_model.get_capture_ratio(
+        returns[["AAPL"]], returns["Benchmark"], window=63
+    )
+
+    assert isinstance(single, pd.Series)
+    pd.testing.assert_series_equal(single, as_frame["AAPL"])
+
+
+def test_regression_ratios_of_too_few_observations_are_nan():
+    index = pd.period_range("2020-01", periods=24, freq="M")
+    rng = np.random.default_rng(3)
+    # The benchmark repeats every return once, so every window of two has no variance.
+    benchmark = pd.Series(np.repeat(rng.normal(0.01, 0.04, 12), 2), index=index)
+    excess = pd.DataFrame({"A": 0.8 * benchmark + rng.normal(0, 0.02, 24)}, index=index)
+
+    beta = performance_model.get_beta(excess, benchmark, window=2)
+    assert not np.isinf(beta.to_numpy(float)).any()
+    assert beta["A"].iloc[1::2].isna().all()
+
+    # A line through two returns fits them exactly, so there is no residual risk.
+    jensens_alpha = pd.DataFrame({"A": rng.normal(0.01, 0.01, 24)}, index=index)
+    appraisal_ratio = performance_model.get_appraisal_ratio(
+        jensens_alpha,
+        excess_returns=excess,
+        benchmark_excess_returns=benchmark,
+        window=2,
+    )
+    assert appraisal_ratio["A"].isna().all()
+
+    # Three returns per side clear the default minimum but not a minimum of 20.
+    days = pd.Series([0.01, 0.02, 0.015, -0.01, -0.02, -0.03])
+    asset = 1.2 * days + pd.Series([0.001, -0.002, 0.003, 0.002, -0.001, 0.0])
+    assert not np.isnan(performance_model.get_bull_bear_beta(asset, days)["Bull Beta"])
+    twenty_days = performance_model.get_bull_bear_beta(
+        asset, days, minimum_observations=20
+    )
+    assert all(np.isnan(value) for value in twenty_days.values())
+
+
+def test_a_window_of_no_observations_raises():
+    rng = np.random.default_rng(2)
+    returns = pd.DataFrame({"A": rng.normal(0, 0.01, 60)})
+    styles = pd.DataFrame(rng.normal(0, 0.01, (60, 2)), columns=["B", "C"])
+
+    for window in (0, -1):
+        with pytest.raises(InvalidArgumentError, match="window is a number"):
+            performance_model.get_kelly_criterion(returns, window=window)
+        with pytest.raises(InvalidArgumentError, match="window is a number"):
+            performance_model.get_omega_ratio(returns, window=window)
+        with pytest.raises(InvalidArgumentError, match="window is a number"):
+            performance_model.get_style_analysis(returns["A"], styles, window=window)
+    # An Omega ratio of one return is defined; a Kelly criterion needs wins and losses.
+    assert performance_model.get_omega_ratio(returns, window=1).notna().any().any()
+    with pytest.raises(InvalidArgumentError, match="at least 2"):
+        performance_model.get_kelly_criterion(returns, window=1)
+
+
+def test_autocorrelation_penalty_of_two_returns_does_not_warn():
+    returns = pd.Series(np.random.default_rng(4).normal(0, 0.01, 40))
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        penalty = performance_model.get_autocorrelation_penalty(returns, window=2)
+
+    assert len(penalty) == len(returns)

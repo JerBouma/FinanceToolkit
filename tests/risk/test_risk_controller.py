@@ -1841,3 +1841,69 @@ def test_get_conditional_expected_drawdown(recorder, risk_module):
 def test_get_drawdown_table(recorder, risk_module):
     recorder.capture(risk_module.get_drawdown_table(top=3))
     recorder.capture(risk_module.get_drawdown_table(top=2, period="weekly"))
+
+
+@pytest.mark.parametrize(
+    "method",
+    [
+        "get_value_at_risk",
+        "get_conditional_value_at_risk",
+        "get_var_backtest",
+        "get_acerbi_szekely_test",
+    ],
+)
+def test_the_garch_options_are_checked_for_every_method(risk_module, method):
+    for option in ("garch_method", "garch_distribution"):
+        with pytest.raises(InvalidArgumentError, match=option):
+            getattr(risk_module, method)(method="historic", **{option: "bogus"})
+
+
+@pytest.mark.parametrize(
+    "method",
+    [
+        "get_volatility",
+        "get_value_at_risk",
+        "get_maximum_drawdown",
+        "get_skewness",
+        "get_bid_ask_spread",
+        "get_srisk",
+    ],
+)
+def test_a_rolling_window_needs_two_periods(risk_module, method):
+    for rolling in (1, 0, -3, 2.5):
+        with pytest.raises(InvalidArgumentError, match="rolling is a number"):
+            getattr(risk_module, method)(rolling=rolling)
+
+
+def test_a_rolling_window_longer_than_the_data_is_logged_once(risk_module, caplog):
+    with caplog.at_level("WARNING"):
+        volatility = risk_module.get_volatility(period="monthly", rolling=1000)
+
+    assert volatility.isna().all().all()
+    assert caplog.text.count("is longer than the") == 1
+
+
+def test_srisk_of_a_range_without_data_says_so(caplog):
+    historical = pd.read_pickle("tests/datasets/historical_dataset.pickle")
+    from financetoolkit import Toolkit
+
+    after_the_data = Toolkit(
+        tickers=["AAPL", "MSFT"],
+        historical=historical,
+        balance=pd.read_pickle("tests/datasets/balance_dataset.pickle"),
+        income=pd.read_pickle("tests/datasets/income_dataset.pickle"),
+        cash=pd.read_pickle("tests/datasets/cash_dataset.pickle"),
+        convert_currency=False,
+        start_date="2023-06-01",
+        end_date="2023-12-31",
+        sleep_timer=False,
+    )
+    after_the_data._daily_risk_free_rate = pd.read_pickle(
+        "tests/datasets/risk_free_rate.pickle"
+    )
+
+    with caplog.at_level("ERROR"):
+        assert after_the_data.risk.get_srisk().empty
+
+    assert "The data holds no yearly period with daily returns" in caplog.text
+    assert "None" not in caplog.text

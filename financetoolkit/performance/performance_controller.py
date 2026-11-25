@@ -14,6 +14,7 @@ from financetoolkit.helpers import LazyDict, handle_portfolio
 from financetoolkit.performance import performance_model
 from financetoolkit.performance.helpers import determine_within_dataset
 from financetoolkit.risk.helpers import (
+    check_rolling,
     determine_within_historical_data,
     get_days_per_period,
     get_observations_per_year,
@@ -39,7 +40,7 @@ from financetoolkit.utilities.error_model import (
     handle_errors,
     validate_alpha,
 )
-from financetoolkit.utilities.logger_model import get_logger
+from financetoolkit.utilities.logger_model import get_logger, log_each_message_once
 from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import (
     PERIOD_TRANSLATION,
@@ -56,6 +57,13 @@ from financetoolkit.utilities.statistics_model import (
 # ruff: noqa: E501
 
 logger = get_logger()
+
+# The fewest days a bull or bear regression is fitted on, about a trading month: the Alpha is
+# compounded over a year, so that of a handful of days (a week) is amplified to extremes.
+MINIMUM_BULL_BEAR_OBSERVATIONS = 20
+
+# The fewest returns a Covariance or Correlation Matrix is calculated from without a warning.
+MINIMUM_MATRIX_OBSERVATIONS = 3
 
 
 # The performance metrics that get_factor_analysis compares across tickers with "all", each
@@ -536,6 +544,29 @@ class Performance:
 
         return self._within_historical_data[period]
 
+    def _get_matrix_returns(self, period: str) -> pd.DataFrame:
+        """
+        The returns of the Covariance and Correlation Matrix, with a warning when the date
+        range holds fewer than three of them: a yearly default over a few years leaves a
+        handful of points per pair, or none (a matrix of NaN).
+        """
+        returns = self._historical_data[period]["Return"].loc[
+            self._start_date : self._end_date
+        ]
+        observations = len(returns.dropna(how="all"))
+
+        if observations < MINIMUM_MATRIX_OBSERVATIONS:
+            logger.warning(
+                "There are %s %s returns between %s and %s, too few for a covariance or correlation. "  # noqa: E501
+                "Use a higher frequency period, such as period='monthly'.",
+                observations,
+                period,
+                self._start_date,
+                self._end_date,
+            )
+
+        return returns
+
     def _get_column(
         self, period: str, column: str, within_period: bool, benchmark: bool = False
     ) -> pd.DataFrame | pd.Series:
@@ -561,6 +592,7 @@ class Performance:
         return self._data_cache[key]
 
     @handle_errors
+    @log_each_message_once()
     def collect_all_metrics(
         self,
         period: str | None = None,
@@ -1012,6 +1044,7 @@ class Performance:
         | 2025   | 1.8311 | 1.9833 | 0.9638 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
+        check_rolling(rolling, self._historical_data, period)
 
         returns = self._get_column(period, "Return", within_period=not rolling)
         benchmark_returns = self._get_column(
@@ -1310,6 +1343,7 @@ class Performance:
         | 2025   |  0.1702 |  0.221  |  0.2173 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
+        check_rolling(rolling, self._historical_data, period)
 
         if rolling:
             returns = self._get_column(period, "Return", within_period=False)
@@ -1866,6 +1900,7 @@ class Performance:
         | 2024 |      0      |         1.0396 |      0.8723 |      0.1568 |     -0.0685 |      0.0143 |      0.9838 |
         | 2025 |      0      |         0.9702 |      0.8649 |      0.1317 |     -0.1871 |     -0.0235 |      0.9826 |
         """
+        check_rolling(rolling, self._historical_data, "daily")
         check_option("method", method, ["simple", "multi"])
 
         factors_to_calculate = (
@@ -2220,6 +2255,7 @@ class Performance:
         | 2025Q4 |      0.0005 |         0.4852 |     -0.2193 |      0.6778 |     -0.0933 |      0.1938 |
         """
         # Carhart (1997) extends the *three* factor model. The three and five factor files share Mkt-RF, HML and RF but their SMB series differ, so the three factor file is the correct source here.  # noqa: E501
+        check_rolling(rolling, self._historical_data, "daily")
         three_factor_dataset = (
             performance_model.obtain_fama_and_french_three_factor_dataset(region=region)
         )
@@ -2410,6 +2446,7 @@ class Performance:
         | ARKK  | 0      | 0.0091 |     0 | 0.9909 |     0 | 0      |      0.6123 |             0.0638 |           0.2632 |
         | BRK-B | 0.8793 | 0      |     0 | 0      |     0 | 0.1207 |      0.5662 |             0.0425 |           0.1304 |
         """
+        check_rolling(rolling, self._historical_data, period)
         check_period(period, PERIODS_PER_YEAR)
         # A comma-separated string (as the MCP server passes a list) is split.
         style_tickers = (
@@ -2625,6 +2662,11 @@ class Performance:
         | 2024   |  0.1474 |  0.4911 | -0.2715 |
         | 2025   | -0.2311 |  0.0677 | -0.4221 |
         """
+        check_rolling(
+            rolling,
+            self._historical_data,
+            period or ("quarterly" if self._quarterly else "yearly"),
+        )
         check_option("method", method, ("standard", "annualized", "jensen"))
 
         if method == "jensen":
@@ -2867,6 +2909,7 @@ class Performance:
         | 2025   | -0.0065 | -0.265  |  0.008  |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
+        check_rolling(rolling, self._historical_data, period)
 
         if rolling:
             returns = self._get_column(period, "Return", within_period=False)
@@ -3198,6 +3241,7 @@ class Performance:
         )
 
         period = period if period else "quarterly" if self._quarterly else "yearly"
+        check_rolling(rolling, self._historical_data, period)
 
         if rolling:
             period_returns = self._get_column(period, "Return", within_period=False)
@@ -3547,6 +3591,7 @@ class Performance:
         )
 
         period = period if period else "quarterly" if self._quarterly else "yearly"
+        check_rolling(rolling, self._historical_data, period)
 
         if rolling:
             period_returns = self._get_column(period, "Return", within_period=False)
@@ -3720,6 +3765,7 @@ class Performance:
         | 2025   |  0.0509 | -0.0036 | -0.0195 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
+        check_rolling(rolling, self._historical_data, period)
 
         returns = self._get_column(period, "Return", within_period=not rolling)
 
@@ -3877,6 +3923,7 @@ class Performance:
         | 2025   | 0.464  | 0.3496 |  0.4248 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
+        check_rolling(rolling, self._historical_data, period)
 
         if rolling:
             period_returns = self._get_column(period, "Return", within_period=False)
@@ -3998,6 +4045,7 @@ class Performance:
         | 2025   |  0.7602 |  1.2863 | -0.7896 |
         """
 
+        check_rolling(rolling, self._historical_data, "daily")
         period = period if period else "quarterly" if self._quarterly else "yearly"
         returns = self._get_column(period, "Return", within_period=True)
 
@@ -4788,6 +4836,7 @@ class Performance:
             )
 
         period = period if period else "quarterly" if self._quarterly else "yearly"
+        check_rolling(rolling, self._historical_data, period)
         period_returns = self._get_column(period, "Return", within_period=False)
         benchmark_period_returns = self._get_column(
             period, "Return", within_period=False, benchmark=True
@@ -4931,6 +4980,7 @@ class Performance:
         | 2025   | 0.001  | 0.0051 | 0.0041 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
+        check_rolling(rolling, self._historical_data, period)
 
         if rolling:
             returns = self._get_column(period, "Return", within_period=False)
@@ -5063,6 +5113,7 @@ class Performance:
         | 2025   |  0.042  | -0.0246 | -0.0114 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
+        check_rolling(rolling, self._historical_data, period)
 
         if rolling:
             returns = self._get_column(period, "Return", within_period=False)
@@ -5216,6 +5267,7 @@ class Performance:
         | 2025   | 1.2056 | 0.5019 | 0.4674 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
+        check_rolling(rolling, self._historical_data, period)
         returns = self._get_column(period, "Return", within_period=not rolling)
         benchmark_returns = self._get_column(
             period, "Return", within_period=not rolling, benchmark=True
@@ -5371,6 +5423,7 @@ class Performance:
         | 2025   | 0.3459 | 0.3223 | 2.0919 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
+        check_rolling(rolling, self._historical_data, period)
         returns = self._get_column(period, "Return", within_period=not rolling)
         benchmark_returns = self._get_column(
             period, "Return", within_period=not rolling, benchmark=True
@@ -5905,7 +5958,9 @@ class Performance:
         excess returns for both.
         - Unlike the upside or downside Beta of `get_beta`, which regresses the returns themselves, these
         regressions use excess returns, so the Alphas are the CAPM (Jensen's) Alphas of each market.
-        - Each side needs at least three days with returns in a period, otherwise its values are NaN.
+        - Each side needs at least 20 days with returns in a period (about a trading month), otherwise its values
+          are NaN: the Alpha is compounded over a year, which amplifies the Alpha of a few days to extremes. Weekly
+          and monthly periods have fewer days per side, so they give NaN; quarterly and yearly periods give values.
         - The Portfolio of a Portfolio's Toolkit is regressed on its own daily return series, as the market
         timing models do.
         - With growth, the method calculates the growth of the ratio values using the specified `lag`.
@@ -5961,6 +6016,7 @@ class Performance:
                             else None
                         ),
                         observations_per_year[ticker],
+                        minimum_observations=MINIMUM_BULL_BEAR_OBSERVATIONS,
                     )
                     for sub_period in excess_return.index.get_level_values(0).unique()
                 },
@@ -6298,6 +6354,7 @@ class Performance:
         | 2025   | 0.9449 | 0.0007 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
+        check_rolling(rolling, self._historical_data, period)
         returns = self._get_column(period, "Return", within_period=not rolling)
         benchmark_returns = self._get_column(
             period, "Return", within_period=not rolling, benchmark=True
@@ -6422,6 +6479,7 @@ class Performance:
         | 2025   |  0.4286 |  0.7212 |  0.921  |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
+        check_rolling(rolling, self._historical_data, period)
         returns = self._get_column(period, "Return", within_period=not rolling)
 
         # The Sharpe ratio of the returns themselves, without a risk free rate.
@@ -6961,6 +7019,7 @@ class Performance:
         | 2025 | 1.0728 | 1.2867 | 0.9944 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
+        check_rolling(rolling, self._historical_data, period)
 
         if rolling:
             returns = self._get_column(period, "Return", within_period=False)
@@ -7138,6 +7197,7 @@ class Performance:
         | 2024   |  0.1789 |  0.1822 |  0.0479 |
         | 2025   |  0.1198 |  0.1351 | -0.0098 |
         """
+        check_rolling(rolling, self._historical_data, "monthly")
         mrar = self._get_morningstar_risk_adjusted_return(
             gamma, period, within_period, rolling
         )
@@ -7249,6 +7309,7 @@ class Performance:
         | 2024   | 0.0122 | 0.0147 | 0.0162 |
         | 2025   | 0.0125 | 0.0256 | 0.0126 |
         """
+        check_rolling(rolling, self._historical_data, "monthly")
         morningstar_return = self._get_morningstar_risk_adjusted_return(
             0, period, within_period, rolling
         )
@@ -7854,6 +7915,7 @@ class Performance:
         check_option("method", method, ("discrete", "continuous"))
 
         period = period if period else "quarterly" if self._quarterly else "yearly"
+        check_rolling(rolling, self._historical_data, period)
 
         if rolling:
             returns = self._get_column(period, "Return", within_period=False)
@@ -8072,6 +8134,16 @@ class Performance:
             )
 
         returns = self._get_column(period, "Return", within_period=within_period)
+
+        # Without returns every statistic is undefined (and the Risk of Ruin would read 1).
+        if returns.dropna(how="all").empty:
+            logger.warning(
+                "There are no %s returns between %s and %s, so the return statistics are empty.",  # noqa: E501
+                period,
+                self._start_date,
+                self._end_date,
+            )
+            return pd.DataFrame()
 
         # The returns in a year: the daily returns within each period, or the returns of
         # `period` over the whole history (the daily returns of each ticker's own calendar).
@@ -8539,9 +8611,9 @@ class Performance:
           the overlapping (pairwise complete) observations of each pair
 
         Args:
-            period (str, optional): The data frequency for returns. Options are: "weekly", "monthly", "quarterly",
-                "yearly". Defaults to "quarterly" if the Toolkit is initialised with quarterly=True, otherwise
-                "yearly".
+            period (str, optional): The data frequency for returns. Options are: "daily", "weekly", "monthly",
+                "quarterly", "yearly". Defaults to "quarterly" if the Toolkit is initialised with quarterly=True,
+                otherwise "yearly"; fewer than three returns in the date range are logged as a warning.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -8580,9 +8652,7 @@ class Performance:
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
-        returns = self._historical_data[period]["Return"].loc[
-            self._start_date : self._end_date
-        ]
+        returns = self._get_matrix_returns(period)
 
         correlation_matrix = performance_model.get_correlation_matrix(returns)
 
@@ -8614,9 +8684,9 @@ class Performance:
           range, per period and not annualized, using the overlapping (pairwise complete) observations of each pair
 
         Args:
-            period (str, optional): The data frequency for returns. Options are: "weekly", "monthly", "quarterly",
-                "yearly". Defaults to "quarterly" if the Toolkit is initialised with quarterly=True, otherwise
-                "yearly".
+            period (str, optional): The data frequency for returns. Options are: "daily", "weekly", "monthly",
+                "quarterly", "yearly". Defaults to "quarterly" if the Toolkit is initialised with quarterly=True,
+                otherwise "yearly"; fewer than three returns in the date range are logged as a warning.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -8655,9 +8725,7 @@ class Performance:
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
-        returns = self._historical_data[period]["Return"].loc[
-            self._start_date : self._end_date
-        ]
+        returns = self._get_matrix_returns(period)
 
         covariance_matrix = performance_model.get_covariance_matrix(returns)
 
@@ -8798,6 +8866,7 @@ class Performance:
         check_option("method", method, ("appraisal", "modified", "alternative"))
 
         period = period if period else "quarterly" if self._quarterly else "yearly"
+        check_rolling(rolling, self._historical_data, period)
 
         if rolling:
             returns = self._get_column(period, "Return", within_period=False)
@@ -9003,6 +9072,7 @@ class Performance:
         | 2025   |  0.0022 | -0.0738 | -0.1335 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
+        check_rolling(rolling, self._historical_data, period)
 
         if rolling:
             returns = self._get_column(period, "Return", within_period=False)
@@ -10096,6 +10166,7 @@ class Performance:
         | 2025   | 1227.15  | 195160 |  134.903 |  nan     |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
+        check_rolling(rolling, self._historical_data, period)
 
         if rolling:
             excess_return = performance_model.get_excess_return(
@@ -10122,6 +10193,18 @@ class Performance:
             kurtosis=kurtosis,
             confidence_level=confidence_level,
         )
+
+        # Without a Sharpe ratio above the benchmark's no track record is long enough, so
+        # every value is NaN and the result would otherwise be empty without a reason.
+        if (
+            minimum_track_record_length.isna().all().all()
+            and sharpe_ratio.notna().any().any()
+        ):
+            logger.warning(
+                "The Sharpe ratio does not exceed the benchmark Sharpe ratio of %s in any period, "  # noqa: E501
+                "so no track record is long enough and the Minimum Track Record Length is empty.",  # noqa: E501
+                benchmark_sharpe_ratio,
+            )
 
         return finalize_dataset(
             dataset=minimum_track_record_length,
@@ -10772,6 +10855,7 @@ class Performance:
         | 2025   | 0.4214 | 0.4813 | 0.4662 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
+        check_rolling(rolling, self._historical_data, period)
 
         returns = self._get_column(period, "Return", within_period=not rolling)
         benchmark_returns = self._get_column(
@@ -11817,6 +11901,15 @@ class Performance:
         returns = self._get_column(period, "Return", within_period=within_period)
         if not within_period:
             returns = returns.loc[self._start_date : self._end_date]
+
+        if returns.dropna(how="all").empty:
+            logger.warning(
+                "There are no %s returns between %s and %s, so the strategy risk is empty.",  # noqa: E501
+                period,
+                self._start_date,
+                self._end_date,
+            )
+            return pd.DataFrame()
 
         # The bets in a year: the daily returns within each period, or the returns of `period`
         # over the whole history (the daily returns of each ticker's own calendar).

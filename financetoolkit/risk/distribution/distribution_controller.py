@@ -10,6 +10,7 @@ import pandas as pd
 from financetoolkit.helpers import calculate_per_window, handle_portfolio
 from financetoolkit.risk import risk_model
 from financetoolkit.risk.distribution import dispersion_model, fractal_model
+from financetoolkit.risk.helpers import check_rolling
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
 from financetoolkit.utilities.error_model import (
     InvalidArgumentError,
@@ -131,6 +132,7 @@ class DistributionRisk:
         period = period if period else "daily"
 
         check_period(period, ["daily", "weekly", "monthly", "quarterly", "yearly"])
+        check_rolling(rolling, self._historical_data, period)
         if (
             period == "daily"
             and within_period
@@ -269,6 +271,7 @@ class DistributionRisk:
         period = period if period else "daily"
 
         check_period(period, ["daily", "weekly", "monthly", "quarterly", "yearly"])
+        check_rolling(rolling, self._historical_data, period)
         if (
             period == "daily"
             and within_period
@@ -422,6 +425,7 @@ class DistributionRisk:
         period = period if period else "daily"
 
         check_period(period, ["daily", "weekly", "monthly", "quarterly", "yearly"])
+        check_rolling(rolling, self._historical_data, period)
         if (
             period == "daily"
             and within_period
@@ -668,6 +672,7 @@ class DistributionRisk:
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
         check_period(period, ["weekly", "monthly", "quarterly", "yearly"])
+        check_rolling(rolling, self._historical_data, period)
 
         if rolling:
             period_returns = self._historical_data[period]["Return"]
@@ -1126,6 +1131,7 @@ class DistributionRisk:
         | Benchmark |  0.4396 |
         """
         # The generalized estimator regresses the dispersion of lagged differences on the lag, which only identifies self-affinity on a level series: on log prices, as in Di Matteo et al. (2005), whose lagged differences are log returns over the lag. The rescaled range and the detrended fluctuation sum the changes themselves, so they take the log returns.  # noqa: E501
+        check_rolling(rolling, self._historical_data, period or "daily")
         log_prices = self._get_log_prices(period)
 
         if method == "generalized":
@@ -1284,6 +1290,7 @@ class DistributionRisk:
         | BTCUSD    |  1.4827 |
         | Benchmark |  1.5085 |
         """
+        check_rolling(rolling, self._historical_data, period or "daily")
         functions = {
             "higuchi": fractal_model.get_higuchi_fractal_dimension,
             "katz": fractal_model.get_katz_fractal_dimension,

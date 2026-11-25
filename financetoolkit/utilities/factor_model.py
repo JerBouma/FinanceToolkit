@@ -1081,8 +1081,9 @@ def get_daily_factors(
             or not name.startswith("get_")
             or name in ("get_factor_analysis", "get_indicator_summary")
         ):
-            raise ValueError(
-                f"{name} is not a metric of the {type(module).__name__} module."
+            raise InvalidArgumentError(
+                f"{name} is not a metric of the {type(module).__name__} module. Please pass "
+                "the name of one of its get_ methods or of one of its collections as metrics."
             )
         accepted = inspect.signature(method).parameters
         for key, value in variant.items():

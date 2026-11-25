@@ -76,6 +76,7 @@ def get_commodity_prices() -> pd.DataFrame:
 
         sheet = read_excel(
             get_request(link.group(1), timeout=120).content,
+            description,
             sheet_name=SHEET_NAME,
             header=None,
         )

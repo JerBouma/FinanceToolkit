@@ -87,6 +87,7 @@ def get_stock_market_data() -> pd.DataFrame:
         )
         sheet = read_excel(
             get_request(url, timeout=120).content,
+            description,
             sheet_name="Data",
             header=None,
         )

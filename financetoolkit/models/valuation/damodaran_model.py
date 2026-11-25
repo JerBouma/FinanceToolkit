@@ -46,7 +46,10 @@ def get_synthetic_rating_table() -> pd.DataFrame:
 
     def fetch() -> pd.DataFrame:
         sheet = read_excel(
-            get_request(RATINGS_URL, timeout=60).content, sheet_name=0, header=None
+            get_request(RATINGS_URL, timeout=60).content,
+            description,
+            sheet_name=0,
+            header=None,
         )
         tables = []
 
@@ -236,6 +239,7 @@ def get_industry_statistics(dataset: str, region: str) -> pd.DataFrame:
     def fetch() -> pd.DataFrame:
         sheet = read_excel(
             get_request(INDUSTRY_URL.format(file=file_name), timeout=60).content,
+            description,
             sheet_name="Industry Averages",
             header=None,
         )

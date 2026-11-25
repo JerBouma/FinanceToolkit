@@ -56,7 +56,7 @@ def _get_year(year: int) -> pd.DataFrame:
                 return pd.DataFrame()
             raise
 
-        data = read_excel(response.content, header=HEADER_ROW)
+        data = read_excel(response.content, description, header=HEADER_ROW)
 
         require_columns(data, {"Date", "Contract", "Status", PRICE_COLUMN}, description)
         data = data[

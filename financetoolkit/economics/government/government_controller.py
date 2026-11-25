@@ -6,7 +6,11 @@ from financetoolkit import helpers
 from financetoolkit.economics.helpers import validate_period
 from financetoolkit.economics.sources import imf_model, oecd_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
-from financetoolkit.utilities.error_model import handle_errors
+from financetoolkit.utilities.error_model import (
+    InvalidArgumentError,
+    check_option,
+    handle_errors,
+)
 from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import finalize_dataset
 
@@ -35,14 +39,11 @@ class GovernmentEconomics:
             str: The variable at that level.
 
         Raises:
-            ValueError: When the level is not one of the three.
+            InvalidArgumentError: When the level is not one of the three.
         """
         prefixes = {"consolidated": "", "general": "gen_", "central": "c"}
 
-        if level not in prefixes:
-            raise ValueError(
-                f"The level must be one of {', '.join(map(repr, prefixes))}, not {level!r}."
-            )
+        check_option("level", level, tuple(prefixes))
 
         return f"{prefixes[level]}{variable}"
 
@@ -1486,13 +1487,13 @@ class GovernmentEconomics:
             list[str]: The functions.
 
         Raises:
-            ValueError: When a function is not known.
+            InvalidArgumentError: When a function is not known.
         """
         names = {name.lower(): name for name in imf_model.EXPENDITURE_FUNCTIONS}
         requested = helpers.split_values(functions) or imf_model.DIVISIONS
 
         if unknown := [name for name in requested if str(name).lower() not in names]:
-            raise ValueError(
+            raise InvalidArgumentError(
                 f"Unknown government function(s) {', '.join(map(repr, unknown))}. Choose from "
                 f"{', '.join(map(repr, imf_model.EXPENDITURE_FUNCTIONS))}."
             )

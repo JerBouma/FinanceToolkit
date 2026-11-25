@@ -2,17 +2,20 @@
 
 __docformat__ = "google"
 
-import io
 import re
 import zipfile
 
 import numpy as np
 import pandas as pd
+import requests
 
 from financetoolkit.cache import policy_model
 from financetoolkit.cache.cache_controller import get_active_cache
-from financetoolkit.economics.helpers import collect_cached_data
+from financetoolkit.economics.helpers import collect_cached_data, open_zip_archive
+from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.requests_model import TOOLKIT_HEADERS, get_request
+
+logger = get_logger()
 
 # DNB publishes, every quarter, the scenario sets Dutch pension funds must use for their
 # feasibility test and the transition to the new pension contract: 20,000 scenarios over
@@ -196,14 +199,21 @@ def get_scenario_set(measure: str) -> pd.DataFrame:
         pd.DataFrame: The variables as decimals, indexed by the year of the horizon (0 is
         the end of the quarter the set is for) with a (variable, scenario) column.
     """
-    link, quarter = get_scenario_set_link(measure)
+    try:
+        link, quarter = get_scenario_set_link(measure)
+    except requests.exceptions.RequestException as error:
+        logger.error(
+            "Could not reach DNB to find its latest %s scenario set (%s).",
+            measure.replace("_", "-"),
+            error,
+        )
+        return pd.DataFrame()
+
     description = f"DNB {measure.replace('_', '-')} scenario set of {quarter}"
 
     def fetch() -> pd.DataFrame:
-        workbook = zipfile.ZipFile(
-            io.BytesIO(
-                get_request(link, timeout=600, extra_headers=TOOLKIT_HEADERS).content
-            )
+        workbook = open_zip_archive(
+            get_request(link, timeout=600, extra_headers=TOOLKIT_HEADERS), description
         )
         paths = _sheet_paths(workbook)
 

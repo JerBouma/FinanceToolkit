@@ -10,6 +10,7 @@ import pandas as pd
 from financetoolkit import helpers, historical_model
 from financetoolkit.economics.helpers import (
     buffered_start_date,
+    quiet_yfinance,
     resample_to_period,
     validate_period,
 )
@@ -21,7 +22,11 @@ from financetoolkit.economics.sources import (
     shiller_model,
 )
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
-from financetoolkit.utilities.error_model import handle_errors
+from financetoolkit.utilities.error_model import (
+    InvalidArgumentError,
+    check_option,
+    handle_errors,
+)
 from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import finalize_dataset
@@ -155,16 +160,12 @@ class HistoryEconomics(PricesEconomics):
         | 2020 |          0.1115 |          -0.1025 |    0.0719 |  0.0786 |
         """
         if not accept_licence:
-            raise ValueError(
+            raise InvalidArgumentError(
                 "The Jordà-Schularick-Taylor Macrohistory Database is licensed under CC "
                 "BY-NC-SA 4.0, for non-commercial use with attribution. Pass "
                 "accept_licence=True to confirm the use is non-commercial."
             )
-        if asset_class not in macrohistory_model.ASSET_CLASSES:
-            raise ValueError(
-                f"The asset_class must be one of "
-                f"{', '.join(map(repr, macrohistory_model.ASSET_CLASSES))}, not {asset_class!r}."
-            )
+        check_option("asset_class", asset_class, macrohistory_model.ASSET_CLASSES)
 
         asset_returns = macrohistory_model.get_asset_returns(asset_class, real)
 
@@ -428,13 +429,8 @@ class HistoryEconomics(PricesEconomics):
         |        30 | -0.0001 | 0.0178 | 0.037  | 0.018  |
         |       100 |  0.0024 | 0.0197 | 0.039  | 0.0201 |
         """
-        if authority != "dnb":
-            raise ValueError(f"The authority must be 'dnb', not {authority!r}.")
-        if measure not in dnb_model.MEASURES:
-            raise ValueError(
-                f"The measure must be one of {', '.join(map(repr, dnb_model.MEASURES))}, "
-                f"not {measure!r}."
-            )
+        check_option("authority", authority, ("dnb",))
+        check_option("measure", measure, tuple(dnb_model.MEASURES))
 
         quantiles = (
             [0.01, 0.05, 0.25, 0.5, 0.75, 0.95, 0.99]
@@ -442,7 +438,7 @@ class HistoryEconomics(PricesEconomics):
             else quantiles
         )
         if any(not 0 <= quantile <= 1 for quantile in quantiles):
-            raise ValueError(
+            raise InvalidArgumentError(
                 f"The quantiles must lie between 0 and 1, not {quantiles}."
             )
 
@@ -460,7 +456,7 @@ class HistoryEconomics(PricesEconomics):
         if unavailable := [
             variable for variable in requested if variable not in available
         ]:
-            raise ValueError(
+            raise InvalidArgumentError(
                 f"The scenario set has no {', '.join(unavailable)}. It has "
                 f"{', '.join(available)}."
             )
@@ -599,28 +595,46 @@ class HistoryEconomics(PricesEconomics):
         if unavailable := [
             name for name in requested if name not in ASSET_CLASS_PROXIES
         ]:
-            raise ValueError(
+            raise InvalidArgumentError(
                 f"There is no proxy for {', '.join(unavailable)}. The asset classes are "
                 f"{', '.join(ASSET_CLASS_PROXIES)}."
             )
 
         tickers = [ASSET_CLASS_PROXIES[name] for name in requested]
         start_date = buffered_start_date(self._start_date, period)
-        historical_data, _ = historical_model.get_historical_data(
-            tickers,
-            api_key=self._api_key or None,
-            start=start_date,
-            end=self._end_date,
-            fill_nan=False,
-            show_ticker_separation=False,
-            cache=self._cache,
-        )
+        # yfinance logs every ticker without prices; they are reported in one line below.
+        with quiet_yfinance():
+            historical_data, _ = historical_model.get_historical_data(
+                tickers,
+                api_key=self._api_key or None,
+                start=start_date,
+                end=self._end_date,
+                fill_nan=False,
+                show_ticker_separation=False,
+                cache=self._cache,
+            )
 
-        if historical_data.empty or "Adj Close" not in historical_data.columns:
+        prices = (
+            historical_data["Adj Close"]
+            if not historical_data.empty and "Adj Close" in historical_data.columns
+            else pd.DataFrame()
+        )
+        prices = prices[[ticker for ticker in tickers if ticker in prices.columns]]
+
+        if missing := [
+            name
+            for name in requested
+            if ASSET_CLASS_PROXIES[name] not in prices
+            or prices[ASSET_CLASS_PROXIES[name]].isna().all()
+        ]:
+            logger.error(
+                "No prices could be retrieved for the proxies of %s.",
+                ", ".join(missing),
+            )
+
+        if prices.empty:
             return pd.DataFrame()
 
-        prices = historical_data["Adj Close"]
-        prices = prices[[ticker for ticker in tickers if ticker in prices.columns]]
         prices = prices.rename(
             columns={ticker: name for name, ticker in ASSET_CLASS_PROXIES.items()}
         )

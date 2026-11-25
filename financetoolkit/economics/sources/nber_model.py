@@ -33,16 +33,22 @@ def get_recession_indicator() -> pd.DataFrame:
         of each month ("Date") as FRED dates it.
 
     Raises:
-        ValueError: When the response is not a list of peaks and troughs.
+        ValueError: When the response is not a non-empty list of peaks and troughs.
     """
     description = "NBER business cycle dates"
 
     def fetch() -> pd.DataFrame:
         cycles = get_request(URL, timeout=60).json()
 
-        if not isinstance(cycles, list) or not all(
-            isinstance(cycle, dict) and {"peak", "trough"}.issubset(cycle)
-            for cycle in cycles
+        # An empty list would read as a country never in recession, so it is refused
+        # (and so never cached) like any other answer without peaks and troughs.
+        if (
+            not isinstance(cycles, list)
+            or not cycles
+            or not all(
+                isinstance(cycle, dict) and {"peak", "trough"}.issubset(cycle)
+                for cycle in cycles
+            )
         ):
             raise ValueError(
                 f"The {description} are not a list of peaks and troughs, which means the NBER "

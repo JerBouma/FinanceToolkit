@@ -659,3 +659,45 @@ def test_tracking_without_an_exchange_rate_compares_the_prices_as_they_are(caplo
         "include the move of the exchange rate" in record.getMessage()
         for record in caplog.records
     )
+
+
+def test_return_excluding_leaves_out_a_ticker_without_holdings(index_fund, caplog):
+    etf, _ = index_fund
+    # A stock next to the fund: it is priced like the fund but holds nothing.
+    etf._tickers = ["FND", "^IDX"]
+
+    excluding = etf.get_return_excluding("X", rounding=8)
+
+    assert list(excluding.columns) == ["FND"]
+    assert excluding.loc["Return Excluding", "FND"] == pytest.approx(-0.2)
+    assert "^IDX has no holdings and is left out." in caplog.text
+
+
+@pytest.mark.parametrize(
+    ("method", "arguments"),
+    [
+        ("get_contribution", {"holdings": 0}),
+        ("get_contribution", {"holdings": -1}),
+        ("get_contribution", {"index": "NOPE"}),
+        ("get_return_excluding", {"holdings": 0}),
+        ("get_return_excluding", {"exclude": []}),
+        ("get_look_through_valuation", {"holdings": 0}),
+    ],
+)
+def test_contribution_arguments_are_checked(index_fund, method, arguments):
+    from financetoolkit.utilities.error_model import InvalidArgumentError
+
+    etf, _ = index_fund
+    with pytest.raises(InvalidArgumentError):
+        getattr(etf, method)(**arguments)
+
+
+@pytest.mark.parametrize("limit", [0, 1.5, True])
+def test_a_holdings_limit_of_zero_is_refused(etf, limit):
+    from financetoolkit.utilities.error_model import InvalidArgumentError
+
+    with pytest.raises(InvalidArgumentError, match="limit"):
+        etf.get_holdings(limit=limit)
+
+    # A negative limit keeps the smallest holdings.
+    assert not etf.get_holdings(limit=-1).empty

@@ -536,7 +536,24 @@ def collect_oecd_data(
                 "Please wait a moment before retrying."
             )
             return pd.DataFrame()
-        raise
+
+        # A server error (5xx) or a refusal (403) says nothing about the query either, so the
+        # cached copy is served as on a connection failure, or nothing.
+        if cached_data is not None and not cached_data.empty:
+            logger.warning(
+                "OECD API returned HTTP %s for '%s' -- serving the most recently cached "
+                "response for this query instead; this may not be the most up-to-date data.",
+                status_code,
+                oecd_data_string,
+            )
+            return cached_data
+
+        logger.error(
+            "OECD API returned HTTP %s for '%s'. No data is returned for this indicator.",
+            status_code,
+            oecd_data_string,
+        )
+        return pd.DataFrame()
     except requests.exceptions.RequestException as error:
         # A connection failure, timeout or DNS error. The cache fallback applies for the same reason it does on a rate limit: the query is fine, the network is not.  # noqa: E501
         if cached_data is not None and not cached_data.empty:
@@ -558,6 +575,9 @@ def collect_oecd_data(
 
     try:
         oecd_data = pd.read_csv(StringIO(response.text))
+    except pd.errors.EmptyDataError:
+        # An empty body is an empty response, reported below, rather than unreadable CSV.
+        oecd_data = pd.DataFrame()
     except pd.errors.ParserError as error:
         raise ValueError(
             f"The OECD response for the query '{oecd_data_string}' is not readable as "

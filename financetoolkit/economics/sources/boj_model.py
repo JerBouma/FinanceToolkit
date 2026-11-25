@@ -62,6 +62,12 @@ def request_boj_series(
         timeout=120,
     ).json()
 
+    if not isinstance(response, dict):
+        raise ValueError(
+            f"The Bank of Japan API answered in an unexpected format for the {description} "
+            f"(a JSON {type(response).__name__} instead of an object), which means it changed."
+        )
+
     if response.get("STATUS") != SUCCESS_STATUS or not response.get("RESULTSET"):
         raise ValueError(
             f"The Bank of Japan API returned no data for the {description}: "

@@ -8,6 +8,7 @@ import requests
 
 from financetoolkit.cache.cache_controller import clear_active_cache
 from financetoolkit.economics.sources import gmdb_model
+from financetoolkit.utilities.error_model import InvalidArgumentError
 
 
 @pytest.fixture(autouse=True)
@@ -145,7 +146,8 @@ def test_economics_reads_the_database_lazily_with_the_new_options(monkeypatch):
     assert consolidated["Japan"].dropna().index[-1] == pd.Period("2025", "Y")
     # The database is downloaded once for all four methods.
     assert requested.count(gmdb_model.RELEASE_URL.format(version="2026_09")) == 1
-    assert economics.get_government_debt(level="state").empty
+    with pytest.raises(InvalidArgumentError, match="level must be one of"):
+        economics.get_government_debt(level="state")
 
 
 def test_projected_years_are_a_choice_per_method(monkeypatch):

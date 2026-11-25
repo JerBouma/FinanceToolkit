@@ -22,7 +22,10 @@ from financetoolkit.economics.sources import (
     stoxx_model,
 )
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
-from financetoolkit.utilities.error_model import handle_errors
+from financetoolkit.utilities.error_model import (
+    check_option,
+    handle_errors,
+)
 from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import finalize_dataset
@@ -493,10 +496,7 @@ class StabilityEconomics:
         | 2025Q3 |           0.139 |     0.123 |   0.188 |   0.152 |
         | 2025Q4 |           0.139 |     0.122 |   0.188 |   0.154 |
         """
-        if borrowers not in self.DEBT_SERVICE_BORROWERS:
-            raise ValueError(
-                f"The borrowers must be one of {', '.join(map(repr, self.DEBT_SERVICE_BORROWERS))}, not {borrowers!r}."  # noqa: E501
-            )
+        check_option("borrowers", borrowers, tuple(self.DEBT_SERVICE_BORROWERS))
 
         debt_service_ratio = bis_model.get_credit_statistics(
             "WS_DSR",
@@ -612,10 +612,7 @@ class StabilityEconomics:
         | 2025Q3 |           1.406 |       1.537 |   2.015 |   1.713 |
         | 2025Q4 |           1.402 |       1.533 |   2.008 |   1.734 |
         """
-        if borrowers not in self.CREDIT_BORROWERS:
-            raise ValueError(
-                f"The borrowers must be one of {', '.join(map(repr, self.CREDIT_BORROWERS))}, not {borrowers!r}."  # noqa: E501
-            )
+        check_option("borrowers", borrowers, tuple(self.CREDIT_BORROWERS))
 
         credit = bis_model.get_credit_statistics(
             "WS_TC",
@@ -939,10 +936,8 @@ class StabilityEconomics:
         | 2026Q4 |            -0.027 |               0.09  |                    0.023 |                 0.079 |
         | 2027Q1 |            -0.014 |               0.095 |                    0.023 |                 0.075 |
         """
-        if scenario not in ("baseline", "adverse", "historic"):
-            raise ValueError(
-                f"The scenario must be 'baseline', 'adverse' or 'historic', not {scenario!r}."
-            )
+        check_option("scenario", scenario, ("baseline", "adverse", "historic"))
+        check_option("authority", authority, ("federal_reserve", "esrb"))
 
         if authority == "federal_reserve":
             stress_test = frb_model.get_supervisory_scenario(scenario, year)

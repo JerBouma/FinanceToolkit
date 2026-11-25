@@ -9,7 +9,12 @@ import yfinance as yf
 
 from financetoolkit.cache import frame_model, policy_model
 from financetoolkit.cache.cache_controller import get_active_cache
+from financetoolkit.economics.helpers import quiet_yfinance
+from financetoolkit.utilities.error_model import check_option
+from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.sources_model import record_source
+
+logger = get_logger()
 
 # CME futures month codes, one letter per calendar month.
 _MONTH_CODES: dict[int, str] = {
@@ -73,7 +78,7 @@ def get_commodity_forward_curve(
             listed ones from the current month on. Defaults to 12.
 
     Raises:
-        ValueError: If the commodity is not one of the supported names.
+        InvalidArgumentError: If the commodity is not one of the supported names.
 
     Returns:
         pd.DataFrame: A DataFrame indexed by date, with one column per contract
@@ -81,17 +86,14 @@ def get_commodity_forward_curve(
             contract's daily closing price over its trading life. Columns are NaN
             outside the date range the contract actually traded in.
     """
-    if commodity not in COMMODITY_TICKERS:
-        raise ValueError(
-            f"Commodity '{commodity}' is not supported. Choose one of: "
-            f"{', '.join(COMMODITY_TICKERS)}."
-        )
+    check_option("commodity", commodity, tuple(COMMODITY_TICKERS))
 
     root, exchange = COMMODITY_TICKERS[commodity]
     today = datetime.today()
     cache = get_active_cache()
 
     curve: dict[str, pd.Series] = {}
+    tried, reached = 0, True
     # The months are scanned until `contracts` contracts are found, since the nearest ones
     # may have expired and some commodities only list a few delivery months a year.
     for months_ahead in range(contracts * 3 + 3):
@@ -128,10 +130,26 @@ def get_commodity_forward_curve(
             fetch_end = fetch_span[1].strftime("%Y-%m-%d")
 
         # Yahoo Finance's end date is exclusive, so the day after includes the end date.
-        contract_data = yf.Ticker(ticker).history(
-            start=fetch_start,
-            end=(pd.Timestamp(fetch_end) + pd.Timedelta(days=1)).strftime("%Y-%m-%d"),
-        )
+        # yfinance logs every month without a listed contract as "possibly delisted",
+        # which is expected while scanning, so its logger is quiet for the request.
+        tried += 1
+        try:
+            with quiet_yfinance():
+                contract_data = yf.Ticker(ticker).history(
+                    start=fetch_start,
+                    end=(pd.Timestamp(fetch_end) + pd.Timedelta(days=1)).strftime(
+                        "%Y-%m-%d"
+                    ),
+                )
+        except OSError as error:
+            # curl's connection errors are OSErrors; the other months would fail alike.
+            logger.error(
+                "Could not reach Yahoo Finance for the %s futures (%s).",
+                commodity,
+                error,
+            )
+            reached = False
+            break
 
         if not contract_data.empty:
             record_source(policy_model.YAHOO_FINANCE)
@@ -160,6 +178,13 @@ def get_commodity_forward_curve(
         curve[f"{year}-{month:02d}"] = contract_data["Close"]
 
     if not curve:
+        if tried and reached:
+            logger.warning(
+                "Yahoo Finance returned no data for any of the %s %s futures contracts "
+                "tried, so no futures curve is returned.",
+                tried,
+                commodity,
+            )
         return pd.DataFrame()
 
     forward_curve = pd.DataFrame(curve)

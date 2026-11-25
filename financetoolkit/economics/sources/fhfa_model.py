@@ -2,13 +2,15 @@
 
 __docformat__ = "google"
 
-import io
-import zipfile
 
 import pandas as pd
 
 from financetoolkit.cache import policy_model
-from financetoolkit.economics.helpers import collect_cached_data, require_columns
+from financetoolkit.economics.helpers import (
+    collect_cached_data,
+    open_zip_archive,
+    require_columns,
+)
 from financetoolkit.utilities.requests_model import get_request
 
 # The outstanding residential mortgage statistics of the FHFA's National Mortgage Database
@@ -57,7 +59,9 @@ def get_outstanding_mortgage_interest_rates() -> pd.DataFrame:
     def fetch() -> pd.DataFrame:
         response = get_request(OUTSTANDING_MORTGAGES_URL, timeout=120)
 
-        with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
+        with open_zip_archive(
+            response, f"FHFA archive for the {description}"
+        ) as archive:
             names = [name for name in archive.namelist() if name.endswith(".csv")]
 
             if len(names) != 1:

@@ -11,7 +11,11 @@ from financetoolkit.economics.helpers import (
 )
 from financetoolkit.economics.sources import eex_model, ngfs_model, oecd_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
-from financetoolkit.utilities.error_model import handle_errors
+from financetoolkit.utilities.error_model import (
+    InvalidArgumentError,
+    check_option,
+    handle_errors,
+)
 from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import finalize_dataset
@@ -448,23 +452,10 @@ class EnvironmentEconomics:
         | 2050 |          0.0341 |    0.0386 |           0.0412 |  0.0371 |
         """
         variables = [*ngfs_model.NIGEM_VARIABLES, "carbon_price"]
-        if variable not in variables:
-            raise ValueError(
-                f"The variable must be one of {', '.join(map(repr, variables))}, not {variable!r}."
-            )
-        if scenario not in [*ngfs_model.SCENARIOS, "Baseline"]:
-            raise ValueError(
-                f"The scenario must be one of {', '.join(map(repr, ngfs_model.SCENARIOS))} or "
-                f"'Baseline', not {scenario!r}."
-            )
-        if model not in ngfs_model.MODELS:
-            raise ValueError(
-                f"The model must be one of {', '.join(map(repr, ngfs_model.MODELS))}, not {model!r}."
-            )
-        if risk not in ngfs_model.RISKS:
-            raise ValueError(
-                f"The risk must be one of {', '.join(map(repr, ngfs_model.RISKS))}, not {risk!r}."
-            )
+        check_option("variable", variable, variables)
+        check_option("scenario", scenario, [*ngfs_model.SCENARIOS, "Baseline"])
+        check_option("model", model, ngfs_model.MODELS)
+        check_option("risk", risk, ngfs_model.RISKS)
 
         if variable == "carbon_price":
             if deviation:
@@ -479,7 +470,7 @@ class EnvironmentEconomics:
             if scenario == "Current Policies" and risk == "combined":
                 risk = "physical"
             elif scenario == "Current Policies" and risk == "transition":
-                raise ValueError(
+                raise InvalidArgumentError(
                     "Current Policies has no transition risk: it is the scenario without a "
                     "transition. Use risk='physical' or 'combined' for its physical risk."
                 )

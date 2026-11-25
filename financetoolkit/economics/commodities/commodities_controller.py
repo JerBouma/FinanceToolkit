@@ -194,7 +194,7 @@ class CommoditiesEconomics:
                 exist the result is returned in full. Defaults to None, which keeps every column.
 
         Raises:
-            ValueError: If the commodity is not one of the supported names.
+            InvalidArgumentError: If the commodity is not one of the supported names.
 
         Returns:
             pd.DataFrame: A DataFrame indexed by date, with one column per contract
@@ -236,6 +236,10 @@ class CommoditiesEconomics:
             else self._start_date
         )
         curves = self._get_commodity_curves(commodity, contracts, generic, start_date)
+
+        # No commodity has prices (Yahoo Finance unreachable), which the model logged.
+        if not curves:
+            return pd.DataFrame()
 
         # Each commodity's changes are taken over its own trading days.
         commodity_forward_curve = {
@@ -320,7 +324,7 @@ class CommoditiesEconomics:
                 exist the result is returned in full. Defaults to None, which keeps every column.
 
         Raises:
-            ValueError: If the commodity is not one of the supported names.
+            InvalidArgumentError: If the commodity is not one of the supported names.
 
         Returns:
             pd.DataFrame: Per date the Front Contract and Far Contract (delivery months),
@@ -355,6 +359,10 @@ class CommoditiesEconomics:
         | 2026-11-06 | 2026-12          |   90.83 | 2027-11        | 76.42 |       11 |    14.41 | -0.1586 |       0.1884 | Backwardation |
         """
         curves = self._get_commodity_curves(commodity, 12, generic, self._start_date)
+
+        # No commodity has prices (Yahoo Finance unreachable), which the model logged.
+        if not curves:
+            return pd.DataFrame()
 
         term_structures = {}
 

@@ -103,6 +103,12 @@ def collect_recent_bls_series(
             ),
         ).json()
 
+        if not isinstance(response, dict):
+            raise ValueError(
+                "The BLS API answered in an unexpected format (a JSON "
+                f"{type(response).__name__} instead of an object), which means it changed."
+            )
+
         # A refused request, such as one over the daily limit, is answered with status 200.
         if response.get("status") != "REQUEST_SUCCEEDED":
             raise BLSRequestRefusedError(

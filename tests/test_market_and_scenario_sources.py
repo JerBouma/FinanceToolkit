@@ -8,6 +8,7 @@ import pytest
 import requests
 
 from financetoolkit.cache.cache_controller import clear_active_cache
+from financetoolkit.utilities.error_model import InvalidArgumentError
 
 
 @pytest.fixture(autouse=True)
@@ -469,7 +470,8 @@ def test_climate_scenario_applies_the_deviation_to_the_baseline(monkeypatch):
     assert rate_deviation.loc[pd.Period("2050", "Y"), "Germany"] == pytest.approx(0.006)
     assert gdp.loc[pd.Period("2050", "Y"), "Germany"] == pytest.approx(5400 * 0.95)
     assert carbon.loc[pd.Period("2050", "Y"), "World"] == pytest.approx(748.8)
-    assert economics.get_climate_scenario(scenario="Hothouse").empty
+    with pytest.raises(InvalidArgumentError):
+        economics.get_climate_scenario(scenario="Hothouse")
 
 
 def test_long_run_asset_returns_require_accepting_the_licence(monkeypatch):
@@ -495,7 +497,8 @@ def test_long_run_asset_returns_require_accepting_the_licence(monkeypatch):
 
     economics = Economics(start_date="2019-01-01", end_date="2020-12-31")
 
-    assert economics.get_long_run_asset_returns().empty
+    with pytest.raises(InvalidArgumentError):
+        economics.get_long_run_asset_returns()
     nominal = economics.get_long_run_asset_returns(accept_licence=True)
     real = economics.get_long_run_asset_returns(accept_licence=True, real=True)
 
@@ -593,7 +596,8 @@ def test_dnb_scenario_set_derives_zero_rates_from_the_state_variables(monkeypatc
     assert np.isnan(scenarios.loc[0, ("Equity return", 1)])
     assert scenarios.loc[2, ("Equity return", 2)] == pytest.approx(0.10)
     assert distribution.loc[1, ("Equity return", "50%")] == pytest.approx(0.03)
-    assert economics.get_scenario_set(variables="Gold price").empty
+    with pytest.raises(InvalidArgumentError):
+        economics.get_scenario_set(variables="Gold price")
 
 
 def test_asset_class_proxies_are_period_returns(monkeypatch):
@@ -629,7 +633,8 @@ def test_asset_class_proxies_are_period_returns(monkeypatch):
     assert proxies.loc[pd.Period("2026-09", "M"), "Private Equity"] == pytest.approx(
         -0.1
     )
-    assert Economics().get_asset_class_proxies(asset_classes="Art").empty
+    with pytest.raises(InvalidArgumentError):
+        Economics().get_asset_class_proxies(asset_classes="Art")
 
 
 def test_eiopa_symmetric_adjustment_reads_the_daily_history(monkeypatch):

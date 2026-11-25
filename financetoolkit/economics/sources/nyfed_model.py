@@ -51,7 +51,9 @@ def get_term_premium() -> pd.DataFrame:
 
     def fetch() -> pd.DataFrame:
         response = get_request(TERM_PREMIUM_URL, timeout=120)
-        data = read_excel(io.BytesIO(response.content), sheet_name=TERM_PREMIUM_SHEET)
+        data = read_excel(
+            io.BytesIO(response.content), description, sheet_name=TERM_PREMIUM_SHEET
+        )
 
         columns = {
             f"{code}{maturity:02d}": (component, f"{maturity}Y")
@@ -99,7 +101,9 @@ def get_supply_chain_pressure_index() -> pd.DataFrame:
     def fetch() -> pd.DataFrame:
         response = get_request(SUPPLY_CHAIN_PRESSURE_URL, timeout=60)
         data = read_excel(
-            io.BytesIO(response.content), sheet_name=SUPPLY_CHAIN_PRESSURE_SHEET
+            io.BytesIO(response.content),
+            description,
+            sheet_name=SUPPLY_CHAIN_PRESSURE_SHEET,
         )
         require_columns(data, {"Date", "GSCPI"}, description)
 

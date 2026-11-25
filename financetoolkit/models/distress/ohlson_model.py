@@ -388,7 +388,7 @@ def get_ohlson_o_score(
     Accounting Research, Vol. 18, No. 1, 1980, pp. 109-131.
     """
     if isinstance(negative_equity_indicator, pd.Series | pd.DataFrame):
-        negative_equity_indicator = negative_equity_indicator.astype(int)
+        negative_equity_indicator = negative_equity_indicator.astype(float)
 
     if isinstance(negative_income_indicator, pd.Series | pd.DataFrame):
         negative_income_indicator = negative_income_indicator.astype(float)

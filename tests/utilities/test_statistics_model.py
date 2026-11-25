@@ -10,6 +10,7 @@ import pandas as pd
 import pytest
 
 from financetoolkit.utilities import statistics_model
+from financetoolkit.utilities.error_model import InvalidArgumentError
 
 
 def test_calculate_growth_basic():
@@ -682,7 +683,7 @@ def test_convert_annualized_rate_to_period_compounds_geometrically():
     )
     assert ((1 + quarterly) ** 4 - 1).tolist() == pytest.approx([0.04, -0.2])
 
-    with pytest.raises(ValueError, match="not valid"):
+    with pytest.raises(InvalidArgumentError, match="period must be one of"):
         statistics_model.convert_annualized_rate_to_period(0.1, "hourly")
 
 
@@ -967,3 +968,105 @@ def test_a_change_without_its_base_period_is_named(caplog):
             row_slice=True,
         )
     assert "No change for" not in caplog.text
+
+
+def test_finalize_dataset_returns_an_empty_metric_as_it_is():
+    # A metric that could not be calculated is an empty Series, which has no columns to
+    # slice, also with growth or a Z-Score asked for.
+    for settings in ({}, {"growth": True}, {"standardize": True}, {"trailing": 2}):
+        result = statistics_model.finalize_dataset(
+            pd.Series(dtype=object), "2020-01-01", "2023-12-31", 4, **settings
+        )
+        assert isinstance(result, pd.Series)
+        assert result.empty
+
+
+def test_calculate_growth_refuses_a_lag_below_one():
+    from financetoolkit.utilities.error_model import (
+        InvalidArgumentError,
+    )  # noqa: PLC0415
+
+    dataset = pd.DataFrame(
+        [[1.0, 2.0, 3.0]], columns=pd.period_range("2021", periods=3, freq="Y")
+    )
+    for lag in (0, -1, [1, 0], [], None, 1.5, True):
+        with pytest.raises(InvalidArgumentError, match="lag"):
+            statistics_model.calculate_growth(dataset, lag=lag)
+
+
+def test_calculate_growth_reports_a_lag_as_long_as_the_data(caplog):
+    dataset = pd.DataFrame(
+        [[1.0, 2.0, 3.0]], columns=pd.period_range("2021", periods=3, freq="Y")
+    )
+
+    assert statistics_model.calculate_growth(dataset, lag=3).isna().all(axis=None)
+    assert caplog.text.count("The lag of 3 periods is at least as long") == 1
+
+    caplog.clear()
+    statistics_model.calculate_growth(dataset, lag=2)
+    assert "The lag of" not in caplog.text
+
+
+def test_finalize_dataset_says_where_the_data_has_values(caplog):
+    # The periods outside the window that only hold NaN are not where the data runs.
+    dataset = pd.DataFrame(
+        [[1.0, 2.0, np.nan]], columns=pd.period_range("2021", periods=3, freq="Y")
+    )
+
+    statistics_model.finalize_dataset(dataset, "2024-01-01", "2024-12-31", 4)
+
+    assert "The data runs from 2021 to 2022." in caplog.text
+
+
+def test_finalize_dataset_reports_a_window_longer_than_the_data(caplog):
+    data = pd.DataFrame(
+        {"United States": [1.0, 2.0, 3.0]},
+        index=pd.period_range("2021", periods=3, freq="Y"),
+    )
+
+    for name in ("rolling", "trailing"):
+        caplog.clear()
+        result = statistics_model.finalize_dataset(
+            dataset=data,
+            start_date=None,
+            end_date=None,
+            default_rounding=4,
+            axis="rows",
+            row_slice=True,
+            **{name: 4},
+        )
+        assert result.isna().all(axis=None)
+        assert (
+            caplog.text.count(f"The {name} window of 4 periods is longer than the 3")
+            == 1
+        )
+
+    caplog.clear()
+    statistics_model.finalize_dataset(
+        dataset=data,
+        start_date=None,
+        end_date=None,
+        default_rounding=4,
+        axis="rows",
+        row_slice=True,
+        rolling=3,
+    )
+    assert "window" not in caplog.text
+
+
+def test_finalize_dataset_rejects_a_window_below_one():
+    data = pd.DataFrame(
+        {"United States": [1.0, 2.0, 3.0]},
+        index=pd.period_range("2021", periods=3, freq="Y"),
+    )
+
+    for name in ("rolling", "trailing"):
+        with pytest.raises(InvalidArgumentError, match=name):
+            statistics_model.finalize_dataset(
+                dataset=data,
+                start_date=None,
+                end_date=None,
+                default_rounding=4,
+                axis="rows",
+                **{name: 0},
+            )

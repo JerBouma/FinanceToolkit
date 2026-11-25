@@ -6,12 +6,16 @@ import math
 
 import numpy as np
 import pandas as pd
+from scipy.spatial import KDTree
 from scipy.special import gammaln
 
 from financetoolkit.helpers import delay_embedding
 
 # The most pairwise distances held in memory at once (32 MB of float64).
 DISTANCE_BLOCK = 4_000_000
+
+# The relative difference below which two distances of the k-d tree count as equal, see get_largest_lyapunov_exponent.  # noqa: E501
+TIE_TOLERANCE = 1e-9
 
 # A series whose range is within rounding of its size (1e-14 per observation) has no
 # variation: the windows would hold rounding noise and give a spurious exponent.
@@ -554,7 +558,9 @@ def get_correlation_dimension(
           the slope towards 0 where few pairs are close; it fits by RANSAC unless asked for a
           polynomial fit and takes the radii 0.1 to 0.5 times the standard deviation, at which an embedding
           of 10 daily returns has hardly any pairs.
-        - The distances are counted in blocks, so the memory stays bounded for long series.
+        - Every pair of vectors is compared, so the time grows with the square of the
+          length of the series (about 12.5 million distances for 5,000 observations); the
+          distances are counted in blocks, so the memory stays bounded for long series.
 
     Args:
         data (pd.Series | np.ndarray): The series, e.g. returns.
@@ -685,6 +691,8 @@ def get_largest_lyapunov_exponent(
         - nolds chooses the delay from the autocorrelation function and fits by RANSAC unless
           given a delay and asked for a polynomial fit; this uses the `delay` as given and a
           least squares fit.
+        - The nearest neighbours are found with a k-d tree, so the time grows with about
+          n log n rather than with the square of the length of the series.
 
     Args:
         data (pd.Series | np.ndarray): The series, e.g. returns.
@@ -711,17 +719,34 @@ def get_largest_lyapunov_exponent(
         return np.nan
 
     followed = vectors[:starts]
-    neighbours = np.empty(starts, dtype=np.int64)
-    step = max(1, DISTANCE_BLOCK // (starts * embedding))
-    for start in range(0, starts, step):
-        block = followed[start : start + step]
-        distances = ((block[:, None, :] - followed[None, :, :]) ** 2).sum(axis=2)
-        rows = np.arange(start, start + len(block))
-        too_close = np.abs(rows[:, None] - np.arange(starts)[None, :]) <= separation
-        distances[too_close] = np.inf
-        neighbours[start : start + len(block)] = distances.argmin(axis=1)
-
     origins = np.arange(starts)
+
+    # At most 2 * separation + 1 vectors (the vector itself and those within the separation)
+    # are excluded, so the nearest vector allowed is among the 2 * separation + 2 nearest a
+    # k-d tree finds, without the distances between every pair.
+    nearest = min(starts, 2 * separation + 2)
+    candidates = np.sort(
+        np.reshape(KDTree(followed).query(followed, k=nearest)[1], (starts, -1)),
+        axis=1,
+    )
+    # The squared distances are taken as below for every vector, and of equally near vectors
+    # the earliest is the neighbour, so the pairs do not depend on the order of the tree.
+    distances = ((followed[:, None, :] - followed[candidates]) ** 2).sum(axis=2)
+    furthest = distances.max(axis=1)
+    distances[np.abs(candidates - origins[:, None]) <= separation] = np.inf
+    neighbours = candidates[origins, distances.argmin(axis=1)]
+
+    # A neighbour as far away as the furthest vector the tree returned can have an equally
+    # near, earlier vector beyond them (repeated values give many vectors at one distance),
+    # so it is taken from the distances to every vector instead.
+    ties = (nearest < starts) & (
+        distances.min(axis=1) >= furthest * (1 - TIE_TOLERANCE)
+    )
+    for origin in np.flatnonzero(ties):
+        every_distance = ((followed[origin] - followed) ** 2).sum(axis=1)
+        every_distance[np.abs(origins - origin) <= separation] = np.inf
+        neighbours[origin] = every_distance.argmin()
+
     divergence = []
     for offset in range(trajectory_length):
         distances = np.linalg.norm(

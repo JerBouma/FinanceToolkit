@@ -12,7 +12,11 @@ from scipy.special import ndtr, ndtri, owens_t
 from scipy.stats import qmc
 
 from financetoolkit.utilities import logger_model
-from financetoolkit.utilities.error_model import check_option
+from financetoolkit.utilities.error_model import (
+    InvalidArgumentError,
+    check_option,
+    validate_window,
+)
 
 logger = logger_model.get_logger()
 
@@ -47,8 +51,10 @@ def define_strike_prices(
     Args:
         tickers (list[str]): the list of tickers.
         stock_price (pd.DataFrame): the current stock price for each ticker.
-        strike_step_size (float): the strike step size, a whole number (5) or a fraction (2.5).
-        strike_price_range (float): the strike price range as a fraction of the price.
+        strike_step_size (float): the strike step size above 0, a whole number (5) or a
+            fraction (2.5).
+        strike_price_range (float): the strike price range as a fraction of the price,
+            between 0 and 1.
         values_per_strike (int, optional): the values calculated per strike price, such as
             the number of expirations (times the nodes of a tree, or a weight for the Monte
             Carlo values that evaluate every path), which with the strikes may be at most
@@ -57,15 +63,24 @@ def define_strike_prices(
     Returns:
         dict: a dictionary of strike prices for each ticker, without the tickers that have no
         price. The strikes are integers when the step size is an integer.
+
+    Raises:
+        InvalidArgumentError: If the range is not between 0 and 1, the step is not above 0, or
+            the strikes or option values exceed MAX_STRIKES or MAX_OPTION_VALUES for a ticker.
     """
-    if strike_price_range < 0 or strike_step_size < 0:
-        raise ValueError(
-            "The strike price range and the strike step size must be positive."
+    # A range above 1 would put strikes at or below zero (they are clamped to one step anyway),
+    # and the negated comparisons also refuse NaN.
+    if not 0 <= strike_price_range <= 1:
+        raise InvalidArgumentError(
+            "strike_price_range is a fraction of the stock price between 0 and 1, e.g. 0.25 for "
+            f"strikes from 75% to 125% of the price, not {strike_price_range!r}. Please pass a "
+            "value between 0 and 1 as strike_price_range."
         )
-    if strike_price_range > 1:
-        raise ValueError("The strike price range must be between 0 and 1.")
-    if strike_step_size == 0:
-        raise ValueError("The strike step size must be greater than 0.")
+    if not strike_step_size > 0:
+        raise InvalidArgumentError(
+            f"strike_step_size is the distance between strike prices, above 0, not {strike_step_size!r}. "
+            "Please pass a positive step such as 5 or 2.5 as strike_step_size."
+        )
 
     # Integer steps give integer strikes (100 rather than 100.0); fractional steps are
     # rounded to remove the floating point noise of step multiples such as 3 * 0.1.
@@ -89,7 +104,7 @@ def define_strike_prices(
         if (
             strike_count := 2 * strike_price_range * price / strike_step_size
         ) > MAX_STRIKES:
-            raise ValueError(
+            raise InvalidArgumentError(
                 f"The strike prices of {ticker} would be about {strike_count:,.0f} prices; at "
                 f"most {MAX_STRIKES:,} can be calculated. Please use a larger "
                 "strike_step_size or a smaller strike_price_range."
@@ -113,7 +128,7 @@ def define_strike_prices(
         strikes = np.arange(lowest_step, highest_step + 1) * strike_step_size
 
         if (option_values := len(strikes) * values_per_strike) > MAX_OPTION_VALUES:
-            raise ValueError(
+            raise InvalidArgumentError(
                 f"{ticker} would have {len(strikes):,} strike prices with {values_per_strike:,} "
                 f"values each, {option_values:,} option values; at most {MAX_OPTION_VALUES:,} "
                 "can be calculated per ticker. Please use a larger strike_step_size, a smaller "
@@ -128,6 +143,43 @@ def define_strike_prices(
         )
 
     return strike_prices_per_ticker
+
+
+def validate_time_to_expiration(time_to_expiration: float) -> None:
+    """
+    Check that a time to expiration in years is above 0.
+
+    Args:
+        time_to_expiration (float): The time to expiration in years.
+
+    Raises:
+        InvalidArgumentError: If it is not a number above 0 (a ValueError).
+    """
+    if not time_to_expiration > 0:
+        raise InvalidArgumentError(
+            f"time_to_expiration is a number of years above 0, e.g. 1 for one year, not "
+            f"{time_to_expiration!r}. Please pass a positive time_to_expiration."
+        )
+
+
+def define_times_to_expiration(expiration_time_range: int) -> list[float]:
+    """
+    Define the times to expiration of an option grid: 0 up to expiration_time_range - 1 days,
+    in years. The first is the start date itself, which the tables leave out, so the range is
+    at least 2 to give one expiration.
+
+    Args:
+        expiration_time_range (int): the number of days, at least 2.
+
+    Returns:
+        list[float]: the times to expiration in years (days / 365).
+
+    Raises:
+        InvalidArgumentError: if expiration_time_range is not a whole number of at least 2.
+    """
+    validate_window("expiration_time_range", expiration_time_range, minimum=2)
+
+    return [time / 365 for time in range(expiration_time_range)]
 
 
 def create_greek_dataframe(
@@ -146,6 +198,10 @@ def create_greek_dataframe(
         pd.DataFrame: the DataFrame that correctly displays the greeks for each ticker
         and strike price.
     """
+    if not greek_dictionary:
+        # Every ticker left out (each with a warning of why) leaves nothing to show.
+        return pd.DataFrame()
+
     greek_dataframe = pd.DataFrame.from_dict(
         {
             (ticker, strike_price): values
@@ -185,6 +241,10 @@ def create_expiration_dataframe(
         pd.DataFrame: The values with the tickers as the index and the expiration dates as the
         columns.
     """
+    if not value_dictionary:
+        # Every ticker left out (each with a warning of why) leaves nothing to show.
+        return pd.DataFrame()
+
     dataframe = pd.DataFrame.from_dict(value_dictionary, orient="index")
 
     dataframe.columns = pd.period_range(
@@ -223,6 +283,10 @@ def create_binomial_tree_dataframe(
         pd.DataFrame: the DataFrame that correctly displays the binomial tree for each ticker
         and strike price.
     """
+    if not binomial_tree_dictionary:
+        # Every ticker left out (each with a warning of why) leaves nothing to show.
+        return pd.DataFrame()
+
     frames = []
     for ticker, (strike_prices, trees) in binomial_tree_dictionary.items():
         steps = trees.shape[1] - 1
@@ -233,7 +297,7 @@ def create_binomial_tree_dataframe(
                 index=pd.MultiIndex.from_product([[ticker], strike_prices, movements]),
             )
         )
-    binomial_tree_dataframe = pd.concat(frames) if frames else pd.DataFrame()
+    binomial_tree_dataframe = pd.concat(frames)
 
     start_date_string = pd.to_datetime(str(start_date))
     end_date_string = pd.to_datetime(
@@ -275,6 +339,10 @@ def create_stock_simulation_dataframe(
         pd.DataFrame: the DataFrame that correctly displays the simulated stock prices for
         each ticker over time.
     """
+    if not stock_simulation_dictionary:
+        # Every ticker left out (each with a warning of why) leaves nothing to show.
+        return pd.DataFrame()
+
     stock_simulation_dataframe = pd.concat(stock_simulation_dictionary)
 
     start_date_string = pd.to_datetime(str(start_date))
@@ -820,6 +888,31 @@ def validate_numeric_inputs(arrays: bool = False, **kwargs) -> None:
                 f"received {type(value).__name__}."
                 if arrays
                 else f"{name} must be a float or int, received {type(value).__name__}."
+            )
+
+
+def validate_positive_inputs(allow_zero: bool = False, **kwargs) -> None:
+    """
+    Raises a ValueError for an option input that is below zero, or at zero unless allow_zero,
+    such as a negative volatility or a strike price of zero that a formula divides by. NaN
+    and None (an optional input left out) pass, as they give NaN rather than a wrong number.
+
+    Args:
+        allow_zero (bool, optional): Whether zero is accepted. Defaults to False.
+        **kwargs: The inputs to validate, keyed by argument name: numbers or arrays.
+
+    Raises:
+        ValueError: If any value of an input is below zero, or at zero unless allow_zero.
+    """
+    for name, value in kwargs.items():
+        if value is None:
+            continue
+        values = np.asarray(value, dtype=float)
+        invalid = values < 0 if allow_zero else values <= 0
+        if np.any(invalid):
+            raise ValueError(
+                f"{name} must be {'0 or above' if allow_zero else 'above 0'}, received "
+                f"{float(values[invalid].flat[0])!r}."
             )
 
 

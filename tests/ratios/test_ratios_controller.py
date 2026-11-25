@@ -2628,3 +2628,155 @@ def test_align_employee_count_puts_a_year_ending_on_7_january_in_the_year_before
         columns=[pd.Period("2017", "Y"), pd.Period("2018", "Y")],
     )
     assert align_employee_count(counts, yearly).loc["K"].tolist() == [100, 200]
+
+
+def _offline_toolkit(balance=None, income=None, cash=None, **settings):
+    """The offline Toolkit of the fixtures, with statements changed by the test."""
+    from financetoolkit import Toolkit  # noqa: PLC0415
+
+    def read(name):
+        return pd.read_pickle(f"tests/datasets/{name}_dataset.pickle")
+
+    toolkit = Toolkit(
+        tickers=["AAPL", "MSFT"],
+        historical=read("historical"),
+        balance=read("balance") if balance is None else balance,
+        income=read("income") if income is None else income,
+        cash=read("cash") if cash is None else cash,
+        convert_currency=False,
+        sleep_timer=False,
+        use_cached_data=False,
+        **{"start_date": "2019-12-31", "end_date": "2023-01-01", **settings},
+    )
+    toolkit._daily_risk_free_rate = pd.read_pickle(
+        "tests/datasets/risk_free_rate.pickle"
+    )
+    toolkit._daily_treasury_data = pd.read_pickle("tests/datasets/treasury_data.pickle")
+    return toolkit
+
+
+def test_a_ratio_built_on_a_missing_one_names_it_instead_of_failing(caplog):
+    # Without the dividends the payout ratio fails, and the ratios built on it report the
+    # missing input (an empty result) rather than an AttributeError on its empty Series.
+    cash = pd.read_pickle("tests/datasets/cash_dataset.pickle")
+    toolkit = _offline_toolkit(cash=cash.drop(index="Dividends Paid", level=1))
+
+    assert toolkit.ratios.get_retention_ratio().empty
+    assert "dividend payout ratio is not available" in caplog.text
+
+    # The collection leaves the ratio out and keeps the others.
+    valuation = toolkit.ratios.collect_valuation_ratios()
+    assert "Dividend Payout Ratio" not in valuation.index.get_level_values(1)
+    assert "Retention Ratio" not in valuation.index.get_level_values(1)
+    assert "Price-to-Earnings" in valuation.index.get_level_values(1)
+    assert not toolkit.ratios.collect_all_ratios().empty
+
+
+def test_the_price_to_earnings_growth_ratios_name_the_missing_earnings(caplog):
+    income = pd.read_pickle("tests/datasets/income_dataset.pickle")
+    cash = pd.read_pickle("tests/datasets/cash_dataset.pickle")
+    toolkit = _offline_toolkit(
+        income=income.drop(index="Net Income", level=1),
+        cash=cash.drop(index="Net Income", level=1),
+    )
+
+    assert toolkit.ratios.get_price_to_earnings_growth_ratio().empty
+    assert toolkit.ratios.get_dividend_adjusted_price_to_earnings_growth_ratio().empty
+    assert "earnings growth rate is not available" in caplog.text
+    assert "AttributeError" not in caplog.text
+
+
+def test_the_market_cap_to_gdp_without_the_gdp_is_empty(ratios_module, caplog):
+    ratios = copy.copy(ratios_module)
+    ratios._gross_domestic_product_function = pd.DataFrame
+    ratios._get_basket_currency = lambda: "USD"
+
+    assert ratios.get_market_cap_to_gdp().empty
+    assert "Gross Domestic Product is not available" in caplog.text
+
+
+def test_the_basic_shares_stand_in_for_missing_diluted_shares(caplog):
+    income = pd.read_pickle("tests/datasets/income_dataset.pickle")
+    toolkit = _offline_toolkit(
+        income=income.drop(index=[("MSFT", "Weighted Average Shares Diluted")])
+    )
+
+    earnings_per_share = toolkit.ratios.get_earnings_per_share(rounding=None)
+    basic = toolkit.ratios.get_earnings_per_share(diluted=False, rounding=None)
+
+    pd.testing.assert_series_equal(earnings_per_share.loc["MSFT"], basic.loc["MSFT"])
+    assert earnings_per_share.loc["AAPL"].notna().all()
+    assert not earnings_per_share.loc["AAPL"].equals(basic.loc["AAPL"])
+    assert "no Weighted Average Shares Diluted for MSFT" in caplog.text
+    # The statement is shown as it was supplied.
+    assert ("MSFT", "Weighted Average Shares Diluted") not in (
+        toolkit.get_income_statement().index
+    )
+
+
+def test_supplied_statements_keep_the_year_before_the_start_date():
+    toolkit = _offline_toolkit(start_date="2022-06-01")
+
+    # The return on assets averages the assets with those of the year before, which the
+    # statements keep, while only the periods from the start date on are shown.
+    return_on_assets = toolkit.ratios.get_return_on_assets()
+    assert return_on_assets.columns[0] == pd.Period("2022", "Y")
+    assert return_on_assets.loc[:, "2022"].notna().all()
+    assert toolkit.get_income_statement().columns[0] == pd.Period("2022", "Y")
+
+
+def test_a_lag_below_one_is_refused_and_one_too_long_is_reported(ratios_module, caplog):
+    from financetoolkit.utilities.error_model import (
+        InvalidArgumentError,
+    )  # noqa: PLC0415
+
+    for lag in (0, -1, [1, 0], []):
+        with pytest.raises(InvalidArgumentError):
+            ratios_module.get_current_ratio(growth=True, lag=lag)
+    with pytest.raises(InvalidArgumentError):
+        ratios_module.collect_liquidity_ratios(growth=True, lag=0)
+
+    assert ratios_module.get_current_ratio(growth=True, lag=100).isna().all().all()
+    assert caplog.text.count("The lag of 100 periods is at least as long") == 1
+
+
+def test_get_cyclically_adjusted_price_to_earnings_ratio_refuses_zero_years(
+    ratios_module,
+):
+    from financetoolkit.utilities.error_model import (
+        InvalidArgumentError,
+    )  # noqa: PLC0415
+
+    with pytest.raises(InvalidArgumentError, match="years"):
+        ratios_module.get_cyclically_adjusted_price_to_earnings_ratio(years=0)
+
+
+def test_ratios_without_values_say_why(ratios_module, caplog):
+    caplog.set_level("INFO", logger="financetoolkit")
+
+    assert ratios_module.get_preferred_dividend_coverage_ratio().isna().all().all()
+    assert "AAPL, MSFT paid no preferred dividends" in caplog.text
+
+    # Five years of market caps back, with four years of statements.
+    assert ratios_module.get_composite_equity_issuance().isna().all().all()
+    assert "with that of 5 periods earlier" in caplog.text
+
+
+def test_get_factor_analysis_refuses_an_unknown_metric(ratios_module):
+    from financetoolkit.utilities.error_model import (
+        InvalidArgumentError,
+    )  # noqa: PLC0415
+
+    with pytest.raises(InvalidArgumentError, match="bogus"):
+        ratios_module.get_factor_analysis(metrics="bogus")
+
+
+def test_a_ratio_built_on_another_reports_a_window_without_data_once(caplog):
+    # The statements end in 2023, so a window in 2024 holds none of their periods; the
+    # price-to-sales ratio reports it once, not again for the market cap it builds on.
+    toolkit = _offline_toolkit(start_date="2024-06-01", end_date="2024-12-31")
+
+    assert toolkit.ratios.get_price_to_sales_ratio().empty
+
+    assert caplog.text.count("There are no observations between") == 1
+    assert "market cap is not available" in caplog.text

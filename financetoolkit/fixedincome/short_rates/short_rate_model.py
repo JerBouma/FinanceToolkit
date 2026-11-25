@@ -106,6 +106,11 @@ def calibrate_short_rate_model(
     values = rates.dropna().to_numpy(dtype=float)
     if len(values) < 30:  # noqa: PLR2004
         raise ValueError("At least 30 observations are needed to calibrate the model.")
+    if np.ptp(values) == 0:
+        raise ValueError(
+            "The rate does not move over the period (a flat history), so it has no volatility "
+            "or mean reversion to calibrate the model to. Use a longer period or another maturity."
+        )
     if model == "cir" and (rates.dropna() <= 0).any():
         at_zero = rates.dropna()[rates.dropna() <= 0]
         raise ValueError(
@@ -345,8 +350,8 @@ def simulate_short_rate(
         volatility (float): The volatility.
         rate (float): The starting rate.
         years (float, optional): The horizon. Defaults to 10.
-        steps_per_year (int, optional): The steps per year. Defaults to 12.
-        simulations (int, optional): The number of paths. Defaults to 10,000.
+        steps_per_year (int, optional): The steps per year, at least 1. Defaults to 12.
+        simulations (int, optional): The number of paths, at least 1. Defaults to 10,000.
         seed (int | None, optional): The random seed. Defaults to 0.
         scheme (str, optional): The simulation scheme. Options are: "euler" (an Euler
             scheme), "exact" (sampling the exact distribution of the rate). Defaults to
@@ -354,6 +359,10 @@ def simulate_short_rate(
 
     Returns:
         np.ndarray: The rates, paths by steps (including the start).
+
+    Raises:
+        InvalidArgumentError: If the model or scheme is not one of its options.
+        ValueError: If steps_per_year or simulations is below 1.
 
     As an example:
 
@@ -374,7 +383,13 @@ def simulate_short_rate(
     array([0.04  , 0.0387, 0.0374, 0.0363, 0.0355, 0.0347])
     ```
     """
+    check_option("model", model, (*MODELS, "hull_white"))
     check_option("scheme", scheme, SCHEMES)
+    if steps_per_year < 1 or simulations < 1:
+        raise ValueError(
+            f"steps_per_year and simulations must be at least 1, received {steps_per_year!r} "
+            f"and {simulations!r}."
+        )
     rng = np.random.default_rng(seed)
     steps = int(round(years * steps_per_year))
     dt = 1 / steps_per_year

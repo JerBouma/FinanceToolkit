@@ -452,23 +452,27 @@ def get_piotroski_score(
     - Piotroski, Joseph D. "Value Investing: The Use of Historical Financial Statement Information to
     Separate Winners from Losers." Journal of Accounting Research, Vol. 38, Supplement, 2000, pp. 1-41.
     """
-    return_on_assets_criteria = return_on_assets_criteria.astype(int)
+    # As floats, so that a criterion that cannot be evaluated (NaN) stays missing
+    # rather than failing the conversion.
+    return_on_assets_criteria = return_on_assets_criteria.astype(float)
 
-    operating_cashflow_criteria = operating_cashflow_criteria.astype(int)
+    operating_cashflow_criteria = operating_cashflow_criteria.astype(float)
 
-    change_in_return_on_asset_criteria = change_in_return_on_asset_criteria.astype(int)
+    change_in_return_on_asset_criteria = change_in_return_on_asset_criteria.astype(
+        float
+    )
 
-    accruals_criteria = accruals_criteria.astype(int)
+    accruals_criteria = accruals_criteria.astype(float)
 
-    change_in_leverage_criteria = change_in_leverage_criteria.astype(int)
+    change_in_leverage_criteria = change_in_leverage_criteria.astype(float)
 
-    change_in_current_ratio_criteria = change_in_current_ratio_criteria.astype(int)
+    change_in_current_ratio_criteria = change_in_current_ratio_criteria.astype(float)
 
-    number_of_shares_criteria = number_of_shares_criteria.astype(int)
+    number_of_shares_criteria = number_of_shares_criteria.astype(float)
 
-    gross_margin_criteria = gross_margin_criteria.astype(int)
+    gross_margin_criteria = gross_margin_criteria.astype(float)
 
-    asset_turnover_ratio_criteria = asset_turnover_ratio_criteria.astype(int)
+    asset_turnover_ratio_criteria = asset_turnover_ratio_criteria.astype(float)
 
     piotroski_score = (
         return_on_assets_criteria

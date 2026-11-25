@@ -338,7 +338,8 @@ def test_get_stacking_weights(recorder, portfolio_module):
             include_benchmark=True,
         )
     )
-    assert portfolio_module.get_stacking_weights(methods=["random"]).empty
+    with pytest.raises(InvalidArgumentError, match="methods must be one of"):
+        portfolio_module.get_stacking_weights(methods=["random"])
 
 
 def test_get_black_litterman_weights(recorder, portfolio_module):
@@ -2015,3 +2016,93 @@ def test_get_entropy_pooling_ranking(recorder, portfolio_module):
             rounding=6,
         )
     )
+
+
+@pytest.fixture(scope="module")
+def constant_price_portfolio():
+    """The offline Toolkit's portfolio module with a constant price for MSFT."""
+    from financetoolkit import Toolkit
+
+    historical = pd.read_pickle("tests/datasets/historical_dataset.pickle").drop(
+        columns=["Return", "Cumulative Return"], level=0
+    )
+    for column in ["Open", "High", "Low", "Close", "Adj Close"]:
+        historical[(column, "MSFT")] = 100.0
+    toolkit = Toolkit(
+        tickers=["AAPL", "MSFT"],
+        historical=historical,
+        convert_currency=False,
+        start_date="2019-12-31",
+        end_date="2023-01-01",
+        sleep_timer=False,
+    )
+    toolkit._daily_risk_free_rate = pd.read_pickle(
+        "tests/datasets/risk_free_rate.pickle"
+    )
+    toolkit._daily_treasury_data = pd.read_pickle("tests/datasets/treasury_data.pickle")
+    return toolkit.portfolio
+
+
+@pytest.mark.parametrize(
+    "method",
+    [
+        "get_minimum_variance_weights",
+        "get_mean_variance_weights",
+        "get_mean_risk_weights",
+        "get_distributionally_robust_cvar_weights",
+        "get_optimization_backtest",
+    ],
+)
+def test_an_asset_without_volatility_has_no_sharpe_ratio(
+    constant_price_portfolio, method
+):
+    table = getattr(constant_price_portfolio, method)()
+    numbers = table.select_dtypes("number").to_numpy(float)
+
+    assert not table.empty
+    assert not np.isinf(numbers).any()
+
+
+@pytest.mark.parametrize(
+    ("method", "arguments", "name"),
+    [
+        ("get_minimum_variance_weights", {"covariance": "bogus"}, "covariance"),
+        ("get_optimization_backtest", {"covariance": "bogus"}, "covariance"),
+        ("get_codependence_matrix", {"covariance": "bogus"}, "covariance"),
+        (
+            "get_hierarchical_risk_parity_weights",
+            {"linkage_method": "bogus"},
+            "linkage_method",
+        ),
+        (
+            "get_schur_complementary_weights",
+            {"linkage_method": "bogus"},
+            "linkage_method",
+        ),
+        ("get_stacking_weights", {"final_method": "bogus"}, "final_method"),
+        ("get_stacking_weights", {"methods": "minimum_variance,bogus"}, "methods"),
+        ("get_covariance_estimate", {"factor_selection": "bogus"}, "factor_selection"),
+        ("get_entropy_pooling", {"pooling": "bogus"}, "pooling"),
+        ("get_codependence_matrix", {"bins": "bogus"}, "bins"),
+        ("get_codependence_matrix", {"alpha": 1.5}, "alpha"),
+    ],
+)
+def test_an_unknown_option_raises(portfolio_module, method, arguments, name):
+    with pytest.raises(InvalidArgumentError, match=name):
+        getattr(portfolio_module, method)(**arguments)
+
+
+def test_equal_weights_are_not_reported_as_rescaled(portfolio_module, caplog):
+    with caplog.at_level("INFO"):
+        portfolio_module.get_risk_contributions()
+
+    assert "are scaled to one" not in caplog.text
+
+
+def test_a_missing_api_key_is_reported_once(portfolio_module, caplog):
+    with caplog.at_level("ERROR"):
+        assert portfolio_module.get_look_through_exposure().empty
+
+    errors = [record for record in caplog.records if record.levelname == "ERROR"]
+    assert len(errors) == 1
+    assert "Financial Modeling Prep API key" in errors[0].getMessage()

@@ -386,3 +386,15 @@ def test_invalid_inputs_raise(call, message):
 def test_non_numeric_inputs_raise():
     with pytest.raises(TypeError):
         multi_asset_model.get_exchange_option("100", 100, 0.2, 0.2, 0.5, 1.0)
+
+
+def test_the_exchange_option_refuses_a_second_price_of_zero():
+    with pytest.raises(ValueError, match="second_stock_price must be above 0"):
+        multi_asset_model.get_exchange_option(
+            first_stock_price=100.0,
+            second_stock_price=0.0,
+            first_volatility=0.2,
+            second_volatility=0.3,
+            correlation=0.5,
+            time_to_expiration=1.0,
+        )

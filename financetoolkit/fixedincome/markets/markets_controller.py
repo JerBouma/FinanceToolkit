@@ -531,6 +531,15 @@ class MarketsFixedIncome(CurvesFixedIncome):
                 "No bond in the holdings matches the bonds, issuer and maturity given."
             )
 
+        # A bond that matured by its price date has no years left to price.
+        bonds = bonds[
+            [
+                maturity > settlement
+                for settlement, maturity in zip(
+                    bonds["Price Date"], bonds["Maturity"], strict=True
+                )
+            ]
+        ].copy()
         # US corporate bonds count their days on the 30/360 Bond Basis.
         bonds["Years"] = [
             bond_data_model.get_years_to_maturity(
@@ -1683,8 +1692,13 @@ class MarketsFixedIncome(CurvesFixedIncome):
         Raises:
             ValueError: When no rate is published on or before the price date.
         """
-        rates = fed_model.get_tri_party_general_collateral_rate()["Rate"]
-        rates = rates.loc[: pd.Period(price_date, freq="D")].dropna()
+        rates = fed_model.get_tri_party_general_collateral_rate()
+        if rates.empty:
+            # The source has logged that it could not be reached.
+            raise ValueError(
+                "No repo rate (TGCR) could be retrieved; pass repo_rate to price the forwards."
+            )
+        rates = rates["Rate"].loc[: pd.Period(price_date, freq="D")].dropna()
         if rates.empty:
             raise ValueError(f"No repo rate (TGCR) is published up to {price_date}.")
 

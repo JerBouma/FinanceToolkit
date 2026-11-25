@@ -6,6 +6,7 @@ import pandas as pd
 import pytest
 
 from financetoolkit import Portfolio, Toolkit, historical_model
+from financetoolkit.utilities.error_model import InvalidArgumentError
 
 historical = pd.read_pickle("tests/datasets/portfolio_historical_dataset.pickle")
 benchmark = pd.read_pickle("tests/datasets/portfolio_benchmark_dataset.pickle")
@@ -1403,3 +1404,31 @@ def test_the_performance_of_the_portfolio_in_its_toolkit_comes_from_its_own_retu
     assert performance.get_beta(period="yearly").iloc[-1]["Portfolio"] == pytest.approx(
         np.cov(portfolio, benchmark)[0, 1] / benchmark.var()
     )
+
+
+def test_a_fully_sold_portfolio_says_why_its_overview_is_empty(monkeypatch, caplog):
+    trades = pd.DataFrame(
+        {
+            "Date": ["2021-01-11", "2021-06-01"],
+            "Ticker": ["AAPL", "AAPL"],
+            "Volume": [10, -10],
+            "Costs": [0.0, 0.0],
+        }
+    )
+    sold, _ = _self_benchmarked_portfolio(monkeypatch, trades)
+
+    with caplog.at_level("WARNING"):
+        assert sold.get_portfolio_overview().empty
+        assert sold.get_portfolio_performance(period="yearly").empty
+
+    assert "the overview without sold positions is empty" in caplog.text
+    assert "the performance without sold positions is empty" in caplog.text
+    assert not sold.get_portfolio_overview(exclude_sold_positions=False).empty
+
+
+@pytest.mark.parametrize(
+    "method", ["get_portfolio_performance", "get_transactions_performance"]
+)
+def test_an_unknown_portfolio_period_raises(method):
+    with pytest.raises(InvalidArgumentError, match="period must be one of"):
+        getattr(portfolio, method)(period="hourly")

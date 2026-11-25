@@ -20,7 +20,12 @@ from financetoolkit.options.pricing import (
 )
 from financetoolkit.utilities import logger_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
-from financetoolkit.utilities.error_model import check_option, handle_errors
+from financetoolkit.utilities.error_model import (
+    InvalidArgumentError,
+    check_option,
+    handle_errors,
+    validate_window,
+)
 from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import (
     apply_rounding,
@@ -131,12 +136,12 @@ class PricingOptions:
             last date of the historical data.
             put_option (bool, optional): Whether to calculate the put option price. Defaults to False which means
             it will calculate the call option price.
-            strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
+            strike_price_range (float): The percentage range to use for the strike prices, between 0 and 1. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
-            strike_step_size (float): The step size to use for the strike prices. Defaults to 5 which means that the
+            strike_step_size (float): The step size to use for the strike prices, above 0. Defaults to 5 which means that the
             strike prices will be 75, 80, 85, ..., 120 and 125 if the current stock price is 100.
             expiration_time_range (int): The number of days to use for the time to expiration: the columns are the
-            expirations 1 up to expiration_time_range - 1 days after the start date. Defaults to 30, which gives
+            expirations 1 up to expiration_time_range - 1 days after the start date, so at least 2. Defaults to 30, which gives
             expirations of 1 to 29 days.
             risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None, which
             uses the Toolkit's risk-free rate on the pricing date: the 10-year Treasury yield unless the Toolkit's
@@ -200,7 +205,7 @@ class PricingOptions:
         """
         check_option("dividends", dividends, ("yield", "escrowed", "haug_haug_lewis"))
         if dividends != "yield" and dividend_yield is not None:
-            raise ValueError(
+            raise InvalidArgumentError(
                 'A dividend_yield is only used with dividends="yield"; the other methods use the cash dividends.'
             )
 
@@ -222,10 +227,9 @@ class PricingOptions:
             values_per_strike=expiration_time_range,
         )
 
-        # This creates a list of time to expiration values from 0 to time_range, with a step size of 1
-        time_to_expiration_list = [
-            time / 365 for time in range(0, expiration_time_range)
-        ]
+        time_to_expiration_list = helpers.define_times_to_expiration(
+            expiration_time_range
+        )
 
         black_scholes: dict[str, dict[float, dict[float, float]]] = {}
         dividend_yield_value: dict[str, float] = {}
@@ -442,13 +446,13 @@ class PricingOptions:
             it will calculate the call option price.
             american_option (bool, optional): Whether to value an American option, which can be exercised at every
                 node, instead of a European option. Defaults to False.
-            strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
+            strike_price_range (float): The percentage range to use for the strike prices, between 0 and 1. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
-            strike_step_size (float): The step size to use for the strike prices. Defaults to 5 which means that the
+            strike_step_size (float): The step size to use for the strike prices, above 0. Defaults to 5 which means that the
             strike prices will be 75, 80, 85, ..., 120 and 125 if the current stock price is 100.
-            time_to_expiration (float): The number of years to use for the time to expiration. Defaults to 1 which equals
+            time_to_expiration (float): The number of years to use for the time to expiration, above 0. Defaults to 1 which equals
             one year.
-            time_steps (int): The number of time steps to use for the binomial tree. Defaults to 10 which equals 10
+            time_steps (int): The number of time steps to use for the binomial tree, at least 1. Defaults to 10 which equals 10
             time steps. This will be evenly distributed over the time to expiration.
             risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None, which
             uses the Toolkit's risk-free rate on the pricing date: the 10-year Treasury yield unless the Toolkit's
@@ -508,6 +512,8 @@ class PricingOptions:
         | (70, 'DDDDD') |     nan      |     nan      |     nan      |     nan      |     nan      |       0      |
         """
         check_option("method", method, binomial_trees_model.BINOMIAL_TREE_METHODS)
+        helpers.validate_time_to_expiration(time_to_expiration)
+        validate_window("time_steps", time_steps)
 
         if method in ("leisen_reimer", "exact_inversion") and time_steps % 2 == 0:
             # Both trees put the strike between the two middle nodes at expiration, which needs an odd count.
@@ -556,20 +562,28 @@ class PricingOptions:
             )
 
             # The trees of every strike at once, as a strikes × nodes × steps array.
-            trees, up_movements, down_movements, probabilities = (
-                binomial_trees_model.get_option_payoff_trees(
-                    stock_price=float(stock_price.loc[ticker]),
-                    strike_prices=np.asarray(strike_prices, dtype=float),
-                    years=time_to_expiration,
-                    time_steps=time_steps,
-                    risk_free_rate=float(risk_free_rate),
-                    volatility=float(volatility.loc[ticker]),
-                    dividend_yield=float(dividend_yield_value[ticker]),
-                    put_option=put_option,
-                    american_option=american_option,
-                    method=method,
+            try:
+                trees, up_movements, down_movements, probabilities = (
+                    binomial_trees_model.get_option_payoff_trees(
+                        stock_price=float(stock_price.loc[ticker]),
+                        strike_prices=np.asarray(strike_prices, dtype=float),
+                        years=time_to_expiration,
+                        time_steps=time_steps,
+                        risk_free_rate=float(risk_free_rate),
+                        volatility=float(volatility.loc[ticker]),
+                        dividend_yield=float(dividend_yield_value[ticker]),
+                        put_option=put_option,
+                        american_option=american_option,
+                        method=method,
+                    )
                 )
-            )
+            except InvalidArgumentError:
+                raise
+            except ValueError as error:
+                # One ticker without a usable volatility (such as constant prices) leaves out
+                # only that ticker.
+                logger.warning("No binomial tree for %s: %s", ticker, error)
+                continue
             binomial_trees[ticker] = (strike_prices, trees)
 
             if show_input_info:
@@ -677,9 +691,9 @@ class PricingOptions:
             start from; a date without prices (a weekend or a holiday) uses the last trading day before it, and a
             ticker without a price on that day is left out with a warning. Defaults to None, which uses the
             last date of the historical data.
-            time_to_expiration (float): The number of years to use for the time to expiration. Defaults to 1 which equals
+            time_to_expiration (float): The number of years to use for the time to expiration, above 0. Defaults to 1 which equals
             one year.
-            time_steps (int): The number of time steps to use for the binomial tree. Defaults to 10 which equals 10
+            time_steps (int): The number of time steps to use for the binomial tree, at least 1. Defaults to 10 which equals 10
             time steps. This will be evenly distributed over the time to expiration.
             risk_free_rate (float, optional): The risk free rate shown with show_input_info; it does not affect the
             simulated prices. Defaults to None, which uses the Toolkit's risk-free rate on the pricing date: the
@@ -732,6 +746,9 @@ class PricingOptions:
         | DDDDU      |       214.16 |      163.225 |      124.403 |      94.8154 |      72.2646 |      94.8154 |
         | DDDDD      |       214.16 |      163.225 |      124.403 |      94.8154 |      72.2646 |      55.0773 |
         """
+        helpers.validate_time_to_expiration(time_to_expiration)
+        validate_window("time_steps", time_steps)
+
         start_date = self._pricing_date(start_date)
         stock_price = self._prices.loc[start_date]
         volatility = self._volatility.loc[start_date]
@@ -750,23 +767,29 @@ class PricingOptions:
 
         logger.info("Simulating Stock Prices")
         for ticker in self._tickers:
-            (
-                up_movement,
-                down_movement,
-            ) = binomial_trees_model.calculate_up_and_down_movements(
-                volatility=volatility.loc[ticker],
-                time_delta=time_to_expiration / time_steps,
-            )
-
-            stock_price_simulation[ticker] = (
-                binomial_trees_model.calculate_stock_prices(
-                    stock_price=stock_price.loc[ticker],
-                    up_movement=up_movement,
-                    down_movement=down_movement,
-                    period_length=time_steps,
-                    show_unique_combinations=show_unique_combinations,
+            try:
+                (
+                    up_movement,
+                    down_movement,
+                ) = binomial_trees_model.calculate_up_and_down_movements(
+                    volatility=volatility.loc[ticker],
+                    time_delta=time_to_expiration / time_steps,
                 )
-            )
+
+                stock_price_simulation[ticker] = (
+                    binomial_trees_model.calculate_stock_prices(
+                        stock_price=stock_price.loc[ticker],
+                        up_movement=up_movement,
+                        down_movement=down_movement,
+                        period_length=time_steps,
+                        show_unique_combinations=show_unique_combinations,
+                    )
+                )
+            except ValueError as error:
+                # One ticker without a usable volatility (such as constant prices) leaves out
+                # only that ticker.
+                logger.warning("No stock price simulation for %s: %s", ticker, error)
+                continue
 
             stock_price_statistics["Up Movement"][ticker] = up_movement
             stock_price_statistics["Down Movement"][ticker] = down_movement
@@ -850,12 +873,12 @@ class PricingOptions:
             start from; a date without prices (a weekend or a holiday) uses the last trading day before it, and a
             ticker without a price on that day is left out with a warning. Defaults to None, which uses the
             last date of the historical data.
-            strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
+            strike_price_range (float): The percentage range to use for the strike prices, between 0 and 1. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
-            strike_step_size (float): The step size to use for the strike prices. Defaults to 5 which means that the
+            strike_step_size (float): The step size to use for the strike prices, above 0. Defaults to 5 which means that the
             strike prices will be 75, 80, 85, ..., 120 and 125 if the current stock price is 100.
             expiration_time_range (int): The number of days to use for the time to expiration: the columns are the
-            expirations 1 up to expiration_time_range - 1 days after the start date. Defaults to 30, which gives
+            expirations 1 up to expiration_time_range - 1 days after the start date, so at least 2. Defaults to 30, which gives
             expirations of 1 to 29 days.
             risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None, which
             uses the Toolkit's risk-free rate on the pricing date: the 10-year Treasury yield unless the Toolkit's
@@ -928,9 +951,9 @@ class PricingOptions:
             values_per_strike=expiration_time_range,
         )
 
-        time_to_expiration_list = [
-            time / 365 for time in range(0, expiration_time_range)
-        ]
+        time_to_expiration_list = helpers.define_times_to_expiration(
+            expiration_time_range
+        )
 
         parity_gap: dict[str, dict[float, dict[float, float]]] = {}
         dividend_yield_value: dict[str, float] = {}
@@ -988,6 +1011,12 @@ class PricingOptions:
                 rounding=rounding if rounding is not None else self._rounding,
                 axis="columns",
             )
+            if not parity_gap_df.empty and parity_gap_df.isna().all().all():
+                logger.warning(
+                    "The put-call parity gaps do not vary within any ticker and strike price (Black-Scholes "
+                    "prices meet parity exactly, so every gap rounds to 0), which leaves no Z-score to "
+                    "calculate. Use standardize=False to see the gaps."
+                )
 
         if show_input_info:
             helpers.show_input_info(
@@ -1047,12 +1076,12 @@ class PricingOptions:
             last date of the historical data.
             put_option (bool, optional): Whether to calculate the put option price. Defaults to False which means
             it will calculate the call option price.
-            strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
+            strike_price_range (float): The percentage range to use for the strike prices, between 0 and 1. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
-            strike_step_size (float): The step size to use for the strike prices. Defaults to 5 which means that the
+            strike_step_size (float): The step size to use for the strike prices, above 0. Defaults to 5 which means that the
             strike prices will be 75, 80, 85, ..., 120 and 125 if the current stock price is 100.
             expiration_time_range (int): The number of days to use for the time to expiration: the columns are the
-            expirations 1 up to expiration_time_range - 1 days after the start date. Defaults to 30, which gives
+            expirations 1 up to expiration_time_range - 1 days after the start date, so at least 2. Defaults to 30, which gives
             expirations of 1 to 29 days.
             risk_free_rate (float, optional): The domestic risk free rate to use for the calculation. Defaults to
             None, which uses the Toolkit's risk-free rate on the pricing date: the 10-year Treasury yield unless the
@@ -1129,9 +1158,9 @@ class PricingOptions:
             values_per_strike=expiration_time_range,
         )
 
-        time_to_expiration_list = [
-            time / 365 for time in range(0, expiration_time_range)
-        ]
+        time_to_expiration_list = helpers.define_times_to_expiration(
+            expiration_time_range
+        )
 
         garman_kohlhagen: dict[str, dict[float, dict[float, float]]] = {}
 
@@ -1234,12 +1263,12 @@ class PricingOptions:
             "asset-or-nothing" (the value of the stock). Defaults to "cash-or-nothing".
             cash_payout (float, optional): The fixed cash amount paid out by a cash-or-nothing option when it
             expires in-the-money. Ignored for asset-or-nothing options. Defaults to 1.0.
-            strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
+            strike_price_range (float): The percentage range to use for the strike prices, between 0 and 1. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
-            strike_step_size (float): The step size to use for the strike prices. Defaults to 5 which means that the
+            strike_step_size (float): The step size to use for the strike prices, above 0. Defaults to 5 which means that the
             strike prices will be 75, 80, 85, ..., 120 and 125 if the current stock price is 100.
             expiration_time_range (int): The number of days to use for the time to expiration: the columns are the
-            expirations 1 up to expiration_time_range - 1 days after the start date. Defaults to 30, which gives
+            expirations 1 up to expiration_time_range - 1 days after the start date, so at least 2. Defaults to 30, which gives
             expirations of 1 to 29 days.
             risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None, which
             uses the Toolkit's risk-free rate on the pricing date: the 10-year Treasury yield unless the Toolkit's
@@ -1317,9 +1346,9 @@ class PricingOptions:
             values_per_strike=expiration_time_range,
         )
 
-        time_to_expiration_list = [
-            time / 365 for time in range(0, expiration_time_range)
-        ]
+        time_to_expiration_list = helpers.define_times_to_expiration(
+            expiration_time_range
+        )
 
         binary_option: dict[str, dict[float, dict[float, float]]] = {}
         dividend_yield_value: dict[str, float] = {}
@@ -1490,6 +1519,11 @@ class PricingOptions:
         falls to or below the strike, a 1,000-step binomial tree prices the option instead. At zero days to
         expiration the value is the exercise value.
 
+        Bjerksund-Stensland can undervalue an option when the risk-free rate or the cost of carry is negative: its
+        flat boundaries can fall back to the European value while early exercise is worth more (with r = -2%,
+        q = -3%, σ = 1% and T = 1, an at-the-money put of 0.0854 against 0.1669 for a 10,000-step binomial tree).
+        A warning names the tickers this applies to; QD+ prices them accurately.
+
         See: Barone-Adesi, G., & Whaley, R. E. (1987), "Efficient Analytic Approximation of American Option
         Values", The Journal of Finance, 42(2), 301-320; Ju, N., & Zhong, R. (1999), "An Approximate Formula for
         Pricing American Options", The Journal of Derivatives, 7(2), 31-40; Li, M. (2010), "Analytical
@@ -1532,12 +1566,12 @@ class PricingOptions:
             (Crank-Nicolson finite differences), "bjerksund_stensland" (Bjerksund-Stensland 2002, two flat trigger
             prices) and "bjerksund_stensland_1993" (Bjerksund-Stensland 1993, one flat trigger price). Defaults to
             "qd_plus".
-            strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
+            strike_price_range (float): The percentage range to use for the strike prices, between 0 and 1. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
-            strike_step_size (float): The step size to use for the strike prices. Defaults to 5 which means that the
+            strike_step_size (float): The step size to use for the strike prices, above 0. Defaults to 5 which means that the
             strike prices will be 75, 80, 85, ..., 120 and 125 if the current stock price is 100.
             expiration_time_range (int): The number of days to use for the time to expiration: the columns are the
-            expirations 1 up to expiration_time_range - 1 days after the start date. Defaults to 30, which gives
+            expirations 1 up to expiration_time_range - 1 days after the start date, so at least 2. Defaults to 30, which gives
             expirations of 1 to 29 days.
             risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None, which
             uses the Toolkit's risk-free rate on the pricing date: the 10-year Treasury yield unless the Toolkit's
@@ -1630,66 +1664,51 @@ class PricingOptions:
             values_per_strike=expiration_time_range,
         )
 
-        time_to_expiration_list = [
-            time / 365 for time in range(0, expiration_time_range)
-        ]
+        time_to_expiration_list = helpers.define_times_to_expiration(
+            expiration_time_range
+        )
 
         american_option: dict[str, dict[float, dict[float, float]]] = {}
         dividend_yield_value: dict[str, float] = {}
 
         for ticker, strike_prices in strike_prices_per_ticker.items():
-            dividend_yield_value[ticker] = (
-                dividend_yield
-                if dividend_yield is not None
-                else self._dividend_yield_on(ticker, start_date)
-            )
-
-            if method == "finite_difference":
-                # One solve per group of expirations gives every strike (the value is
-                # homogeneous in the stock and strike price), with four time steps per
-                # expiration day.
-                values = finite_difference_model.get_finite_difference_option_values(
-                    stock_price=float(stock_price.loc[ticker]),
-                    strike_prices=np.asarray(strike_prices, dtype=float),
-                    times_to_expiration=np.asarray(time_to_expiration_list),
-                    risk_free_rate=float(risk_free_rate),
-                    volatility=float(volatility.loc[ticker]),
-                    dividend_yield=float(dividend_yield_value[ticker]),
-                    put_option=put_option,
-                    american_option=True,
-                    time_steps=max(400, 4 * expiration_time_range),
+            try:
+                dividend_yield_value[ticker] = (
+                    dividend_yield
+                    if dividend_yield is not None
+                    else self._dividend_yield_on(ticker, start_date)
                 )
-                american_option[ticker] = {
-                    strike_price: dict(
-                        zip(time_to_expiration_list, map(float, row), strict=True)
+
+                if method == "finite_difference":
+                    # One solve per group of expirations gives every strike (the value is
+                    # homogeneous in the stock and strike price), with four time steps per
+                    # expiration day.
+                    values = (
+                        finite_difference_model.get_finite_difference_option_values(
+                            stock_price=float(stock_price.loc[ticker]),
+                            strike_prices=np.asarray(strike_prices, dtype=float),
+                            times_to_expiration=np.asarray(time_to_expiration_list),
+                            risk_free_rate=float(risk_free_rate),
+                            volatility=float(volatility.loc[ticker]),
+                            dividend_yield=float(dividend_yield_value[ticker]),
+                            put_option=put_option,
+                            american_option=True,
+                            time_steps=max(400, 4 * expiration_time_range),
+                        )
                     )
-                    for strike_price, row in zip(strike_prices, values, strict=True)
-                }
-                continue
+                    american_option[ticker] = {
+                        strike_price: dict(
+                            zip(time_to_expiration_list, map(float, row), strict=True)
+                        )
+                        for strike_price, row in zip(strike_prices, values, strict=True)
+                    }
+                    continue
 
-            if method == "qd_plus":
-                # Every strike price and expiration at once: the boundary of each expiration
-                # is solved once, for all expirations together, and scaled to every strike.
-                american_option[ticker] = helpers.evaluate_on_grid(
-                    lambda strike_price, time_to_expiration: american_model.get_qd_plus(
-                        stock_price=float(stock_price.loc[ticker]),
-                        strike_price=strike_price,
-                        risk_free_rate=float(risk_free_rate),
-                        volatility=float(volatility.loc[ticker]),
-                        time_to_expiration=time_to_expiration,
-                        dividend_yield=float(dividend_yield_value[ticker]),
-                        put_option=put_option,
-                    ),
-                    strike_prices,
-                    time_to_expiration_list,
-                )
-                continue
-
-            if method in ("bjerksund_stensland", "bjerksund_stensland_1993"):
-                # The closed forms evaluate every strike price and expiration on arrays.
-                american_option[ticker] = helpers.evaluate_on_grid(
-                    lambda strike_price, time_to_expiration, ticker=ticker: (
-                        black_scholes_model.get_bjerksund_stensland(
+                if method == "qd_plus":
+                    # Every strike price and expiration at once: the boundary of each expiration
+                    # is solved once, for all expirations together, and scaled to every strike.
+                    american_option[ticker] = helpers.evaluate_on_grid(
+                        lambda strike_price, time_to_expiration: american_model.get_qd_plus(
                             stock_price=float(stock_price.loc[ticker]),
                             strike_price=strike_price,
                             risk_free_rate=float(risk_free_rate),
@@ -1697,36 +1716,76 @@ class PricingOptions:
                             time_to_expiration=time_to_expiration,
                             dividend_yield=float(dividend_yield_value[ticker]),
                             put_option=put_option,
-                            method=(
-                                "1993"
-                                if method == "bjerksund_stensland_1993"
-                                else "2002"
-                            ),
+                        ),
+                        strike_prices,
+                        time_to_expiration_list,
+                    )
+                    continue
+
+                if method in ("bjerksund_stensland", "bjerksund_stensland_1993"):
+                    # The closed forms evaluate every strike price and expiration on arrays.
+                    american_option[ticker] = helpers.evaluate_on_grid(
+                        lambda strike_price, time_to_expiration, ticker=ticker: (
+                            black_scholes_model.get_bjerksund_stensland(
+                                stock_price=float(stock_price.loc[ticker]),
+                                strike_price=strike_price,
+                                risk_free_rate=float(risk_free_rate),
+                                volatility=float(volatility.loc[ticker]),
+                                time_to_expiration=time_to_expiration,
+                                dividend_yield=float(dividend_yield_value[ticker]),
+                                put_option=put_option,
+                                method=(
+                                    "1993"
+                                    if method == "bjerksund_stensland_1993"
+                                    else "2002"
+                                ),
+                            )
+                        ),
+                        strike_prices,
+                        time_to_expiration_list,
+                    )
+                    continue
+
+                # The quadratic approximations solve their critical price once per expiration and
+                # evaluate every strike at once; the QD fixed point is priced per option.
+                american_option[ticker] = helpers.evaluate_on_grid(
+                    lambda strike_price, time_to_expiration, ticker=ticker: (
+                        american_model.get_american_option(
+                            stock_price=float(stock_price.loc[ticker]),
+                            strike_price=strike_price,
+                            risk_free_rate=float(risk_free_rate),
+                            volatility=float(volatility.loc[ticker]),
+                            time_to_expiration=time_to_expiration,
+                            dividend_yield=float(dividend_yield_value[ticker]),
+                            put_option=put_option,
+                            method=method,
                         )
                     ),
                     strike_prices,
                     time_to_expiration_list,
                 )
-                continue
+            except InvalidArgumentError:
+                raise
+            except ValueError as error:
+                # One ticker the formula cannot value (such as a volatility of zero from constant
+                # prices) is left out rather than emptying the result of every ticker.
+                logger.warning("No American option value for %s: %s", ticker, error)
 
-            # The quadratic approximations solve their critical price once per expiration and
-            # evaluate every strike at once; the QD fixed point is priced per option.
-            american_option[ticker] = helpers.evaluate_on_grid(
-                lambda strike_price, time_to_expiration, ticker=ticker: (
-                    american_model.get_american_option(
-                        stock_price=float(stock_price.loc[ticker]),
-                        strike_price=strike_price,
-                        risk_free_rate=float(risk_free_rate),
-                        volatility=float(volatility.loc[ticker]),
-                        time_to_expiration=time_to_expiration,
-                        dividend_yield=float(dividend_yield_value[ticker]),
-                        put_option=put_option,
-                        method=method,
-                    )
-                ),
-                strike_prices,
-                time_to_expiration_list,
-            )
+        if method in ("bjerksund_stensland", "bjerksund_stensland_1993"):
+            # The flat exercise boundaries are derived for a positive rate and cost of carry; below zero the
+            # approximation can fall to the European value while early exercise is worth more.
+            negative_carry = [
+                ticker
+                for ticker, ticker_dividend_yield in dividend_yield_value.items()
+                if risk_free_rate < 0 or risk_free_rate - ticker_dividend_yield < 0
+            ]
+            if negative_carry:
+                logger.warning(
+                    "The Bjerksund-Stensland approximation can undervalue American options when the risk-free rate "
+                    "or the cost of carry (the risk-free rate minus the dividend yield) is negative, as for %s. "
+                    'Use method="qd_plus" for these.',
+                    ", ".join(negative_carry),
+                )
 
         american_option_df = helpers.create_greek_dataframe(
             greek_dictionary=american_option,
@@ -1822,12 +1881,12 @@ class PricingOptions:
             it will calculate the call option price.
             beta (float, optional): The elasticity β, between 0 and 1, where 1 is the Black-Scholes model. Defaults to
             0.5, the square-root process.
-            strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
+            strike_price_range (float): The percentage range to use for the strike prices, between 0 and 1. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
-            strike_step_size (float): The step size to use for the strike prices. Defaults to 5 which means that the
+            strike_step_size (float): The step size to use for the strike prices, above 0. Defaults to 5 which means that the
             strike prices will be 75, 80, 85, ..., 120 and 125 if the current stock price is 100.
             expiration_time_range (int): The number of days to use for the time to expiration: the columns are the
-            expirations 1 up to expiration_time_range - 1 days after the start date. Defaults to 30, which gives
+            expirations 1 up to expiration_time_range - 1 days after the start date, so at least 2. Defaults to 30, which gives
             expirations of 1 to 29 days.
             risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None, which
             uses the Toolkit's risk-free rate on the pricing date: the 10-year Treasury yield unless the Toolkit's
@@ -1885,7 +1944,9 @@ class PricingOptions:
         |            320 |      47.5269 |      48.0578 |      48.9786 |
         """
         if not 0 <= beta <= 1:
-            raise ValueError(f"beta must be between 0 and 1, received {beta!r}.")
+            raise InvalidArgumentError(
+                f"beta must be between 0 and 1, received {beta!r}."
+            )
 
         start_date = self._pricing_date(start_date)
         stock_price = self._prices.loc[start_date]
@@ -1905,35 +1966,42 @@ class PricingOptions:
             values_per_strike=expiration_time_range,
         )
 
-        time_to_expiration_list = [
-            time / 365 for time in range(0, expiration_time_range)
-        ]
+        time_to_expiration_list = helpers.define_times_to_expiration(
+            expiration_time_range
+        )
 
         cev_option: dict[str, dict[float, dict[float, float]]] = {}
         dividend_yield_value: dict[str, float] = {}
 
         for ticker, strike_prices in strike_prices_per_ticker.items():
-            dividend_yield_value[ticker] = (
-                dividend_yield
-                if dividend_yield is not None
-                else self._dividend_yield_on(ticker, start_date)
-            )
+            try:
+                dividend_yield_value[ticker] = (
+                    dividend_yield
+                    if dividend_yield is not None
+                    else self._dividend_yield_on(ticker, start_date)
+                )
 
-            # Every strike price and time to expiration in one call on arrays.
-            cev_option[ticker] = helpers.evaluate_on_grid(
-                lambda strike_price, time_to_expiration: cev_model.get_cev(
-                    stock_price=float(stock_price.loc[ticker]),
-                    strike_price=strike_price,
-                    risk_free_rate=float(risk_free_rate),
-                    volatility=float(volatility.loc[ticker]),
-                    time_to_expiration=time_to_expiration,
-                    beta=float(beta),
-                    dividend_yield=float(dividend_yield_value[ticker]),
-                    put_option=put_option,
-                ),
-                strike_prices,
-                time_to_expiration_list,
-            )
+                # Every strike price and time to expiration in one call on arrays.
+                cev_option[ticker] = helpers.evaluate_on_grid(
+                    lambda strike_price, time_to_expiration: cev_model.get_cev(
+                        stock_price=float(stock_price.loc[ticker]),
+                        strike_price=strike_price,
+                        risk_free_rate=float(risk_free_rate),
+                        volatility=float(volatility.loc[ticker]),
+                        time_to_expiration=time_to_expiration,
+                        beta=float(beta),
+                        dividend_yield=float(dividend_yield_value[ticker]),
+                        put_option=put_option,
+                    ),
+                    strike_prices,
+                    time_to_expiration_list,
+                )
+            except InvalidArgumentError:
+                raise
+            except ValueError as error:
+                # One ticker the formula cannot value (such as a volatility of zero from constant
+                # prices) is left out rather than emptying the result of every ticker.
+                logger.warning("No CEV option value for %s: %s", ticker, error)
 
         cev_option_df = helpers.create_greek_dataframe(
             greek_dictionary=cev_option,
@@ -2019,12 +2087,12 @@ class PricingOptions:
             last date of the historical data.
             put_option (bool, optional): Whether to calculate the put option price. Defaults to False which means
             it will calculate the call option price.
-            strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
+            strike_price_range (float): The percentage range to use for the strike prices, between 0 and 1. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current futures price is 100.
-            strike_step_size (float): The step size to use for the strike prices. Defaults to 5 which means that the
+            strike_step_size (float): The step size to use for the strike prices, above 0. Defaults to 5 which means that the
             strike prices will be 75, 80, 85, ..., 120 and 125 if the current futures price is 100.
             expiration_time_range (int): The number of days to use for the time to expiration: the columns are the
-            expirations 1 up to expiration_time_range - 1 days after the start date. Defaults to 30, which gives
+            expirations 1 up to expiration_time_range - 1 days after the start date, so at least 2. Defaults to 30, which gives
             expirations of 1 to 29 days.
             risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None, which
             uses the Toolkit's risk-free rate on the pricing date: the 10-year Treasury yield unless the Toolkit's
@@ -2096,9 +2164,9 @@ class PricingOptions:
             values_per_strike=expiration_time_range,
         )
 
-        time_to_expiration_list = [
-            time / 365 for time in range(0, expiration_time_range)
-        ]
+        time_to_expiration_list = helpers.define_times_to_expiration(
+            expiration_time_range
+        )
 
         # Every strike price and time to expiration in one call on arrays.
         black_76: dict[str, dict[float, dict[float, float]]] = {
@@ -2247,12 +2315,12 @@ class PricingOptions:
             last date of the historical data.
             put_option (bool, optional): Whether to calculate the put option price. Defaults to False which means
             it will calculate the call option price.
-            strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
+            strike_price_range (float): The percentage range to use for the strike prices, between 0 and 1. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
-            strike_step_size (float): The step size to use for the strike prices. Defaults to 5 which means that the
+            strike_step_size (float): The step size to use for the strike prices, above 0. Defaults to 5 which means that the
             strike prices will be 75, 80, 85, ..., 120 and 125 if the current stock price is 100.
             expiration_time_range (int): The number of days to use for the time to expiration: the columns are the
-            expirations 1 up to expiration_time_range - 1 days after the start date. Defaults to 30, which gives
+            expirations 1 up to expiration_time_range - 1 days after the start date, so at least 2. Defaults to 30, which gives
             expirations of 1 to 29 days.
             risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None, which
             uses the Toolkit's risk-free rate on the pricing date: the 10-year Treasury yield unless the Toolkit's
@@ -2261,8 +2329,9 @@ class PricingOptions:
             dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None, which
             uses the dividend yield on the pricing date (the dividends of the 365 days up to it relative to its close,
             as the continuously compounded ln(1 + q)). A given value is used as a continuous yield.
-            simulations (int, optional): The number of simulated stock price paths. Defaults to 10,000.
-            time_steps (int, optional): The number of time steps used to build each simulated path. Defaults to 100.
+            simulations (int, optional): The number of simulated stock price paths, at least 1. Defaults to 10,000.
+            time_steps (int, optional): The number of time steps used to build each simulated path, at least 1.
+            Defaults to 100.
             seed (int | None, optional): The seed used to initialize the random number generator, ensuring
             reproducible results; None draws new paths on every call. Defaults to 0.
             show_standard_error (bool, optional): Whether to also return the standard error of each Monte Carlo
@@ -2331,6 +2400,9 @@ class PricingOptions:
         |            940 |       0.018  |       0.3432 |       2.3097 |
         |            950 |       0.0049 |       0.1773 |       1.6158 |
         """
+        validate_window("simulations", simulations)
+        validate_window("time_steps", time_steps)
+
         start_date = self._pricing_date(start_date)
         stock_price = self._prices.loc[start_date]
         volatility = self._volatility.loc[start_date]
@@ -2357,9 +2429,9 @@ class PricingOptions:
             ),
         )
 
-        time_to_expiration_list = [
-            time / 365 for time in range(0, expiration_time_range)
-        ]
+        time_to_expiration_list = helpers.define_times_to_expiration(
+            expiration_time_range
+        )
 
         monte_carlo_price: dict[str, dict[float, dict[float, float]]] = {}
         monte_carlo_error: dict[str, dict[float, dict[float, float]]] = {}
@@ -2607,8 +2679,8 @@ class PricingOptions:
             last date of the historical data.
             put_option (bool, optional): Whether to calculate the put option price. Defaults to False which means
             it will calculate the call option price.
-            barrier_percentage (float, optional): The barrier level as a percentage of the current stock price.
-            Defaults to 0.9 which equals 90% of the current stock price. A down barrier needs a value below 1
+            barrier_percentage (float, optional): The barrier level as a percentage of the current stock price,
+            above 0. Defaults to 0.9 which equals 90% of the current stock price. A down barrier needs a value below 1
             and an up barrier a value above 1; otherwise the barrier is already breached.
             barrier_direction (str, optional): The side of the barrier. Options are: "down" (below the stock
             price), "up" (above the stock price), "double" (barrier_percentage is then the lower and
@@ -2629,12 +2701,12 @@ class PricingOptions:
             monitoring (str, optional): How often the barrier is checked. Options are: "continuous"
             (continuously), "daily" (252 times a year), "weekly" (52 times a year), "monthly" (12 times a year).
             Defaults to "continuous".
-            strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
+            strike_price_range (float): The percentage range to use for the strike prices, between 0 and 1. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
-            strike_step_size (float): The step size to use for the strike prices. Defaults to 5 which means that the
+            strike_step_size (float): The step size to use for the strike prices, above 0. Defaults to 5 which means that the
             strike prices will be 75, 80, 85, ..., 120 and 125 if the current stock price is 100.
             expiration_time_range (int): The number of days to use for the time to expiration: the columns are the
-            expirations 1 up to expiration_time_range - 1 days after the start date. Defaults to 30, which gives
+            expirations 1 up to expiration_time_range - 1 days after the start date, so at least 2. Defaults to 30, which gives
             expirations of 1 to 29 days.
             risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None, which
             uses the Toolkit's risk-free rate on the pricing date: the 10-year Treasury yield unless the Toolkit's
@@ -2658,11 +2730,11 @@ class PricingOptions:
             time to expiration as the columns.
 
         Raises:
-            ValueError: If barrier_percentage puts the barrier at or beyond the current stock price for the
+            InvalidArgumentError: If barrier_percentage is not above 0 or puts the barrier at or beyond the current stock price for the
                 given barrier_direction (at or below 1 for "up", at or above 1 for "down", or outside the lower and
                 upper barrier for "double"), since such a barrier is breached at the start and every price would
                 be the rebate (knock-out) or the vanilla price (knock-in); or when a rebate is combined with a
-                double, partial-time or soft barrier, or two of those are combined.
+                double, partial-time or soft barrier, or two of those are combined, or monitoring is not one of its values.
 
         As an example:
 
@@ -2704,12 +2776,15 @@ class PricingOptions:
         """
         check_option("barrier_direction", barrier_direction, ("down", "up", "double"))
         check_option("barrier_window", barrier_window, ("full", "start", "end"))
-        if (
-            monitoring != "continuous"
-            and monitoring not in path_dependent_model.MONITORING_INTERVALS
-        ):
-            raise ValueError(
-                f"monitoring must be 'continuous', 'daily', 'weekly' or 'monthly', received {monitoring!r}."
+        check_option(
+            "monitoring",
+            monitoring,
+            ("continuous", *path_dependent_model.MONITORING_INTERVALS),
+        )
+        if not barrier_percentage > 0:
+            raise InvalidArgumentError(
+                "barrier_percentage is the barrier as a fraction of the stock price, above 0 (0.9 for a barrier "
+                f"10% below it), not {barrier_percentage!r}. Please pass a positive barrier_percentage."
             )
         variants = [
             name
@@ -2721,18 +2796,18 @@ class PricingOptions:
             if chosen
         ]
         if len(variants) > 1:
-            raise ValueError(
+            raise InvalidArgumentError(
                 f"Choose one of {' and '.join(variants)}; they cannot be combined."
             )
         if variants and rebate:
-            raise ValueError(
+            raise InvalidArgumentError(
                 f"A rebate is only available for a single hard barrier, not for {variants[0]}."
             )
         if (
             barrier_direction == "double"
             and not barrier_percentage < 1 < upper_barrier_percentage
         ):
-            raise ValueError(
+            raise InvalidArgumentError(
                 f"A double barrier needs barrier_percentage below 1 and upper_barrier_percentage above 1 "
                 f"(received {barrier_percentage} and {upper_barrier_percentage})."
             )
@@ -2740,7 +2815,7 @@ class PricingOptions:
             soft_barrier_percentage is not None
             and (soft_barrier_percentage - 1) * (barrier_percentage - 1) <= 0
         ):
-            raise ValueError(
+            raise InvalidArgumentError(
                 f"Both edges of a soft barrier must lie on the same side of the current stock price "
                 f"(received {barrier_percentage} and {soft_barrier_percentage})."
             )
@@ -2749,12 +2824,12 @@ class PricingOptions:
         # before the option starts. The prices would then be a flat rebate or the vanilla price,
         # which hides a mistaken barrier_percentage or barrier_direction instead of reporting it.
         if barrier_direction == "up" and barrier_percentage <= 1:
-            raise ValueError(
+            raise InvalidArgumentError(
                 f"An up barrier must lie above the current stock price, so barrier_percentage must be above 1 "
                 f"(received {barrier_percentage}). Use barrier_direction='down' for a barrier below the stock price."
             )
         if barrier_direction == "down" and barrier_percentage >= 1:
-            raise ValueError(
+            raise InvalidArgumentError(
                 f"A down barrier must lie below the current stock price, so barrier_percentage must be below 1 "
                 f"(received {barrier_percentage}). Use barrier_direction='up' for a barrier above the stock price."
             )
@@ -2777,91 +2852,103 @@ class PricingOptions:
             values_per_strike=expiration_time_range,
         )
 
-        time_to_expiration_list = [
-            time / 365 for time in range(0, expiration_time_range)
-        ]
+        time_to_expiration_list = helpers.define_times_to_expiration(
+            expiration_time_range
+        )
 
         barrier_option: dict[str, dict[float, dict[float, float]]] = {}
         dividend_yield_value: dict[str, float] = {}
 
         for ticker, strike_prices in strike_prices_per_ticker.items():
-            barrier_option[ticker] = {}
-            dividend_yield_value[ticker] = (
-                dividend_yield
-                if dividend_yield is not None
-                else self._dividend_yield_on(ticker, start_date)
-            )
-            ticker_price = float(stock_price.loc[ticker])
-            ticker_volatility = float(volatility.loc[ticker])
-            interval = path_dependent_model.MONITORING_INTERVALS.get(monitoring, 0.0)
-            # A discretely watched barrier prices as a continuous one moved away from the stock price.
-            barriers = [
-                path_dependent_model.get_discrete_monitoring_barrier(
-                    ticker_price * percentage, ticker_price, ticker_volatility, interval
+            try:
+                barrier_option[ticker] = {}
+                dividend_yield_value[ticker] = (
+                    dividend_yield
+                    if dividend_yield is not None
+                    else self._dividend_yield_on(ticker, start_date)
                 )
-                for percentage in (
-                    barrier_percentage,
-                    upper_barrier_percentage,
-                    (
-                        soft_barrier_percentage
-                        if soft_barrier_percentage is not None
-                        else barrier_percentage
-                    ),
+                ticker_price = float(stock_price.loc[ticker])
+                ticker_volatility = float(volatility.loc[ticker])
+                interval = path_dependent_model.MONITORING_INTERVALS.get(
+                    monitoring, 0.0
                 )
-            ]
-            inputs = {
-                "stock_price": ticker_price,
-                "risk_free_rate": float(risk_free_rate),
-                "volatility": ticker_volatility,
-                "dividend_yield": float(dividend_yield_value[ticker]),
-                "put_option": put_option,
-                "knock_type": knock_type,
-            }
-
-            def barrier_value(
-                strike_price, time_to_expiration, inputs=inputs, barriers=barriers
-            ):
-                # Every strike price and time to expiration in one call on arrays.
-                arguments = {
-                    **inputs,
-                    "strike_price": strike_price,
-                    "time_to_expiration": time_to_expiration,
+                # A discretely watched barrier prices as a continuous one moved away from the stock price.
+                barriers = [
+                    path_dependent_model.get_discrete_monitoring_barrier(
+                        ticker_price * percentage,
+                        ticker_price,
+                        ticker_volatility,
+                        interval,
+                    )
+                    for percentage in (
+                        barrier_percentage,
+                        upper_barrier_percentage,
+                        (
+                            soft_barrier_percentage
+                            if soft_barrier_percentage is not None
+                            else barrier_percentage
+                        ),
+                    )
+                ]
+                inputs = {
+                    "stock_price": ticker_price,
+                    "risk_free_rate": float(risk_free_rate),
+                    "volatility": ticker_volatility,
+                    "dividend_yield": float(dividend_yield_value[ticker]),
+                    "put_option": put_option,
+                    "knock_type": knock_type,
                 }
-                if barrier_direction == "double":
-                    return path_dependent_model.get_double_barrier_option(
-                        **arguments,
-                        lower_barrier=barriers[0],
-                        upper_barrier=barriers[1],
-                    )
-                if barrier_window != "full":
-                    return path_dependent_model.get_partial_time_barrier_option(
-                        **arguments,
-                        barrier=barriers[0],
-                        barrier_direction=barrier_direction,
-                        barrier_window=barrier_window,
-                        window_share=window_share,
-                    )
-                if soft_barrier_percentage is not None:
-                    return path_dependent_model.get_soft_barrier_option(
-                        **arguments,
-                        first_barrier=barriers[0],
-                        second_barrier=barriers[2],
-                        barrier_direction=barrier_direction,
-                    )
-                return exotics_model.get_barrier_option(
-                    **arguments,
-                    barrier=(
-                        barriers[0]
-                        if interval
-                        else stock_price.loc[ticker] * barrier_percentage
-                    ),
-                    barrier_direction=barrier_direction,
-                    rebate=rebate,
-                )
 
-            barrier_option[ticker] = helpers.evaluate_on_grid(
-                barrier_value, strike_prices, time_to_expiration_list
-            )
+                def barrier_value(
+                    strike_price, time_to_expiration, inputs=inputs, barriers=barriers
+                ):
+                    # Every strike price and time to expiration in one call on arrays.
+                    arguments = {
+                        **inputs,
+                        "strike_price": strike_price,
+                        "time_to_expiration": time_to_expiration,
+                    }
+                    if barrier_direction == "double":
+                        return path_dependent_model.get_double_barrier_option(
+                            **arguments,
+                            lower_barrier=barriers[0],
+                            upper_barrier=barriers[1],
+                        )
+                    if barrier_window != "full":
+                        return path_dependent_model.get_partial_time_barrier_option(
+                            **arguments,
+                            barrier=barriers[0],
+                            barrier_direction=barrier_direction,
+                            barrier_window=barrier_window,
+                            window_share=window_share,
+                        )
+                    if soft_barrier_percentage is not None:
+                        return path_dependent_model.get_soft_barrier_option(
+                            **arguments,
+                            first_barrier=barriers[0],
+                            second_barrier=barriers[2],
+                            barrier_direction=barrier_direction,
+                        )
+                    return exotics_model.get_barrier_option(
+                        **arguments,
+                        barrier=(
+                            barriers[0]
+                            if interval
+                            else stock_price.loc[ticker] * barrier_percentage
+                        ),
+                        barrier_direction=barrier_direction,
+                        rebate=rebate,
+                    )
+
+                barrier_option[ticker] = helpers.evaluate_on_grid(
+                    barrier_value, strike_prices, time_to_expiration_list
+                )
+            except InvalidArgumentError:
+                raise
+            except ValueError as error:
+                # One ticker the formula cannot value (such as a volatility of zero from constant
+                # prices) is left out rather than emptying the result of every ticker.
+                logger.warning("No barrier option value for %s: %s", ticker, error)
 
         barrier_option_df = helpers.create_greek_dataframe(
             greek_dictionary=barrier_option,
@@ -3009,14 +3096,14 @@ class PricingOptions:
             method (str, optional): The pricing method. Options are: "geometric" (the geometric average),
             "turnbull_wakeman" (Turnbull-Wakeman, arithmetic average), "curran" (Curran, arithmetic average),
             "monte_carlo" (Monte Carlo, arithmetic average). Defaults to "geometric".
-            fixings (int | None, optional): The number of equally spaced fixings of the average, the last on the
+            fixings (int | None, optional): The number of equally spaced fixings of the average, at least 1, the last on the
             expiration date. Defaults to None, which averages continuously.
-            strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
+            strike_price_range (float): The percentage range to use for the strike prices, between 0 and 1. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
-            strike_step_size (float): The step size to use for the strike prices. Defaults to 5 which means that the
+            strike_step_size (float): The step size to use for the strike prices, above 0. Defaults to 5 which means that the
             strike prices will be 75, 80, 85, ..., 120 and 125 if the current stock price is 100.
             expiration_time_range (int): The number of days to use for the time to expiration: the columns are the
-            expirations 1 up to expiration_time_range - 1 days after the start date. Defaults to 30, which gives
+            expirations 1 up to expiration_time_range - 1 days after the start date, so at least 2. Defaults to 30, which gives
             expirations of 1 to 29 days.
             risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None, which
             uses the Toolkit's risk-free rate on the pricing date: the 10-year Treasury yield unless the Toolkit's
@@ -3025,9 +3112,10 @@ class PricingOptions:
             dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None, which
             uses the dividend yield on the pricing date (the dividends of the 365 days up to it relative to its close,
             as the continuously compounded ln(1 + q)). A given value is used as a continuous yield.
-            simulations (int, optional): The number of simulated paths of the Monte Carlo method. Defaults to 10,000.
-            time_steps (int, optional): The fixings that approximate a continuous average with the Monte Carlo method
-            (fixings, when given, take their place). Defaults to 100.
+            simulations (int, optional): The number of simulated paths of the Monte Carlo method, at least 1. Defaults
+            to 10,000.
+            time_steps (int, optional): The fixings that approximate a continuous average with the Monte Carlo method,
+            at least 1 (fixings, when given, take their place). Defaults to 100.
             seed (int | None, optional): The seed of the random number generator of the Monte Carlo method, which
             makes the results reproducible; None draws new paths on every call. Defaults to 0.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
@@ -3045,7 +3133,8 @@ class PricingOptions:
             expiration as the columns.
 
         Raises:
-            ValueError: If method is not one of the methods or fixings is not a whole number of at least 1.
+            InvalidArgumentError: If method is not one of the methods or fixings, simulations or time_steps is not a whole
+            number of at least 1.
 
         As an example:
 
@@ -3087,12 +3176,9 @@ class PricingOptions:
         """
         methods = ("geometric", "turnbull_wakeman", "curran", "monte_carlo")
         check_option("method", method, methods)
-        if fixings is not None and (
-            isinstance(fixings, bool) or not isinstance(fixings, int) or fixings < 1
-        ):
-            raise ValueError(
-                f"fixings must be a whole number of at least 1 or None, received {fixings!r}."
-            )
+        validate_window("simulations", simulations)
+        validate_window("time_steps", time_steps)
+        validate_window("fixings", fixings)
 
         start_date = self._pricing_date(start_date)
         stock_price = self._prices.loc[start_date]
@@ -3116,9 +3202,9 @@ class PricingOptions:
             * (-(-simulations // 500) if method == "monte_carlo" else 1),
         )
 
-        time_to_expiration_list = [
-            time / 365 for time in range(0, expiration_time_range)
-        ]
+        time_to_expiration_list = helpers.define_times_to_expiration(
+            expiration_time_range
+        )
 
         asian_option: dict[str, dict[float, dict[float, float]]] = {}
         dividend_yield_value: dict[str, float] = {}
@@ -3307,14 +3393,14 @@ class PricingOptions:
             lookback_period (float, optional): The share of the life over which the extreme is watched, above 0 and
             at most 1: the start of the life for a floating strike and the end for a fixed strike. Defaults to 1,
             the whole life.
-            strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
+            strike_price_range (float): The percentage range to use for the strike prices, between 0 and 1. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100. Not used for a
             floating strike.
-            strike_step_size (float): The step size to use for the strike prices. Defaults to 5 which means that the
+            strike_step_size (float): The step size to use for the strike prices, above 0. Defaults to 5 which means that the
             strike prices will be 75, 80, 85, ..., 120 and 125 if the current stock price is 100. Not used for a
             floating strike.
             expiration_time_range (int): The number of days to use for the time to expiration: the columns are the
-            expirations 1 up to expiration_time_range - 1 days after the start date. Defaults to 30, which gives
+            expirations 1 up to expiration_time_range - 1 days after the start date, so at least 2. Defaults to 30, which gives
             expirations of 1 to 29 days.
             risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None, which
             uses the Toolkit's risk-free rate on the pricing date: the 10-year Treasury yield unless the Toolkit's
@@ -3338,7 +3424,7 @@ class PricingOptions:
             floating strike) as the index and the time to expiration as the columns.
 
         Raises:
-            ValueError: If strike_type is not "fixed" or "floating" or lookback_period is not above 0 and at most 1.
+            InvalidArgumentError: If strike_type is not "fixed" or "floating" or lookback_period is not above 0 and at most 1.
 
         As an example:
 
@@ -3377,7 +3463,7 @@ class PricingOptions:
         """
         check_option("strike_type", strike_type, ("fixed", "floating"))
         if not 0 < lookback_period <= 1:
-            raise ValueError(
+            raise InvalidArgumentError(
                 f"lookback_period must be above 0 and at most 1, received {lookback_period!r}."
             )
 
@@ -3399,37 +3485,48 @@ class PricingOptions:
             values_per_strike=expiration_time_range,
         )
 
-        time_to_expiration_list = [
-            time / 365 for time in range(0, expiration_time_range)
-        ]
+        time_to_expiration_list = helpers.define_times_to_expiration(
+            expiration_time_range
+        )
 
         lookback_option: dict[str, dict[float, dict[float, float]]] = {}
         dividend_yield_value: dict[str, float] = {}
 
         for ticker, strike_prices in strike_prices_per_ticker.items():
-            dividend_yield_value[ticker] = (
-                dividend_yield
-                if dividend_yield is not None
-                else self._dividend_yield_on(ticker, start_date)
-            )
-            inputs = {
-                "stock_price": float(stock_price.loc[ticker]),
-                "risk_free_rate": float(risk_free_rate),
-                "volatility": float(volatility.loc[ticker]),
-                "dividend_yield": float(dividend_yield_value[ticker]),
-                "put_option": put_option,
-                "strike_type": strike_type,
-                "lookback_period": float(lookback_period),
-            }
+            try:
+                dividend_yield_value[ticker] = (
+                    dividend_yield
+                    if dividend_yield is not None
+                    else self._dividend_yield_on(ticker, start_date)
+                )
+                inputs = {
+                    "stock_price": float(stock_price.loc[ticker]),
+                    "risk_free_rate": float(risk_free_rate),
+                    "volatility": float(volatility.loc[ticker]),
+                    "dividend_yield": float(dividend_yield_value[ticker]),
+                    "put_option": put_option,
+                    "strike_type": strike_type,
+                    "lookback_period": float(lookback_period),
+                }
 
-            # A floating strike has no strike price, so it is priced once per expiration.
-            lookback_option[ticker] = helpers.evaluate_on_grid(
-                lambda strike, time, inputs=inputs: path_dependent_model.get_lookback_option(
-                    **inputs, strike_price=strike, time_to_expiration=time
-                ),
-                strike_prices if strike_type == "fixed" else [inputs["stock_price"]],
-                time_to_expiration_list,
-            )
+                # A floating strike has no strike price, so it is priced once per expiration.
+                lookback_option[ticker] = helpers.evaluate_on_grid(
+                    lambda strike, time, inputs=inputs: path_dependent_model.get_lookback_option(
+                        **inputs, strike_price=strike, time_to_expiration=time
+                    ),
+                    (
+                        strike_prices
+                        if strike_type == "fixed"
+                        else [inputs["stock_price"]]
+                    ),
+                    time_to_expiration_list,
+                )
+            except InvalidArgumentError:
+                raise
+            except ValueError as error:
+                # One ticker the formula cannot value (such as a volatility of zero from constant
+                # prices) is left out rather than emptying the result of every ticker.
+                logger.warning("No lookback option value for %s: %s", ticker, error)
 
         if strike_type == "fixed":
             lookback_option_df = helpers.create_greek_dataframe(
@@ -3554,7 +3651,7 @@ class PricingOptions:
             "no-touch" (no-touch), "double-one-touch" (double one-touch), "double-no-touch" (double no-touch).
             Defaults to "one-touch".
             barrier_percentage (float, optional): The barrier (the lower barrier of a double touch option) as a
-            percentage of the current stock price. Defaults to 0.9, 90% of the current stock price.
+            percentage of the current stock price, above 0. Defaults to 0.9, 90% of the current stock price.
             upper_barrier_percentage (float, optional): The upper barrier of a double touch option as a percentage of
             the current stock price. Defaults to 1.1, 110% of the current stock price.
             payment (str, optional): When a one-touch option pays. Options are: "expiration" (at expiration),
@@ -3565,7 +3662,7 @@ class PricingOptions:
             (continuously), "daily" (252 times a year), "weekly" (52 times a year), "monthly" (12 times a year).
             Defaults to "continuous".
             expiration_time_range (int): The number of days to use for the time to expiration: the columns are the
-            expirations 1 up to expiration_time_range - 1 days after the start date. Defaults to 30, which gives
+            expirations 1 up to expiration_time_range - 1 days after the start date, so at least 2. Defaults to 30, which gives
             expirations of 1 to 29 days.
             risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None, which
             uses the Toolkit's risk-free rate on the pricing date: the 10-year Treasury yield unless the Toolkit's
@@ -3589,9 +3686,9 @@ class PricingOptions:
             columns.
 
         Raises:
-            ValueError: If option_type, payment or monitoring is not one of its values, a touch option other than the
-                one-touch is asked to pay at the hit, the barrier is at the current stock price or a double touch
-                option's barriers do not lie on either side of it.
+            InvalidArgumentError: If option_type, payment or monitoring is not one of its values, a touch option other
+                than the one-touch is asked to pay at the hit, barrier_percentage is not above 0, the barrier is at the
+                current stock price or a double touch option's barriers do not lie on either side of it.
 
         As an example:
 
@@ -3625,24 +3722,27 @@ class PricingOptions:
         check_option("option_type", option_type, option_types)
         check_option("payment", payment, ("expiration", "hit"))
         if payment == "hit" and option_type != "one-touch":
-            raise ValueError(
+            raise InvalidArgumentError(
                 f"Only a one-touch option pays at the hit; a {option_type} option pays at expiration."
             )
-        if (
-            monitoring != "continuous"
-            and monitoring not in path_dependent_model.MONITORING_INTERVALS
-        ):
-            raise ValueError(
-                f"monitoring must be 'continuous', 'daily', 'weekly' or 'monthly', received {monitoring!r}."
+        check_option(
+            "monitoring",
+            monitoring,
+            ("continuous", *path_dependent_model.MONITORING_INTERVALS),
+        )
+        if not barrier_percentage > 0:
+            raise InvalidArgumentError(
+                "barrier_percentage is the barrier as a fraction of the stock price, above 0 (0.9 for a barrier "
+                f"10% below it), not {barrier_percentage!r}. Please pass a positive barrier_percentage."
             )
         double = option_type.startswith("double")
         if double and not barrier_percentage < 1 < upper_barrier_percentage:
-            raise ValueError(
+            raise InvalidArgumentError(
                 f"A double touch option needs barrier_percentage below 1 and upper_barrier_percentage above 1 "
                 f"(received {barrier_percentage} and {upper_barrier_percentage})."
             )
         if not double and barrier_percentage == 1:
-            raise ValueError(
+            raise InvalidArgumentError(
                 "The barrier is at the current stock price, so it is touched already; use a barrier_percentage "
                 "below 1 for a barrier below the stock price or above 1 for one above it."
             )
@@ -3657,63 +3757,73 @@ class PricingOptions:
             else self._risk_free_rate.loc[start_date]
         )
 
-        time_to_expiration_list = [
-            time / 365 for time in range(0, expiration_time_range)
-        ]
+        time_to_expiration_list = helpers.define_times_to_expiration(
+            expiration_time_range
+        )
         interval = path_dependent_model.MONITORING_INTERVALS.get(monitoring, 0.0)
 
         touch_option: dict[str, dict[float, float]] = {}
         dividend_yield_value: dict[str, float] = {}
 
         for ticker in self._tickers:
-            # A ticker without a price on the date is left out, as on the strike price grids.
-            if pd.isna(stock_price.get(ticker)):
-                logger.warning(
-                    "%s has no price on %s, so it is left out of the option values.",
-                    ticker,
-                    stock_price.name,
+            try:
+                # A ticker without a price on the date is left out, as on the strike price grids.
+                if pd.isna(stock_price.get(ticker)):
+                    logger.warning(
+                        "%s has no price on %s, so it is left out of the option values.",
+                        ticker,
+                        stock_price.name,
+                    )
+                    continue
+                dividend_yield_value[ticker] = (
+                    dividend_yield
+                    if dividend_yield is not None
+                    else self._dividend_yield_on(ticker, start_date)
                 )
-                continue
-            dividend_yield_value[ticker] = (
-                dividend_yield
-                if dividend_yield is not None
-                else self._dividend_yield_on(ticker, start_date)
-            )
-            ticker_price = float(stock_price.loc[ticker])
-            ticker_volatility = float(volatility.loc[ticker])
-            lower_barrier, upper_barrier = (
-                path_dependent_model.get_discrete_monitoring_barrier(
-                    ticker_price * percentage, ticker_price, ticker_volatility, interval
+                ticker_price = float(stock_price.loc[ticker])
+                ticker_volatility = float(volatility.loc[ticker])
+                lower_barrier, upper_barrier = (
+                    path_dependent_model.get_discrete_monitoring_barrier(
+                        ticker_price * percentage,
+                        ticker_price,
+                        ticker_volatility,
+                        interval,
+                    )
+                    for percentage in (barrier_percentage, upper_barrier_percentage)
                 )
-                for percentage in (barrier_percentage, upper_barrier_percentage)
-            )
-            inputs = {
-                "stock_price": ticker_price,
-                "risk_free_rate": float(risk_free_rate),
-                "volatility": ticker_volatility,
-                "dividend_yield": float(dividend_yield_value[ticker]),
-                "option_type": option_type,
-                "cash_payout": float(cash_payout),
-            }
+                inputs = {
+                    "stock_price": ticker_price,
+                    "risk_free_rate": float(risk_free_rate),
+                    "volatility": ticker_volatility,
+                    "dividend_yield": float(dividend_yield_value[ticker]),
+                    "option_type": option_type,
+                    "cash_payout": float(cash_payout),
+                }
 
-            touch_option[ticker] = {
-                time_to_expiration: (
-                    path_dependent_model.get_double_touch_option(
-                        **inputs,
-                        lower_barrier=lower_barrier,
-                        upper_barrier=upper_barrier,
-                        time_to_expiration=time_to_expiration,
+                touch_option[ticker] = {
+                    time_to_expiration: (
+                        path_dependent_model.get_double_touch_option(
+                            **inputs,
+                            lower_barrier=lower_barrier,
+                            upper_barrier=upper_barrier,
+                            time_to_expiration=time_to_expiration,
+                        )
+                        if double
+                        else path_dependent_model.get_touch_option(
+                            **inputs,
+                            barrier=lower_barrier,
+                            time_to_expiration=time_to_expiration,
+                            payment=payment,
+                        )
                     )
-                    if double
-                    else path_dependent_model.get_touch_option(
-                        **inputs,
-                        barrier=lower_barrier,
-                        time_to_expiration=time_to_expiration,
-                        payment=payment,
-                    )
-                )
-                for time_to_expiration in time_to_expiration_list
-            }
+                    for time_to_expiration in time_to_expiration_list
+                }
+            except InvalidArgumentError:
+                raise
+            except ValueError as error:
+                # One ticker the formula cannot value (such as a volatility of zero from constant
+                # prices) is left out rather than emptying the result of every ticker.
+                logger.warning("No touch option value for %s: %s", ticker, error)
 
         touch_option_df = helpers.create_expiration_dataframe(
             value_dictionary=touch_option,
@@ -3805,12 +3915,12 @@ class PricingOptions:
             last date of the historical data.
             choice_period (float, optional): The share of the life after which the holder chooses between the call
             and the put, at least 0 and at most 1. Defaults to 0.5, halfway.
-            strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
+            strike_price_range (float): The percentage range to use for the strike prices, between 0 and 1. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
-            strike_step_size (float): The step size to use for the strike prices. Defaults to 5 which means that the
+            strike_step_size (float): The step size to use for the strike prices, above 0. Defaults to 5 which means that the
             strike prices will be 75, 80, 85, ..., 120 and 125 if the current stock price is 100.
             expiration_time_range (int): The number of days to use for the time to expiration: the columns are the
-            expirations 1 up to expiration_time_range - 1 days after the start date. Defaults to 30, which gives
+            expirations 1 up to expiration_time_range - 1 days after the start date, so at least 2. Defaults to 30, which gives
             expirations of 1 to 29 days.
             risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None, which
             uses the Toolkit's risk-free rate on the pricing date: the 10-year Treasury yield unless the Toolkit's
@@ -3834,7 +3944,7 @@ class PricingOptions:
             to expiration as the columns.
 
         Raises:
-            ValueError: If choice_period is not at least 0 and at most 1.
+            InvalidArgumentError: If choice_period is not at least 0 and at most 1.
 
         As an example:
 
@@ -3871,7 +3981,7 @@ class PricingOptions:
         |            210 |      27.3507 |      32.7032 |      37.4324 |
         """
         if not 0 <= choice_period <= 1:
-            raise ValueError(
+            raise InvalidArgumentError(
                 f"choice_period must be at least 0 and at most 1, received {choice_period!r}."
             )
 
@@ -3893,37 +4003,44 @@ class PricingOptions:
             values_per_strike=expiration_time_range,
         )
 
-        time_to_expiration_list = [
-            time / 365 for time in range(0, expiration_time_range)
-        ]
+        time_to_expiration_list = helpers.define_times_to_expiration(
+            expiration_time_range
+        )
 
         chooser_option: dict[str, dict[float, dict[float, float]]] = {}
         dividend_yield_value: dict[str, float] = {}
 
         for ticker, strike_prices in strike_prices_per_ticker.items():
-            dividend_yield_value[ticker] = (
-                dividend_yield
-                if dividend_yield is not None
-                else self._dividend_yield_on(ticker, start_date)
-            )
-            inputs = {
-                "stock_price": float(stock_price.loc[ticker]),
-                "risk_free_rate": float(risk_free_rate),
-                "volatility": float(volatility.loc[ticker]),
-                "dividend_yield": float(dividend_yield_value[ticker]),
-            }
+            try:
+                dividend_yield_value[ticker] = (
+                    dividend_yield
+                    if dividend_yield is not None
+                    else self._dividend_yield_on(ticker, start_date)
+                )
+                inputs = {
+                    "stock_price": float(stock_price.loc[ticker]),
+                    "risk_free_rate": float(risk_free_rate),
+                    "volatility": float(volatility.loc[ticker]),
+                    "dividend_yield": float(dividend_yield_value[ticker]),
+                }
 
-            # Every strike price and time to expiration in one call on arrays.
-            chooser_option[ticker] = helpers.evaluate_on_grid(
-                lambda strike_price, time_to_expiration, inputs=inputs: compound_model.get_chooser_option(
-                    **inputs,
-                    strike_price=strike_price,
-                    time_to_expiration=time_to_expiration,
-                    choice_time=choice_period * time_to_expiration,
-                ),
-                strike_prices,
-                time_to_expiration_list,
-            )
+                # Every strike price and time to expiration in one call on arrays.
+                chooser_option[ticker] = helpers.evaluate_on_grid(
+                    lambda strike_price, time_to_expiration, inputs=inputs: compound_model.get_chooser_option(
+                        **inputs,
+                        strike_price=strike_price,
+                        time_to_expiration=time_to_expiration,
+                        choice_time=choice_period * time_to_expiration,
+                    ),
+                    strike_prices,
+                    time_to_expiration_list,
+                )
+            except InvalidArgumentError:
+                raise
+            except ValueError as error:
+                # One ticker the formula cannot value (such as a volatility of zero from constant
+                # prices) is left out rather than emptying the result of every ticker.
+                logger.warning("No chooser option value for %s: %s", ticker, error)
 
         chooser_option_df = helpers.create_greek_dataframe(
             greek_dictionary=chooser_option,
@@ -4027,7 +4144,7 @@ class PricingOptions:
             performance (bool, optional): Whether each period pays its return beyond the moneyness instead of the
             price difference. Defaults to False.
             expiration_time_range (int): The number of days to use for the time to expiration: the columns are the
-            expirations 1 up to expiration_time_range - 1 days after the start date. Defaults to 30, which gives
+            expirations 1 up to expiration_time_range - 1 days after the start date, so at least 2. Defaults to 30, which gives
             expirations of 1 to 29 days.
             risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None, which
             uses the Toolkit's risk-free rate on the pricing date: the 10-year Treasury yield unless the Toolkit's
@@ -4051,7 +4168,7 @@ class PricingOptions:
             as the columns.
 
         Raises:
-            ValueError: If start_period is not at least 0 and below 1, moneyness is not positive or periods is not
+            InvalidArgumentError: If start_period is not at least 0 and below 1, moneyness is not positive or periods is not
             a positive whole number.
 
         As an example:
@@ -4082,13 +4199,15 @@ class PricingOptions:
         | MSFT     |       9.834  |      14.0922 |      17.4287 |
         """
         if not 0 <= start_period < 1:
-            raise ValueError(
+            raise InvalidArgumentError(
                 f"start_period must be at least 0 and below 1, received {start_period!r}."
             )
         if moneyness <= 0:
-            raise ValueError(f"moneyness must be positive, received {moneyness!r}.")
+            raise InvalidArgumentError(
+                f"moneyness must be positive, received {moneyness!r}."
+            )
         if isinstance(periods, bool) or not isinstance(periods, int) or periods < 1:
-            raise ValueError(
+            raise InvalidArgumentError(
                 f"periods must be a positive whole number, received {periods!r}."
             )
 
@@ -4102,54 +4221,63 @@ class PricingOptions:
             else self._risk_free_rate.loc[start_date]
         )
 
-        time_to_expiration_list = [
-            time / 365 for time in range(0, expiration_time_range)
-        ]
+        time_to_expiration_list = helpers.define_times_to_expiration(
+            expiration_time_range
+        )
 
         forward_start_option: dict[str, dict[float, float]] = {}
         dividend_yield_value: dict[str, float] = {}
 
         for ticker in self._tickers:
-            # A ticker without a price on the date is left out, as on the strike price grids.
-            if pd.isna(stock_price.get(ticker)):
-                logger.warning(
-                    "%s has no price on %s, so it is left out of the option values.",
-                    ticker,
-                    stock_price.name,
-                )
-                continue
-            dividend_yield_value[ticker] = (
-                dividend_yield
-                if dividend_yield is not None
-                else self._dividend_yield_on(ticker, start_date)
-            )
-            inputs = {
-                "stock_price": float(stock_price.loc[ticker]),
-                "risk_free_rate": float(risk_free_rate),
-                "volatility": float(volatility.loc[ticker]),
-                "moneyness": float(moneyness),
-                "dividend_yield": float(dividend_yield_value[ticker]),
-                "put_option": put_option,
-                "performance": performance,
-            }
-
-            # The pricing date itself (no time to expiration) has no periods and is left out of the result.
-            forward_start_option[ticker] = {
-                time_to_expiration: (
-                    compound_model.get_cliquet_option(
-                        **inputs,
-                        time_to_expiration=time_to_expiration,
-                        reset_times=[
-                            time_to_expiration
-                            * (start_period + (1 - start_period) * period / periods)
-                            for period in range(periods)
-                        ],
+            try:
+                # A ticker without a price on the date is left out, as on the strike price grids.
+                if pd.isna(stock_price.get(ticker)):
+                    logger.warning(
+                        "%s has no price on %s, so it is left out of the option values.",
+                        ticker,
+                        stock_price.name,
                     )
-                    if time_to_expiration > 0
-                    else np.nan
+                    continue
+                dividend_yield_value[ticker] = (
+                    dividend_yield
+                    if dividend_yield is not None
+                    else self._dividend_yield_on(ticker, start_date)
                 )
-                for time_to_expiration in time_to_expiration_list
-            }
+                inputs = {
+                    "stock_price": float(stock_price.loc[ticker]),
+                    "risk_free_rate": float(risk_free_rate),
+                    "volatility": float(volatility.loc[ticker]),
+                    "moneyness": float(moneyness),
+                    "dividend_yield": float(dividend_yield_value[ticker]),
+                    "put_option": put_option,
+                    "performance": performance,
+                }
+
+                # The pricing date itself (no time to expiration) has no periods and is left out of the result.
+                forward_start_option[ticker] = {
+                    time_to_expiration: (
+                        compound_model.get_cliquet_option(
+                            **inputs,
+                            time_to_expiration=time_to_expiration,
+                            reset_times=[
+                                time_to_expiration
+                                * (start_period + (1 - start_period) * period / periods)
+                                for period in range(periods)
+                            ],
+                        )
+                        if time_to_expiration > 0
+                        else np.nan
+                    )
+                    for time_to_expiration in time_to_expiration_list
+                }
+            except InvalidArgumentError:
+                raise
+            except ValueError as error:
+                # One ticker the formula cannot value (such as a volatility of zero from constant
+                # prices) is left out rather than emptying the result of every ticker.
+                logger.warning(
+                    "No forward start option value for %s: %s", ticker, error
+                )
 
         forward_start_option_df = helpers.create_expiration_dataframe(
             value_dictionary=forward_start_option,

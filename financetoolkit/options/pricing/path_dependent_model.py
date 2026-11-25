@@ -8,6 +8,7 @@ from scipy.special import exprel, log_ndtr, ndtr
 from financetoolkit.options.helpers import (
     bivariate_normal_cdf,
     validate_numeric_inputs,
+    validate_positive_inputs,
 )
 from financetoolkit.options.options_model import (
     MAX_SIMULATED_VALUES,
@@ -467,6 +468,8 @@ def get_turnbull_wakeman(
         fixings,
         arrays=True,
     )
+    # The moments are matched in logarithms of the strike price.
+    validate_positive_inputs(stock_price=stock_price, strike_price=strike_price)
     if time_to_expiration <= 0:
         payoff = np.maximum(
             (strike_price - stock_price) * (1 if put_option else -1), 0.0
@@ -526,12 +529,23 @@ def _curran_call(
         ),
         axis=-1,
     )
-    # A non-positive adjusted strike puts the whole distribution above it: the average ends
-    # above the strike for (almost) every path and the call is the forward minus the strike.
+    # A non-positive adjusted strike is where the first-order expansion breaks down, which
+    # happens at both ends. Deep in the money (a strike below the forward of the average) the
+    # average ends above the strike for (almost) every path and the call is the forward minus
+    # the strike; deep out of the money the expansion would give that negative difference too,
+    # so the call on the geometric average, a lower bound of about zero there, is used instead.
     positive = adjusted_strike > 0
     threshold = (
         geometric_mean - np.log(np.where(positive, adjusted_strike, 1.0))
     ) / geometric_deviation
+    geometric_threshold = (
+        geometric_mean - np.log(strikes[..., 0])
+    ) / geometric_deviation
+    geometric_call = discount_factor * (
+        np.exp(geometric_mean + 0.5 * geometric_variance)
+        * ndtr(geometric_threshold + geometric_deviation)
+        - strike_price * ndtr(geometric_threshold)
+    )
     call = np.where(
         positive,
         discount_factor
@@ -544,8 +558,14 @@ def _curran_call(
             )
             - strike_price * ndtr(threshold)
         ),
-        discount_factor * (forward - strike_price),
+        np.where(
+            strike_price < forward,
+            discount_factor * (forward - strike_price),
+            geometric_call,
+        ),
     )
+    # The sums of the approximation leave rounding noise below zero far out of the money.
+    call = np.maximum(call, 0.0)
     return (float(call) if np.ndim(call) == 0 else call), discount_factor * forward
 
 
@@ -576,8 +596,12 @@ def get_curran(
 
     With n equally spaced fixings t_i = iT / n. A continuous average replaces the sums by
     integrals over [0, T] (σ_tG = σ² * (t - t² / (2T)), σ_G² = σ² * T / 3), taken with
-    Gauss-Legendre points. When K̂ is not positive the average ends above the strike on
-    every path and the call is e^(-rT) * (E[A] - K).
+    Gauss-Legendre points. When K̂ is not positive the expansion breaks down: for a strike
+    below E[A] the average ends above the strike on every path and the call is
+    e^(-rT) * (E[A] - K); for a strike above it (deep out of the money) the call is that on
+    the geometric average, e^(-rT) * [e^(μ_G + σ_G² / 2) * N(d + σ_G) - K * N(d)] with
+    d = (μ_G - ln K) / σ_G, a lower bound that is about zero there. Calls and puts are floored
+    at zero.
 
     Referenced against:
     - QuantLib, MCDiscreteArithmeticAPEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_m_c_discrete_arithmetic_a_p_engine.html
@@ -654,10 +678,12 @@ def get_curran(
     )
 
     if put_option:
-        put = (
+        # Floored at zero, as the parity leaves rounding noise below it deep out of the money.
+        put = np.maximum(
             call
             - discounted_forward
-            + strike_price * np.exp(-risk_free_rate * time_to_expiration)
+            + strike_price * np.exp(-risk_free_rate * time_to_expiration),
+            0.0,
         )
         return float(put) if np.ndim(put) == 0 else put
     return call
@@ -1378,6 +1404,7 @@ def get_double_barrier_option(
         time_to_expiration=time_to_expiration,
     )
     _validate_volatility(volatility)
+    validate_positive_inputs(stock_price=stock_price, lower_barrier=lower_barrier)
     check_option("knock_type", knock_type, ("in", "out"))
     if lower_barrier >= upper_barrier:
         raise ValueError(
@@ -1653,6 +1680,7 @@ def get_partial_time_barrier_option(
         time_to_expiration=time_to_expiration,
     )
     _validate_volatility(volatility)
+    validate_positive_inputs(stock_price=stock_price, barrier=barrier)
     check_option("barrier_direction", barrier_direction, ("down", "up"))
     check_option("knock_type", knock_type, ("in", "out"))
     check_option("barrier_window", barrier_window, ("start", "end"))
@@ -2092,6 +2120,7 @@ def get_touch_option(
         cash_payout=cash_payout,
     )
     _validate_volatility(volatility)
+    validate_positive_inputs(stock_price=stock_price, barrier=barrier)
     check_option("option_type", option_type, ("one-touch", "no-touch"))
     check_option("payment", payment, ("expiration", "hit"))
     if option_type == "no-touch" and payment == "hit":
@@ -2228,6 +2257,7 @@ def get_double_touch_option(
         cash_payout=cash_payout,
     )
     _validate_volatility(volatility)
+    validate_positive_inputs(stock_price=stock_price, lower_barrier=lower_barrier)
     check_option("option_type", option_type, ("double-one-touch", "double-no-touch"))
     if lower_barrier >= upper_barrier:
         raise ValueError(

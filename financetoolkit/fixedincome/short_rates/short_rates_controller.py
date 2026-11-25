@@ -16,7 +16,11 @@ from financetoolkit.fixedincome.short_rates import (
 from financetoolkit.fixedincome.swaps import swap_model
 from financetoolkit.utilities import logger_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
-from financetoolkit.utilities.error_model import check_option, handle_errors
+from financetoolkit.utilities.error_model import (
+    check_option,
+    handle_errors,
+    validate_window,
+)
 from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import apply_rounding
 
@@ -289,8 +293,8 @@ class ShortRatesFixedIncome(CurvesFixedIncome):
             period (str, optional): The frequency of the rates. Options are: "daily", "weekly", "monthly". Defaults to
                 "daily".
             years (float, optional): The horizon in years. Defaults to 10.
-            steps_per_year (int, optional): The steps per year. Defaults to 12.
-            simulations (int, optional): The number of simulated paths. Defaults to 10,000.
+            steps_per_year (int, optional): The steps per year, at least 1. Defaults to 12.
+            simulations (int, optional): The number of simulated paths, at least 1. Defaults to 10,000.
             seed (int | None, optional): The random seed, None for a different simulation
                 every time. Defaults to 0.
             scheme (str, optional): The simulation scheme. Options are: "euler" (an Euler scheme), "exact" (sampling the
@@ -336,6 +340,8 @@ class ShortRatesFixedIncome(CurvesFixedIncome):
         model = model.lower().replace("-", "_").replace(" ", "_")
         check_option("model", model, SHORT_RATE_SIMULATION_MODELS)
         check_option("scheme", scheme, short_rate_model.SCHEMES)
+        validate_window("simulations", simulations)
+        validate_window("steps_per_year", steps_per_year)
         if simulations * years * steps_per_year > MAX_SIMULATED_VALUES:
             raise ValueError(
                 f"The simulation of {simulations:,} paths over {years * steps_per_year:,.0f} steps is "
@@ -514,7 +520,7 @@ class ShortRatesFixedIncome(CurvesFixedIncome):
                 "receiver" (the right to receive it). Defaults to "payer".
             strike (float | None, optional): The fixed rate of the swaps (decimal). Defaults
                 to None, the at-the-money forward swap rate of each expiry and tenor.
-            fixed_frequency (int, optional): The fixed payments per year. Defaults to 1.
+            fixed_frequency (int, optional): The fixed payments per year, at least 1. Defaults to 1.
             country (str, optional): The country, see `get_government_bond_yield_curve`.
                 Defaults to "United States".
             short_rate (str, optional): The maturity of the yield used as the short rate,
@@ -566,6 +572,7 @@ class ShortRatesFixedIncome(CurvesFixedIncome):
         model = model.lower().replace("-", "_").replace(" ", "_")
         check_option("model", model, SWAPTION_MODELS)
         check_option("exercise", exercise, ("european", "bermudan"))
+        validate_window("fixed_frequency", fixed_frequency)
         if exercise == "bermudan" and model != "hull_white":
             raise ValueError(
                 "Bermudan swaptions are valued on a Hull-White tree; use model='hull_white'."

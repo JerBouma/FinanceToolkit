@@ -6,6 +6,7 @@ import pytest
 from scipy import stats
 
 from financetoolkit.risk.liquidity import market_liquidity_model
+from financetoolkit.utilities.error_model import InvalidArgumentError
 
 ROLL_SPREAD_RECOVERY_TOLERANCE = 0.05
 
@@ -366,7 +367,7 @@ def test_liquidity_measures_invalid_input():
         market_liquidity_model.get_corwin_schultz_spread(1, 2, 3)  # type: ignore
     with pytest.raises(TypeError):
         market_liquidity_model.get_share_turnover(1, 2)  # type: ignore
-    with pytest.raises(ValueError, match="Period"):
+    with pytest.raises(InvalidArgumentError, match="period must be one of"):
         market_liquidity_model.get_idiosyncratic_volatility(
             pd.Series(dtype=float), pd.DataFrame(), "daily"
         )

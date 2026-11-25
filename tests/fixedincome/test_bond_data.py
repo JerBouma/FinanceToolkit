@@ -119,9 +119,8 @@ def test_get_years_to_maturity_counts_actual_coupon_periods():
         bond_data_model.get_years_to_maturity(date(2027, 2, 28), date(2030, 8, 31))
         == 3.5
     )
-    assert np.isnan(
+    with pytest.raises(ValueError, match="on or after the maturity date"):
         bond_data_model.get_years_to_maturity(date(2030, 1, 1), date(2030, 1, 1))
-    )
 
 
 @pytest.mark.parametrize(
@@ -714,3 +713,15 @@ def test_programme_markers_are_not_part_of_the_issuer():
             bond_data_model.parse_bond_name(name)["Issuer"]
             == "FORD MOTOR CREDIT COMPANY LLC"
         )
+
+
+def test_a_matured_bond_or_impossible_frequency_is_refused():
+    with pytest.raises(ValueError, match="on or after the maturity date"):
+        bond_data_model.get_years_to_maturity(date(2031, 1, 1), date(2030, 1, 1))
+    with pytest.raises(ValueError, match="on or after the maturity date"):
+        bond_data_model.get_accrued_interest(0.04, date(2030, 1, 1), date(2030, 1, 1))
+    for frequency in (0, -1, 5):
+        with pytest.raises(ValueError, match="frequency"):
+            bond_data_model.get_years_to_maturity(
+                date(2026, 1, 1), date(2030, 1, 1), frequency=frequency
+            )

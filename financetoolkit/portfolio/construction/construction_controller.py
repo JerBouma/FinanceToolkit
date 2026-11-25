@@ -351,7 +351,8 @@ class PortfolioConstructionBase:
                 )
             resolved = latest.reindex(assets).fillna(0).astype(float)
         else:
-            resolved = pd.Series(1.0, index=assets)
+            # Equal weights that already sum to one, so they are not reported as rescaled.
+            resolved = pd.Series(1 / max(len(assets), 1), index=assets)
 
         if resolved.sum() == 0:
             raise ValueError("The weights sum to zero.")

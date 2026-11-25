@@ -5,9 +5,15 @@ __docformat__ = "google"
 from functools import cache
 from typing import Literal
 
+import numpy as np
 import pandas as pd
 
-from financetoolkit.helpers import calendar_periods, trailing_mean, trailing_sum
+from financetoolkit.helpers import (
+    calendar_periods,
+    require_input,
+    trailing_mean,
+    trailing_sum,
+)
 from financetoolkit.models import helpers
 from financetoolkit.models.profitability import growth_model
 from financetoolkit.models.valuation import (
@@ -25,6 +31,7 @@ from financetoolkit.utilities.error_model import (
     InvalidArgumentError,
     check_option,
     handle_errors,
+    validate_window,
 )
 from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.sources_model import track_sources
@@ -1209,7 +1216,7 @@ class ValuationModels:
         Also known as: ROIIC, incremental ROIC, return on new invested capital, RONIC.
 
         Args:
-            years (int, optional): The number of years n the changes span. Defaults to 1.
+            years (int, optional): The number of years n the changes span, at least 1. Defaults to 1.
             rounding (int, optional): The number of decimals to round the results to. Defaults to None.
             growth (bool, optional): Whether to calculate the growth of the values. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
@@ -1262,8 +1269,7 @@ class ValuationModels:
         | TGT  |    nan |    nan |   1.3141 | -0.0469 |    nan |
         | WMT  |    nan |    nan | nan      |  0.264  |    nan |
         """
-        if years < 1:
-            raise ValueError("years must be at least 1.")
+        validate_window("years", years, 1)
         trailing, periods_per_year = self._annual_trailing(trailing)
         span = years * periods_per_year
 
@@ -1605,8 +1611,8 @@ class ValuationModels:
 
         Args:
             amortization_years (int, optional): The amortizable life n of the research asset in
-                years. Damodaran uses 2 years for software, 3 to 5 for most industries and up to 10
-                for pharmaceuticals (the life it takes to turn research into products). Defaults to 5.
+                years, at least 1. Damodaran uses 2 years for software, 3 to 5 for most industries and up
+                to 10 for pharmaceuticals (the life it takes to turn research into products). Defaults to 5.
             rounding (int, optional): The number of decimals to round the results to. Defaults to None.
             growth (bool, optional): Whether to calculate the growth of the values. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
@@ -1665,6 +1671,7 @@ class ValuationModels:
         | Adjusted Invested Capital           | nan          |   1.55784e+11 | 1.72093e+11 | 1.89717e+11 |
         | Adjusted Return on Invested Capital | nan          | nan           | 0.1423      | 0.1136      |
         """
+        validate_window("amortization_years", amortization_years, 1)
         periods_per_year = 4 if self._quarterly else 1
         trailing = periods_per_year if self._quarterly else None
 
@@ -1674,6 +1681,18 @@ class ValuationModels:
         research_and_development = flow(
             self._income_statement, "Research and Development Expenses"
         )
+
+        # Companies that report no research and development have nothing to capitalize,
+        # which would otherwise only show as empty rows.
+        without_research = research_and_development.index[
+            research_and_development.isna().all(axis=1)
+        ]
+        if len(without_research):
+            logger.warning(
+                "No Research and Development Expenses are reported for %s, so there is no "
+                "research asset to capitalize and their adjusted figures are not calculated.",
+                ", ".join(map(str, without_research)),
+            )
         research_asset, amortization = eva_model.get_research_and_development_asset(
             research_and_development=research_and_development,
             amortization_years=amortization_years,
@@ -1929,7 +1948,8 @@ class ValuationModels:
             ticker. Defaults to None, which uses the Weighted Average Cost of Capital of each company of the
             period valued, calculated over a year (the last 4 quarters with quarterly data, with a beta of
             their daily returns).
-            periods (int, optional): The number of periods to use for the cash flow projections. Defaults to 5.
+            periods (int, optional): The number of periods to use for the cash flow projections, at least 1.
+                Defaults to 5.
             cash_flow_type (str, optional): The type of cash flow to use for the cash flow projections. Both
                 reported cash flows are after interest, so discounting them at the WACC and subtracting the debt
                 counts the cost of debt twice. Options are: "Free Cash Flow to Firm", "Free Cash Flow" (as
@@ -2018,6 +2038,7 @@ class ValuationModels:
             cash_flow_type,
             ["Free Cash Flow to Firm", "Free Cash Flow", "Operating Cash Flow"],
         )
+        validate_window("periods", periods, 1)
 
         # The growth and discount rates are annual, so a quarterly base cash flow is the trailing twelve months.
         if trailing is None and self._quarterly:
@@ -2029,13 +2050,12 @@ class ValuationModels:
                 trailing,
             )
 
-        cash_flows = (
-            self.get_free_cash_flow_to_firm(rounding=15).xs(
-                "Free Cash Flow to Firm", level=1
-            )
-            if cash_flow_type == "Free Cash Flow to Firm"
-            else self._cash_flow_statement.loc[:, cash_flow_type, :]
-        )
+        if cash_flow_type == "Free Cash Flow to Firm":
+            free_cash_flow_to_firm = self.get_free_cash_flow_to_firm(rounding=15)
+            require_input(free_cash_flow_to_firm, "free cash flow to firm")
+            cash_flows = free_cash_flow_to_firm.xs("Free Cash Flow to Firm", level=1)
+        else:
+            cash_flows = self._cash_flow_statement.loc[:, cash_flow_type, :]
 
         operating_growth = cache(self._operating_growth)
 
@@ -3450,7 +3470,10 @@ class ValuationModels:
             preferred_dividends = trailing_sum(dividends, trailing)
         else:
             preferred_dividends = 0
+        # Without shares (0 reported) there are no earnings per share, rather than infinite
+        # ones that would make the growth opportunities infinite.
         avg_shares = trailing_mean(average_shares, trailing)
+        avg_shares = avg_shares.where(avg_shares > 0)
 
         earnings_per_share = valuation_model.get_earnings_per_share(
             net_income=net_income,
@@ -4151,7 +4174,7 @@ class ValuationModels:
                 which uses the latest Weighted Average Cost of Capital of each company,
                 calculated over a year (the last 4 quarters with quarterly data) whatever
                 `trailing` the cash flows use, as the rate is a yearly one.
-            periods (int, optional): The number of projection periods. Defaults to 5.
+            periods (int, optional): The number of projection periods, at least 1. Defaults to 5.
             cash_flow_type (str, optional): The cash flow to project. The reported cash flows are after interest
                 (cash flows to equity), so that discounting them at the WACC and subtracting the debt counts the
                 cost of debt twice. Options are: "Free Cash Flow to Firm" (see get_free_cash_flow_to_firm, the cash
@@ -4207,6 +4230,8 @@ class ValuationModels:
         | MSFT |        483.62 | 7.0121e+10  |                               0.09 |                   0.025 |                0.328  |                   0.1183 |
         | NVDA |        186.5  | 5.98933e+10 |                               0.09 |                   0.025 |                0.4431 |                   1.0031 |
         """
+        validate_window("periods", periods, 1)
+
         perpetual = helpers.rates_per_ticker(
             perpetual_growth_rate, self._tickers, "perpetual growth rate"
         )
@@ -4309,7 +4334,7 @@ class ValuationModels:
                 are averaged over; with `trailing`, the number of trailing sums, `trailing`
                 calendar periods apart so that they do not overlap, counted back from the
                 latest reported one. A sum that includes a missing period is left out of
-                the average. Defaults to 5.
+                the average. At least 1. Defaults to 5.
             trailing (int | None, optional): Sum the revenue, operating income, taxes and
                 income before tax over this many periods (e.g. 4 quarters), so that the
                 margin is applied to a year of revenue. The window counts calendar periods,
@@ -4358,6 +4383,8 @@ class ValuationModels:
         | KO   |                     0.2534 |                   1.21476e+10 |     0.1861 |        9.88662e+09 |                               0.08 |            1.23583e+11 |    8.81348e+10 |                          20.4347 |         69.91 |         3.4211 |
         | MSFT |                     0.4314 |                   1.2153e+11  |     0.1636 |        1.01652e+11 |                               0.08 |            1.27066e+12 |    1.25303e+12 |                         167.853  |        483.62 |         2.8812 |
         """
+        validate_window("periods", periods, 1)
+
         # The NOPAT is capitalized as a yearly amount, so quarterly figures are summed into a
         # year (a trailing twelve months) before the margin is applied to the revenue.
         if trailing is None and self._quarterly:
@@ -4413,8 +4440,12 @@ class ValuationModels:
                     pd.Series(
                         {
                             "Share Price": share_price,
-                            "Price to EPV": share_price
-                            / result["Earnings Power Value per Share"],
+                            # No ratio to an Earnings Power Value of 0 (or none per share).
+                            "Price to EPV": (
+                                share_price / result["Earnings Power Value per Share"]
+                                if result["Earnings Power Value per Share"] != 0
+                                else np.nan
+                            ),
                         }
                     ),
                 ]
@@ -4469,20 +4500,20 @@ class ValuationModels:
                 to None, which uses the growth the company's reinvestment supports, as in
                 `get_intrinsic_valuation`.
             growth_rate_volatility (float, optional): The standard deviation of the growth
-                rate. Defaults to 0.02.
+                rate, 0 or more. Defaults to 0.02.
             perpetual_growth_rate (float | dict[str, float] | None, optional): The expected
                 growth after the projection periods. Defaults to None, which uses the company's
                 growth kept within 0 and the long-run growth rate of 2.5% (2.5% where it has none).
-            perpetual_growth_rate_volatility (float, optional): Its standard deviation.
-                Defaults to 0.005.
+            perpetual_growth_rate_volatility (float, optional): Its standard deviation, 0 or
+                more. Defaults to 0.005.
             weighted_average_cost_of_capital (float | dict[str, float] | None, optional):
                 The expected discount rate. Defaults to None, which uses the latest Weighted
                 Average Cost of Capital of each company, calculated over a year (the last 4
                 quarters with quarterly data) whatever `trailing` the cash flows use, as the
                 rate is a yearly one.
             weighted_average_cost_of_capital_volatility (float, optional): Its standard
-                deviation. Defaults to 0.01.
-            periods (int, optional): The number of projection periods. Defaults to 5.
+                deviation, 0 or more. Defaults to 0.01.
+            periods (int, optional): The number of projection periods, at least 1. Defaults to 5.
             simulations (int, optional): The number of simulations. Defaults to 10,000.
             cash_flow_type (str, optional): The cash flow to project. The reported cash flows are after interest
                 (cash flows to equity), so that discounting them at the WACC and subtracting the debt counts the
@@ -4530,6 +4561,21 @@ class ValuationModels:
         | AAPL |  83.9988 |              16.3235 |          62.3819 |           72.7029 |           81.6781 |           92.6049 |           113.888 |        271.86 |                    0.0001 |
         | MSFT | 209.732  |              54.4736 |         146.029  |          174.188  |          199.786  |          233.56   |           305.64  |        483.62 |                    0.0026 |
         """
+        validate_window("periods", periods, 1)
+        for name, volatility in (
+            ("growth_rate_volatility", growth_rate_volatility),
+            ("perpetual_growth_rate_volatility", perpetual_growth_rate_volatility),
+            (
+                "weighted_average_cost_of_capital_volatility",
+                weighted_average_cost_of_capital_volatility,
+            ),
+        ):
+            if not volatility >= 0:
+                raise InvalidArgumentError(
+                    f"{name} is a standard deviation, which is 0 or more, not {volatility!r}. "
+                    f"Please pass 0 or a positive number as {name}."
+                )
+
         operating_growth = cache(lambda: self._latest(self._operating_growth()))
         growth = helpers.rates_per_ticker(
             growth_rate, self._tickers, "growth rate", operating_growth

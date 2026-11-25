@@ -603,3 +603,33 @@ def test_curve_construction_invalid(fixedincome):
     with pytest.raises(InvalidArgumentError, match="method must be one of"):
         fixedincome.get_fitted_bond_curve(method="polynomial")
     assert fixedincome.get_smith_wilson_curve(last_liquid_point=0.01).empty
+
+
+@pytest.mark.parametrize(
+    "function",
+    [
+        curve_model.bootstrap_zero_rates,
+        interpolation_model.bootstrap_zero_curve,
+        lambda maturities, rates: interpolation_model.get_discount_factors(
+            maturities, rates, [1.0]
+        ),
+        lambda maturities, rates: interpolation_model.get_instantaneous_forward_rates(
+            maturities, rates, [1.0]
+        ),
+    ],
+)
+def test_a_curve_needs_one_rate_for_each_maturity(function):
+    with pytest.raises(ValueError, match="for each maturity"):
+        function(np.array([1.0, 3.0, 5.0]), np.array([0.04]))
+    with pytest.raises(ValueError, match="for each maturity"):
+        function(np.array([]), np.array([]))
+
+
+@pytest.mark.parametrize("frequency", [0, -1])
+def test_bootstrapping_refuses_a_frequency_below_one(frequency):
+    with pytest.raises(ValueError, match="frequency must be at least 1"):
+        curve_model.bootstrap_zero_rates(
+            np.array([0.5, 2.0]), np.array([0.04, 0.042]), frequency
+        )
+    with pytest.raises(ValueError, match="frequency must be at least 1"):
+        interpolation_model.bootstrap_zero_curve([0.5, 2.0], [0.04, 0.042], frequency)

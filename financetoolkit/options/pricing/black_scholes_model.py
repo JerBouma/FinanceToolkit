@@ -9,7 +9,10 @@ from scipy.interpolate import CubicSpline
 from scipy.optimize import brentq
 from scipy.special import log_ndtr, ndtr
 
-from financetoolkit.options.helpers import validate_numeric_inputs
+from financetoolkit.options.helpers import (
+    validate_numeric_inputs,
+    validate_positive_inputs,
+)
 from financetoolkit.utilities.error_model import check_option
 
 # The volatility range the implied volatility is solved within.
@@ -124,7 +127,20 @@ def get_black_scholes(
 
     Returns:
         float | pd.Series: The Black-Scholes value.
+
+    Raises:
+        ValueError: If the stock price, strike price, volatility or time to expiration is
+            negative.
     """
+    # A negative volatility or price gives a number (a negative option value) rather than an
+    # error, so it is refused here for every formula built on this one.
+    validate_positive_inputs(
+        allow_zero=True,
+        stock_price=stock_price,
+        strike_price=strike_price,
+        volatility=volatility,
+        time_to_expiration=time_to_expiration,
+    )
     d1 = get_d1(
         stock_price,
         strike_price,
@@ -393,6 +409,8 @@ def get_garman_kohlhagen(
     Raises:
         TypeError: if any of the numeric inputs is not a float, int, np.ndarray or
         pd.Series.
+        ValueError: if the exchange rate, strike price, volatility or time to expiration is
+        negative.
 
     Notes:
         Reference: Garman, M. B., & Kohlhagen, S. W. (1983). "Foreign Currency Option
@@ -404,6 +422,13 @@ def get_garman_kohlhagen(
         strike_price=strike_price,
         risk_free_rate=risk_free_rate,
         foreign_risk_free_rate=foreign_risk_free_rate,
+        volatility=volatility,
+        time_to_expiration=time_to_expiration,
+    )
+    validate_positive_inputs(
+        allow_zero=True,
+        stock_price=stock_price,
+        strike_price=strike_price,
         volatility=volatility,
         time_to_expiration=time_to_expiration,
     )
@@ -475,6 +500,8 @@ def get_black_76(
     Raises:
         TypeError: if any of the numeric inputs is not a float, int, np.ndarray or
         pd.Series.
+        ValueError: if the forward price, strike price, volatility or time to expiration is
+        negative.
 
     Notes:
         Reference: Black, F. (1976). "The Pricing of Commodity Contracts." Journal of
@@ -507,6 +534,13 @@ def get_black_76(
         forward_price=forward_price,
         strike_price=strike_price,
         risk_free_rate=risk_free_rate,
+        volatility=volatility,
+        time_to_expiration=time_to_expiration,
+    )
+    validate_positive_inputs(
+        allow_zero=True,
+        forward_price=forward_price,
+        strike_price=strike_price,
         volatility=volatility,
         time_to_expiration=time_to_expiration,
     )
@@ -1524,6 +1558,12 @@ def get_bjerksund_stensland(
         BjerksundStenslandApproximationEngine implements the 1993 model with its single flat
         boundary, so its prices are close to but not a reference for the 2002 version; the
         prices of Haug (2007) and a finite-difference American price are.
+
+        Both versions are derived for a positive risk-free rate and cost of carry. Where either is
+        negative the flat boundaries can fall back to the European value while early exercise is
+        worth more: for S = K = 100, r = -2%, q = -3%, σ = 1% and T = 1 both give 0.0854 for the
+        put, against 0.1669 for a 10,000-step binomial tree. american_model.get_qd_plus prices
+        these options accurately.
     """
     validate_numeric_inputs(
         arrays=True,

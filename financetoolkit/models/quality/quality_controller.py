@@ -11,7 +11,11 @@ from financetoolkit.helpers import trailing_sum
 from financetoolkit.models.quality import beneish_model, piotroski_model, quality_model
 from financetoolkit.performance.performance_model import get_beta
 from financetoolkit.utilities.dataframe_model import concat_frames, filter_shown_columns
-from financetoolkit.utilities.error_model import check_option, handle_errors
+from financetoolkit.utilities.error_model import (
+    check_option,
+    handle_errors,
+    validate_window,
+)
 from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.sources_model import track_sources
 
@@ -806,9 +810,9 @@ class QualityModels:
         Also known as: G-Score, growth stock score.
 
         Args:
-            variance_periods (int, optional): The number of yearly values the variances of
-                G4 (return on assets) and G5 (revenue growth) are calculated over, of which at
-                least three (or all, when fewer are asked for) must be available. With
+            variance_periods (int, optional): The number of yearly values (at least 2) the
+                variances of G4 (return on assets) and G5 (revenue growth) are calculated over,
+                of which at least three (or all, when fewer are asked for) must be available. With
                 `trailing` the values are `trailing` periods apart (one a year with 4
                 quarters); without it, one per period. Defaults to 5, the five years of the
                 paper.
@@ -870,6 +874,9 @@ class QualityModels:
         | MSFT  |      4 |      5 |      3 |
         | NVDA  |      3 |      3 |    nan |
         """
+        # A variance needs two values at least.
+        validate_window("variance_periods", variance_periods, 2)
+
         # The scores were estimated on yearly statements, so quarterly data is summed into a
         # year (a trailing twelve months) unless a trailing period is given.
         if trailing is None and self._quarterly:
@@ -1409,8 +1416,10 @@ class QualityModels:
             method (str, optional): Options are: "dechow_dichev" (Dechow and Dichev, 2002), "mcnichols" (McNichols,
                 2002, which adds the change in revenue and the property, plant and equipment). Defaults to
                 "dechow_dichev".
-            window (int, optional): The number of years every regression is estimated on. Dechow
-                and Dichev required at least 8 years per company. Defaults to 8.
+            window (int, optional): The number of years every regression is estimated on, at
+                least one more than the coefficients it estimates: 5 for the Dechow and Dichev
+                model and 7 for the McNichols model. Dechow and Dichev required at least 8 years
+                per company. Defaults to 8.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -1458,6 +1467,9 @@ class QualityModels:
         """
         method = method.lower()
         check_option("method", method, ("dechow_dichev", "mcnichols"))
+        # One year more than the coefficients of the regression: the intercept and the three
+        # cash flows, plus the change in revenue and the PP&E of the McNichols model.
+        validate_window("window", window, 5 if method == "dechow_dichev" else 7)
         year = 4 if self._quarterly else 1
         trailing = year if self._quarterly else None
 
@@ -1500,7 +1512,25 @@ class QualityModels:
             ),
         }
 
-        return self._finish_score(results, rounding, first_columns=0)
+        # The inputs are shown for every year, so a window longer than the history leaves
+        # only the Accrual Quality empty, which the result alone would not explain.
+        available_years = working_capital_accruals.shape[1] // year
+        if (
+            results["Accrual Quality"].isna().all(axis=None)
+            and available_years < window + 2
+        ):
+            logger.warning(
+                "The Accrual Quality needs %s years of statements (the window of %s plus the "
+                "year before and after it) and %s were available, so it could not be "
+                "calculated. Set an earlier start_date or a smaller window to obtain it.",
+                window + 2,
+                window,
+                available_years,
+            )
+
+        return self._finish_score(
+            results, rounding, first_columns=0, name="The Accrual Quality"
+        )
 
     @handle_errors
     def get_earnings_attributes(
@@ -1541,8 +1571,8 @@ class QualityModels:
         quality attributes, Francis LaFond Olsson Schipper.
 
         Args:
-            window (int, optional): The number of years of every window; the paper uses 10.
-                Defaults to 10.
+            window (int, optional): The number of years of every window, at least 3 for the
+                regression; the paper uses 10. Defaults to 10.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -1588,6 +1618,7 @@ class QualityModels:
         | ('MSFT', 'Predictability') |  0.5798 |  1.0244 | 1.2588 | 1.4298 | 1.3595 | 1.4282 | 1.4569 | 1.2686 |
         | ('MSFT', 'Smoothness')     |  1.2413 |  1.2008 | 1.2202 | 1.1846 | 1.5726 | 1.616  | 1.4189 | 1.3102 |
         """
+        validate_window("window", window, 3)
         year = 4 if self._quarterly else 1
         trailing = year if self._quarterly else None
 
@@ -1612,7 +1643,9 @@ class QualityModels:
             lag=year,
         )
 
-        return self._finish_score(results, rounding, first_columns=0)
+        return self._finish_score(
+            results, rounding, first_columns=0, name="The Earnings Attributes"
+        )
 
     @handle_errors
     def get_graham_criteria(
@@ -1915,8 +1948,9 @@ class QualityModels:
                 of one industry). Defaults to "time_series".
             min_observations (int, optional): The fewest observations a regression is
                 estimated on: earlier years of the company with "time_series", tickers with
-                "cross_section". At least 3, the number of coefficients. Defaults to 10, the
-                minimum estimation period of Dechow, Sloan and Sweeney (1995).
+                "cross_section". At least the number of coefficients: 3, or 4 with an
+                intercept. Defaults to 10, the minimum estimation period of Dechow, Sloan and
+                Sweeney (1995).
             intercept (bool, optional): Whether to add a constant to the regression, as
                 Kothari, Leone and Wasley (2005) do, in both methods. It removes the average
                 level of the accruals from the other coefficients at the cost of a degree of
@@ -2003,6 +2037,8 @@ class QualityModels:
         | ('MSFT', 'Non-Discretionary Accruals') | -0.1076 | -0.0973 | -0.1047 | -0.0961 | -0.1061 |
         | ('MSFT', 'Discretionary Accruals')     |  0.0563 |  0.0485 |  0.063  |  0.0223 |  0.039  |
         """
+        validate_window("min_observations", min_observations, 4 if intercept else 3)
+
         # The model was estimated on yearly statements, so quarterly data is summed into a
         # year (a trailing twelve months) unless a trailing period is given.
         if trailing is None and self._quarterly:

@@ -384,3 +384,20 @@ def test_floating_rate_note_index_is_not_locked_out_on_a_price_date(
     assert notes.loc["91282CRS2", "Index Rate"] == pytest.approx(
         frn_model.get_index_rate(0.04155, 91)
     )
+
+
+def test_forward_prices_without_a_repo_rate_say_why(fixedincome, monkeypatch, caplog):
+    # The New York Fed could not be reached, so no TGCR came back.
+    monkeypatch.setattr(
+        fed_model, "get_tri_party_general_collateral_rate", pd.DataFrame
+    )
+
+    with caplog.at_level("WARNING"):
+        assert fixedincome.get_treasury_forward_prices(
+            forward_date="2026-12-31", security_type="Bill"
+        ).empty
+    assert "pass repo_rate" in caplog.text
+    # A repo rate of your own still prices the forwards.
+    assert not fixedincome.get_treasury_forward_prices(
+        forward_date="2026-12-31", security_type="Bill", repo_rate=0.039
+    ).empty

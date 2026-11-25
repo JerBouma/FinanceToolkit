@@ -451,7 +451,9 @@ class ModelsBase:
         """
         Combine score components, drop the periods without a comparison and round. When the
         statements hold no more periods than the comparison needs, the result is empty, and
-        a warning says how many periods `start_date` must cover.
+        a warning says how many periods `start_date` must cover. With a name, a result that
+        is empty because none of its windows is complete (a window longer than the history)
+        is also reported.
         """
         # Ticker and metric (rows) by period (columns), the metrics in the order of `results`.
         order = {metric: position for position, metric in enumerate(results)}
@@ -463,16 +465,27 @@ class ModelsBase:
             )
             .reindex(self._tickers, level=0)
         )
-        if name and len(combined.columns) <= first_columns:
+        unit = "quarters" if self._quarterly else "years"
+        available = len(combined.columns)
+        if name and available <= first_columns:
             logger.warning(
                 "%s needs at least %s %s of statements and %s were available, so it could "
                 "not be calculated. Set an earlier start_date to obtain it.",
                 name,
                 first_columns + 1,
-                "quarters" if self._quarterly else "years",
-                len(combined.columns),
+                unit,
+                available,
             )
         combined = combined[combined.columns[first_columns:]].dropna(axis=1, how="all")
+        if name and available > first_columns and combined.empty:
+            logger.warning(
+                "%s could not be calculated from the %s %s of statements available, as none "
+                "of its windows is complete. Set an earlier start_date (or a smaller window) "
+                "to obtain it.",
+                name,
+                available,
+                unit,
+            )
         combined = apply_rounding(
             combined, rounding if rounding is not None else self._rounding
         )

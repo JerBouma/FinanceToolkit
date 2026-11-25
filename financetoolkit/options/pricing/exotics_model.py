@@ -5,7 +5,10 @@ __docformat__ = "google"
 import numpy as np
 from scipy.special import ndtr
 
-from financetoolkit.options.helpers import validate_numeric_inputs
+from financetoolkit.options.helpers import (
+    validate_numeric_inputs,
+    validate_positive_inputs,
+)
 from financetoolkit.utilities.error_model import check_option
 
 
@@ -199,6 +202,10 @@ def get_barrier_option(
         dividend_yield=dividend_yield,
         rebate=rebate,
     )
+    # The barrier terms divide by the prices and take their logarithms.
+    validate_positive_inputs(
+        stock_price=stock_price, strike_price=strike_price, barrier=barrier
+    )
 
     check_option("barrier_direction", barrier_direction, ("down", "up"))
 
@@ -386,6 +393,7 @@ def get_asian_option(
         time_to_expiration=time_to_expiration,
         dividend_yield=dividend_yield,
     )
+    validate_positive_inputs(stock_price=stock_price, strike_price=strike_price)
 
     cost_of_carry = risk_free_rate - dividend_yield
 

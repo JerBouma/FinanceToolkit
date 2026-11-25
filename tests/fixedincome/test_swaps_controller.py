@@ -221,3 +221,27 @@ def test_get_fx_forward_rates_follow_covered_interest_parity(fixedincome):
     assert forwards.loc["Euro Area", "2Y"] == pytest.approx(
         spot * ((1 + euro[2]) / (1 + dollar[2])) ** 2
     )
+
+
+def test_swaps_without_source_data_say_why(fixedincome, monkeypatch, caplog):
+    # EIOPA and the BIS could not be reached, so their sources returned no data.
+    monkeypatch.setattr(
+        eiopa_model,
+        "get_risk_free_rate_term_structures",
+        lambda curve, start_date, end_date: pd.DataFrame(),
+    )
+
+    with caplog.at_level("WARNING"):
+        assert fixedincome.get_swap_rate().empty
+    assert "EIOPA returned no risk-free rate term structures" in caplog.text
+    assert "IndexError" not in caplog.text
+
+    monkeypatch.setattr(
+        bis_model,
+        "get_exchange_rates",
+        lambda frequency, start_date, end_date: pd.DataFrame(),
+    )
+    caplog.clear()
+    with caplog.at_level("WARNING"):
+        assert fixedincome.get_fx_forward_rates(curve="government").empty
+    assert "The BIS returned no exchange rates" in caplog.text

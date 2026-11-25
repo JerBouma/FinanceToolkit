@@ -59,6 +59,7 @@ from financetoolkit.helpers import (
     add_basket_total,
     determine_availability_dates,
     determine_period_end_dates,
+    fill_diluted_shares,
     prepare_supplied_historical_data,
     trailing_sum,
 )
@@ -74,6 +75,7 @@ from financetoolkit.normalization_model import (
 )
 from financetoolkit.utilities import logger_model, validation_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
+from financetoolkit.utilities.error_model import check_period
 from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import (
     apply_rounding,
@@ -598,7 +600,9 @@ class Toolkit:
             income=income,
             cash=cash,
             format_location=format_location,
-            start_date=self._start_date,
+            # From the lookback start, as downloaded statements are, so that the first
+            # periods have the prior ones their growth and averages need.
+            start_date=self._lookback_start_date,
             end_date=self._end_date,
             quarterly=self._quarterly,
             tickers=self._tickers,
@@ -1648,6 +1652,10 @@ class Toolkit:
             return adjusted
 
         def funds(kind: str, tickers: list[str]) -> pd.DataFrame:
+            # Without an API key there are no fund weightings (or company profiles), which
+            # the method using them reports once, rather than every request.
+            if not self._api_key:
+                return pd.DataFrame()
             own = set(tickers) <= set(self._tickers)
             source = (
                 self
@@ -1685,7 +1693,7 @@ class Toolkit:
             benchmark_name=self._benchmark_ticker,
             portfolio_weights=self._portfolio_weights,
             price_function=prices,
-            profile_function=self.get_profile,
+            profile_function=self.get_profile if self._api_key else lambda: None,
             fund_function=funds,
             rounding=self._rounding,
             start_date=self._start_date,
@@ -6930,6 +6938,12 @@ class Toolkit:
                     "reached the API limit or entered an invalid API key."
                 )
 
+        # The Ratios and Models read the diluted share count wherever they need shares, so
+        # a provider that reports only the basic count gets it there; the statement itself
+        # is shown as reported.
+        if statement == "income_statement":
+            return fill_diluted_shares(self._income_statement)
+
         return getattr(self, f"_{statement}")
 
     def _get_statement_tickers(self, module: str) -> list[str]:
@@ -6978,18 +6992,15 @@ class Toolkit:
             intraday_period.
 
         Raises:
-            KeyError: For any other period, as a dictionary of the periods would.
+            InvalidArgumentError: For any other period, naming the periods.
         """
         if period == "intraday":
             if self._intraday_period:
                 self.get_intraday_data(period=self._intraday_period)
             return self._intraday_historical_data
 
-        if period not in ("daily", "weekly", "monthly", "quarterly", "yearly"):
-            raise KeyError(
-                "period must be one of 'intraday', 'daily', 'weekly', 'monthly', 'quarterly' or "
-                f"'yearly', not {period!r}."
-            )
+        # A period outside these is a mistake in the call, not missing data, so it raises.
+        check_period(period, ("daily", "weekly", "monthly", "quarterly", "yearly"))
 
         self.get_historical_data(period=period)
 
@@ -7036,7 +7047,7 @@ class Toolkit:
             pd.DataFrame: The historical data of the period, from before the start date.
 
         Raises:
-            KeyError: For any other period, as a dictionary of the periods would.
+            InvalidArgumentError: For any other period, naming the periods.
         """
         if period == "intraday" or not self._historical.empty:
             if period == "daily" and not self._historical.empty:
@@ -7044,11 +7055,8 @@ class Toolkit:
                 return self._daily_historical_data.loc[: self._end_date]
             return self._get_module_historical_data(period)
 
-        if period not in ("daily", "weekly", "monthly", "quarterly", "yearly"):
-            raise KeyError(
-                "period must be one of 'intraday', 'daily', 'weekly', 'monthly', 'quarterly' or "
-                f"'yearly', not {period!r}."
-            )
+        # A period outside these is a mistake in the call, not missing data, so it raises.
+        check_period(period, ("daily", "weekly", "monthly", "quarterly", "yearly"))
 
         daily_historical_data = self._get_module_historical_data("daily")
         settings = self._daily_historical_data_params
@@ -7125,13 +7133,10 @@ class Toolkit:
             pd.DataFrame: The risk free rate of the period.
 
         Raises:
-            KeyError: For any other period, as a dictionary of the periods would.
+            InvalidArgumentError: For any other period, naming the periods.
         """
-        if period not in ("daily", "weekly", "monthly", "quarterly", "yearly"):
-            raise KeyError(
-                "period must be one of 'daily', 'weekly', 'monthly', 'quarterly' or "
-                f"'yearly', not {period!r}."
-            )
+        # A period outside these is a mistake in the call, not missing data, so it raises.
+        check_period(period, ("daily", "weekly", "monthly", "quarterly", "yearly"))
 
         self.get_historical_data(period=period)
 

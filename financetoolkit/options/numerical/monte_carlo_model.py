@@ -12,6 +12,7 @@ from financetoolkit.options.helpers import (
     monte_carlo_estimate,
     simulation_groups,
     validate_numeric_inputs,
+    validate_positive_inputs,
 )
 from financetoolkit.options.options_model import SIMULATION_CHUNK_SIZE
 from financetoolkit.options.pricing.black_scholes_model import get_black_scholes
@@ -800,6 +801,8 @@ def get_longstaff_schwartz_option_prices(
     if not isinstance(degree, int) or degree < 1:
         raise ValueError(f"degree must be a positive integer, received {degree!r}.")
 
+    # The regression is on the stock price over the strike price.
+    validate_positive_inputs(strike_prices=strike_prices)
     strikes = np.asarray(strike_prices, dtype=float)
     sign = -1 if put_option else 1
 
@@ -1110,6 +1113,8 @@ def get_longstaff_schwartz_basket_option(
     validate_numeric_inputs(
         strike_price=strike_price, time_to_expiration=time_to_expiration
     )
+    # The regression is on the basket over the strike price.
+    validate_positive_inputs(strike_price=strike_price)
     check_option("variance_reduction", variance_reduction, (None, "antithetic"))
     check_option("basket_type", basket_type, ("weighted", "maximum"))
     prices = np.asarray(stock_prices, dtype=float)

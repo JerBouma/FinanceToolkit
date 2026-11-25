@@ -2370,6 +2370,11 @@ class Portfolio:
             if "Portfolio" in open_positions.index:
                 open_positions["Portfolio"] = open_positions.drop("Portfolio").any()
             self._portfolio_overview = self._portfolio_overview[open_positions]
+            if self._portfolio_overview.empty:
+                logger.warning(
+                    "Every position of the portfolio is sold, so the overview without sold "
+                    "positions is empty. Set exclude_sold_positions=False to include them."
+                )
 
         self._portfolio_overview = self._portfolio_overview.pipe(
             apply_rounding, rounding if rounding is not None else self._rounding
@@ -2415,7 +2420,7 @@ class Portfolio:
             pd.DataFrame: A DataFrame containing the portfolio performance metrics for the specified period.
 
         Raises:
-            ValueError: If an invalid or unsupported period is provided.
+            InvalidArgumentError: If the period is not one of the options.
             ValueError: If there is an issue with collecting historical data or creating the portfolio performance.
 
         Notes:
@@ -2453,6 +2458,8 @@ class Portfolio:
         if not period:
             period = "quarterly" if self._quarterly else "yearly"
 
+        check_period(period.lower(), list(_PERIOD_SYMBOLS))
+
         if not self._collect_data():
             return pd.DataFrame()
 
@@ -2464,11 +2471,7 @@ class Portfolio:
                     f"Failed to get positions overview: {error}"
                 ) from error
 
-        period_symbol = _PERIOD_SYMBOLS.get(period.lower())
-        if period_symbol is None:
-            raise ValueError(
-                "Please provide a valid period. This can be 'yearly', 'quarterly', 'monthly', 'weekly', or 'daily'"
-            )
+        period_symbol = _PERIOD_SYMBOLS[period.lower()]
 
         try:
             self._portfolio_performance = overview_model.create_portfolio_performance(
@@ -2486,6 +2489,12 @@ class Portfolio:
             self._portfolio_performance = self._portfolio_performance[
                 self._open_positions(self._portfolio_performance["Volume"])
             ]
+            if self._portfolio_performance.empty:
+                logger.warning(
+                    "No position of the portfolio is held at the end of any period, so the "
+                    "performance without sold positions is empty. Set "
+                    "exclude_sold_positions=False to include them."
+                )
 
         self._portfolio_performance = self._portfolio_performance.pipe(
             apply_rounding, rounding if rounding is not None else self._rounding
@@ -2698,8 +2707,8 @@ class Portfolio:
                 returns, costs, and benchmarks, for the specified period.
 
         Raises:
-            ValueError: If an invalid or unsupported period is provided or if there is an issue
-                        with creating the transaction performance metrics.
+            InvalidArgumentError: If the period is not one of the options.
+            ValueError: If there is an issue with creating the transaction performance metrics.
 
         Notes:
             - The method supports every period from daily to yearly for calculating transaction
@@ -2741,14 +2750,12 @@ class Portfolio:
         if not period:
             period = "quarterly" if self._quarterly else "yearly"
 
+        check_period(period.lower(), list(_PERIOD_SYMBOLS))
+
         if not self._collect_data():
             return pd.DataFrame()
 
-        period_symbol = _PERIOD_SYMBOLS.get(period.lower())
-        if period_symbol is None:
-            raise ValueError(
-                "Please provide a valid period. This can be 'yearly', 'quarterly', 'monthly', 'weekly', or 'daily'"
-            )
+        period_symbol = _PERIOD_SYMBOLS[period.lower()]
 
         def end_of_period(daily_values: pd.DataFrame) -> pd.DataFrame:
             # The last value of every period, from the daily data so the asset and the benchmark are both in the currency of each ticker's transactions.  # noqa: E501

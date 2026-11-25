@@ -20,6 +20,7 @@ from financetoolkit.mcp_server.registry.coercion_model import (
 from financetoolkit.mcp_server.registry.formatting_model import format_result
 from financetoolkit.mcp_server.registry.provider_model import ToolkitProvider
 from financetoolkit.utilities import requests_model
+from tests.mcp_server.answers import read_answer
 
 
 @pytest.fixture
@@ -176,8 +177,7 @@ def test_series_references_are_held_to_the_entity_limit(captured):
         "econometrics",
         indicator="get_ols",
         series=(
-            f"valuation:get_price_to_earnings_ratio:{tickers};"
-            f"valuation:get_price_to_book_ratio:{tickers}"
+            f"valuation:get_price_to_earnings_ratio:{tickers};valuation:get_price_to_book_ratio:{tickers}"
         ),
     )
 
@@ -242,7 +242,7 @@ def test_a_large_table_is_cut_before_its_records_are_built(monkeypatch):
         np.random.default_rng(0).normal(size=(1_000_000, 2)), columns=["A", "B"]
     )
 
-    answer = json.loads(format_result(table, max_characters=60_000))
+    answer = read_answer(format_result(table, max_characters=60_000))
 
     assert max(built) <= 60_000 // 4  # noqa: PLR2004
     assert "first" in answer["_notes"][-1] and "1,000,000 rows" in answer["_notes"][-1]

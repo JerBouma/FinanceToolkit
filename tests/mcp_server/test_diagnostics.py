@@ -8,6 +8,7 @@ from financetoolkit import helpers
 from financetoolkit.mcp_server.registry import diagnostics_model
 from financetoolkit.mcp_server.registry.formatting_model import format_result
 from financetoolkit.utilities.logger_model import get_logger
+from tests.mcp_server.answers import read_answer
 
 
 def test_a_missing_key_is_answered_with_how_to_pass_one():
@@ -67,11 +68,11 @@ def test_messages_are_captured_per_call_including_worker_threads():
 
 
 def test_a_response_without_data_carries_the_reason():
-    assert json.loads(format_result(pd.DataFrame(), reason="A key is required.")) == {
+    assert read_answer(format_result(pd.DataFrame(), reason="A key is required.")) == {
         "error": "No data available.",
         "reason": "A key is required.",
     }
-    assert json.loads(format_result(None)) == {"error": "No data available."}
+    assert read_answer(format_result(None)) == {"error": "No data available."}
 
 
 def test_an_empty_result_is_not_cached(tmp_path, monkeypatch):
@@ -132,7 +133,7 @@ def test_the_key_hints_survive_redaction_and_logs_are_redacted():
 
 
 def test_a_long_list_is_cut_to_the_response_size():
-    answer = json.loads(format_result(list(range(200_000)), max_characters=1_000))
+    answer = read_answer(format_result(list(range(200_000)), max_characters=1_000))
 
     assert len(json.dumps(answer["data"])) <= 1_000
     assert answer["data"][:3] == [0, 1, 2]
@@ -178,7 +179,7 @@ def test_a_ticker_without_the_expiry_is_noted_with_its_dates_not_as_unknown(
     monkeypatch.setattr(options_model, "get_option_chains", fake_option_chains)
     monkeypatch.setattr(ToolkitProvider, "call_method", fake_call_method)
 
-    answer = json.loads(
+    answer = read_answer(
         asyncio.run(
             mcp_controller.mcp.call_tool(
                 "options",
@@ -188,7 +189,7 @@ def test_a_ticker_without_the_expiry_is_noted_with_its_dates_not_as_unknown(
                     "expiration_date": "2026-12-04",
                 },
             )
-        )[0][0].text
+        )[0].text
     )
 
     assert {row["Ticker"] for row in answer["data"]} == {"AAPL"}

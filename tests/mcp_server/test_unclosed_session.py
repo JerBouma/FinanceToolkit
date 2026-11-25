@@ -76,6 +76,6 @@ def test_a_forecast_starting_today_is_not_noted(monkeypatch):
             "risk",
             {"indicator": "get_garch_forecast", "tickers": "AAPL", "forecast_steps": 1},
         )
-    )[0][0].text
+    )[0].text
 
     assert "has not closed yet" not in text

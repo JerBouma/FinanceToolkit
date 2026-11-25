@@ -33,7 +33,7 @@ def toolkit_calls(monkeypatch):
 
 
 def call(tool, arguments):
-    return asyncio.run(mcp_controller.mcp.call_tool(tool, arguments))[0][0].text
+    return asyncio.run(mcp_controller.mcp.call_tool(tool, arguments))[0].text
 
 
 def test_a_quote_of_the_benchmark_ticker_is_returned(toolkit_calls):

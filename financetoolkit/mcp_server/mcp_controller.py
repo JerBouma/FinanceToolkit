@@ -381,7 +381,6 @@ def _build_mcp_app(transport: str = "stdio") -> FastMCP:
 
             report: dict = {}
             try:
-
                 headers = get_http_headers(include={"authorization"})
                 report["header_names"] = sorted(headers.keys())
                 report["has_x_fmp_api_key"] = "x-fmp-api-key" in headers
@@ -407,13 +406,15 @@ def _build_mcp_app(transport: str = "stdio") -> FastMCP:
             return str(report)
 
         mcp.add_tool(
-            diagnostics, name="diagnostics", description=diagnostics.__doc__ or ""
+            diagnostics,
+            name="diagnostics",
+            description=diagnostics.__doc__ or "",
+            structured_output=False,
         )
         logger.info("Diagnostic tool registered (FT_MCP_DIAG set).")
 
     logger.info(
-        f"Finance Toolkit MCP Server ready. Registered {toolkit_count} "
-        f"router tools and {utility_count} utility tools."
+        f"Finance Toolkit MCP Server ready. Registered {toolkit_count} router tools and {utility_count} utility tools."
     )
 
     return mcp
@@ -518,8 +519,7 @@ def main() -> None:
         "--port",
         type=int,
         help=(
-            "The port to bind to, for the sse and streamable-http transports only. "
-            "Defaults to MCP_PORT, then 8000."
+            "The port to bind to, for the sse and streamable-http transports only. Defaults to MCP_PORT, then 8000."
         ),
     )
 
@@ -619,8 +619,7 @@ def inspector() -> None:
     argparse.ArgumentParser(
         prog="financetoolkit-mcp-inspector",
         description=(
-            "Launch the MCP Inspector against the Finance Toolkit MCP server. "
-            "Requires npx, which ships with Node.js."
+            "Launch the MCP Inspector against the Finance Toolkit MCP server. Requires npx, which ships with Node.js."
         ),
     ).parse_args()
 
@@ -720,8 +719,7 @@ def _setup_cli(client: str, overwrite: bool) -> None:
     if fred_api_key:
         masked_fred = setup_model.mask_key(fred_api_key)
         setup_model.ok(
-            f"FRED API key found (optional)  [dim]·[/]  [dim]{fred_key_source}[/]"
-            f"  [dim]·[/]  [dim cyan]{masked_fred}[/]"
+            f"FRED API key found (optional)  [dim]·[/]  [dim]{fred_key_source}[/]  [dim]·[/]  [dim cyan]{masked_fred}[/]"
         )
         if client != "claude-desktop" and (
             not global_env.exists() or fred_key_source != "global config"

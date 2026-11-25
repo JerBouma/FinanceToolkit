@@ -62,11 +62,28 @@ def describe_indicators(entries: list[dict]) -> str:
         parameters = "\n".join(
             f"- `{name}`: {text}" for name, text in entry["parameters"].items()
         )
+        # The tool's own parameters (dates, growth, rolling) apply to all its indicators.
+        tool_parameters = entry.get("tool_parameters", {})
+        explained = "\n".join(
+            f"- `{name}`: {text}" for name, text in tool_parameters.items() if text
+        )
+        named = ", ".join(
+            f"`{name}`" for name, text in tool_parameters.items() if not text
+        )
         sections.append(
             f"### `{entry['indicator']}` (tool `{entry['tool']}`)\n\n"
             f"{entry['description']}\n\n"
             + (f"Parameters:\n{parameters}\n\n" if parameters else "")
-            + f"Call `{entry['tool']}` with `indicator='{entry['indicator']}'`."
+            + (
+                f"Parameters of the `{entry['tool']}` tool:\n{explained}\n"
+                + (f"- Also {named}.\n" if named else "")
+                + "\n"
+                if explained or named
+                else ""
+            )
+            + "Every tool also takes `limit`, `rank`, `rebase_to`, `sample` and "
+            "`show_columns`, which the server instructions explain.\n\n"
+            f"Call `{entry['tool']}` with `indicator='{entry['indicator']}'`."
         )
 
     return "\n\n".join(sections)
@@ -264,6 +281,8 @@ class UtilityToolRegistry:
                         exclude={"title"}, exclude_none=True
                     ),
                 ),
+                # Text only, so the answer is not sent a second time as structured content.
+                structured_output=False,
             )
             # A misspelt or foreign argument is named in the answer rather than dropped.
             keep_unknown_arguments(self._mcp, tool_name)
@@ -311,8 +330,7 @@ class UtilityToolRegistry:
             f"({len(unique_metrics)} indicators) in {total_tools} tools**"
         )
         lines.append(
-            "\n**Tip:** Use `search_metrics('what you want to measure')` to find the "
-            "indicator and its tool."
+            "\n**Tip:** Use `search_metrics('what you want to measure')` to find the indicator and its tool."
         )
         result = "\n".join(lines)
         return result
@@ -532,8 +550,7 @@ class UtilityToolRegistry:
         ][:MAX_QUERY_TERMS]
         if not query_tokens:
             return (
-                f"No meaningful search terms in '{query}'. "
-                "Try a more specific keyword."
+                f"No meaningful search terms in '{query}'. Try a more specific keyword."
             )
 
         # Indicators first: an agent asking for "free cash flow yield" needs the indicator
@@ -583,10 +600,7 @@ class UtilityToolRegistry:
         hits = [(s, t) for s, t in results if s >= 0.3][:30]  # noqa
 
         if not hits:
-            return (
-                f"No strong matches for '{query}'. "
-                "Try `search_metric_categories` to browse all modules."
-            )
+            return f"No strong matches for '{query}'. Try `search_metric_categories` to browse all modules."
 
         lines = [
             f"### Search results for '{query}' — {len(hits)} matches\n",

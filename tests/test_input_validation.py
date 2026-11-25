@@ -1,7 +1,6 @@
 """Regression tests for the input validation the stress test added."""
 
 import asyncio
-import json
 import logging
 
 import pandas as pd
@@ -15,6 +14,7 @@ from financetoolkit.mcp_server import mcp_controller
 from financetoolkit.utilities import validation_model
 from financetoolkit.utilities.error_model import InvalidArgumentError
 from financetoolkit.utilities.statistics_model import finalize_dataset
+from tests.mcp_server.answers import read_answer
 
 # mcp_controller is imported while collecting, before a test may replace FastMCP with a
 # stub and reload the module, so the tool calls below always reach the real server.
@@ -175,7 +175,7 @@ def test_discovery_refuses_arguments_the_endpoints_would_ignore(
 
 def _call_tool(tool, arguments):
     result = asyncio.run(mcp_controller.mcp.call_tool(tool, arguments))
-    content = result[0] if isinstance(result, tuple) else result.content
+    content = result[0] if isinstance(result, tuple) else result
     return "".join(getattr(item, "text", "") for item in content)
 
 
@@ -223,7 +223,7 @@ def test_mcp_accepts_countries_as_a_list(monkeypatch):
     )
 
     assert received["countries"] == ["Japan", "Germany"]
-    assert json.loads(text)[0]["Japan"] == 0.02
+    assert read_answer(text)[0]["Japan"] == 0.02
 
 
 def test_a_date_range_without_prices_explains_itself(caplog):

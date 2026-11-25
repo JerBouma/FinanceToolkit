@@ -1,12 +1,12 @@
 """Tests for signals_only on the signal and candlestick pattern methods of the MCP."""
 
 import asyncio
-import json
 
 import pytest
 
 from financetoolkit.mcp_server import mcp_controller
 from financetoolkit.mcp_server.registry.provider_model import ToolkitProvider
+from tests.mcp_server.answers import read_answer
 
 
 @pytest.fixture
@@ -32,7 +32,7 @@ def call(tool, indicator, **arguments):
         mcp_controller.mcp.call_tool(
             tool, {"indicator": indicator, "tickers": "AAPL,MSFT", **arguments}
         )
-    )[0][0].text
+    )[0].text
 
 
 def test_the_tools_offer_signals_only():
@@ -57,7 +57,7 @@ def test_signals_only_is_passed_on(answered_by, tool, indicator, extra):
 
 
 def test_a_limit_gives_every_ticker_its_last_signals(answered_by, technical_module):
-    rows = json.loads(
+    rows = read_answer(
         call(
             "overlap",
             "get_candlestick_patterns",
@@ -89,7 +89,7 @@ def test_a_ticker_without_signals_is_named(answered_by, technical_module):
     if not quiet:
         pytest.skip("Every ticker has the pattern in the offline data.")
 
-    answer = json.loads(
+    answer = read_answer(
         call(
             "overlap",
             "get_candlestick_patterns",

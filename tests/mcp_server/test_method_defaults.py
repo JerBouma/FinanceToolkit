@@ -8,6 +8,7 @@ import pytest
 
 from financetoolkit.mcp_server import mcp_controller
 from financetoolkit.mcp_server.registry.provider_model import ToolkitProvider
+from tests.mcp_server.answers import read_answer
 
 
 @pytest.fixture
@@ -109,14 +110,13 @@ def test_the_server_cuts_an_answer_that_is_too_large(monkeypatch):
             "performance", {"indicator": "get_sharpe_ratio", "tickers": "AAPL"}
         )
     )
-    text = result[0][0].text
+    text = result[0].text
 
     assert len(text) < 62_000  # noqa: PLR2004
     assert "was too large and was cut" in text
 
 
 def test_limit_selects_the_first_or_last_rows(monkeypatch):
-    import json
 
     def prices(self, module_name, method_name, category, **kwargs):  # noqa: ARG001
         return pd.DataFrame(
@@ -133,7 +133,7 @@ def test_limit_selects_the_first_or_last_rows(monkeypatch):
                 {"indicator": "get_sharpe_ratio", "tickers": "AAPL", "limit": limit},
             )
         )
-        return [row["Close"] for row in json.loads(result[0][0].text)]
+        return [row["Close"] for row in read_answer(result[0].text)]
 
     assert closes(2) == [1.0, 2.0]
     assert closes(-2) == [3.0, 4.0]
@@ -185,7 +185,7 @@ def test_a_transcript_is_one_full_call_of_one_ticker(monkeypatch):
                 {"indicator": "get_earnings_call_transcripts", **arguments},
             )
         )
-        return result[0][0].text
+        return result[0].text
 
     # 150,000 characters, well over the response size, and still returned in full.
     text = call(tickers="AAPL", fiscal_period="2025Q4")
@@ -205,7 +205,7 @@ def test_missing_required_inputs_are_named(captured):
         mcp_controller.mcp.call_tool(
             "econometrics", {"indicator": "get_chow_test", "tickers": "MSFT"}
         )
-    )[0][0].text
+    )[0].text
 
     assert "requires `break_date`" in text
     assert captured == []
@@ -216,7 +216,7 @@ def test_an_indicator_of_another_tool_is_pointed_there(captured):
         mcp_controller.mcp.call_tool(
             "overlap", {"indicator": "get_bollinger_bands", "tickers": "AAPL"}
         )
-    )[0][0].text
+    )[0].text
 
     assert "indicator of `volatility`" in text
     assert captured == []
@@ -232,7 +232,7 @@ def test_the_benchmark_note_is_left_out_without_a_benchmark(monkeypatch):
         mcp_controller.mcp.call_tool(
             "etf", {"indicator": "get_holdings", "tickers": "SPY"}
         )
-    )[0][0].text
+    )[0].text
 
     assert "benchmark" not in text.lower()
 
@@ -260,7 +260,7 @@ def test_a_ticker_without_data_and_an_unknown_column_are_named(monkeypatch):
                 "limit": -1,
             },
         )
-    )[0][0].text
+    )[0].text
 
     assert '"NOTATICKER"' not in text
     assert "No data is available for NOTATICKER" in text
@@ -286,7 +286,7 @@ def test_limit_does_not_cut_an_answer_of_one_row_per_ticker(monkeypatch):
                 "limit": -2,
             },
         )
-    )[0][0].text
+    )[0].text
 
     assert '"AAPL"' in text and "was not applied" in text
 
@@ -336,7 +336,7 @@ def test_an_argument_the_indicator_does_not_take_is_named(captured):
                 "short_window": 5,
             },
         )
-    )[0][0].text
+    )[0].text
 
     assert "`short_window` is not used by `get_relative_strength_index`" in text
 
@@ -373,7 +373,7 @@ def test_an_unknown_period_is_named_with_the_known_ones(captured):
                 "period": "fortnightly",
             },
         )
-    )[0][0].text
+    )[0].text
 
     assert "Invalid `period`" in text and "monthly" in text
     assert captured == []
@@ -397,7 +397,7 @@ def test_a_yearly_answer_to_a_quarterly_question_says_so(monkeypatch):
                 "quarterly": True,
             },
         )
-    )[0][0].text
+    )[0].text
 
     assert "Quarterly data is not available" in text
 
@@ -413,7 +413,7 @@ def test_a_near_certain_indicator_name_is_read_as_the_known_one(captured):
                 "growth_rate": 0.03,
             },
         )
-    )[0][0].text
+    )[0].text
 
     assert "was read as `get_gordon_growth_model`" in text
 
@@ -439,7 +439,7 @@ def test_a_result_and_its_detail_become_named_tables(monkeypatch):
                 "limit": -1,
             },
         )
-    )[0][0].text
+    )[0].text
 
     assert '"Model"' in text and '"Daily Residuals"' in text
     assert "-0.005" in text and "0.006" not in text
@@ -459,9 +459,10 @@ def test_show_columns_matches_names_in_any_casing(monkeypatch):
             "market_data",
             {"indicator": "get_quote", "tickers": "AAPL,MSFT", "show_columns": "price"},
         )
-    )[0][0].text
+    )[0].text
 
-    assert '"Price": 336.6' in text and "Market Capitalization" not in text
+    assert [row["Price"] for row in read_answer(text)] == [336.6, 535.1]
+    assert "Market Capitalization" not in text
 
 
 def test_limit_leaves_a_table_of_metrics_per_ticker_whole(monkeypatch):
@@ -478,7 +479,7 @@ def test_limit_leaves_a_table_of_metrics_per_ticker_whole(monkeypatch):
             "market_data",
             {"indicator": "get_shares_float", "tickers": "AAPL", "limit": -1},
         )
-    )[0][0].text
+    )[0].text
 
     assert "Free Float" in text and "one column per ticker" in text
 
@@ -498,7 +499,7 @@ def test_an_empty_answer_over_a_weekend_says_why(monkeypatch):
                 "end_date": "2026-10-11",
             },
         )
-    )[0][0].text
+    )[0].text
 
     assert "no trading days" in text
 
@@ -576,7 +577,6 @@ def test_default_dates_follow_the_day_of_the_call(captured, monkeypatch):
 
 
 def test_limit_zero_returns_every_row(monkeypatch):
-    import json
 
     def prices(self, module_name, method_name, category, **kwargs):  # noqa: ARG001
         return pd.DataFrame(
@@ -591,7 +591,7 @@ def test_limit_zero_returns_every_row(monkeypatch):
             {"indicator": "get_sharpe_ratio", "tickers": "AAPL", "limit": 0},
         )
     )
-    assert [row["Close"] for row in json.loads(result[0][0].text)] == [1.0, 2.0, 3.0]
+    assert [row["Close"] for row in read_answer(result[0].text)] == [1.0, 2.0, 3.0]
 
 
 def test_too_many_tickers_or_countries_are_refused(captured):
@@ -640,7 +640,7 @@ def test_a_ticker_left_out_by_show_columns_is_not_missing(monkeypatch):
                 "show_columns": "AAPL",
             },
         )
-    )[0][0].text
+    )[0].text
 
     assert '"MSFT"' not in text
     assert "No data is available" not in text
@@ -673,7 +673,7 @@ def test_an_unknown_parameter_is_named_with_a_near_match(captured):
                 "colour": "red",
             },
         )
-    )[0][0].text
+    )[0].text
 
     assert (
         "`alpa` is not a parameter of `risk` and was ignored; did you mean `alpha`?"
@@ -711,7 +711,7 @@ def test_a_series_that_lags_behind_the_last_rows_is_named(monkeypatch):
                     "limit": limit,
                 },
             )
-        )[0][0].text
+        )[0].text
         return json.loads(text).get("_notes", []) if text.startswith("{") else []
 
     assert any(
@@ -742,11 +742,11 @@ def test_a_monthly_answer_to_a_quarterly_question_says_so(monkeypatch):
                     **arguments,
                 },
             )
-        )[0][0].text
+        )[0].text
 
     assert (
-        "Quarterly data is not available for `get_inflation_rate`, so the monthly "
-        "figures are shown." in answer()
+        "Quarterly data is not available for `get_inflation_rate`, so the monthly figures are shown."
+        in answer()
     )
     # A period given explicitly is what was asked for.
     assert "Quarterly data is not available" not in answer(period="monthly")
@@ -763,7 +763,7 @@ def test_a_parameter_of_another_tool_is_named_and_not_applied(captured):
                 "risk_free_rate": "3m",
             },
         )
-    )[0][0].text
+    )[0].text
 
     for pname in ("benchmark_ticker", "basket", "risk_free_rate"):
         assert (
@@ -782,7 +782,7 @@ def test_a_parameter_of_another_tool_is_named_and_not_applied(captured):
     ],
 )
 def test_the_search_tools_name_an_unknown_parameter(tool, arguments):
-    text = asyncio.run(mcp_controller.mcp.call_tool(tool, arguments))[0][0].text
+    text = asyncio.run(mcp_controller.mcp.call_tool(tool, arguments))[0].text
 
     assert f"`quer` is not a parameter of `{tool}` and was ignored" in text
 
@@ -805,7 +805,7 @@ def test_limit_does_not_cut_tickers_next_to_a_portfolio_row(monkeypatch):
                 "limit": -1,
             },
         )
-    )[0][0].text
+    )[0].text
 
     assert '"AAPL"' in text and '"MSFT"' in text and '"Portfolio"' in text
     assert "was not applied" in text
@@ -823,7 +823,6 @@ def test_limit_does_not_cut_tickers_next_to_a_portfolio_row(monkeypatch):
 def test_a_default_limit_selects_the_last_rows(
     monkeypatch, tool, indicator, tickers, rows
 ):
-    import json
 
     def series(self, module_name, method_name, category, **kwargs):  # noqa: ARG001
         return pd.DataFrame(
@@ -838,19 +837,19 @@ def test_a_default_limit_selects_the_last_rows(
             mcp_controller.mcp.call_tool(
                 tool, {"indicator": indicator, **tickers, **arguments}
             )
-        )[0][0].text
+        )[0].text
 
     text = answer()
-    data = json.loads(text)["data"]
+    data = read_answer(text)["data"]
     assert [row["Value"] for row in data] == [float(n) for n in range(100 - rows, 100)]
     assert f"limit=-{rows} applies by default" in text
 
     # An explicit limit, limit=0 and a range given with dates win.
-    assert len(json.loads(answer(limit=-3))) == 3  # noqa: PLR2004
+    assert len(read_answer(answer(limit=-3))) == 3  # noqa: PLR2004
     for arguments in ({"limit": 0}, {"start_date": "2026-01-01"}):
         text = answer(**arguments)
         assert "applies by default" not in text
-        assert len(json.loads(text)) == 100  # noqa: PLR2004
+        assert len(read_answer(text)) == 100  # noqa: PLR2004
 
 
 def test_a_cryptocurrency_in_a_statement_tool_has_no_statements(monkeypatch):
@@ -867,7 +866,7 @@ def test_a_cryptocurrency_in_a_statement_tool_has_no_statements(monkeypatch):
                 "tickers": "AAPL,BTC-USD,NOTATICKER",
             },
         )
-    )[0][0].text
+    )[0].text
 
     assert (
         "BTC-USD is left out: currencies and cryptocurrencies have no financial" in text
@@ -903,7 +902,7 @@ def test_a_ranking_of_amounts_in_different_currencies_says_so(
             "valuation",
             {"indicator": indicator, "tickers": "AAPL,ASML.AS", "rank": True},
         )
-    )[0][0].text
+    )[0].text
 
     assert '"Rank"' in text
     assert ("in each ticker's own currency (AAPL: USD, ASML.AS: EUR)" in text) is noted
@@ -923,11 +922,11 @@ def test_a_ticker_passed_as_ticker_is_pointed_to_tickers(
 ):
     text = asyncio.run(
         mcp_controller.mcp.call_tool(tool, {"indicator": indicator, name: "AAPL"})
-    )[0][0].text
+    )[0].text
 
     assert (
-        f"`{name}` is not a parameter of `{indicator}`; pass the ticker symbols as "
-        "`tickers`" in text
+        f"`{name}` is not a parameter of `{indicator}`; pass the ticker symbols as `tickers`"
+        in text
     )
     assert "requires a `tickers` parameter" in text
     assert captured == []
@@ -956,6 +955,6 @@ def test_missing_data_is_not_called_invalid_input(monkeypatch, error, expected):
         mcp_controller.mcp.call_tool(
             "risk", {"indicator": "get_value_at_risk", "tickers": "AAPL"}
         )
-    )[0][0].text
+    )[0].text
 
     assert expected in text

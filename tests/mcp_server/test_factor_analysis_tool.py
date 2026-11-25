@@ -55,7 +55,7 @@ def test_the_factor_analysis_passes_the_parameters_of_the_metrics_on(captured):
                 "trailing": 4,
             },
         )
-    )[0][0].text
+    )[0].text
 
     assert captured[-1]["method"] == "get_factor_analysis"
     assert captured[-1]["metrics"] == "profitability"
@@ -71,7 +71,7 @@ def test_search_metrics_finds_the_factor_analysis_as_predictive_power():
         mcp_controller.mcp.call_tool(
             "search_metrics", {"query": "predictive power of a ratio"}
         )
-    )[0][0].text
+    )[0].text
 
     assert "get_factor_analysis" in result.split("\n\n")[0] or (
         "get_factor_analysis" in result[:600]

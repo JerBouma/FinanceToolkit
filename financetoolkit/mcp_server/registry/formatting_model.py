@@ -310,7 +310,7 @@ def _no_data(
     if sources:
         payload["_sources"] = sources
 
-    return json.dumps(payload)
+    return _dumps(payload)
 
 
 # The number of rows a cut answer keeps at least, before columns are cut as well.
@@ -554,8 +554,7 @@ def sample_rows(
 
     if not _is_time_index(table.index):
         return data, (
-            f"sample={sample!r} was not applied: the answer has no dates as its rows or "
-            "columns."
+            f"sample={sample!r} was not applied: the answer has no dates as its rows or columns."
         )
 
     dates = table.index.get_level_values(0)
@@ -587,8 +586,7 @@ def sample_rows(
     before, after = len(dates.unique()), len(last_dates)
 
     return (sampled.T if by_columns else sampled), (
-        f"Sampled to the last {axis[:-1]} of each {SAMPLE_PERIOD_NAMES[sample]} "
-        f"({after} of {before} {axis})."
+        f"Sampled to the last {axis[:-1]} of each {SAMPLE_PERIOD_NAMES[sample]} ({after} of {before} {axis})."
     )
 
 
@@ -1020,6 +1018,30 @@ def filled_day_notes(result: Any) -> list[str]:
     return notes
 
 
+def _columnar(records: list[dict]) -> dict[str, list]:
+    """A table as its column names once and a list of values per row, rather than records
+    that repeat every column name on every row, which about halves an answer.
+
+    Args:
+        records (list[dict]): The table as records.
+
+    Returns:
+        dict[str, list]: The ``columns`` and the ``rows``, each row's values in the order of
+            the columns.
+    """
+    columns = list(dict.fromkeys(key for record in records for key in record))
+
+    return {
+        "columns": columns,
+        "rows": [[record.get(column) for column in columns] for record in records],
+    }
+
+
+def _dumps(payload: Any) -> str:
+    """The answer as JSON without the spaces after separators."""
+    return json.dumps(payload, default=str, separators=(",", ":"))
+
+
 def format_result(
     dataset: dict | pd.Series | pd.DataFrame | int | float | str | None,
     notes: list[str] | None = None,
@@ -1043,8 +1065,9 @@ def format_result(
             the Bank for International Settlements, included under a ``"_sources"`` key.
 
     Returns:
-        A JSON string.  DataFrames become lists of flat records; dicts of
-        DataFrames become JSON objects keyed by the original dict keys;
+        A JSON string.  DataFrames become ``{"columns": [...], "rows": [[...], ...]}``
+        (the ``_notes`` and ``_sources`` next to them); dicts of DataFrames become JSON
+        objects keyed by the original dict keys, a table of columns and rows each;
         scalars become ``{"value": <scalar>}``; missing data becomes
         ``{"error": "No data available."}``.
     """
@@ -1060,6 +1083,7 @@ def format_result(
             return payload
         if isinstance(payload, list):
             return {"data": payload, **extras}
+        # A table's columns and rows sit next to the notes and sources.
         if isinstance(payload, dict):
             payload.update(extras)
             return payload
@@ -1074,12 +1098,14 @@ def format_result(
     if isinstance(dataset, pd.DataFrame):
         if dataset.empty or not int(dataset.notna().to_numpy().sum()):
             return _no_data(reason, notes, sources)
+        # The size a response may have is that of the table as records, so a cut keeps
+        # the same rows whatever form the answer is sent in.
         if max_characters:
             records, cut_note = _fit_to_size(dataset, max_characters)
             if cut_note:
                 notes = [*(notes or []), cut_note]
-            return json.dumps(_inject(records), default=str)
-        return json.dumps(_inject(_df_to_records(dataset)), default=str)
+            return _dumps(_inject(_columnar(records)))
+        return _dumps(_inject(_columnar(_df_to_records(dataset))))
 
     if isinstance(dataset, dict):
         out: dict[str, Any] = {}
@@ -1091,21 +1117,22 @@ def format_result(
                 if not value.empty and int(value.notna().to_numpy().sum()):
                     if max_characters:
                         # The tables share the size a response may have.
-                        out[str(key)], cut_note = _fit_to_size(
+                        records, cut_note = _fit_to_size(
                             value, max_characters // max(1, len(tables))
                         )
+                        out[str(key)] = _columnar(records)
                         if cut_note:
                             notes = [*(notes or []), f"{key}: {cut_note}"]
                     else:
-                        out[str(key)] = _df_to_records(value)
+                        out[str(key)] = _columnar(_df_to_records(value))
                 else:
                     out[str(key)] = []
             else:
                 out[str(key)] = _clean(value)
-        return json.dumps(_inject(out), default=str)
+        return _dumps(_inject(out))
 
     if isinstance(dataset, int | float | str):
-        return json.dumps(_inject({"value": _clean(dataset)}))
+        return _dumps(_inject({"value": _clean(dataset)}))
 
     # A plain list of values, such as the expiration dates of an option chain.
     if isinstance(dataset, list | tuple):
@@ -1126,7 +1153,7 @@ def format_result(
                 "response size; use limit to choose which values are returned.",
             ]
             values = values[:kept]
-        return json.dumps(_inject(values), default=str)
+        return _dumps(_inject(values))
 
     logger.warning("Unexpected result type: %s. Returning raw string.", type(dataset))
-    return json.dumps(_inject({"value": str(dataset)}))
+    return _dumps(_inject({"value": str(dataset)}))

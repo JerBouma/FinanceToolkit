@@ -36,7 +36,7 @@ def types_of(schema):
 
 
 def call(tool, arguments):
-    return asyncio.run(mcp_controller.mcp.call_tool(tool, arguments))[0][0].text
+    return asyncio.run(mcp_controller.mcp.call_tool(tool, arguments))[0].text
 
 
 @pytest.mark.parametrize(
@@ -89,8 +89,9 @@ def test_the_screener_takes_a_fractional_beta(captured):
 def test_a_restriction_matrix_is_an_array_of_arrays(schemas):
     matrix = schemas["econometrics"]["restriction_matrix"]
 
+    # A parameter that may be left out is listed without its null option.
     assert types_of(matrix) == {"array"}
-    assert matrix["anyOf"][0]["items"]["type"] == "array"
+    assert matrix["items"]["type"] == "array"
 
 
 @pytest.mark.parametrize("matrix", ["[[0, 1, 0], [0, 0, 1]]", [[0, 1, 0], [0, 0, 1]]])
@@ -373,7 +374,7 @@ def test_strategy_legs_are_an_array_of_objects(schemas):
     legs = schemas["options"]["legs"]
 
     assert types_of(legs) == {"array"}
-    assert legs["anyOf"][0]["items"]["type"] == "object"
+    assert legs["items"]["type"] == "object"
 
 
 @pytest.mark.parametrize(

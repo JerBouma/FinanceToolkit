@@ -11,7 +11,7 @@ def search(query):
     result = asyncio.run(
         mcp_controller.mcp.call_tool("search_metrics", {"query": query})
     )
-    text = result[0][0].text
+    text = result[0].text
     rows = [line.split("|") for line in text.splitlines() if line.startswith("| `")]
 
     return [(row[1].strip(" `"), row[2].strip(" `")) for row in rows]
@@ -53,7 +53,7 @@ def test_a_search_is_kept_to_a_few_words():
     result = asyncio.run(
         mcp_controller.mcp.call_tool("search_metrics", {"query": long_query})
     )
-    assert "keep it to a few keywords" in result[0][0].text
+    assert "keep it to a few keywords" in result[0].text
     assert len(long_query) > tools_model.MAX_QUERY_CHARACTERS
 
 
@@ -62,7 +62,7 @@ def test_an_indicator_name_returns_its_description_and_parameters():
         mcp_controller.mcp.call_tool(
             "search_metrics", {"query": "get_yield_decomposition"}
         )
-    )[0][0].text
+    )[0].text
 
     assert text.startswith("### `get_yield_decomposition` (tool `rates`)")
     assert "Nominal Yield = Real Yield + Breakeven Inflation" in text
@@ -116,7 +116,7 @@ def test_compact_tools_keep_the_first_clause_and_the_indicator_description(
 def test_an_indicator_name_returns_the_whole_description_up_to_its_sections():
     text = asyncio.run(
         mcp_controller.mcp.call_tool("search_metrics", {"query": "get_aroon_indicator"})
-    )[0][0].text
+    )[0].text
     # The summary sentence, the explanation and the formula, but not the library references or Args.
     assert "how many periods ago the highest high" in text
     assert "- Aroon Oscillator = Aroon Up — Aroon Down" in text

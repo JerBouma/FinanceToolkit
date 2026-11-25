@@ -405,3 +405,19 @@ def test_acerbi_szekely_test_without_a_cvar_does_not_warn_per_resample():
     assert np.isnan(result["Standard Error"]) or not np.isfinite(
         result["Acerbi-Szekely Statistic"]
     )
+
+
+def test_acerbi_szekely_test_with_a_cvar_of_zero_is_nan_rather_than_infinite():
+    returns = pd.Series(np.random.default_rng(4).normal(0, 0.01, 300))
+    var = pd.Series(-0.015, index=returns.index)
+    cvar = pd.Series(-0.02, index=returns.index)
+    # A breach on a day whose CVaR is 0 would divide a loss by 0.
+    returns.iloc[10], cvar.iloc[10] = -0.05, 0.0
+
+    result = backtesting_model.get_acerbi_szekely_test(
+        returns, var, cvar, alpha=0.05, n_bootstrap=50
+    )
+
+    assert np.isnan(result["Acerbi-Szekely Statistic"])
+    assert np.isnan(result["Standard Error"])
+    assert np.isnan(result["P-Value"])

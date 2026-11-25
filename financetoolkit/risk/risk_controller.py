@@ -193,11 +193,13 @@ class RiskBase:
         within_period: bool,
         rolling: int | None,
         growth: bool,
+        minimum: int = 2,
     ) -> pd.DataFrame:
         """
         The returns a measure of the return distribution runs on, after validating the
         parameters it shares with the other distribution measures: the `period` returns of
-        the full history for a rolling window, else those of `_get_returns`.
+        the full history for a rolling window, else those of `_get_returns`. `minimum` is the
+        smallest rolling window the measure has a value for.
         """
         check_period(period, ["daily", "weekly", "monthly", "quarterly", "yearly"])
         if (
@@ -216,7 +218,7 @@ class RiskBase:
                 "Set within_period=True to calculate growth."
             )
 
-        check_rolling(rolling, self._historical_data, period)
+        check_rolling(rolling, self._historical_data, period, minimum)
         if rolling:
             return self._historical_data[period]["Return"]
 
@@ -624,7 +626,7 @@ class Risk(
                 (every risk metric with a value per ticker and period). Defaults to "anomalies". "all" adds the downside deviation, kurtosis, value at risk,
                 conditional value at risk, tail ratio and Roll spread.
             period (str, optional): The frequency at which the metrics are measured and evaluated.
-                Options are: "daily", "weekly", "monthly", "quarterly", "yearly". Each metric is calculated
+                Options are: "weekly", "monthly", "quarterly", "yearly". Each metric is calculated
                 within each period from that period's daily returns, so use monthly or longer
                 for enough returns per period. Defaults to "monthly".
             horizons (list[int] | int | None, optional): The number of periods the forward

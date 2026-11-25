@@ -8,6 +8,7 @@ from financetoolkit.economics.sources import bea_model
 from financetoolkit.helpers import (
     add_score_zone,
     calendar_periods,
+    check_trailing,
     get_goodwill_and_intangible_assets,
     trailing_sum,
 )
@@ -40,6 +41,7 @@ from financetoolkit.utilities.statistics_model import (
 logger = get_logger()
 
 
+@check_trailing
 @filter_shown_columns
 @track_sources
 class DistressModels:

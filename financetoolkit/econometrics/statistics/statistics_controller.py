@@ -1079,8 +1079,11 @@ class StatisticsEconometrics:
                 prices, the series as given with `Econometrics(data=...)`), "Close" (the traded
                 prices). Defaults to None, which uses "Adj Close" for the share entropy, whose
                 values must be positive, and "Return" for the others.
-            rolling (int | None, optional): The number of periods of a rolling window, at least 2.
-                Defaults to None, which calculates one value over the full history of every asset.
+            rolling (int | None, optional): The number of periods of a rolling window, at least the
+                shortest window with a value: order + 2 for the sample and approximate entropy (4 by
+                default), (order - 1) * delay + 1 for the permutation and SVD entropy (3 by default),
+                word_length for the Shannon entropy and 2 otherwise. Defaults to None, which
+                calculates one value over the full history of every asset.
             order (int | None, optional): The template length m of the sample and approximate
                 entropy or the number of values n of the permutation and SVD entropy. Defaults to
                 None, which uses 2 for the sample and approximate and 3 for the permutation and
@@ -1157,7 +1160,23 @@ class StatisticsEconometrics:
         | 2025-12-30 | 0.998  | 0.9921 | 0.9992 |
         | 2025-12-31 | 0.9981 | 0.9919 | 0.9992 |
         """
-        validate_window("rolling", rolling, 2)
+        # The shortest window with a value: the sample and approximate entropy compare at least
+        # two templates of order + 1 values and a pattern of the permutation and SVD entropy
+        # spans (order - 1) * delay + 1 values.
+        validate_window(
+            "rolling",
+            rolling,
+            max(
+                {
+                    "sample": (order or 2) + 2,
+                    "approximate": (order or 2) + 2,
+                    "permutation": ((order or 3) - 1) * delay + 1,
+                    "svd": ((order or 3) - 1) * delay + 1,
+                    "shannon": word_length,
+                }.get(method, 2),
+                2,
+            ),
+        )
         check_option("estimator", estimator, ("periodogram", "welch"))
         check_option("encoding", encoding, ("binary", "quantile", "sigma"))
         period = period if period else "daily"
@@ -1406,7 +1425,7 @@ class StatisticsEconometrics:
                 "Return" for the returns (the changes of the series), "Adj Close" for the prices
                 (the series as given with `Econometrics(data=...)`) or "Close" for the traded
                 prices. Defaults to "Return".
-            rolling (int | None, optional): The number of periods of a rolling window, at least 2.
+            rolling (int | None, optional): The number of periods of a rolling window, at least 4.
                 Defaults to None, which calculates the parameters over the full history of every asset.
             include_benchmark (bool, optional): Whether to include "Benchmark" among the assets.
                 Defaults to False.
@@ -1452,7 +1471,8 @@ class StatisticsEconometrics:
         | MSFT |     0.0003 |     1.4267 |       1.2057 |              625 |
         | NVDA |     0.0011 |     1.4484 |       1.2098 |              619 |
         """
-        validate_window("rolling", rolling, 2)
+        # The complexity compares the variance of the second differences, which takes four values.
+        validate_window("rolling", rolling, 4)
         period = period if period else "daily"
 
         data = self._filter_benchmark(

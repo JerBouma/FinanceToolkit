@@ -1309,3 +1309,26 @@ def test_intraday_data_follows_the_return_column_and_rounding(monkeypatch):
     assert on_open_again["Close"].iloc[1] == pytest.approx(102.1)
     # The data the modules calculate on is unrounded.
     assert toolkit._intraday_historical_data[("Close", "AAPL")].iloc[1] == 102.123456
+
+
+def test_a_history_of_two_days_names_its_observations(caplog):
+    historical = pd.read_pickle("tests/datasets/historical_dataset.pickle")
+    historical = historical.drop(columns=["Return", "Cumulative Return"], level=0)
+    toolkit = Toolkit(
+        tickers=["AAPL", "MSFT"],
+        historical=historical.loc[historical.index >= pd.Period("2022-12-29", "D")],
+        convert_currency=False,
+        start_date="2022-12-28",
+        end_date="2023-01-01",
+        sleep_timer=False,
+    )
+    toolkit._daily_risk_free_rate = pd.read_pickle(
+        "tests/datasets/risk_free_rate.pickle"
+    )
+
+    with caplog.at_level("WARNING", logger="financetoolkit"):
+        toolkit.risk.get_value_at_risk()
+        toolkit.performance.get_sharpe_ratio(period="daily", rolling=2)
+
+    # Each module loads the daily data, the warning is given once.
+    assert caplog.text.count("There are only 2 daily observations") == 1

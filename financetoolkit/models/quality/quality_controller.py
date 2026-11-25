@@ -7,7 +7,7 @@ from typing import Literal
 import numpy as np
 import pandas as pd
 
-from financetoolkit.helpers import trailing_sum
+from financetoolkit.helpers import check_trailing, trailing_sum
 from financetoolkit.models.quality import beneish_model, piotroski_model, quality_model
 from financetoolkit.performance.performance_model import get_beta
 from financetoolkit.utilities.dataframe_model import concat_frames, filter_shown_columns
@@ -24,6 +24,7 @@ from financetoolkit.utilities.sources_model import track_sources
 logger = get_logger()
 
 
+@check_trailing
 @filter_shown_columns
 @track_sources
 class QualityModels:

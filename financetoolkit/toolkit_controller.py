@@ -114,6 +114,10 @@ logger = logger_model.get_logger()
 # on the start date and a full year of dividends for the daily dividend yield.
 PRICE_LOOKBACK_DAYS = 366
 
+# The daily prices that give two returns, the fewest a spread, ratio or regression of returns
+# (and most technical indicators) has a value for.
+MINIMUM_DAILY_OBSERVATIONS = 3
+
 # Profile country codes (ISO 3166-1 alpha-2) whose name in Damodaran's equity risk premium
 # table (get_market_risk_premium) differs from economics.helpers.COUNTRY_CODES or is not
 # in it. Many US-listed companies are domiciled in these offshore jurisdictions. Puerto
@@ -565,6 +569,9 @@ class Toolkit:
         # were retrieved with.
         self._lookback_historical_data: dict[str, pd.DataFrame] = {}
         self._lookback_historical_data_params: tuple | None = None
+        # The date ranges whose few daily observations were reported, so each module that
+        # loads them does not report them again.
+        self._reported_short_histories: set[tuple] = set()
 
         # Initialize other periods as empty DataFrames. They will be populated on demand.
         self._weekly_historical_data: pd.DataFrame = pd.DataFrame()
@@ -7014,7 +7021,8 @@ class Toolkit:
             if len(within) != len(historical_data):
                 historical_data = within
 
-        # An empty period otherwise surfaces as an empty or all-NaN result of every calculation on it without a reason.  # noqa: E501
+        # An empty period, or a day or two of daily prices, otherwise surfaces as an empty or all-NaN result of every calculation on it without a reason.  # noqa: E501
+        observations = len(historical_data.dropna(how="all"))
         if historical_data.empty:
             logger.warning(
                 "There is no %s historical data between %s and %s. Please check the start and end "
@@ -7022,6 +7030,21 @@ class Toolkit:
                 period,
                 self._start_date,
                 self._end_date,
+            )
+        elif (
+            period == "daily"
+            and observations < MINIMUM_DAILY_OBSERVATIONS
+            and (self._start_date, self._end_date) not in self._reported_short_histories
+        ):
+            self._reported_short_histories.add((self._start_date, self._end_date))
+            logger.warning(
+                "There are only %s daily observations between %s and %s, fewer than the %s that "
+                "give two returns, so the measures of returns and most technical indicators are "
+                "NaN. Please choose an earlier start date or a later end date.",
+                observations,
+                self._start_date,
+                self._end_date,
+                MINIMUM_DAILY_OBSERVATIONS,
             )
 
         return historical_data

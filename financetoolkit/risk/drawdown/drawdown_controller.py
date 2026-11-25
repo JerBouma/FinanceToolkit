@@ -92,7 +92,7 @@ class DrawdownRisk:
             single day only nests observations when intraday data was fetched.
             rolling (int, optional): The rolling window size to use for the calculation. If set, CDaR is
             calculated over a rolling window of this many periods across the full return history instead
-            of per `period`. Defaults to None.
+            of per `period`. At least 2. Defaults to None.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the CDaR values over time. Defaults to False.
@@ -316,7 +316,10 @@ class DrawdownRisk:
         """
         validate_alpha(alpha)
         period = period if period else "daily"
-        returns = self._get_measure_returns(period, within_period, rolling, growth)
+        # A rolling window holds at least one path of `window` returns.
+        returns = self._get_measure_returns(
+            period, within_period, rolling, growth, max(window, 2)
+        )
 
         conditional_expected_drawdown = (
             drawdown_model.get_conditional_expected_drawdown(
@@ -402,7 +405,7 @@ class DrawdownRisk:
             'daily', since a single day only nests observations when intraday data was fetched.
             rolling (int, optional): The rolling window size to use for the calculation. If set, the DaR is
             calculated over a rolling window of this many periods across the full return history instead
-            of per `period`, every window starting from a wealth of 1. Defaults to None.
+            of per `period`, every window starting from a wealth of 1. At least 2. Defaults to None.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the DaR values over time. Defaults to False.
@@ -535,7 +538,7 @@ class DrawdownRisk:
             'daily', since a single day only nests observations when intraday data was fetched.
             rolling (int, optional): The rolling window size to use for the calculation. If set, the EDaR is
             calculated over a rolling window of this many periods across the full return history instead
-            of per `period`, every window starting from a wealth of 1. Defaults to None.
+            of per `period`, every window starting from a wealth of 1. At least 2. Defaults to None.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the EDaR values over time. Defaults to False.
@@ -684,7 +687,7 @@ class DrawdownRisk:
             measured on, or to sum them (absolute drawdowns). Defaults to True.
             rolling (int, optional): The rolling window size to use for the calculation. If set, the Maximum
             Drawdown is calculated over a rolling window of this many periods across the full return history
-            instead of per `period` (e.g. the deepest decline of the last 252 days). Defaults to None.
+            instead of per `period` (e.g. the deepest decline of the last 252 days). At least 2. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -1775,7 +1778,7 @@ class DrawdownRisk:
             was fetched.
             rolling (int, optional): The rolling window size to use for the calculation. If set, the Average
             Drawdown is calculated over a rolling window of this many periods across the full return history
-            instead of per `period`, every window starting from a wealth of 1. Defaults to None.
+            instead of per `period`, every window starting from a wealth of 1. At least 2. Defaults to None.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the Average Drawdown values over time.

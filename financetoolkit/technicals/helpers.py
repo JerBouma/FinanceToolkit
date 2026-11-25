@@ -2,6 +2,8 @@
 
 __docformat__ = "google"
 
+import functools
+import inspect
 import math
 from collections.abc import Callable
 
@@ -9,11 +11,18 @@ import numpy as np
 import pandas as pd
 
 from financetoolkit.helpers import get_non_trading_days
+from financetoolkit.utilities.dataframe_model import FilteredClass
+from financetoolkit.utilities.logger_model import get_logger
+
+logger = get_logger()
 
 # The observations in a year of a ticker that trades on an exchange's trading days, and of
 # one that also trades on weekends, such as a cryptocurrency.
 TRADING_DAYS_PER_YEAR = 252
 CALENDAR_DAYS_PER_YEAR = 365
+
+# The indicators a collection names when it reports those without values.
+MAXIMUM_REPORTED_INDICATORS = 10
 
 PERIODS = ("intraday", "daily", "weekly", "monthly", "quarterly", "yearly")
 
@@ -242,6 +251,149 @@ def is_factor_listed(
             return True
 
     return False
+
+
+def _has_no_values(result: object) -> bool:
+    """Whether a result has numbers to show, but every one of them is NaN."""
+    if isinstance(result, pd.Series):
+        numbers = result if pd.api.types.is_numeric_dtype(result) else pd.Series()
+    elif isinstance(result, pd.DataFrame):
+        numbers = result.select_dtypes("number")
+    else:
+        return False
+
+    return numbers.size > 0 and not numbers.notna().to_numpy().any()
+
+
+def _reported_method(function: Callable, name: str) -> Callable:
+    """
+    Wraps an indicator (get_) or a collection (collect_) of the Technicals class so that a
+    result without values is reported, see `report_missing_values`.
+    """
+    signature = inspect.signature(function)
+    collection = name.startswith("collect_")
+
+    @functools.wraps(function)
+    def wrapper(self, *args, **kwargs):
+        # A method called on another object (such as one standing in for the Technicals in
+        # get_factor_analysis) has nothing to report on.
+        if not hasattr(self, "_collecting"):
+            return function(self, *args, **kwargs)
+
+        arguments = signature.bind_partial(self, *args, **kwargs).arguments
+        period = arguments.get("period", signature.parameters.get("period"))
+        if isinstance(period, inspect.Parameter):
+            period = period.default
+        outermost = not self._collecting and not self._depth
+
+        if outermost:
+            self._window_too_long = False
+        if collection and not self._collecting:
+            self._long_windows, self._without_values = set(), {}
+
+        self._collecting += collection
+        self._depth += 1
+        try:
+            result = function(self, *args, **kwargs)
+        finally:
+            self._collecting -= collection
+            self._depth -= 1
+
+        historical_data = (
+            self._historical_data.get(period) if isinstance(period, str) else None
+        )
+        with_data = (
+            historical_data is not None
+            and not historical_data.loc[self._start_date : self._end_date]
+            .dropna(how="all")
+            .empty
+        )
+
+        if collection and not self._collecting:
+            report_collection(self, name, period, historical_data)
+        elif not collection and with_data and _has_no_values(result):
+            if self._collecting:
+                self._without_values[name] = None
+            elif outermost and not self._window_too_long:
+                logger.warning(
+                    "%s has no values for the %s %s periods of data: its windows (or the "
+                    "periods it needs to warm up) are longer than the data. Use a "
+                    "higher-frequency period, shorter windows or a longer date range.",
+                    name,
+                    len(historical_data.dropna(how="all")),
+                    period,
+                )
+
+        return result
+
+    return wrapper
+
+
+def report_collection(
+    technicals, name: str, period: str, historical_data: pd.DataFrame | None
+) -> None:
+    """
+    Logs one message for a collection of indicators: the windows longer than the data and
+    the indicators left without values, rather than one message per indicator.
+
+    Args:
+        technicals (Technicals): The Technicals instance that collected the indicators.
+        name (str): The name of the collection, e.g. "collect_all_indicators".
+        period (str): The period of the collection.
+        historical_data (pd.DataFrame | None): The historical data of the period.
+    """
+    if not technicals._long_windows and not technicals._without_values:
+        return
+
+    periods = 0 if historical_data is None else len(historical_data.dropna(how="all"))
+    windows = sorted(technicals._long_windows)
+    without_values = list(technicals._without_values)
+    # A yearly collection leaves most of the indicators without values, so the names are
+    # shortened to the first ones.
+    names = ", ".join(without_values[:MAXIMUM_REPORTED_INDICATORS]) + (
+        f" and {len(without_values) - MAXIMUM_REPORTED_INDICATORS} more"
+        if len(without_values) > MAXIMUM_REPORTED_INDICATORS
+        else ""
+    )
+    logger.warning(
+        "%s over %s %s periods of data: %s%s%s. Use a higher-frequency period, shorter "
+        "windows or a longer date range.",
+        name,
+        periods,
+        period,
+        (
+            f"the windows of {', '.join(map(str, windows))} periods are longer than the data"
+            if windows
+            else ""
+        ),
+        " and " if windows and without_values else "",
+        (
+            f"{len(without_values)} indicators have no values ({names})"
+            if without_values
+            else ""
+        ),
+    )
+
+
+def report_missing_values(cls: FilteredClass) -> FilteredClass:
+    """
+    Class decorator that reports an indicator without values: a result that is NaN
+    throughout while the data of its period is not, as when a window, a signal window
+    or the warm-up of an indicator is longer than the data (such as a one- or two-row
+    history). A standalone indicator logs it once per call; a collection of indicators
+    logs one message naming the long windows and the indicators without values.
+
+    Args:
+        cls (type): A class of Technicals indicators (a topic or the base class).
+
+    Returns:
+        type: The same class.
+    """
+    for name, member in list(vars(cls).items()):
+        if name.startswith(("get_", "collect_")) and callable(member):
+            setattr(cls, name, _reported_method(member, name))
+
+    return cls
 
 
 def calculate_per_ticker(

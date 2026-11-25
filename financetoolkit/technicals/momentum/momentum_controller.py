@@ -9,7 +9,10 @@ import pandas as pd
 from financetoolkit.helpers import handle_portfolio
 from financetoolkit.technicals.breadth import breadth_model
 from financetoolkit.technicals.cycle import cycle_model
-from financetoolkit.technicals.helpers import calculate_per_ticker
+from financetoolkit.technicals.helpers import (
+    calculate_per_ticker,
+    report_missing_values,
+)
 from financetoolkit.technicals.momentum import momentum_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
 from financetoolkit.utilities.error_model import (
@@ -17,6 +20,7 @@ from financetoolkit.utilities.error_model import (
     check_option,
     check_period,
     handle_errors,
+    validate_window,
 )
 from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import (
@@ -30,6 +34,7 @@ from financetoolkit.utilities.statistics_model import (
 # ruff: noqa: E501
 
 
+@report_missing_values
 @filter_shown_columns
 @track_sources
 class MomentumTechnicals:
@@ -58,7 +63,8 @@ class MomentumTechnicals:
                 "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
                 "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
                 to "daily".
-            window (int, optional): The window size for calculating indicators.
+            window (int, optional): The window size for calculating indicators, at least 2 as
+                the Commodity Channel Index and the Choppiness Index need two periods.
                 Defaults to 14.
             close_column (str, optional): The name of the column containing the close prices.
                 Defaults to "Adj Close".
@@ -114,6 +120,7 @@ class MomentumTechnicals:
         | 2025-12-31 |            38.2003 |      -62.8029 |              21.4286 |                42.8571 |           -21.4286 |                  -56.9136 |                -0.0887 |                            -0.1381 |      -4.82705e+06 |               46.4079 |                       -0.0003 |                                    0.0023 |                                 -0.0026 |                     -0.0897 |                        -0.1258 |                                    -0.0512 |                                  -0.0746 |                      -1.5169 |                     18.7176 |                      9.0003 |                      11.3294 |                      16.2589 |                       20.4663 |                      11.4565 |                            24.6539 |                     -37.4456 |                   34.0262 |                    270.248 |              276.821 |                   265.6   |                   250.867 |         37.1971 |         45.0758 |     -0.0897 |             0.628  |          -0.7176 |                   45.6902 |             12.0094 |             27.1964 |               -0.6702 |                            2.8953 |            -0.6218 |                  0.057  |  -0.536  |              -1.6049 |                   0.515  |                 0.9113 |                 1.1148 |                -0.0091 |                -1.9324 |          -0.0248 |    -6.896  |            52.5944 |             0.3745 |                       0.3956 |           -0.0452 |                        0.1157 |         -0.0431 |            -0.1073 |                    -0.4022 |                        -0.6548 | 57.905  | 51.1539 | 71.4071 |                          0.1423 |                     -7.1079 |                                 -1.6769 |                -10.1732 |                   -8.9975 |                  -1.1757 |               0.0026 |    -23.361  |                -20.8876 |                 -0.6816 |      -19.3794 |                    5862.45 | 53.9827 |                  47.7724 |                  43.3308 |                 -9.9432 |       24.882  |   52.0466 | -0.0166 |   99.0847 |   92.3301 |                  -0.3998 |              50      |                     -1.4421 |               0 |                1 |          -1 |                       -0.6071 |                0.0023 |                  0.6255 |
         """
         self._check_arguments(period, close_column, window=window)
+        validate_window("window", window, 2)
         check_period(
             period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
         )
@@ -976,7 +983,7 @@ class MomentumTechnicals:
             close_column (str, optional): The column in the historical data that represents
                 Defaults to "Adj Close", in which case the open, high and low prices are adjusted
                 for dividends in the same way.
-            window (int, optional): The number of periods for calculating the CCI.
+            window (int, optional): The number of periods for calculating the CCI, at least 2.
                 Defaults to 14.
             constant (float, optional): Constant multiplier used in the CCI calculation.
                 Defaults to 0.015.
@@ -1030,6 +1037,8 @@ class MomentumTechnicals:
         | 2025-12-31 | 38.1997 |     13.3141 |
         """
         self._check_arguments(period, close_column, window=window)
+        # The mean deviation of the typical price needs two periods.
+        validate_window("window", window, 2)
         check_period(
             period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
         )
@@ -4396,7 +4405,7 @@ class MomentumTechnicals:
                 Defaults to "Adj Close", in which case the open, high and low prices are adjusted
                 for dividends in the same way.
             window (int, optional): Number of periods to consider for the Choppiness Index
-                calculation. Defaults to 14.
+                calculation, at least 2. Defaults to 14.
             range_method (str, optional): The net range the summed True Range is divided by. Options are:
                 "high_low" (the highest high minus the lowest low), "true_range" (the highest true high minus
                 the lowest true low, TA-Lib's CHOPTR). Defaults to "high_low".
@@ -4457,6 +4466,8 @@ class MomentumTechnicals:
         | 2025-12-31 |  63.0658 |     48.7037 |
         """
         self._check_arguments(period, close_column, window=window)
+        # The denominator log10(window) is 0 for a window of one period.
+        validate_window("window", window, 2)
         check_period(
             period, ["intraday", "daily", "weekly", "monthly", "quarterly", "yearly"]
         )

@@ -238,6 +238,8 @@ def get_acerbi_szekely_test(
     The test is one-sided, as in the paper: only an underestimation of tail risk
     rejects the model. On this module's sign convention that is a positive Z2, so the
     p-value is P(Z > z-score); a conservative model (Z2 < 0) gives a p-value above 0.5.
+    A CVaR of 0 on any day (no loss to scale the breach by) gives a NaN statistic,
+    Standard Error and p-value rather than an infinite one.
 
     For more information about the method, see the following paper:
 
@@ -297,7 +299,10 @@ def get_acerbi_szekely_test(
 
         breach = (aligned["returns"] < aligned["var"]).to_numpy()
         r = aligned["returns"].to_numpy()
-        cvar = aligned["cvar"].to_numpy()
+        # A CVaR of 0 (an asset whose price did not move, or a short estimation window whose
+        # tail holds only flat days) scales no loss, so it gives NaN rather than an infinite
+        # statistic.
+        cvar = aligned["cvar"].replace(0, np.nan).to_numpy()
 
         def _z2(
             breach_mask: np.ndarray, r_values: np.ndarray, cvar_values: np.ndarray
@@ -307,8 +312,8 @@ def get_acerbi_szekely_test(
         rng = np.random.default_rng(seed)
         bootstrap_indices = rng.integers(0, n, size=(n_bootstrap, n))
 
-        # A CVaR of 0 (an asset whose price did not move) gives no statistic; numpy would
-        # warn about it once for every resample.
+        # Without a CVaR there is no statistic; numpy would warn about it once for every
+        # resample.
         with np.errstate(divide="ignore", invalid="ignore"):
             z2_statistic = _z2(breach, r, cvar)
             bootstrap_z2 = np.array(
@@ -316,7 +321,9 @@ def get_acerbi_szekely_test(
             )
             standard_error = float(np.std(bootstrap_z2, ddof=1))
 
-        if standard_error == 0:
+        if not np.isfinite(z2_statistic) or not np.isfinite(standard_error):
+            z2_statistic, standard_error, p_value = np.nan, np.nan, np.nan
+        elif standard_error == 0:
             p_value = np.nan if z2_statistic == 0 else float(z2_statistic < 0)
         else:
             # One-sided: only Z2 > 0 (tail risk underestimated) counts against the model.

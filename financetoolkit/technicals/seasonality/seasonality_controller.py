@@ -8,6 +8,7 @@ from financetoolkit.helpers import get_non_trading_days
 from financetoolkit.technicals.helpers import (
     calculate_per_ticker,
     get_observations_per_year,
+    report_missing_values,
 )
 from financetoolkit.technicals.seasonality import seasonality_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
@@ -26,6 +27,7 @@ from financetoolkit.utilities.statistics_model import (
 # ruff: noqa: E501
 
 
+@report_missing_values
 @filter_shown_columns
 @track_sources
 class SeasonalityTechnicals:

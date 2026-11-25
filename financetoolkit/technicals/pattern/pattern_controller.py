@@ -9,6 +9,7 @@ from financetoolkit.technicals.helpers import (
     PERIODS,
     calculate_per_ticker,
     get_observations_per_year,
+    report_missing_values,
 )
 from financetoolkit.technicals.pattern import pattern_model
 from financetoolkit.utilities import factor_model
@@ -28,6 +29,7 @@ from financetoolkit.utilities.statistics_model import (
 # ruff: noqa: E501
 
 
+@report_missing_values
 @filter_shown_columns
 @track_sources
 class PatternTechnicals:

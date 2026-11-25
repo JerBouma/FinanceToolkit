@@ -2,6 +2,7 @@
 
 __docformat__ = "google"
 
+import numbers
 from collections.abc import Callable
 
 import pandas as pd
@@ -356,10 +357,25 @@ class ETF:
             fund: weights.get(fund, pd.Series(dtype=float)) for fund in self._funds()
         }
 
-    @staticmethod
-    def _sorted_weightings(weightings: pd.DataFrame | None) -> pd.DataFrame | None:
-        """The weightings with the largest weights of the first fund first."""
-        if weightings is None or weightings.empty:
+    def _sorted_weightings(
+        self, weightings: pd.DataFrame | None, name: str
+    ) -> pd.DataFrame | None:
+        """
+        The weightings with the largest weights of the first fund first, naming the funds
+        without any, as an empty answer for a fund otherwise says nothing about why.
+        """
+        if weightings is None:
+            return weightings
+        if without := [
+            fund for fund in self._funds() if fund not in weightings.columns
+        ]:
+            logger.warning(
+                "Financial Modeling Prep has no %s weightings for %s; it publishes them for "
+                "ETFs and funds only.",
+                name,
+                ", ".join(without),
+            )
+        if weightings.empty:
             return weightings
         # A fund lists only the sectors or countries it holds, so one another fund holds has
         # no weight in it rather than an unknown one.
@@ -432,7 +448,9 @@ class ETF:
         | AMZN    | Amazon.com Inc        | US0231351067 | 023135106 | 8.13519e+07 |   0.0412 |    1.98328e+10 | 2026-10-31 15:30:02 |
         """
         if limit is not None and (
-            isinstance(limit, bool) or not isinstance(limit, int) or limit == 0
+            isinstance(limit, bool)
+            or not isinstance(limit, numbers.Integral)
+            or limit == 0
         ):
             raise InvalidArgumentError(
                 f"limit is a number of holdings, not {limit!r}. Please pass a positive whole "
@@ -541,8 +559,8 @@ class ETF:
         Two funds tracking similar markets can differ considerably here, which matters for the currency and political
         risk the fund carries.
 
-        Tickers that are not an ETF or fund return no data. They are not removed from the
-        Toolkit instance.
+        Tickers that are not an ETF or fund return no data, which is logged. They are not removed
+        from the Toolkit instance.
 
         Also known as: country allocation, geographic exposure, country exposure.
 
@@ -584,7 +602,8 @@ class ETF:
         | Singapore      | 0.0074 | 0.0025 |
         """
         return self._sorted_weightings(
-            self._fund_data_function("country_weightings", overwrite=overwrite)
+            self._fund_data_function("country_weightings", overwrite=overwrite),
+            "country",
         )
 
     def get_sector_weightings(
@@ -596,8 +615,8 @@ class ETF:
         This shows whether a fund that looks broad is in fact concentrated in a few sectors, such as technology in
         many large-cap indices.
 
-        Tickers that are not an ETF or fund return no data. They are not removed from the
-        Toolkit instance.
+        Tickers that are not an ETF or fund return no data, which is logged. They are not removed
+        from the Toolkit instance.
 
         Also known as: sector allocation, sector exposure, sector breakdown.
 
@@ -646,7 +665,7 @@ class ETF:
         | Real Estate            | 0        | 0.022741 |
         """
         return self._sorted_weightings(
-            self._fund_data_function("sector_weightings", overwrite=overwrite)
+            self._fund_data_function("sector_weightings", overwrite=overwrite), "sector"
         )
 
     @handle_errors
@@ -1847,8 +1866,11 @@ class ETF:
             result[fund] = {
                 "Return": fund_return,
                 # The like-for-like comparison for the Return Excluding.
-                "Priced Holdings Return": float(
-                    table["Contribution"].sum() / table["Start Weight"].sum()
+                # NaN without a start weight (no holding priced at the start), as below.
+                "Priced Holdings Return": (
+                    float(table["Contribution"].sum() / table["Start Weight"].sum())
+                    if table["Start Weight"].sum() > 0
+                    else float("nan")
                 ),
                 "Excluded Weight": float(table.loc[excluded, "Start Weight"].sum()),
                 "Excluded Contribution": float(

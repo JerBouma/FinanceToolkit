@@ -7,6 +7,7 @@ import re
 import sys
 from collections.abc import Generator
 from contextlib import contextmanager
+from contextvars import ContextVar
 
 # Credentials that can appear in a logged URL or message: the value after a parameter named
 # key, apikey, api_key, token, secret or password, or one of those after a prefix and an
@@ -155,28 +156,56 @@ def get_logger():
     return setup_logger()
 
 
+# The messages written so far in the current log_each_message_once block. A ContextVar, so a
+# block covers only its own call: the worker threads of run_in_parallel run in a copy of the
+# caller's context and share its record, while another call running at the same time (an MCP
+# request in another thread) keeps all of its own messages.
+_written_messages: ContextVar[set[tuple[int, str]] | None] = ContextVar(
+    "written_messages", default=None
+)
+
+
+def _first_time(record: logging.LogRecord) -> bool:
+    """
+    Lets a record through unless the current log_each_message_once block already wrote it.
+
+    Args:
+        record (logging.LogRecord): The record to write.
+
+    Returns:
+        bool: Whether to write the record.
+    """
+    written = _written_messages.get()
+    if written is None:
+        return True
+    message = (record.levelno, record.getMessage())
+    if message in written:
+        return False
+    written.add(message)
+    return True
+
+
+logging.getLogger("financetoolkit").addFilter(_first_time)
+
+
 @contextmanager
 def log_each_message_once() -> Generator[None]:
     """
     Write each distinct message of the Finance Toolkit's logger once while the block runs,
     for a method that calls many others which report the same thing (such as a date range
-    without data) each time. It can also decorate a function, for every call of it.
+    without data) each time. It can also decorate a function, for every call of it. A block
+    inside another shares the outer one's record, and the filter applies to this call only,
+    including the worker threads it starts, never to another call running at the same time.
 
     Yields:
         None: Nothing; the messages are filtered until the block ends.
     """
-    logger = logging.getLogger("financetoolkit")
-    written: set[tuple[int, str]] = set()
+    if _written_messages.get() is not None:
+        yield
+        return
 
-    def first_time(record: logging.LogRecord) -> bool:
-        message = (record.levelno, record.getMessage())
-        if message in written:
-            return False
-        written.add(message)
-        return True
-
-    logger.addFilter(first_time)
+    token = _written_messages.set(set())
     try:
         yield
     finally:
-        logger.removeFilter(first_time)
+        _written_messages.reset(token)

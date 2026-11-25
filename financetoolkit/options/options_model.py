@@ -1,5 +1,7 @@
 """Options Model"""
 
+import numbers
+
 import numpy as np
 import pandas as pd
 import yfinance as yf
@@ -457,12 +459,12 @@ def get_monte_carlo_option_price(
         dividend_yield=dividend_yield,
     )
 
-    if not isinstance(simulations, int) or simulations <= 0:
+    if not isinstance(simulations, numbers.Integral) or simulations <= 0:
         raise ValueError(
             f"simulations must be a positive integer, received {simulations!r}."
         )
 
-    if not isinstance(time_steps, int) or time_steps <= 0:
+    if not isinstance(time_steps, numbers.Integral) or time_steps <= 0:
         raise ValueError(
             f"time_steps must be a positive integer, received {time_steps!r}."
         )

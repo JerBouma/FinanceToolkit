@@ -10,6 +10,7 @@ from financetoolkit import fmp_model, helpers
 from financetoolkit.cache import policy_model
 from financetoolkit.economics.helpers import (
     buffered_start_date,
+    stop_at_unreachable_sources,
     validate_period,
 )
 from financetoolkit.economics.sources import (
@@ -21,6 +22,7 @@ from financetoolkit.economics.sources import (
     gmdb_model,
     stoxx_model,
 )
+from financetoolkit.utilities import error_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
 from financetoolkit.utilities.error_model import (
     check_option,
@@ -639,6 +641,7 @@ class StabilityEconomics:
         )
 
     @handle_errors
+    @stop_at_unreachable_sources()
     def get_implied_volatility(
         self,
         markets: list[str] | str | None = None,
@@ -756,13 +759,26 @@ class StabilityEconomics:
                 }
             )
 
+        # Financial Modeling Prep failing for the MOVE (unreachable, rate limited, which it
+        # logs) would fail alike for the JGB VIX, after its own retries, so it is not asked.
+        fmp_failed: list[str] = []
+
         def fmp(symbol: str, scale: float) -> Callable[[str], pd.DataFrame]:
-            return lambda start: (
-                economics_fmp_model.get_index_history(
+            def collect(start: str) -> pd.DataFrame:
+                if fmp_failed:
+                    return pd.DataFrame()
+                failures_before = error_model.get_request_failures()
+                history = economics_fmp_model.get_index_history(
                     symbol, self._api_key, start, self._end_date
                 )
-                * scale
-            ).to_frame("1M")
+                if (
+                    history.empty
+                    and error_model.get_request_failures() != failures_before
+                ):
+                    fmp_failed.append(symbol)
+                return (history * scale).to_frame("1M")
+
+            return collect
 
         sources: dict[str, Callable[[str], pd.DataFrame]] = {
             "US Equity": cboe(

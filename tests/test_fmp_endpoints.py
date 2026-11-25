@@ -2073,9 +2073,8 @@ def test_a_lasting_server_error_or_rate_limit_is_named(
         fmp_model, "get_request", lambda *_, **__: _Response(status, "Unavailable")
     )
     monkeypatch.setattr(fmp_model.time, "sleep", lambda _: None)
-    monkeypatch.setattr(fmp_model, "_server_errors_logged", {})
 
-    with caplog.at_level("ERROR"):
+    with caplog.at_level("ERROR"), fmp_model.log_server_errors_once():
         first = fmp_model.get_financial_data("https://example.com")
         second = fmp_model.get_financial_data("https://example.com")
 
@@ -2089,12 +2088,36 @@ def test_a_lasting_server_error_or_rate_limit_is_named(
 def test_an_answer_that_is_not_json_is_named_once(monkeypatch, caplog):
     page = "<!DOCTYPE html><html><body>Service Unavailable</body></html>"
     monkeypatch.setattr(fmp_model, "get_request", lambda *_, **__: _Response(200, page))
-    monkeypatch.setattr(fmp_model, "_server_errors_logged", {})
 
     with caplog.at_level("ERROR"):
-        for _ in range(3):
-            result = fmp_model.get_financial_data("https://example.com")
+        for _call in range(2):
+            with fmp_model.log_server_errors_once():
+                for _ in range(3):
+                    result = fmp_model.get_financial_data("https://example.com")
 
     assert list(result.columns) == ["REQUEST FAILED"]
     assert "unrecognised error" not in caplog.text
-    assert caplog.text.count("answered with something other than JSON") == 1
+    # Once per call, so the second call (another MCP request) is told as well.
+    assert caplog.text.count("answered with something other than JSON") == 2
+
+
+@pytest.mark.parametrize(
+    ("error", "reason"),
+    [("NO ERRORS", "could not be reached"), ("LIMIT REACH", "rate limit was reached")],
+)
+def test_an_unanswered_market_risk_premium_is_empty_and_reported(
+    monkeypatch, caplog, error, reason
+):
+    from financetoolkit import Economics
+
+    monkeypatch.setattr(
+        fmp_model,
+        "get_financial_data",
+        lambda url: pd.DataFrame(columns=[error]),  # noqa: ARG005
+    )
+
+    premium = Economics(api_key="key").get_market_risk_premium()
+
+    assert premium.empty and list(premium.columns) == []
+    assert "The market risk premium could not be retrieved" in caplog.text
+    assert reason in caplog.text

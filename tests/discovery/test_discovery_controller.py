@@ -477,7 +477,7 @@ def test_the_sector_and_industry_snapshots_work_without_arguments(method, name, 
     discovery = discovery_controller.Discovery(api_key="test_key")
 
     with patch(f"financetoolkit.discovery.discovery_model.{method}") as mock_fn:
-        mock_fn.return_value = pd.DataFrame()
+        mock_fn.return_value = pd.DataFrame({"Sector": ["Energy"]})
         getattr(discovery, method)()
 
         # The snapshot of the latest business day.
@@ -527,3 +527,97 @@ def test_invalid_discovery_arguments_are_refused_before_any_request(method, argu
         getattr(discovery, method)(**arguments)
 
     mock_fetch.assert_not_called()
+
+
+def test_get_industry_statistics_reports_an_error_page_as_no_data(monkeypatch, caplog):
+    from financetoolkit.cache.cache_controller import clear_active_cache
+    from financetoolkit.models.valuation import damodaran_model
+
+    class ErrorPage:
+        content = b"<!DOCTYPE html><html><body>Unavailable</body></html>"
+
+    clear_active_cache()
+    monkeypatch.setattr(
+        damodaran_model, "get_request", lambda url, timeout: ErrorPage()
+    )
+
+    discovery = discovery_controller.Discovery(api_key="test_key")
+    result = discovery.get_industry_statistics(
+        dataset="cost_of_capital", region="Europe"
+    )
+
+    assert result.empty
+    assert "not an Excel workbook" in caplog.text
+    assert caplog.text.count("Damodaran") == 1
+
+
+@pytest.mark.parametrize(
+    "method",
+    [
+        "get_sector_performance",
+        "get_industry_performance",
+        "get_sector_pe",
+        "get_industry_pe",
+    ],
+)
+def test_a_default_snapshot_steps_back_over_a_market_holiday(method, caplog):
+    discovery = discovery_controller.Discovery(api_key="test_key")
+    snapshot = pd.DataFrame({"Sector": ["Energy"]})
+
+    with patch(f"financetoolkit.discovery.discovery_model.{method}") as mock_fn:
+        # The latest business day (a holiday) has no snapshot; the one before it has.
+        mock_fn.side_effect = [pd.DataFrame(), snapshot]
+        result = getattr(discovery, method)()
+
+        first, second = (
+            pd.Timestamp(call.kwargs["date"]) for call in mock_fn.call_args_list
+        )
+        assert second == first - pd.offsets.BDay()
+        assert result.equals(snapshot)
+
+        # An explicit date stays as given.
+        mock_fn.reset_mock(side_effect=True)
+        mock_fn.return_value = pd.DataFrame()
+        assert getattr(discovery, method)(date="2026-11-26").empty
+        assert mock_fn.call_count == 1
+
+        # Without any snapshot in the last business days, one warning says so.
+        mock_fn.reset_mock()
+        assert getattr(discovery, method)().empty
+        assert mock_fn.call_count == 1 + discovery_controller.SNAPSHOT_LOOKBACK_DAYS
+    assert caplog.text.count("has no") == 1
+
+
+def test_a_failing_default_snapshot_does_not_step_back():
+    from financetoolkit.utilities import error_model
+
+    discovery = discovery_controller.Discovery(api_key="test_key")
+
+    def unreachable(**kwargs):  # noqa: ARG001
+        error_model.report_request_failure()
+        return pd.DataFrame()
+
+    with patch(
+        "financetoolkit.discovery.discovery_model.get_sector_performance",
+        side_effect=unreachable,
+    ) as mock_fn:
+        assert discovery.get_sector_performance().empty
+
+    assert mock_fn.call_count == 1
+
+
+def test_a_page_count_that_is_not_a_whole_number_is_refused():
+    import numpy as np
+
+    from financetoolkit.utilities.error_model import InvalidArgumentError
+
+    discovery = discovery_controller.Discovery(api_key="test_key")
+
+    with patch("financetoolkit.discovery.discovery_model.get_stock_news") as mock_fn:
+        with pytest.raises(InvalidArgumentError, match="pages must be a whole number"):
+            discovery.get_stock_news(pages="2")
+        mock_fn.assert_not_called()
+
+        # A numpy whole number, as read from a DataFrame, is a page count.
+        mock_fn.return_value = pd.DataFrame()
+        discovery.get_stock_news(pages=np.int64(2))

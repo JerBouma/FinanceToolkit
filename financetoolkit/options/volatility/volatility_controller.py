@@ -460,6 +460,7 @@ class VolatilityOptions:
                 )
 
         quotes: dict[str, list[dict]] = {}
+        left_out: dict[str, str] = {}
 
         for expiration_date in sorted(expiration_dates):
             # The smile of every expiry is fitted with the stock price, rates and time to
@@ -477,6 +478,7 @@ class VolatilityOptions:
                 )
             except (KeyError, IndexError, ValueError) as error:
                 logger.debug("The %s expiry is left out: %s", expiration_date, error)
+                left_out[expiration_date] = str(error)
                 continue
 
             if implied_volatility.empty:
@@ -518,6 +520,14 @@ class VolatilityOptions:
                         "implied_volatility": ticker_iv,
                     }
                 )
+
+        # Every expiry left out (all expired, or without a chain) leaves nothing to fit, said once.
+        if not quotes and left_out:
+            logger.warning(
+                "None of the expiries %s can be fitted, so the result is empty: %s",
+                ", ".join(left_out),
+                next(iter(left_out.values())),
+            )
 
         return quotes
 

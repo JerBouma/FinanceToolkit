@@ -1,5 +1,7 @@
 """Yield Curve Model Module"""
 
+import numbers
+
 import numpy as np
 import pandas as pd
 
@@ -149,7 +151,7 @@ def get_par_yield(
         raise TypeError(
             f"Expected years_to_maturity to be a float or int, received {type(years_to_maturity)} instead."
         )
-    if not isinstance(frequency, int):
+    if not isinstance(frequency, numbers.Integral):
         raise TypeError(
             f"Expected frequency to be an int, received {type(frequency)} instead."
         )

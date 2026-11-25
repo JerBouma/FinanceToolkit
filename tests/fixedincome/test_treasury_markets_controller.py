@@ -401,3 +401,19 @@ def test_forward_prices_without_a_repo_rate_say_why(fixedincome, monkeypatch, ca
     assert not fixedincome.get_treasury_forward_prices(
         forward_date="2026-12-31", security_type="Bill", repo_rate=0.039
     ).empty
+
+
+def test_unreachable_auctions_leave_the_notes_empty_without_a_second_message(
+    fixedincome, monkeypatch, caplog
+):
+    # TreasuryDirect unreachable: the source reports it and answers with no auctions.
+    monkeypatch.setattr(
+        treasurydirect_model,
+        "get_auctioned_securities",
+        lambda *args, **kwargs: pd.DataFrame(),  # noqa: ARG005
+    )
+
+    assert fixedincome.get_treasury_floating_rate_notes().empty
+    assert fixedincome.get_treasury_inflation_protected_securities().empty
+    assert "is missing" not in caplog.text
+    assert "could not be calculated" not in caplog.text

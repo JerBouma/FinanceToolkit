@@ -8,6 +8,7 @@ import time
 import zipfile
 from collections.abc import Callable, Generator, Iterable
 from contextlib import contextmanager
+from contextvars import ContextVar
 
 import pandas as pd
 import requests
@@ -107,6 +108,40 @@ RETRY_DELAY_SECONDS = 2
 # Long enough that an entry is never too old to serve when the source cannot be reached.
 STALE_TTL_SECONDS = 100 * 365 * 86400
 
+# The sources that could not be reached during a call that retrieves many series (see
+# stop_at_unreachable_sources), shared with the worker threads it starts.
+_UNREACHABLE_SOURCES: ContextVar[set[str] | None] = ContextVar(
+    "financetoolkit_unreachable_sources", default=None
+)
+
+
+class SourceUnreachableError(requests.exceptions.ConnectionError):
+    """A request not sent, as its source could not be reached earlier in the same call."""
+
+
+@contextmanager
+def stop_at_unreachable_sources() -> Generator[None]:
+    """
+    Stops requesting a source for the rest of the block once it could not be reached (no
+    connection, a timeout, a server error or a rate limit, after the retries), for a method
+    that retrieves many series of the same sources: each further series would otherwise
+    wait through the same retries before failing alike. The series not requested are served
+    from the cache where it has them and are otherwise empty, logged once with the first.
+    A block inside another shares its record. It can also decorate a method.
+
+    Yields:
+        None: Nothing; the sources are tracked until the block ends.
+    """
+    if _UNREACHABLE_SOURCES.get() is not None:
+        yield
+        return
+
+    token = _UNREACHABLE_SOURCES.set(set())
+    try:
+        yield
+    finally:
+        _UNREACHABLE_SOURCES.reset(token)
+
 
 def _fetch_with_retry(
     fetch: Callable[..., pd.DataFrame], *args: str, source: str = "The source"
@@ -129,6 +164,13 @@ def _fetch_with_retry(
             connection.
         ValueError: When the source answers with something other than the JSON asked for.
     """
+    unreachable = _UNREACHABLE_SOURCES.get()
+    if unreachable is not None and source in unreachable:
+        raise SourceUnreachableError(
+            f"{source} could not be reached for an earlier request of this call, so it is "
+            "not asked again"
+        )
+
     for attempt in range(1, RETRY_ATTEMPTS + 1):
         try:
             return fetch(*args)
@@ -151,6 +193,13 @@ def _fetch_with_retry(
             )
 
             if not retryable or attempt == RETRY_ATTEMPTS:
+                # A missing series (404) is that series only; anything else is the source.
+                if unreachable is not None and (
+                    status_code is None
+                    or status_code >= 500  # noqa: PLR2004
+                    or status_code == requests.codes.too_many_requests
+                ):
+                    unreachable.add(source)
                 raise
 
             time.sleep(RETRY_DELAY_SECONDS * attempt)
@@ -242,7 +291,11 @@ def collect_cached_data(
             )
             return pd.DataFrame()
 
-        (logger.debug if quiet else logger.error)(
+        (
+            logger.debug
+            if quiet or isinstance(request_error, SourceUnreachableError)
+            else logger.error
+        )(
             "Could not reach %s for the %s (%s). No data is returned for it.",
             source,
             description,
@@ -338,7 +391,11 @@ def collect_ranged_data(
             )
             return cached_data
 
-        logger.error(
+        (
+            logger.debug
+            if isinstance(request_error, SourceUnreachableError)
+            else logger.error
+        )(
             "Could not reach %s for the %s (%s). No data is returned for it.",
             source,
             description,

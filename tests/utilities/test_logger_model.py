@@ -398,3 +398,56 @@ def test_redact_only_hides_credential_names():
         == "key=***&apikey=***&API_KEY=***&fred_api_key=***&fred_key=***"
         "&access_token=***&token=***&client_secret=***&password=***"
     )
+
+
+def test_log_each_message_once_writes_a_repeated_message_once(caplog):
+    import logging  # noqa: PLC0415
+
+    from financetoolkit.helpers import run_in_parallel  # noqa: PLC0415
+    from financetoolkit.utilities.logger_model import (  # noqa: PLC0415
+        log_each_message_once,
+    )
+
+    logger = logging.getLogger("financetoolkit")
+    with caplog.at_level(logging.WARNING, logger="financetoolkit"):
+        with log_each_message_once():
+            logger.warning("No data for the range")
+            with log_each_message_once():
+                logger.warning("No data for the range")
+            # The worker threads of the call share its record.
+            run_in_parallel(lambda: logger.warning("No data for the range"), [()] * 4)
+            logger.warning("Another message")
+        logger.warning("No data for the range")
+
+    assert caplog.text.count("No data for the range") == 2  # noqa: PLR2004
+    assert caplog.text.count("Another message") == 1
+
+
+def test_log_each_message_once_leaves_other_calls_alone(caplog):
+    import logging  # noqa: PLC0415
+    import threading  # noqa: PLC0415
+
+    from financetoolkit.utilities.logger_model import (  # noqa: PLC0415
+        log_each_message_once,
+    )
+
+    logger = logging.getLogger("financetoolkit")
+    inside = threading.Event()
+    done = threading.Event()
+
+    def call():
+        with log_each_message_once():
+            logger.warning("Rate limit reached")
+            inside.set()
+            done.wait(5)
+
+    with caplog.at_level(logging.WARNING, logger="financetoolkit"):
+        thread = threading.Thread(target=call)
+        thread.start()
+        inside.wait(5)
+        # Another call running at the same time still writes its own message.
+        logger.warning("Rate limit reached")
+        done.set()
+        thread.join()
+
+    assert caplog.text.count("Rate limit reached") == 2  # noqa: PLR2004

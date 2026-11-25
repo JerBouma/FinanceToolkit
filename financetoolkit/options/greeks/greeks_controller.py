@@ -28,6 +28,7 @@ class GreeksOptions:
     """
 
     @handle_errors
+    @logger_model.log_each_message_once()
     def collect_all_greeks(
         self,
         start_date: str | None = None,
@@ -233,6 +234,7 @@ class GreeksOptions:
         return all_greeks
 
     @handle_errors
+    @logger_model.log_each_message_once()
     def collect_first_order_greeks(
         self,
         start_date: str | None = None,
@@ -1829,6 +1831,7 @@ class GreeksOptions:
         return lambda_df
 
     @handle_errors
+    @logger_model.log_each_message_once()
     def collect_second_order_greeks(
         self,
         start_date: str | None = None,
@@ -3593,6 +3596,7 @@ class GreeksOptions:
         return partial_derivative_df
 
     @handle_errors
+    @logger_model.log_each_message_once()
     def collect_third_order_greeks(
         self,
         start_date: str | None = None,

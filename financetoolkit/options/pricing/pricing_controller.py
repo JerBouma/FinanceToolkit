@@ -2,6 +2,7 @@
 
 __docformat__ = "google"
 
+import numbers
 from typing import Literal
 
 import numpy as np
@@ -452,7 +453,7 @@ class PricingOptions:
             strike prices will be 75, 80, 85, ..., 120 and 125 if the current stock price is 100.
             time_to_expiration (float): The number of years to use for the time to expiration, above 0. Defaults to 1 which equals
             one year.
-            time_steps (int): The number of time steps to use for the binomial tree, at least 1. Defaults to 10 which equals 10
+            time_steps (int): The number of time steps to use for the binomial tree, from 1 to 1,000. Defaults to 10 which equals 10
             time steps. This will be evenly distributed over the time to expiration.
             risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None, which
             uses the Toolkit's risk-free rate on the pricing date: the 10-year Treasury yield unless the Toolkit's
@@ -514,6 +515,12 @@ class PricingOptions:
         check_option("method", method, binomial_trees_model.BINOMIAL_TREE_METHODS)
         helpers.validate_time_to_expiration(time_to_expiration)
         validate_window("time_steps", time_steps)
+        # Checked once for every ticker rather than reported per ticker by the tree.
+        if time_steps > binomial_trees_model.MAX_TIMESTEPS:
+            raise InvalidArgumentError(
+                f"A tree of {time_steps:,} time steps is too large: time_steps must be at most "
+                f"{binomial_trees_model.MAX_TIMESTEPS:,}. Please pass fewer time_steps."
+            )
 
         if method in ("leisen_reimer", "exact_inversion") and time_steps % 2 == 0:
             # Both trees put the strike between the two middle nodes at expiration, which needs an odd count.
@@ -693,7 +700,8 @@ class PricingOptions:
             last date of the historical data.
             time_to_expiration (float): The number of years to use for the time to expiration, above 0. Defaults to 1 which equals
             one year.
-            time_steps (int): The number of time steps to use for the binomial tree, at least 1. Defaults to 10 which equals 10
+            time_steps (int): The number of time steps to use for the binomial tree, from 1 to 1,000, and at
+            most 16 when listing every path (show_unique_combinations=False). Defaults to 10 which equals 10
             time steps. This will be evenly distributed over the time to expiration.
             risk_free_rate (float, optional): The risk free rate shown with show_input_info; it does not affect the
             simulated prices. Defaults to None, which uses the Toolkit's risk-free rate on the pricing date: the
@@ -748,6 +756,22 @@ class PricingOptions:
         """
         helpers.validate_time_to_expiration(time_to_expiration)
         validate_window("time_steps", time_steps)
+        # Checked once for every ticker rather than reported per ticker by the tree.
+        if time_steps > binomial_trees_model.MAX_TIMESTEPS:
+            raise InvalidArgumentError(
+                f"A tree of {time_steps:,} time steps is too large: time_steps must be at most "
+                f"{binomial_trees_model.MAX_TIMESTEPS:,}. Please pass fewer time_steps."
+            )
+        if (
+            not show_unique_combinations
+            and time_steps > binomial_trees_model.MAX_PATH_TIMESTEPS
+        ):
+            raise InvalidArgumentError(
+                f"Listing every path of {time_steps:,} time steps gives 2^{time_steps} paths: "
+                f"time_steps must be at most {binomial_trees_model.MAX_PATH_TIMESTEPS}. Please "
+                "pass fewer time_steps, or show_unique_combinations=True for the distinct "
+                "prices per step."
+            )
 
         start_date = self._pricing_date(start_date)
         stock_price = self._prices.loc[start_date]
@@ -4206,7 +4230,11 @@ class PricingOptions:
             raise InvalidArgumentError(
                 f"moneyness must be positive, received {moneyness!r}."
             )
-        if isinstance(periods, bool) or not isinstance(periods, int) or periods < 1:
+        if (
+            isinstance(periods, bool)
+            or not isinstance(periods, numbers.Integral)
+            or periods < 1
+        ):
             raise InvalidArgumentError(
                 f"periods must be a positive whole number, received {periods!r}."
             )
@@ -4447,6 +4475,20 @@ class PricingOptions:
         |           550 |  35.3422 |
         |           555 |  40.3422 |
         """
+        # Checked here, as define_strike_prices names its own strike parameters.
+        if not 0 <= stock_price_range <= 1:
+            raise InvalidArgumentError(
+                "stock_price_range is a fraction of the stock price between 0 and 1, e.g. 0.25 "
+                f"for prices from 75% to 125% of the price, not {stock_price_range!r}. Please "
+                "pass a value between 0 and 1 as stock_price_range."
+            )
+        if not stock_price_step_size > 0:
+            raise InvalidArgumentError(
+                "stock_price_step_size is the distance between stock prices, above 0, not "
+                f"{stock_price_step_size!r}. Please pass a positive step such as 5 or 2.5 as "
+                "stock_price_step_size."
+            )
+
         start_date = self._pricing_date(start_date)
         stock_price = self._prices.loc[start_date]
 

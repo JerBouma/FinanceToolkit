@@ -2,6 +2,7 @@
 
 __docformat__ = "google"
 
+import numbers
 from collections.abc import Callable
 
 import numpy as np
@@ -89,7 +90,11 @@ def _validate(
         ("time_steps", time_steps, 1),
         ("rannacher_steps", rannacher_steps, 0),
     ):
-        if not isinstance(value, int) or isinstance(value, bool) or value < minimum:
+        if (
+            not isinstance(value, numbers.Integral)
+            or isinstance(value, bool)
+            or value < minimum
+        ):
             raise ValueError(
                 f"{name} must be an integer of at least {minimum}, received {value!r}."
             )

@@ -2,6 +2,8 @@
 
 __docformat__ = "google"
 
+import numbers
+
 import numpy as np
 from scipy.special import exprel, log_ndtr, ndtr
 
@@ -269,7 +271,9 @@ def _validate_asian(
     )
     _validate_volatility(volatility)
     if fixings is not None and (
-        isinstance(fixings, bool) or not isinstance(fixings, int) or fixings < 1
+        isinstance(fixings, bool)
+        or not isinstance(fixings, numbers.Integral)
+        or fixings < 1
     ):
         raise ValueError(
             f"fixings must be a whole number of at least 1 or None, received {fixings!r}."

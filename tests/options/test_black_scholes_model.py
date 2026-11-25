@@ -459,3 +459,25 @@ def test_the_strike_density_refuses_prices_of_zero():
             greeks_model.get_second_order_partial_derivative(
                 stock_price, strike_price, 1.0, 0.05, 0.2, 0.0
             )
+
+
+def test_lambda_is_nan_when_the_option_price_underflows(monkeypatch):
+    from financetoolkit.options.greeks import greeks_model
+
+    # Near expiry and far out of the money the price can underflow to a subnormal number
+    # (about 1e-320) while the delta does not, which made delta * S / price infinite.
+    monkeypatch.setattr(
+        greeks_model.black_scholes_model,
+        "get_black_scholes",
+        lambda **kwargs: np.array([10.0, 5e-324]),  # noqa: ARG005
+    )
+    monkeypatch.setattr(
+        greeks_model,
+        "get_delta",
+        lambda **kwargs: np.array([0.5, 1e-10]),  # noqa: ARG005
+    )
+
+    values = greeks_model.get_lambda(400, np.array([400.0, 480.0]), 1 / 365, 0.05, 0.2)
+
+    assert values[0] == pytest.approx(20.0)
+    assert np.isnan(values[1])

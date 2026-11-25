@@ -947,3 +947,14 @@ def test_fill_diluted_shares_keeps_the_statement_numeric():
     filled = helpers.fill_diluted_shares(statement)
 
     assert (filled.dtypes == "float64").all()
+
+
+def test_run_in_parallel_names_a_failed_fetch_without_its_function(caplog):
+    """A worker handed a function per source is named in words, not by its repr."""
+
+    def failing():
+        raise ValueError("The source answered with something other than JSON.")
+
+    assert helpers.run_in_parallel(lambda fetch: fetch(), [(failing,)]) == []
+    assert "No data could be retrieved for one of the requests" in caplog.text
+    assert "<function" not in caplog.text

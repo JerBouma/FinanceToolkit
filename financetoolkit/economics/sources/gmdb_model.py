@@ -1,6 +1,7 @@
 """Global Macro Database (GMDB) Model"""
 
 import io
+import struct
 import threading
 import time
 
@@ -197,7 +198,8 @@ def collect_global_macro_database_dataset(
 
     Returns:
         pd.DataFrame: A transformed DataFrame indexed by 'year' with country-wise columns, or
-            an empty DataFrame when the Global Macro Database cannot be reached.
+            an empty DataFrame when the Global Macro Database cannot be reached or its file
+            cannot be read (both logged).
     """
     # The quarterly releases are cached apart from the January 2025 file read before,
     # since they have variables that file lacks.
@@ -244,7 +246,18 @@ def collect_global_macro_database_dataset(
         )
         return pd.DataFrame()
 
-    gmd_dataset = _parse_dataset(response.content, include_forecasts)
+    try:
+        gmd_dataset = _parse_dataset(response.content, include_forecasts)
+    except (struct.error, EOFError, ValueError) as error:
+        # An empty or cut-off download, or an error page instead of the Stata file, which
+        # the Stata reader fails on with an unpacking error, an end of file or a ValueError.
+        logger.error(
+            "The Global Macro Database file could not be read (%s: %s). No data is "
+            "returned for it.",
+            type(error).__name__,
+            error,
+        )
+        return pd.DataFrame()
 
     if cache is not None and cache.enabled and cacheable:
         cache.set(

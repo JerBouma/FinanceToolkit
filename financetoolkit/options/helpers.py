@@ -2,6 +2,7 @@
 
 __docformat__ = "google"
 
+import numbers
 import warnings
 from collections.abc import Callable, Iterator
 from typing import Any
@@ -605,9 +606,9 @@ def _validate_monte_carlo(
         antithetic (bool): Whether the paths come in antithetic pairs.
     """
     check_option("sequence", sequence, MONTE_CARLO_SEQUENCES)
-    if not isinstance(simulations, int) or isinstance(simulations, bool):
+    if not isinstance(simulations, numbers.Integral) or isinstance(simulations, bool):
         raise ValueError(f"simulations must be an integer, received {simulations!r}.")
-    if not isinstance(time_steps, int) or time_steps <= 0:
+    if not isinstance(time_steps, numbers.Integral) or time_steps <= 0:
         raise ValueError(
             f"time_steps must be a positive integer, received {time_steps!r}."
         )
@@ -880,8 +881,10 @@ def validate_numeric_inputs(arrays: bool = False, **kwargs) -> None:
     for name, value in kwargs.items():
         if arrays and value is None:
             continue
+        # numbers.Real also takes numpy's numbers, such as an np.int64 from a DataFrame.
         if not isinstance(
-            value, (int, float, np.ndarray, pd.Series) if arrays else (int, float)
+            value,
+            (numbers.Real, np.ndarray, pd.Series) if arrays else numbers.Real,
         ) or isinstance(value, bool):
             raise TypeError(
                 f"{name} must be a float, int, np.ndarray or pd.Series, "

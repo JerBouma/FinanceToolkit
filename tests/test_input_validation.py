@@ -13,6 +13,7 @@ from financetoolkit.economics import helpers
 from financetoolkit.economics.sources import fmp_model as economics_fmp_model
 from financetoolkit.mcp_server import mcp_controller
 from financetoolkit.utilities import validation_model
+from financetoolkit.utilities.error_model import InvalidArgumentError
 from financetoolkit.utilities.statistics_model import finalize_dataset
 
 # mcp_controller is imported while collecting, before a test may replace FastMCP with a
@@ -150,7 +151,7 @@ def test_the_calendar_refuses_arguments_it_cannot_honour(arguments, message):
             "YYYY-MM-DD",
         ),
         ("get_sec_filings_8k", {"limit": 0}, ValueError, "one or more"),
-        ("get_sec_filings_8k", {"limit": "ten"}, TypeError, "whole number"),
+        ("get_sec_filings_8k", {"limit": "ten"}, InvalidArgumentError, "whole number"),
         ("get_insider_trading_latest", {"page": -1}, ValueError, "zero or more"),
         ("get_sector_performance", {"date": "2026/09/31"}, ValueError, "YYYY-MM-DD"),
         (

@@ -16,6 +16,7 @@ from financetoolkit.economics.helpers import (
     extend_with_recent,
     normalize_requested_countries,
     resample_to_period,
+    stop_at_unreachable_sources,
     validate_period,
 )
 from financetoolkit.economics.sources import (
@@ -1965,6 +1966,7 @@ class RatesEconomics:
         ]
 
     @handle_errors
+    @stop_at_unreachable_sources()
     def get_real_yield_curve(
         self,
         countries: list[str] | str | None = None,
@@ -2092,6 +2094,7 @@ class RatesEconomics:
         )
 
     @handle_errors
+    @stop_at_unreachable_sources()
     def get_breakeven_inflation_expectations(
         self,
         countries: list[str] | str | None = None,
@@ -2229,6 +2232,7 @@ class RatesEconomics:
         )
 
     @handle_errors
+    @stop_at_unreachable_sources()
     def get_yield_decomposition(
         self,
         countries: list[str] | str | None = None,
@@ -2321,12 +2325,17 @@ class RatesEconomics:
         real_yield = self.get_real_yield_curve(
             countries=countries, period=period, rounding=unrounded
         )
+
+        # Either part failing (logged by its own method) leaves nothing to decompose, so
+        # the breakeven inflation is not asked for without a real yield.
+        if real_yield.empty:
+            return pd.DataFrame()
+
         breakeven_inflation = self.get_breakeven_inflation_expectations(
             countries=countries, period=period, rounding=unrounded
         )
 
-        # Either part failing (logged by its own method) leaves nothing to decompose.
-        if real_yield.empty or breakeven_inflation.empty:
+        if breakeven_inflation.empty:
             return pd.DataFrame()
 
         decompositions = {}

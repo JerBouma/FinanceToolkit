@@ -1070,3 +1070,11 @@ def test_finalize_dataset_rejects_a_window_below_one():
                 axis="rows",
                 **{name: 0},
             )
+
+
+def test_growth_of_no_data_is_no_data_for_a_list_of_lags():
+    """A source that could not be reached leaves nothing to grow, also with several lags."""
+    from financetoolkit.utilities.statistics_model import calculate_growth
+
+    for axis in ("rows", "columns"):
+        assert calculate_growth(pd.DataFrame(), lag=[1, 4], axis=axis).empty

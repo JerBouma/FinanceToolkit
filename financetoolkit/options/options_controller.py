@@ -179,7 +179,24 @@ class OptionsBase:
                 TRAILING_DAYS, min_periods=MINIMUM_VOLATILITY_DAYS
             ).std() * np.sqrt(TRAILING_DAYS)
 
-        return trailing_volatility(self._daily_historical["Return"]).ffill()
+        volatility = trailing_volatility(self._daily_historical["Return"]).ffill()
+
+        # Every option value of such a ticker is NaN, which says nothing about why on its own.
+        if short := [
+            str(ticker)
+            for ticker in volatility.columns
+            if volatility[ticker].isna().all()
+        ]:
+            logger.warning(
+                "%s %s fewer than %d daily returns, too few for a volatility, so %s option "
+                "values are NaN. Please pass an earlier start_date.",
+                ", ".join(short),
+                "has" if len(short) == 1 else "have",
+                MINIMUM_VOLATILITY_DAYS,
+                "its" if len(short) == 1 else "their",
+            )
+
+        return volatility
 
     @cached_property
     def _risk_free_rate(self) -> pd.Series:

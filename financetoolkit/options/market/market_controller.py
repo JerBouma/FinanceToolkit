@@ -2,6 +2,8 @@
 
 __docformat__ = "google"
 
+from functools import partial
+
 import numpy as np
 import pandas as pd
 
@@ -34,6 +36,76 @@ _CHAIN_INPUTS_FROM_HISTORY = (
     "the risk free rate, the dividend yield and, when a chain quotes no price of "
     "the underlying, the stock price come from that date"
 )
+
+# Above this bid-ask spread, as a fraction of the straddle, the middle of the quotes says
+# little about where the straddle trades.
+_WIDE_STRADDLE_SPREAD = 0.5
+
+
+def _implied_move_noting_quotes(
+    unquoted: list[str],
+    ticker: str,
+    expiration_date: str,
+    calls: pd.DataFrame,
+    puts: pd.DataFrame,
+    stock_price: float,
+    *_,
+) -> pd.Series:
+    """
+    The implied move of one expiry, with a warning when its straddle is priced from a last
+    trade or its bid-ask spread is wider than half the straddle. An expiry whose chain has no
+    bid at all (Yahoo Finance outside US market hours) is added to `unquoted` instead, so that
+    the caller warns once for all of them.
+    """
+    move = market_metrics_model.get_implied_move(calls, puts, stock_price)
+    if np.isnan(move["Straddle Strike"]):
+        return move
+    bids = pd.concat(
+        [chain.get("Bid", pd.Series(dtype=float)) for chain in (calls, puts)]
+    )
+    if not (pd.to_numeric(bids, errors="coerce") > 0).any():
+        unquoted.append(f"{ticker} {expiration_date}")
+        return move
+    if (
+        move["Last Trade Legs"] == 0
+        and not move["Bid-Ask Spread"] > _WIDE_STRADDLE_SPREAD
+    ):
+        return move
+
+    strike = f"{move['Straddle Strike']:g}"
+    legs = market_metrics_model.get_straddle_quotes(
+        calls, puts, move["Straddle Strike"]
+    )
+    if move["Last Trade Legs"] == 0:
+        reasons = [
+            f"the bid-ask spread of the {strike} straddle is "
+            f"{move['Bid-Ask Spread']:.0%} of its price"
+        ]
+    else:
+        reasons = []
+        for leg, quote in legs.iterrows():
+            if quote["Last Trade"]:
+                reason = (
+                    f"the {strike} {leg.lower()} has no two-sided quote and is priced at "
+                    "its last trade"
+                )
+                if isinstance(quote["Last Trade Date"], str):
+                    reason += f" of {quote['Last Trade Date']}"
+                if pd.notna(quote["Open Interest"]):
+                    reason += f" (open interest {quote['Open Interest']:g})"
+            else:
+                reason = (
+                    f"the {leg.lower()}'s bid-ask spread is "
+                    f"{quote['Bid-Ask Spread'] / move['Straddle Price']:.0%} of the straddle"
+                )
+            reasons.append(reason)
+    logger.warning(
+        "%s %s: %s, so the implied move may not reflect the live market.",
+        ticker,
+        expiration_date,
+        ", and ".join(reasons),
+    )
+    return move
 
 
 @filter_shown_columns
@@ -649,6 +721,7 @@ class MarketOptions:
 
             - Implied Move = (Call Price + Put Price) / Stock Price
             - Expected Range = Stock Price ± Straddle Price
+            - Bid-Ask Spread = (Call Ask − Call Bid + Put Ask − Put Bid) / Straddle Price
 
         The straddle pays the absolute move, so its price is the market's expected size of
         the move, regardless of direction. Around earnings the first expiry after the next
@@ -674,12 +747,23 @@ class MarketOptions:
 
         Returns:
             pd.DataFrame: Per ticker and expiry the Days to Expiration, Straddle Strike,
-            Straddle Price, Implied Move (as a fraction of the price) and the Lower and Upper
-            Price of the expected range.
+            Straddle Price, Bid-Ask Spread (as a fraction of the straddle price), Last Trade
+            Legs, Implied Move (as a fraction of the price) and the Lower and Upper Price of
+            the expected range.
 
         Notes:
         - The move up to an expiry after earnings also includes the ordinary daily moves
           until then; the closer the expiry is to the announcement, the purer the measure.
+        - The prices are the middle of the bid and ask, or the last traded price of an option
+          without a two-sided quote that is still held or traded. The Bid-Ask Spread shows
+          how firmly the straddle is quoted (NaN when a leg has no two-sided quote) and the
+          Last Trade Legs how many of the two legs (0, 1 or 2) are priced from their last
+          trade, which can be days or weeks old.
+        - A warning names the ticker, expiry and strike when a leg is priced from its last
+          trade (with its last trade date and open interest) or when the bid-ask spread is
+          wider than half the straddle (above 0.5), as the implied move then may not reflect
+          the live market. Outside US market hours Yahoo Finance reports a bid and ask of 0,
+          so every leg is priced from its last trade; one warning then names the expiries.
         - The stock price is the price of the underlying quoted with the live option chain
           (Yahoo Finance's regular market price), so both come from the same moment; when
           the chain quotes none, the traded Close of the last historical date is used. The
@@ -699,10 +783,10 @@ class MarketOptions:
 
         Which returns:
 
-        |                        | Earnings Date   |   Days to Expiration |   Straddle Strike |   Straddle Price |   Implied Move |   Lower Price |   Upper Price |
-        |:-----------------------|:----------------|---------------------:|------------------:|-----------------:|---------------:|--------------:|--------------:|
-        | ('AAPL', '2027-02-19') | 2027-02-04      |                   95 |               350 |            38.2  |         0.1083 |        314.58 |        390.98 |
-        | ('NVDA', '2026-11-18') | 2026-11-17      |                    2 |               155 |            13.05 |         0.0836 |        143.09 |        169.19 |
+        |                        | Earnings Date   |   Days to Expiration |   Straddle Strike |   Straddle Price |   Bid-Ask Spread |   Last Trade Legs |   Implied Move |   Lower Price |   Upper Price |
+        |:-----------------------|:----------------|---------------------:|------------------:|-----------------:|-----------------:|------------------:|---------------:|--------------:|--------------:|
+        | ('AAPL', '2027-02-19') | 2027-02-04      |                   85 |               360 |           36.925 |           0.0447 |                 0 |         0.1038 |       318.655 |       392.505 |
+        | ('NVDA', '2027-03-19') | 2027-02-24      |                  113 |               150 |           38.725 |           0.0374 |                 0 |         0.2594 |       110.575 |       188.025 |
         """
         earnings_dates = None
         if around_earnings:
@@ -730,14 +814,21 @@ class MarketOptions:
             if not expiration_dates:
                 raise ValueError("No expiry after an upcoming earnings date was found.")
 
+        unquoted: list[str] = []
         table = self._per_expiry(
-            lambda calls, puts, stock_price, *_: market_metrics_model.get_implied_move(
-                calls, puts, stock_price
-            ),
+            partial(_implied_move_noting_quotes, unquoted),
             expiration_dates,
             number_of_expirations,
             rounding,
+            with_ticker=True,
         )
+        if unquoted:
+            logger.warning(
+                "The option chains of %s have no bid quotes, so their implied moves are priced "
+                "from the last trades, which may not reflect the live market. Outside US market "
+                "hours Yahoo Finance reports a bid and ask of 0; try again during market hours.",
+                ", ".join(unquoted),
+            )
         if earnings_dates is not None:
             table.insert(
                 0,

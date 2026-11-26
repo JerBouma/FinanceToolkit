@@ -159,6 +159,8 @@ MISSING_DATA_PATTERN = re.compile(
     r"|^No change for .+ (?:has|have) no value\.$"
     # The years of a long-run price index its inflation rate does not describe as it reads.
     r"|^The Global Macro Database repeats\b|^Prices in .+ rose more than tenfold\b"
+    # Option prices from a last trade or a wide quote rather than the live market.
+    r"|\bmay not reflect the live market\b"
 )
 
 

@@ -39,8 +39,7 @@ def get_mid_prices(chain: pd.DataFrame) -> pd.Series:
     Returns:
         pd.Series: The price per strike, NaN for an option without a quote or activity.
     """
-    bid = pd.to_numeric(chain.get("Bid"), errors="coerce")
-    ask = pd.to_numeric(chain.get("Ask"), errors="coerce")
+    bid, ask, quoted = _two_sided_quotes(chain)
     last = pd.to_numeric(chain.get("Last Price"), errors="coerce")
 
     activity = [
@@ -51,8 +50,14 @@ def get_mid_prices(chain: pd.DataFrame) -> pd.Series:
     if activity:
         last = last.where(np.logical_or.reduce(activity))
 
-    quoted = (bid > 0) & (ask > 0) & (ask >= bid)
     return ((bid + ask) / 2).where(quoted, last)
+
+
+def _two_sided_quotes(chain: pd.DataFrame) -> tuple[pd.Series, pd.Series, pd.Series]:
+    """The bid and ask of every option and whether both are quoted: above zero, the ask at or above the bid."""  # noqa: E501
+    bid = pd.to_numeric(chain.get("Bid"), errors="coerce")
+    ask = pd.to_numeric(chain.get("Ask"), errors="coerce")
+    return bid, ask, (bid > 0) & (ask > 0) & (ask >= bid)
 
 
 def _positive_volatility(chain: pd.DataFrame) -> pd.Series:
@@ -393,6 +398,53 @@ def get_volatility_skew(
     )
 
 
+def get_straddle_quotes(
+    calls: pd.DataFrame, puts: pd.DataFrame, strike: float
+) -> pd.DataFrame:
+    """
+    Show how the call and the put at one strike are priced: from a two-sided quote, or
+    from their last trade when there is none (see get_mid_prices), with the bid-ask spread
+    of a quoted leg and the last trade date and open interest the chain reports.
+
+    Strikes listed more than once are combined as get_implied_move averages their prices:
+    a leg is priced from its last trade when any of its priced options at the strike is
+    (and then has no spread), otherwise its spread is their average spread; the last trade
+    date is the latest and the open interest the sum.
+
+    Args:
+        calls (pd.DataFrame): The calls of one expiry, indexed by strike, with Bid, Ask and
+            Last Price columns, and where the chain has them the Volume, Open Interest and
+            Last Trade Date columns.
+        puts (pd.DataFrame): The puts of the same expiry.
+        strike (float): The strike of the call and the put.
+
+    Returns:
+        pd.DataFrame: Per leg ("Call" and "Put") whether it is priced from its Last Trade
+        (1 or 0), its Bid-Ask Spread (in price, NaN without a two-sided quote), the Last
+        Trade Date and the Open Interest (NaN when the chain has no such column).
+    """
+    legs = {}
+    for leg, chain in (("Call", calls), ("Put", puts)):
+        bid, ask, quoted = _two_sided_quotes(chain)
+        at_strike = pd.Series(chain.index == strike, index=chain.index)
+        priced = get_mid_prices(chain).notna() & at_strike
+        last_trade = priced & ~quoted
+        open_interest = pd.to_numeric(
+            chain.get("Open Interest", pd.Series(np.nan, index=chain.index)),
+            errors="coerce",
+        )
+        trade_dates = chain.get("Last Trade Date", pd.Series(np.nan, index=chain.index))
+        legs[leg] = {
+            "Last Trade": float(last_trade.any()),
+            "Bid-Ask Spread": (
+                np.nan if last_trade.any() else (ask - bid)[priced & quoted].mean()
+            ),
+            "Last Trade Date": trade_dates[at_strike].dropna().max(),
+            "Open Interest": open_interest[at_strike].sum(min_count=1),
+        }
+    return pd.DataFrame.from_dict(legs, orient="index")
+
+
 def get_implied_move(
     calls: pd.DataFrame, puts: pd.DataFrame, stock_price: float
 ) -> pd.Series:
@@ -405,14 +457,31 @@ def get_implied_move(
     (Brenner and Subrahmanyam, 1988), so under a lognormal model about 57% of outcomes fall
     within one implied move and one standard deviation is about 1.25 times the straddle.
 
+    The formula is as follows:
+
+        - Straddle Price = Call Price + Put Price
+        - Bid-Ask Spread = (Call Ask − Call Bid + Put Ask − Put Bid) / Straddle Price
+        - Implied Move = Straddle Price / Stock Price
+
     Args:
         calls (pd.DataFrame): The calls of one expiry, indexed by strike.
         puts (pd.DataFrame): The puts of the same expiry.
         stock_price (float): The price of the underlying.
 
     Returns:
-        pd.Series: The Straddle Strike, Straddle Price, Implied Move (as a fraction of the
-        price) and the Lower and Upper Price of the expected range.
+        pd.Series: The Straddle Strike, Straddle Price, Bid-Ask Spread (as a fraction of
+        the straddle price), Last Trade Legs, Implied Move (as a fraction of the price) and
+        the Lower and Upper Price of the expected range.
+
+    Notes:
+    - The prices are the middle of the bid and ask, or the last traded price of an option
+      without a two-sided quote that is still held or traded (see get_mid_prices).
+    - The Bid-Ask Spread shows how firmly the straddle is quoted: both legs' spreads as a
+      fraction of the straddle price, NaN when a leg has no two-sided quote. Above 0.5 the
+      spread is wider than half the straddle, and the middle can lie far from where it trades.
+    - The Last Trade Legs counts how many of the two legs (0, 1 or 2) are priced from their
+      last trade instead of a quote. A last trade can be days or weeks old, from when the
+      underlying stood elsewhere, so the implied move then may not reflect the live market.
     """
     call_prices = get_mid_prices(calls).groupby(level=0).mean()
     put_prices = get_mid_prices(puts).groupby(level=0).mean()
@@ -424,6 +493,8 @@ def get_implied_move(
                 [
                     "Straddle Strike",
                     "Straddle Price",
+                    "Bid-Ask Spread",
+                    "Last Trade Legs",
                     "Implied Move",
                     "Lower Price",
                     "Upper Price",
@@ -436,11 +507,16 @@ def get_implied_move(
         strikes[np.argmin(np.abs(strikes.to_numpy(dtype=float) - stock_price))]
     )
     straddle = float(call_prices[strike] + put_prices[strike])
+    legs = get_straddle_quotes(calls, puts, strike)
 
     return pd.Series(
         {
             "Straddle Strike": strike,
             "Straddle Price": straddle,
+            # NaN unless both legs are quoted: a spread of one leg alone understates it.
+            "Bid-Ask Spread": legs["Bid-Ask Spread"].astype(float).sum(min_count=2)
+            / straddle,
+            "Last Trade Legs": legs["Last Trade"].astype(float).sum(),
             "Implied Move": straddle / stock_price,
             "Lower Price": stock_price - straddle,
             "Upper Price": stock_price + straddle,

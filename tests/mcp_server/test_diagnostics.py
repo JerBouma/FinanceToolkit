@@ -197,3 +197,12 @@ def test_a_ticker_without_the_expiry_is_noted_with_its_dates_not_as_unknown(
         "No options data is available for MSFT expiring on 2026-12-04, so it is left "
         "out. Its expiration dates are 2026-12-18."
     ]
+
+
+def test_an_implied_move_from_stale_quotes_is_a_note():
+    message = (
+        "EZU 2026-12-18: the 65 call has no two-sided quote and is priced at its last trade of "
+        "2026-11-09 (open interest 1), so the implied move may not reflect the live market."
+    )
+
+    assert diagnostics_model.missing_data_notes([message]) == [message]

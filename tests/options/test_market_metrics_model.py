@@ -97,6 +97,30 @@ def test_implied_move_is_the_straddle():
     assert move["Implied Move"] == pytest.approx(0.8 * 0.2 * np.sqrt(TIME), rel=0.05)
 
 
+def test_a_quoted_straddle_has_its_spread_and_no_last_trade_legs():
+    move = market_metrics_model.get_implied_move(chain(False), chain(True), STOCK_PRICE)
+    # Each leg is quoted a cent either side of its price, so the spreads sum to 0.04.
+    assert move["Bid-Ask Spread"] == pytest.approx(0.04 / move["Straddle Price"])
+    assert move["Last Trade Legs"] == 0
+
+
+def test_a_leg_without_a_quote_counts_as_a_last_trade_leg():
+    calls = chain(False).assign(**{"Last Trade Date": "2026-11-09"})
+    calls.loc[100.0, ["Bid", "Ask", "Last Price", "Open Interest"]] = [0, 1.75, 3.15, 1]
+
+    move = market_metrics_model.get_implied_move(calls, chain(True), STOCK_PRICE)
+    legs = market_metrics_model.get_straddle_quotes(calls, chain(True), 100.0)
+
+    assert move["Last Trade Legs"] == 1
+    assert np.isnan(move["Bid-Ask Spread"])
+    assert move["Straddle Price"] == pytest.approx(
+        3.15 + chain(True).loc[100.0, "Last Price"]
+    )
+    assert legs.loc["Call", "Last Trade Date"] == "2026-11-09"
+    assert legs.loc["Call", "Open Interest"] == 1
+    assert legs.loc["Put", "Bid-Ask Spread"] == pytest.approx(0.02)
+
+
 def test_model_free_variance_recovers_a_flat_volatility():
     variance, forward = market_metrics_model.get_model_free_variance(
         chain(False), chain(True), TIME, RATE

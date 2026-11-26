@@ -9,7 +9,6 @@ from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 import pandas as pd
-from dateutil.relativedelta import relativedelta
 
 from financetoolkit import currencies_model, earnings_model, finra_model
 from financetoolkit.cache import cache_controller, policy_model, ticker_model
@@ -49,7 +48,6 @@ from financetoolkit.fmp_model import (
     get_ratios_ttm as _get_ratios_ttm,
     get_revenue_segmentation as _get_revenue_segmentation,
     get_shares_float as _get_shares_float,
-    get_sp500_market_value as _get_sp500_market_value,
     get_stock_grades as _get_stock_grades,
     get_stock_splits as _get_stock_splits,
 )
@@ -81,7 +79,6 @@ from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import (
     apply_rounding,
     calculate_growth,
-    normalize_country_name,
     shift_periods,
 )
 
@@ -605,8 +602,6 @@ class Toolkit:
             income=income,
             cash=cash,
             format_location=format_location,
-            # From the lookback start, as downloaded statements are, so that the first
-            # periods have the prior ones their growth and averages need.
             start_date=self._lookback_start_date,
             end_date=self._end_date,
             quarterly=self._quarterly,
@@ -733,73 +728,18 @@ class Toolkit:
         """
         # Imported when first used, so the Finance Toolkit loads only what is needed.
         from financetoolkit.ratios.ratios_controller import Ratios  # noqa: PLC0415
+        from financetoolkit.ratios.sources import (  # noqa: PLC0415
+            economics_model,
+            employees_model,
+        )
 
         # Every dataset is retrieved when a ratio first needs it, so a ratio downloads only
         # what it uses (the gross margin only the income statement).
         period = "quarterly" if self._quarterly else "yearly"
 
-        def gross_domestic_product() -> pd.DataFrame:
-            # Imported when first used, as only the market cap to GDP ratio needs it.
-            from financetoolkit.economics.economics_controller import (  # noqa: PLC0415
-                Economics,
-            )
-
-            # Every year, as each date is compared with the GDP of the year before it.
-            return Economics(
-                rounding=None,
-                allow_stale_oecd_cache=self._allow_stale_oecd_cache,
-                cache=self._cache,
-                api_key=self._api_key,
-            ).get_gross_domestic_product(usd=True)
-
-        def consumer_price_index(country: str) -> pd.Series:
-            # Imported when first used, as only the cyclically adjusted P/E needs it.
-            from financetoolkit.economics.economics_controller import (  # noqa: PLC0415
-                Economics,
-            )
-
-            # Every month of the Economics history, as the earnings go back up to decades.
-            consumer_price_index = Economics(
-                rounding=None,
-                allow_stale_oecd_cache=self._allow_stale_oecd_cache,
-                cache=self._cache,
-                api_key=self._api_key,
-            ).get_consumer_price_index(countries=country, period="monthly")
-
-            # Economics returns the name its sources use ("USA" gives "United States").
-            country = normalize_country_name(country, consumer_price_index.columns)
-
-            if country not in consumer_price_index.columns:
-                return pd.Series(dtype=float)
-
-            return consumer_price_index[country]
-
-        def employee_count() -> pd.DataFrame:
-            # Imported when first used, as only the figures per employee need it.
-            from financetoolkit.ratios.helpers import (  # noqa: PLC0415
-                align_employee_count,
-            )
-
-            # The counts are matched on the fiscal period end dates, as they are labelled with
-            # the year of the fiscal year end rather than the statement period.
-            # Including the year before the start date, which the first quarters use.
-            counts = self._collect_employee_count()
-
-            if counts is None or counts.empty:
-                return pd.DataFrame()
-
-            return align_employee_count(
-                counts,
-                self._get_period_end_dates(
-                    self._get_module_statement("income_statement", "Ratios")
-                ),
-                quarterly=self._quarterly,
-            )
-
         ratios = Ratios(
             tickers=lambda: self._get_statement_tickers("Ratios")
             + (["Portfolio"] if "Portfolio" in self._tickers else []),
-            # The daily ratios use the prices from before the start date as well.
             historical=LazyDict(
                 lambda key: self._with_basket_prices(
                     self._get_module_historical_data(period)
@@ -824,10 +764,19 @@ class Toolkit:
                 self._get_module_statement("balance_sheet_statement", "Ratios")
             ),
             currency_function=self._get_listing_currencies,
-            gross_domestic_product_function=gross_domestic_product,
-            consumer_price_index_function=consumer_price_index,
-            employee_count_function=employee_count,
-            # The sectors and industries of get_factor_analysis(group=...).
+            gross_domestic_product_function=lambda: economics_model.get_gross_domestic_product(
+                self._allow_stale_oecd_cache, self._cache, self._api_key
+            ),
+            consumer_price_index_function=lambda country: economics_model.get_consumer_price_index(
+                country, self._allow_stale_oecd_cache, self._cache, self._api_key
+            ),
+            employee_count_function=lambda: employees_model.get_employee_count(
+                self._collect_employee_count(),
+                lambda: self._get_period_end_dates(
+                    self._get_module_statement("income_statement", "Ratios")
+                ),
+                quarterly=self._quarterly,
+            ),
             profile=self._get_statement_profile,
         )
 
@@ -878,146 +827,15 @@ class Toolkit:
         """
         # Imported when first used, so the Finance Toolkit loads only what is needed.
         from financetoolkit.models.models_controller import Models  # noqa: PLC0415
+        from financetoolkit.models.sources import (  # noqa: PLC0415
+            market_model,
+            peers_model,
+        )
 
         # Every dataset is retrieved when a model first needs it.
 
-        def compare_with_peers(peers: dict[str, list[str]] | None) -> pd.DataFrame:
-            # Imported when first used, as only the peer comparison needs them.
-            from financetoolkit.fmp_model import get_stock_peers  # noqa: PLC0415
-            from financetoolkit.models.valuation import peers_model  # noqa: PLC0415
-
-            tickers = self._get_statement_tickers("Models")
-
-            # The tickers are upper case, also when the peers are given per lower case ticker.
-            given_peers = {
-                key.strip().upper(): value for key, value in (peers or {}).items()
-            }
-            peer_map = {
-                ticker: list(given_peers.get(ticker) or [])
-                or get_stock_peers(ticker, self._api_key, self._fmp_plan)
-                for ticker in tickers
-            }
-            universe = sorted(
-                set(tickers) | {peer for group in peer_map.values() for peer in group}
-            )
-            # The latest period up to this Toolkit's end date is what is compared, so three
-            # years before it suffice (the Toolkit adds the lookback that growth and trailing
-            # figures need). The settings that change the figures are this Toolkit's, so the
-            # Company column equals what its own ratios show for that period.
-            others = Toolkit(
-                tickers=universe,
-                api_key=self._api_key,
-                start_date=(
-                    datetime.strptime(self._end_date, "%Y-%m-%d")
-                    - relativedelta(years=3)
-                ).strftime("%Y-%m-%d"),
-                end_date=self._end_date,
-                quarterly=self._quarterly,
-                point_in_time=self._point_in_time,
-                convert_currency=self._convert_currency,
-                use_cached_data=self._cache,
-                enforce_source=self._enforce_source,
-                sleep_timer=self._sleep_timer,
-                benchmark_ticker=None,
-                progress_bar=False,
-                # Unrounded, as the comparison is calculated (and rounded) here.
-                rounding=None,
-            )
-            ratios = others.ratios
-            # Quarterly growth is over a year, as the growth of a quarter on the quarter before
-            # it mixes in the seasons.
-            income = others.get_income_statement(
-                growth=True, lag=4 if self._quarterly else 1
-            )
-            metrics = pd.DataFrame(
-                {
-                    "Price-to-Earnings": peers_model.get_latest_values(
-                        ratios.get_price_to_earnings_ratio()
-                    ),
-                    "EV-to-EBITDA": peers_model.get_latest_values(
-                        ratios.get_ev_to_ebitda_ratio()
-                    ),
-                    "Price-to-Book": peers_model.get_latest_values(
-                        ratios.get_price_to_book_ratio()
-                    ),
-                    "Price-to-Sales": peers_model.get_latest_values(
-                        ratios.get_price_to_sales_ratio()
-                    ),
-                    "Gross Margin": peers_model.get_latest_values(
-                        ratios.get_gross_margin()
-                    ),
-                    "Operating Margin": peers_model.get_latest_values(
-                        ratios.get_operating_margin()
-                    ),
-                    "Net Profit Margin": peers_model.get_latest_values(
-                        ratios.get_net_profit_margin()
-                    ),
-                    "Return on Equity": peers_model.get_latest_values(
-                        ratios.get_return_on_equity()
-                    ),
-                    "Return on Invested Capital": peers_model.get_latest_values(
-                        ratios.get_return_on_invested_capital()
-                    ),
-                    "Revenue Growth": peers_model.get_latest_values(
-                        income.loc[:, "Revenue", :]
-                    ),
-                    "Debt-to-Equity": peers_model.get_latest_values(
-                        ratios.get_debt_to_equity_ratio()
-                    ),
-                    "Dividend Yield": peers_model.get_latest_values(
-                        ratios.get_dividend_yield()
-                    ),
-                }
-            )
-            return pd.concat(
-                {
-                    ticker: peers_model.get_peer_comparison(
-                        metrics, ticker, peer_map[ticker]
-                    )
-                    for ticker in tickers
-                }
-            )
-
-        def sp500(start: str, end: str) -> tuple[pd.DataFrame, pd.Series]:
-            # The price index scales the total market value of the S&P 500 companies, known
-            # for the latest date only, back in time; the total return index is the market
-            # return.
-            historical = self._other_toolkit(
-                ["^GSPC", "^SP500TR"], start, end
-            ).get_historical_data(period="daily")
-            if historical.empty:
-                index_data = pd.DataFrame(columns=["Price Index", "Total Return Index"])
-            else:
-                index_data = (
-                    historical["Close"]
-                    .reindex(columns=["^GSPC", "^SP500TR"])
-                    .set_axis(["Price Index", "Total Return Index"], axis=1)
-                )
-                index_data.index = index_data.index.to_timestamp()
-            market_value = (
-                _get_sp500_market_value(self._api_key, self._fmp_plan)
-                if self._api_key
-                else pd.Series(dtype=float)
-            )
-            return index_data, market_value
-
-        def corporate_bond_yield(start: str, end: str) -> pd.Series:
-            # Imported when first used, as only the Graham intrinsic value needs it.
-            from financetoolkit.fixedincome.sources import fred_model  # noqa: PLC0415
-            from financetoolkit.helpers import require_fred_api_key  # noqa: PLC0415
-
-            require_fred_api_key(
-                self._fred_api_key,
-                "the Moody's Aaa corporate bond yield (or pass a bond_yield)",
-            )
-            return fred_model.get_moodys_corporate_bond_yields(
-                "daily", start, end, self._fred_api_key
-            )["Aaa"]
-
         return Models(
             tickers=lambda: self._get_statement_tickers("Models"),
-            # "lookback" is the daily data from a year before the start date, for the
-            # models that measure returns over the year before a period end.
             historical_data=LazyDict(
                 lambda key: self._with_basket_prices(
                     self._get_lookback_historical_data("daily")
@@ -1035,16 +853,32 @@ class Toolkit:
             rounding=self._rounding,
             start_date=self._start_date,
             end_date=self._end_date,
-            peer_function=compare_with_peers,
+            peer_function=lambda peers: peers_model.compare_with_peers(
+                peers,
+                tickers=self._get_statement_tickers("Models"),
+                api_key=self._api_key,
+                user_subscription=self._fmp_plan,
+                end_date=self._end_date,
+                quarterly=self._quarterly,
+                point_in_time=self._point_in_time,
+                convert_currency=self._convert_currency,
+                cache=self._cache,
+                enforce_source=self._enforce_source,
+                sleep_timer=self._sleep_timer,
+            ),
             country_risk_premiums=self._get_country_risk_premiums,
             period_end_dates=lambda: self._get_daily_start_dates(
                 self._get_module_statement("balance_sheet_statement", "Models")
             ),
-            sp500_function=sp500,
+            sp500_function=lambda start, end: market_model.get_sp500_data(
+                start, end, self._other_toolkit, self._api_key, self._fmp_plan
+            ),
             # The same fetch and cache as the forward ratios, so the estimates are retrieved once; the lambda keeps the Ratios module from being built until a model asks for them.
             analyst_estimates=lambda: self.ratios._get_or_fetch_analyst_estimates(),  # noqa: PLW0108, SLF001
             profile=self._get_statement_profile,
-            corporate_bond_yield_function=corporate_bond_yield,
+            corporate_bond_yield_function=lambda start, end: market_model.get_corporate_bond_yield(
+                start, end, self._fred_api_key
+            ),
         )
 
     @property
@@ -1110,27 +944,11 @@ class Toolkit:
         """
         # Imported when first used, so the Finance Toolkit loads only what is needed.
         from financetoolkit.options.options_controller import Options  # noqa: PLC0415
+        from financetoolkit.options.sources.earnings_model import (  # noqa: PLC0415
+            get_next_earnings_dates,
+        )
 
         # The prices and the risk free rate are retrieved when a calculation first needs them.
-
-        def next_earnings_dates() -> dict[str, str]:
-            # The first announcement from today on, per ticker, for the implied earnings
-            # move. The earnings calendar stops at the end date, so the dates are read
-            # from the announcements Financial Modeling Prep lists, estimates included.
-            from financetoolkit.fmp_model import (  # noqa: PLC0415
-                get_upcoming_earnings_date,
-            )
-
-            if not self._api_key:
-                return {}
-            dates = {}
-            for ticker in self._tickers:
-                upcoming = get_upcoming_earnings_date(
-                    ticker, self._api_key, self._fmp_plan
-                )
-                if upcoming:
-                    dates[ticker] = upcoming
-            return dates
 
         return Options(
             tickers=self._tickers,
@@ -1141,7 +959,9 @@ class Toolkit:
             rounding=self._rounding,
             start_date=self._start_date,
             end_date=self._end_date,
-            earnings_function=next_earnings_dates,
+            earnings_function=lambda: get_next_earnings_dates(
+                self._tickers, self._api_key, self._fmp_plan
+            ),
         )
 
     @property
@@ -1203,7 +1023,6 @@ class Toolkit:
             rounding=self._rounding,
             start_date=self._start_date,
             end_date=self._end_date,
-            # The sectors and industries of get_factor_analysis(group=...).
             profile=self._get_statement_profile,
         )
 
@@ -1285,10 +1104,7 @@ class Toolkit:
             intraday_period=self._intraday_period,
             progress_bar=self._progress_bar,
             returns_function=self._other_returns,
-            # The daily market cap values the Residual of get_beta_implied_return; the
-            # statements are only retrieved when that method asks for it.
             market_cap_function=lambda: self.ratios.get_market_cap(show_daily=True),
-            # The sectors and industries of get_factor_analysis(group=...).
             profile=self._get_statement_profile,
         )
 
@@ -1340,6 +1156,9 @@ class Toolkit:
         """
         # Imported when first used, so the Finance Toolkit loads only what is needed.
         from financetoolkit.risk.risk_controller import Risk  # noqa: PLC0415
+        from financetoolkit.risk.sources.statements_model import (  # noqa: PLC0415
+            get_capital_shortfall_data,
+        )
 
         # The prices and risk free rate of a period are retrieved when a metric first asks
         # for that period.
@@ -1354,7 +1173,6 @@ class Toolkit:
             rounding=self._rounding,
             start_date=self._start_date,
             end_date=self._end_date,
-            # The sectors and industries of get_factor_analysis(group=...).
             profile=self._get_statement_profile,
         )
 
@@ -1371,50 +1189,19 @@ class Toolkit:
         risk._shares_outstanding_function = shares_outstanding
 
         # SRISK takes the debt from the balance sheet and the market cap from the diluted
-        # share count, as get_market_cap does, each from the day its period's figures apply.
-        def capital_shortfall() -> (
-            tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]
-        ):
-            balance_sheet = self._get_module_statement(
+        # share count. The arguments are evaluated in order: the statements are retrieved
+        # first, which sets the statistics statement and currencies read after them.
+        risk._capital_shortfall_function = lambda: get_capital_shortfall_data(
+            balance_sheet=self._get_module_statement(
                 "balance_sheet_statement", "Ratios"
-            )
-            income_statement = self._get_module_statement("income_statement", "Ratios")
+            ),
+            income_statement=self._get_module_statement("income_statement", "Ratios"),
+            start_dates=self._get_daily_start_dates,
+            statistics_statement=self._statistics_statement,
+            listing_currencies=self._get_listing_currencies,
+            converted=self._convert_currency and not self._statement_currencies.empty,
+        )
 
-            # Without a conversion the liabilities stay in the reported currency while the market
-            # cap is in the currency the ticker is listed in, so SRISK would mix the two.
-            if (
-                not (self._convert_currency and not self._statement_currencies.empty)
-                and not self._statistics_statement.empty
-            ):
-                reported = (
-                    self._statistics_statement.xs("Reported Currency", axis=0, level=1)
-                    .T.ffill()
-                    .iloc[-1]
-                )
-                listed = self._get_listing_currencies().reindex(reported.index)
-                mismatched = [
-                    f"{ticker} ({reported[ticker]} statements, {listed[ticker]} prices)"
-                    for ticker in reported.index
-                    if pd.notna(reported[ticker])
-                    and pd.notna(listed[ticker])
-                    and reported[ticker] != listed[ticker]
-                ]
-                if mismatched:
-                    logger.warning(
-                        "SRISK compares the liabilities with the market cap, but the statements "
-                        "are in another currency than the prices for %s; set convert_currency=True "
-                        "to convert the statements to the currency of the historical data.",
-                        ", ".join(mismatched),
-                    )
-
-            return (
-                balance_sheet.loc[:, "Total Liabilities", :],
-                self._get_daily_start_dates(balance_sheet),
-                income_statement.loc[:, "Weighted Average Shares Diluted", :],
-                self._get_daily_start_dates(income_statement),
-            )
-
-        risk._capital_shortfall_function = capital_shortfall
         # A market or system ticker of the systemic risk measures is named as it trades: the
         # benchmark is its "Benchmark" column and another ticker is retrieved for the same dates.
         risk._benchmark_name = self._benchmark_ticker
@@ -1539,6 +1326,7 @@ class Toolkit:
         """
         # Imported when first used, so the Finance Toolkit loads only what is needed.
         from financetoolkit.etf.etf_controller import ETF  # noqa: PLC0415
+        from financetoolkit.etf.sources import holdings_model  # noqa: PLC0415
 
         if not self._start_date:
             self._start_date = (datetime.today() - timedelta(days=365 * 10)).strftime(
@@ -1552,50 +1340,26 @@ class Toolkit:
             self.get_historical_data(period="daily")
             return self._daily_historical_data
 
-        def ratios(tickers: list[str]) -> pd.DataFrame:
-            ratios_ttm, _ = _get_ratios_ttm(
-                tickers, api_key=self._api_key, user_subscription=self._fmp_plan
-            )
-            return ratios_ttm
-
-        def prices(tickers: list[str], start: str, end: str) -> pd.DataFrame:
-            # The traded (split-adjusted) close, as an index level is a price index.
-            historical = self._other_toolkit(tickers, start, end).get_historical_data(
-                period="daily"
-            )
-            if historical.empty:
-                return pd.DataFrame(columns=tickers)
-            close = historical["Close"]
-            return close.to_frame(tickers[0]) if isinstance(close, pd.Series) else close
-
-        def sectors(tickers: list[str]) -> pd.Series:
-            profile = self._other_toolkit(
-                tickers, self._start_date, self._end_date
-            ).get_profile()
-            if isinstance(profile, pd.Series):
-                return pd.Series({tickers[0]: profile.get("Sector")})
-            if profile.empty or "Sector" not in profile.index:
-                return pd.Series(dtype=object)
-            return profile.loc["Sector"]
-
-        def holding_currencies(tickers: list[str]) -> pd.Series:
-            # The holdings' prices are converted into the fund's currency for their contributions.
-            return self._other_toolkit(
-                tickers, self._start_date, self._end_date
-            )._get_listing_currencies()
-
         return ETF(
             tickers=self._tickers,
             historical_function=historical,
             fund_data_function=self._collect_fund_data,
-            ratios_function=ratios,
+            ratios_function=lambda tickers: _get_ratios_ttm(
+                tickers, api_key=self._api_key, user_subscription=self._fmp_plan
+            )[0],
             start_date=self._start_date,
             end_date=self._end_date,
             rounding=self._rounding,
             currency_function=self._get_listing_currencies,
-            prices_function=prices,
-            sector_function=sectors,
-            holding_currency_function=holding_currencies,
+            prices_function=lambda tickers, start, end: holdings_model.get_prices(
+                tickers, start, end, self._other_toolkit
+            ),
+            sector_function=lambda tickers: holdings_model.get_sectors(
+                tickers, self._start_date, self._end_date, self._other_toolkit
+            ),
+            holding_currency_function=lambda tickers: self._other_toolkit(
+                tickers, self._start_date, self._end_date
+            )._get_listing_currencies(),
             benchmark_ticker=self._benchmark_ticker,
         )
 
@@ -1637,6 +1401,7 @@ class Toolkit:
         from financetoolkit.portfolio.construction.construction_controller import (  # noqa: PLC0415
             PortfolioConstruction,
         )
+        from financetoolkit.portfolio.sources import funds_model  # noqa: PLC0415
 
         # The prices and the risk free rate of a period are retrieved when a calculation
         # first needs them.
@@ -1645,61 +1410,26 @@ class Toolkit:
             lambda period: self._get_module_risk_free_rate(period)["Adj Close"]
         )
 
-        def prices(tickers: list[str], start: str, end: str) -> pd.DataFrame:
-            historical = self._other_toolkit(tickers, start, end).get_historical_data(
-                period="daily"
-            )
-            if historical.empty:
-                return pd.DataFrame(columns=tickers)
-            adjusted = historical["Adj Close"]
-            if isinstance(adjusted, pd.Series):
-                adjusted = adjusted.to_frame(tickers[0])
-            return adjusted
-
-        def funds(kind: str, tickers: list[str]) -> pd.DataFrame:
-            # Without an API key there are no fund weightings (or company profiles), which
-            # the method using them reports once, rather than every request.
-            if not self._api_key:
-                return pd.DataFrame()
-            own = set(tickers) <= set(self._tickers)
-            source = (
-                self
-                if own
-                else self._other_toolkit(tickers, self._start_date, self._end_date)
-            )
-            if kind == "sector":
-                result = source._collect_fund_data("sector_weightings")
-            elif kind == "country":
-                result = source._collect_fund_data("country_weightings")
-            else:
-                holdings = source._collect_fund_data("holdings")
-                if holdings is None or holdings.empty:
-                    return pd.DataFrame()
-                # One fund comes back indexed by holding, several by fund and holding.
-                if not isinstance(holdings.index, pd.MultiIndex):
-                    holdings = pd.concat({tickers[0]: holdings})
-                weights = pd.to_numeric(holdings["Weight"], errors="coerce")
-                result = pd.DataFrame(
-                    {
-                        fund: weights.loc[fund].groupby(level=0).sum()
-                        for fund in holdings.index.get_level_values(0).unique()
-                    }
-                )
-            if result is None:
-                return pd.DataFrame()
-            if isinstance(result, pd.Series):
-                result = result.to_frame(tickers[0])
-            return result
-
         portfolio = PortfolioConstruction(
             tickers=self._tickers,
             historical_data=historical_data,
             risk_free_rate_data=risk_free_rate_data,
             benchmark_name=self._benchmark_ticker,
             portfolio_weights=self._portfolio_weights,
-            price_function=prices,
+            price_function=lambda tickers, start, end: funds_model.get_prices(
+                tickers, start, end, self._other_toolkit
+            ),
             profile_function=self.get_profile if self._api_key else lambda: None,
-            fund_function=funds,
+            fund_function=lambda kind, tickers: funds_model.get_fund_weights(
+                kind,
+                tickers,
+                api_key=self._api_key,
+                own_tickers=self._tickers,
+                own_fund_data=self._collect_fund_data,
+                start=self._start_date,
+                end=self._end_date,
+                other_toolkit=self._other_toolkit,
+            ),
             rounding=self._rounding,
             start_date=self._start_date,
             end_date=self._end_date,
@@ -2284,7 +2014,6 @@ class Toolkit:
                     api_key=self._api_key,
                     quarter=self._quarterly,
                     start_date=self._start_date,
-                    # Stored unrounded, so a later call can round differently.
                     rounding=None,
                     sleep_timer=self._sleep_timer,
                     user_subscription=self._fmp_plan,
@@ -5653,19 +5382,6 @@ class Toolkit:
         risk_free_rate_tickers = list(treasury_names)
         risk_free_rate = risk_free_names[self._risk_free_rate]
 
-        # Kept unrounded, as the risk free rate of every module is taken from it; only the
-        # returned frame is rounded.
-        def select(treasury_data: pd.DataFrame) -> pd.DataFrame:
-            treasury_data = treasury_data.loc[self._start_date : self._end_date, :]
-            if requested_maturity is not None:
-                treasury_data = treasury_data.loc[
-                    :,
-                    treasury_data.columns.get_level_values(1) == requested_maturity,
-                ]
-            return apply_rounding(
-                treasury_data, rounding if rounding is not None else self._rounding
-            )
-
         specific_rates = (
             [
                 treasury_names[ticker]
@@ -5730,8 +5446,8 @@ class Toolkit:
                 return pd.DataFrame()
 
         if period == "daily":
-            return select(self._daily_treasury_data)
-        if period in ("weekly", "monthly", "quarterly", "yearly"):
+            treasury_data = self._daily_treasury_data
+        elif period in ("weekly", "monthly", "quarterly", "yearly"):
             treasury_data = _convert_daily_to_other_period(
                 period=period,
                 daily_historical_data=self._daily_treasury_data,
@@ -5749,11 +5465,20 @@ class Toolkit:
                     risk_free_rate=risk_free_rate,
                 ),
             )
+        else:
+            raise ValueError(
+                "Please choose from daily, weekly, monthly, quarterly or yearly as period."
+            )
 
-            return select(treasury_data)
-
-        raise ValueError(
-            "Please choose from daily, weekly, monthly, quarterly or yearly as period."
+        # Kept unrounded, as the risk free rate of every module is taken from it; only the
+        # returned frame is rounded.
+        treasury_data = treasury_data.loc[self._start_date : self._end_date, :]
+        if requested_maturity is not None:
+            treasury_data = treasury_data.loc[
+                :, treasury_data.columns.get_level_values(1) == requested_maturity
+            ]
+        return apply_rounding(
+            treasury_data, rounding if rounding is not None else self._rounding
         )
 
     def get_exchange_rates(
@@ -6200,8 +5925,6 @@ class Toolkit:
                 quarter=self._quarterly,
                 start_date=self._lookback_start_date,
                 end_date=self._end_date,
-                # Stored unrounded: the ratios and models read these figures, and only what
-                # this method returns is rounded.
                 rounding=None,
                 fmp_statement_format=self._fmp_balance_sheet_statement_generic,
                 fmp_statistics_format=self._fmp_statistics_statement_generic,
@@ -6413,8 +6136,6 @@ class Toolkit:
                 quarter=self._quarterly,
                 start_date=self._lookback_start_date,
                 end_date=self._end_date,
-                # Stored unrounded: the ratios and models read these figures, and only what
-                # this method returns is rounded.
                 rounding=None,
                 fmp_statement_format=self._fmp_income_statement_generic,
                 fmp_statistics_format=self._fmp_statistics_statement_generic,
@@ -6435,7 +6156,6 @@ class Toolkit:
                     self._income_statement = currencies_model.convert_currencies(
                         financial_statement_data=self._income_statement,
                         financial_statement_currencies=self._statement_currencies,
-                        # Income and expenses at the average rate of the fiscal period (IAS 21.39-40), EPS included.  # noqa: E501
                         exchange_rate_data=self._get_statement_exchange_rates(
                             self._income_statement, rate="average"
                         ),
@@ -6652,8 +6372,6 @@ class Toolkit:
                 quarter=self._quarterly,
                 start_date=self._lookback_start_date,
                 end_date=self._end_date,
-                # Stored unrounded: the ratios and models read these figures, and only what
-                # this method returns is rounded.
                 rounding=None,
                 fmp_statement_format=self._fmp_cash_flow_statement_generic,
                 fmp_statistics_format=self._fmp_statistics_statement_generic,

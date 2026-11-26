@@ -197,6 +197,22 @@ def collect_sources() -> Generator[set[str]]:
         _SOURCES.reset(token)
 
 
+def fetch_with_sources(fetch: Callable[[], Any]) -> tuple[Any, set[str]]:
+    """
+    Retrieves data and collects the sources it is taken from without recording them, so
+    they can be recorded once it is known which of several sources is used.
+
+    Args:
+        fetch (Callable[[], Any]): The retrieval.
+
+    Returns:
+        tuple[Any, set[str]]: The data and its sources.
+    """
+    with collect_sources() as fetched:
+        data = fetch()
+    return data, fetched
+
+
 def readable_sources(sources: set[str] | list[str]) -> list[str]:
     """
     Names the sources as publishers, sorted.

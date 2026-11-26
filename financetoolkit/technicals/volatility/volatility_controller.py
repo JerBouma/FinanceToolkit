@@ -1930,8 +1930,10 @@ class VolatilityTechnicals:
             ).normalize()
             bars_per_day = len(index) / max(days.nunique(), 1)
 
-        def get_volatility_cone(prices: pd.Series) -> pd.DataFrame:
-            return volatility_model.get_volatility_cone(
+        volatility_cone_df = calculate_per_ticker(
+            historical_data,
+            [close_column],
+            lambda prices: volatility_model.get_volatility_cone(
                 prices,
                 windows=windows,
                 periods_per_year=(
@@ -1939,10 +1941,7 @@ class VolatilityTechnicals:
                     if period in ("daily", "intraday")
                     else PERIODS_PER_YEAR[period]
                 ),
-            )
-
-        volatility_cone_df = calculate_per_ticker(
-            historical_data, [close_column], get_volatility_cone
+            ),
         )
 
         return apply_rounding(

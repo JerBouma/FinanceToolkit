@@ -19,7 +19,6 @@ from financetoolkit.utilities.error_model import (
 )
 from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import (
-    PERIODS_PER_YEAR,
     apply_rounding,
 )
 
@@ -249,31 +248,13 @@ class SeasonalityTechnicals:
         ]
         benchmark = prices["Benchmark"]
 
-        def get_relative_strength(ticker_prices: pd.Series) -> pd.DataFrame:
-            # A year of periods whatever the period: 252 periods would be almost five years of weekly and 21 years of monthly prices, leaving most histories without a value. A ticker that trades on weekends has 365 daily periods a year.  # noqa: E501
-            relative, mansfield = seasonality_model.get_relative_strength(
-                ticker_prices,
-                benchmark.reindex(ticker_prices.index),
-                (
-                    window
-                    if window is not None
-                    else (
-                        get_observations_per_year(ticker_prices)
-                        if period == "daily"
-                        else PERIODS_PER_YEAR[period]
-                    )
-                ),
-            )
-            return pd.concat(
-                {
-                    "Relative Strength": relative,
-                    "Mansfield Relative Strength": mansfield,
-                },
-                axis=1,
-            )
-
         strength = calculate_per_ticker(
-            self._historical_data[period], [close_column], get_relative_strength
+            self._historical_data[period],
+            [close_column],
+            seasonality_model.get_period_relative_strength,
+            benchmark_prices=benchmark,
+            period=period,
+            window=window,
         )
 
         # Each ticker's score over the days it traded, its quarters counted in its own days

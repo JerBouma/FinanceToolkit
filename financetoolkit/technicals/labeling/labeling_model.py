@@ -306,6 +306,58 @@ def get_triple_barrier_labels(
     return labels
 
 
+def get_volatility_triple_barrier_labels(
+    prices: pd.Series,
+    span: int = 100,
+    horizon: int = 10,
+    profit_taking: float = 1.0,
+    stop_loss: float = 1.0,
+    events: pd.DataFrame | None = None,
+    side: pd.DataFrame | None = None,
+    vertical_barrier_zero: bool = False,
+    minimum_target: float = 0.0,
+) -> pd.DataFrame:
+    """
+    Calculate the triple-barrier labels of one ticker with its daily volatility as the target,
+    see get_triple_barrier_labels.
+
+    Args:
+        prices (pd.Series): The closes of the ticker, named after the ticker.
+        span (int, optional): The span of the daily volatility. Defaults to 100.
+        horizon (int, optional): The periods to the vertical barrier. Defaults to 10.
+        profit_taking (float, optional): The multiple of the target of the profit-taking
+            barrier. Defaults to 1.0.
+        stop_loss (float, optional): The multiple of the target of the stop-loss barrier.
+            Defaults to 1.0.
+        events (pd.DataFrame | None, optional): The event dates per ticker. Defaults to None,
+            every date.
+        side (pd.DataFrame | None, optional): The side of the bets per ticker (meta-labeling).
+            Defaults to None, no side.
+        vertical_barrier_zero (bool, optional): Whether the vertical barrier labels 0.
+            Defaults to False.
+        minimum_target (float, optional): The smallest target an event needs. Defaults to 0.0.
+
+    Returns:
+        pd.DataFrame: The labels of the ticker, see get_triple_barrier_labels.
+    """
+    ticker = prices.name
+    return get_triple_barrier_labels(
+        prices,
+        get_daily_volatility(prices, span),
+        horizon=horizon,
+        profit_taking=profit_taking,
+        stop_loss=stop_loss,
+        events=(None if events is None else events.get(ticker, pd.Series(dtype=float))),
+        side=(
+            None
+            if side is None
+            else side.get(ticker, pd.Series(dtype=float)).reindex(prices.index)
+        ),
+        vertical_barrier_zero=vertical_barrier_zero,
+        minimum_target=minimum_target,
+    )
+
+
 def get_forward_returns(prices: pd.Series, horizon: int = 1) -> pd.Series:
     """
     Calculate the forward returns: the return from each date to a number of periods later, the outcome a label
@@ -670,6 +722,25 @@ def get_average_uniqueness(holding_periods: pd.Series) -> pd.Series:
     return pd.Series(uniqueness, index=holding_periods.index)
 
 
+def get_label_uniqueness(holding_periods: pd.Series) -> pd.DataFrame:
+    """
+    Calculate the concurrency and the average uniqueness of the labels, see
+    get_label_concurrency and get_average_uniqueness.
+
+    Args:
+        holding_periods (pd.Series): The holding period of the label of every date.
+
+    Returns:
+        pd.DataFrame: The Concurrency and the Average Uniqueness per date.
+    """
+    return pd.DataFrame(
+        {
+            "Concurrency": get_label_concurrency(holding_periods),
+            "Average Uniqueness": get_average_uniqueness(holding_periods),
+        }
+    )
+
+
 def get_return_attribution_weights(
     prices: pd.Series, holding_periods: pd.Series
 ) -> pd.Series:
@@ -766,3 +837,29 @@ def get_time_decay_weights(
     weights = (1 - slope * total + slope * cumulative).clip(lower=0)
 
     return weights.reindex(average_uniqueness.index)
+
+
+def get_sample_weights(
+    prices: pd.Series,
+    holding_periods: pd.Series,
+    method: str = "return",
+    decay: float = 1.0,
+) -> pd.Series:
+    """
+    Calculate the sample weights of the labels: by return attribution
+    (get_return_attribution_weights) or by time decay of the average uniqueness
+    (get_time_decay_weights).
+
+    Args:
+        prices (pd.Series): The closes.
+        holding_periods (pd.Series): The holding period of the label of every date.
+        method (str, optional): "return" or "time_decay". Defaults to "return".
+        decay (float, optional): The weight of the oldest label of the time decay.
+            Defaults to 1.0.
+
+    Returns:
+        pd.Series: The weight per date.
+    """
+    if method == "return":
+        return get_return_attribution_weights(prices, holding_periods)
+    return get_time_decay_weights(get_average_uniqueness(holding_periods), decay)

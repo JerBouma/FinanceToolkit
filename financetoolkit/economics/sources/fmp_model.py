@@ -555,3 +555,40 @@ def get_index_history(
     values.index = pd.PeriodIndex(pd.to_datetime(data["date"]), freq="D")
 
     return values.dropna().sort_index().rename(symbol)
+
+
+def get_volatility_index(
+    symbol: str,
+    scale: float,
+    api_key: str,
+    start_date: str,
+    end_date: str,
+    failed: list[str],
+) -> pd.DataFrame:
+    """
+    Retrieves the daily closing values of a volatility index, such as "^MOVE", scaled to
+    percent, unless the retrieval of another index already failed: Financial Modeling Prep
+    failing for one (unreachable, rate limited, which it logs) would fail alike for the
+    next, after its own retries.
+
+    Args:
+        symbol (str): The index symbol, e.g. "^MOVE".
+        scale (float): The factor that turns the closing values into percent, 0.01 for an
+            index in basis points.
+        api_key (str): the API key from Financial Modeling Prep.
+        start_date (str): The start date (YYYY-MM-DD).
+        end_date (str): The end date (YYYY-MM-DD).
+        failed (list[str]): The indices whose retrieval failed, to which this one is added
+            when it fails.
+
+    Returns:
+        pd.DataFrame: The scaled closing values, indexed by day in the column "1M", or an
+        empty DataFrame when a retrieval failed before.
+    """
+    if failed:
+        return pd.DataFrame()
+    failures_before = error_model.get_request_failures()
+    history = get_index_history(symbol, api_key, start_date, end_date)
+    if history.empty and error_model.get_request_failures() != failures_before:
+        failed.append(symbol)
+    return (history * scale).to_frame("1M")

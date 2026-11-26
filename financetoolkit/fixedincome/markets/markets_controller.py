@@ -807,21 +807,12 @@ class MarketsFixedIncome(CurvesFixedIncome):
         """
         prices, price_date = self._treasury_prices(date, security_type, bonds)
 
-        def analytics(security: pd.Series) -> tuple[float, float]:
-            maturity = security["Maturity"].date()
-            if security["Security Type"] == "FRN":
-                return np.nan, np.nan
-            if security["Security Type"] == "Bill":
-                return bond_data_model.get_bill_analytics(
-                    (maturity - price_date).days, security["Price"]
-                )
-            return bond_data_model.get_bond_analytics(
-                security["Coupon"],
-                bond_data_model.get_years_to_maturity(price_date, maturity),
-                security["Price"],
-            )
-
-        values = prices.apply(analytics, axis=1, result_type="expand")
+        values = prices.apply(
+            bond_data_model.get_security_analytics,
+            axis=1,
+            result_type="expand",
+            args=(price_date,),
+        )
         prices["Yield to Maturity"] = values[0]
         prices["Modified Duration"] = values[1]
 

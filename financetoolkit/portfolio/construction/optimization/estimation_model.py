@@ -2089,6 +2089,60 @@ def get_entropy_pooling(
     return pd.Series(probabilities, index=returns.index)
 
 
+def get_opinion_entropy_pooling(
+    returns: pd.DataFrame, opinion: dict, periods_per_year: float
+) -> pd.Series:
+    """
+    Calculate the entropy pooling probabilities of one opinion: its annualized views on
+    expected returns and volatilities scaled to the period of the returns, its correlation
+    views and its ranking, applied with get_entropy_pooling.
+
+    Args:
+        returns (pd.DataFrame): The returns per period, one column per asset.
+        opinion (dict): The views, volatility_views, correlation_views and ranking of one
+            opinion, each optional.
+        periods_per_year (float): The number of return periods in a year.
+
+    Returns:
+        pd.Series: The posterior probability of every period.
+    """
+    unknown = set(opinion) - {
+        "views",
+        "volatility_views",
+        "correlation_views",
+        "ranking",
+    }
+    if unknown:
+        raise ValueError(
+            "An opinion holds views, volatility_views, correlation_views and "
+            f"ranking, not {', '.join(sorted(unknown))}."
+        )
+
+    def per_period(views: dict | None, scale) -> dict | None:
+        # The views are annualized; the scenarios are returns per period.
+        if not views:
+            return None
+        return {
+            name: (
+                scale(value)
+                if isinstance(value, int | float)
+                else (value[0], scale(value[1]))
+            )
+            for name, value in views.items()
+        }
+
+    return get_entropy_pooling(
+        returns,
+        per_period(opinion.get("views"), lambda value: value / periods_per_year),
+        per_period(
+            opinion.get("volatility_views"),
+            lambda value: value / np.sqrt(periods_per_year),
+        ),
+        opinion.get("correlation_views") or None,
+        ranking=opinion.get("ranking"),
+    )
+
+
 POOLING_METHODS = ("linear", "logarithmic")
 
 

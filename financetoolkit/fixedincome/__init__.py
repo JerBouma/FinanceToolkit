@@ -89,6 +89,7 @@ _MODULES = {
     ],
     "financetoolkit.fixedincome.curves.interpolation_model": [
         "bootstrap_zero_curve",
+        "get_coupon_spot_rates",
         "get_discount_factors",
         "get_instantaneous_forward_rates",
     ],
@@ -124,6 +125,7 @@ _MODULES = {
         "get_bill_price",
         "get_bond_analytics",
         "get_coupon_dates",
+        "get_security_analytics",
         "get_spreads_at_maturities",
         "get_treasury_accrued_interest",
         "get_years_to_maturity",
@@ -251,6 +253,7 @@ __all__ = [
     "get_convertible_bond_value",
     "get_convexity",
     "get_coupon_dates",
+    "get_coupon_spot_rates",
     "get_credit_default_swap",
     "get_current_yield",
     "get_daily_index_rates",
@@ -312,6 +315,7 @@ __all__ = [
     "get_rebonato_swaption_volatility",
     "get_reference_cpi",
     "get_risky_bond_price",
+    "get_security_analytics",
     "get_short_rate_tree",
     "get_smith_wilson_alpha",
     "get_smith_wilson_curve",
@@ -429,6 +433,7 @@ if TYPE_CHECKING:
     )
     from financetoolkit.fixedincome.curves.interpolation_model import (
         bootstrap_zero_curve,
+        get_coupon_spot_rates,
         get_discount_factors,
         get_instantaneous_forward_rates,
     )
@@ -464,6 +469,7 @@ if TYPE_CHECKING:
         get_bill_price,
         get_bond_analytics,
         get_coupon_dates,
+        get_security_analytics,
         get_spreads_at_maturities,
         get_treasury_accrued_interest,
         get_years_to_maturity,

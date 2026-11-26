@@ -42,6 +42,26 @@ MATURITIES = {
 COUNTRY = "United States"
 
 
+# The Treasury's names for the maturities of the US par yield curve, in the labels the
+# government bond yield curve uses for every country.
+LABELS = {
+    "1 Mo": "1M",
+    "1.5 Month": "1.5M",
+    "2 Mo": "2M",
+    "3 Mo": "3M",
+    "4 Mo": "4M",
+    "6 Mo": "6M",
+    "1 Yr": "1Y",
+    "2 Yr": "2Y",
+    "3 Yr": "3Y",
+    "5 Yr": "5Y",
+    "7 Yr": "7Y",
+    "10 Yr": "10Y",
+    "20 Yr": "20Y",
+    "30 Yr": "30Y",
+}
+
+
 def _get_year(year: int, curve: str) -> pd.DataFrame:
     """
     Retrieves the daily nominal or real par yield curve of one year. A past year no
@@ -268,3 +288,26 @@ def get_breakeven_inflation_expectations(
     breakeven_inflation.index.name = "Date"
 
     return breakeven_inflation.dropna(how="all")
+
+
+def get_labelled_yield_curve(
+    start_date: str | None = None, end_date: str | None = None
+) -> pd.DataFrame:
+    """
+    Retrieves the daily nominal par yield curve of US Treasuries with the maturity labels
+    the government bond yield curve uses for every country, such as "1M" and "10Y".
+
+    Args:
+        start_date (str | None): The start date (YYYY-MM-DD). Defaults to None, which
+            starts at the first year of the curve.
+        end_date (str | None): The end date (YYYY-MM-DD). Defaults to None, which ends in
+            the current year.
+
+    Returns:
+        pd.DataFrame: The yields as decimals, indexed by business day with a column per
+        maturity.
+    """
+    curve = get_yield_curve("nominal", start_date, end_date)
+    return curve.rename(columns=LABELS)[
+        [label for column, label in LABELS.items() if column in curve]
+    ]

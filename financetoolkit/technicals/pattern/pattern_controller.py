@@ -7,8 +7,8 @@ import pandas as pd
 from financetoolkit.technicals.helpers import (
     FACTOR_COLLECTIONS,
     PERIODS,
+    calculate_on_complete_bars,
     calculate_per_ticker,
-    get_observations_per_year,
     report_missing_values,
 )
 from financetoolkit.technicals.pattern import pattern_model
@@ -21,7 +21,6 @@ from financetoolkit.utilities.error_model import (
 )
 from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import (
-    PERIODS_PER_YEAR,
     apply_rounding,
 )
 
@@ -366,29 +365,14 @@ class PatternTechnicals:
 
         historical_data = self._get_historical_data(period, close_column)
 
-        def get_candlestick_patterns(
-            open_prices: pd.Series,
-            high_prices: pd.Series,
-            low_prices: pd.Series,
-            close_prices: pd.Series,
-        ) -> pd.DataFrame:
-            # Each ticker is evaluated on its own candles, so a later listing or a missing
-            # day doesn't shift the candles a pattern compares.
-            candles = pd.concat(
-                [open_prices, high_prices, low_prices, close_prices], axis=1
-            ).dropna()
-            return pattern_model.get_candlestick_patterns(
-                candles.iloc[:, 0],
-                candles.iloc[:, 1],
-                candles.iloc[:, 2],
-                candles.iloc[:, 3],
-                patterns,
-            ).reindex(close_prices.index)
-
+        # Each ticker is evaluated on its own candles, so a later listing or a missing
+        # day doesn't shift the candles a pattern compares.
         candlestick_patterns = calculate_per_ticker(
             historical_data,
             ["Open", "High", "Low", close_column],
-            get_candlestick_patterns,
+            calculate_on_complete_bars,
+            indicator=pattern_model.get_candlestick_patterns,
+            patterns=patterns,
         ).loc[self._start_date : self._end_date][patterns]
         candlestick_patterns = candlestick_patterns.reindex(
             columns=historical_data[close_column].columns, level=1
@@ -509,28 +493,13 @@ class PatternTechnicals:
 
         historical_data = self._get_historical_data(period, close_column)
 
-        def get_heikin_ashi(
-            open_prices: pd.Series,
-            high_prices: pd.Series,
-            low_prices: pd.Series,
-            close_prices: pd.Series,
-        ) -> pd.DataFrame:
-            # The HA Open carries over from candle to candle, so it starts on the ticker's own
-            # first complete candle.
-            candles = pd.concat(
-                [open_prices, high_prices, low_prices, close_prices], axis=1
-            ).dropna()
-            return pattern_model.get_heikin_ashi(
-                candles.iloc[:, 0],
-                candles.iloc[:, 1],
-                candles.iloc[:, 2],
-                candles.iloc[:, 3],
-            ).reindex(close_prices.index)
-
+        # The HA Open carries over from candle to candle, so it starts on the ticker's own
+        # first complete candle.
         heikin_ashi = calculate_per_ticker(
             historical_data,
             ["Open", "High", "Low", close_column],
-            get_heikin_ashi,
+            calculate_on_complete_bars,
+            indicator=pattern_model.get_heikin_ashi,
         ).loc[self._start_date : self._end_date][["Open", "High", "Low", "Close"]]
         heikin_ashi = heikin_ashi.reindex(
             columns=historical_data[close_column].columns, level=1
@@ -651,17 +620,14 @@ class PatternTechnicals:
 
         historical_data = self._get_historical_data(period, close_column)
 
-        def get_williams_fractal(
-            high_prices: pd.Series, low_prices: pd.Series
-        ) -> pd.DataFrame:
-            # The bars around a high are the ticker's own complete bars.
-            prices = pd.concat([high_prices, low_prices], axis=1).dropna()
-            return pattern_model.get_williams_fractal(
-                prices.iloc[:, 0], prices.iloc[:, 1], left_bars, right_bars
-            ).reindex(high_prices.index)
-
+        # The bars around a high are the ticker's own complete bars.
         fractals = calculate_per_ticker(
-            historical_data, ["High", "Low"], get_williams_fractal
+            historical_data,
+            ["High", "Low"],
+            calculate_on_complete_bars,
+            indicator=pattern_model.get_williams_fractal,
+            left_bars=left_bars,
+            right_bars=right_bars,
         ).loc[self._start_date : self._end_date][["Up Fractal", "Down Fractal"]]
         fractals = fractals.reindex(
             columns=historical_data[close_column].columns, level=1
@@ -786,18 +752,13 @@ class PatternTechnicals:
 
         historical_data = self._get_historical_data(period, close_column)
 
-        def get_td_sequential(
-            high_prices: pd.Series, low_prices: pd.Series, close_prices: pd.Series
-        ) -> pd.DataFrame:
-            # The counts run over the ticker's own complete bars.
-            prices = pd.concat([high_prices, low_prices, close_prices], axis=1).dropna()
-            return pattern_model.get_td_sequential(
-                prices.iloc[:, 0], prices.iloc[:, 1], prices.iloc[:, 2]
-            ).reindex(close_prices.index)
-
+        # The counts run over the ticker's own complete bars.
         columns = ["Buy Setup", "Sell Setup", "Buy Countdown", "Sell Countdown"]
         td_sequential = calculate_per_ticker(
-            historical_data, ["High", "Low", close_column], get_td_sequential
+            historical_data,
+            ["High", "Low", close_column],
+            calculate_on_complete_bars,
+            indicator=pattern_model.get_td_sequential,
         ).loc[self._start_date : self._end_date][columns]
 
         return td_sequential.reindex(
@@ -910,29 +871,14 @@ class PatternTechnicals:
 
         historical_data = self._get_historical_data(period, close_column)
 
-        def get_liquidity_sweep(
-            open_prices: pd.Series,
-            high_prices: pd.Series,
-            low_prices: pd.Series,
-            close_prices: pd.Series,
-        ) -> pd.Series:
-            # The swing is taken over the ticker's own complete candles.
-            candles = pd.concat(
-                [open_prices, high_prices, low_prices, close_prices], axis=1
-            ).dropna()
-            return pattern_model.get_liquidity_sweep(
-                candles.iloc[:, 0],
-                candles.iloc[:, 1],
-                candles.iloc[:, 2],
-                candles.iloc[:, 3],
-                window,
-                wick_multiple,
-            ).reindex(close_prices.index)
-
+        # The swing is taken over the ticker's own complete candles.
         sweeps = calculate_per_ticker(
             historical_data,
             ["Open", "High", "Low", close_column],
-            get_liquidity_sweep,
+            calculate_on_complete_bars,
+            indicator=pattern_model.get_liquidity_sweep,
+            window=window,
+            wick_multiple=wick_multiple,
         ).loc[self._start_date : self._end_date]
         sweeps = sweeps[historical_data[close_column].columns]
 
@@ -1091,17 +1037,13 @@ class PatternTechnicals:
 
         historical_data = self._historical_data[period]
 
-        def get_signals(prices: pd.Series) -> pd.DataFrame:
-            # A year of periods, which is 365 days for a ticker that trades on weekends.
-            if high_low_window is not None:
-                window = high_low_window
-            elif period in ("daily", "intraday"):
-                window = get_observations_per_year(prices)
-            else:
-                window = PERIODS_PER_YEAR[period]
-
-            signals = pattern_model.get_signals(
-                prices.dropna(),
+        # The signals in the order the model gives them and the tickers in their own order.
+        signals = (
+            calculate_per_ticker(
+                historical_data,
+                [close_column],
+                pattern_model.get_period_signals,
+                period=period,
                 short_window=short_window,
                 long_window=long_window,
                 macd_short_window=macd_short_window,
@@ -1112,16 +1054,9 @@ class PatternTechnicals:
                 rsi_oversold=rsi_oversold,
                 bollinger_window=bollinger_window,
                 bollinger_std_dev=bollinger_std_dev,
-                high_low_window=window,
+                high_low_window=high_low_window,
             )
-            signal_names[:] = signals.columns
-            return signals.reindex(prices.index)
-
-        # The signals in the order the model gives them and the tickers in their own order.
-        signal_names: list[str] = []
-        signals = (
-            calculate_per_ticker(historical_data, [close_column], get_signals)
-            .loc[self._start_date : self._end_date][signal_names]
+            .loc[self._start_date : self._end_date][pattern_model.SIGNAL_NAMES]
             .reindex(columns=historical_data[close_column].columns, level=1)
         )
 

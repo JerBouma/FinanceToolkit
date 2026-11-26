@@ -2928,8 +2928,6 @@ def get_earnings_calendar(
             country=country,
             limit=MAXIMUM_SCREENER_LIMIT,
             user_subscription=user_subscription,
-            # The limit is already the screener's maximum, so the advice is about the
-            # calendar's own parameters.
             truncation_advice=(
                 "The releases of the companies beyond them are left out of the earnings "
                 "calendar: set a (higher) min_market_cap to look up fewer companies."

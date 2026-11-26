@@ -295,7 +295,6 @@ def _build_mcp_app(transport: str = "stdio") -> FastMCP:
     provider = ToolkitProvider(
         api_key=os.environ.get("FINANCIAL_MODELING_PREP_API_KEY", ""),
         fred_api_key=os.environ.get("FRED_API_KEY", ""),
-        # Tool responses are only cached when everything is, see _resolve_cache_mode.
         cache_ttl=(
             0
             if _cache_mode != "full"
@@ -318,8 +317,6 @@ def _build_mcp_app(transport: str = "stdio") -> FastMCP:
         name="Finance Toolkit Analyst",
         instructions=configuration.get("instructions"),
         website_url="https://www.jeroenbouma.com/projects/financetoolkit/mcp",
-        # Clients show this icon next to the server; the hosted server serves it, so a
-        # local installation shows it too.
         icons=[
             Icon(
                 src="https://financetoolkit.jeroenbouma.com/oauth/icon",

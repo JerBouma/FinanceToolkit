@@ -845,7 +845,6 @@ class ActivityEconomics:
             standardize=standardize,
             axis="rows",
             row_slice=True,
-            # Rows empty for every selected country, e.g. a quarter only one source has.
             dropna=True,
         )
 

@@ -1,5 +1,6 @@
 """Portfolio Module"""
 
+import functools
 import os
 import shutil
 from importlib import resources
@@ -19,6 +20,7 @@ from financetoolkit.portfolio import (
 )
 from financetoolkit.portfolio.construction.attribution import attribution_model
 from financetoolkit.portfolio.definition_model import PortfolioDefinition
+from financetoolkit.portfolio.sources import benchmark_model
 from financetoolkit.toolkit_controller import Toolkit
 from financetoolkit.utilities import logger_model, validation_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
@@ -387,7 +389,6 @@ class Portfolio:
                 start_date=start_date,
                 use_cached_data=self._use_cached_data,
                 progress_bar=False,
-                # Unrounded: a rate such as JPY to EUR (0.0061) loses digits at four decimals.
                 rounding=None,
             ).get_historical_data(period="daily")
             # A single ticker comes back without the ticker level.
@@ -782,27 +783,8 @@ class Portfolio:
         closes.index = closes.index.to_timestamp()
         closes = closes.sort_index()
 
-        def first_close(symbol: str, day: pd.Timestamp) -> float:
-            # The first close of the ticker's own trading days on or after the date, as the positions, the benchmark and the dividends use: the previous close would price a weekend purchase on Friday while its position starts on Monday.  # noqa: E501
-            if symbol not in closes.columns or pd.isna(day):
-                return float("nan")
-            available = closes[symbol].dropna()
-            following = available.loc[day.normalize() :]
-            if not following.empty:
-                return float(following.iloc[0])
-            # A trade after the latest close (the weekend after it, or today before the provider has today's bar) takes the latest close, the day its position, benchmark and dividends start on as well.  # noqa: E501
-            if available.empty:
-                return float("nan")
-            logger.warning(
-                "The %s transaction of %s has no close on or after that date and is priced at the last close of %s.",
-                symbol,
-                day.strftime("%Y-%m-%d"),
-                available.index[-1].strftime("%Y-%m-%d"),
-            )
-            return float(available.iloc[-1])
-
         frame["Price"] = [
-            first_close(str(symbol), day)
+            portfolio_model.get_first_close(closes, str(symbol), day)
             for symbol, day in zip(symbols, dates, strict=True)
         ]
 
@@ -1484,25 +1466,14 @@ class Portfolio:
             self._start_date,
         )
 
-        def convert(data: pd.DataFrame, currency: str | None) -> pd.DataFrame:
-            if data.empty or currency not in conversions:
-                return data
-            data = data.copy()
-            data.columns = pd.MultiIndex.from_product([data.columns, [benchmark_name]])
-            data = portfolio_model.convert_historical_data(
-                data,
-                {benchmark_name: (str(benchmark_currency), str(currency))},
-                exchange_rates,
-                self._cfg["adjustments"]["currency_adjustment_columns"],
-            )
-            return data.droplevel(1, axis=1)
-
-        def benchmark_period(period: str) -> pd.DataFrame:
-            data = self._benchmark_toolkit.get_historical_data(period=period)  # type: ignore[union-attr]
-            # A single benchmark can come back with the ticker as a second column level.
-            if data.columns.nlevels > 1:
-                data = data.droplevel(1, axis=1)
-            return data
+        convert = functools.partial(
+            portfolio_model.convert_benchmark_data,
+            conversions=conversions,
+            benchmark_name=benchmark_name,
+            benchmark_currency=benchmark_currency,
+            exchange_rates=exchange_rates,
+            columns=self._cfg["adjustments"]["currency_adjustment_columns"],
+        )
 
         if ticker_currencies and not benchmark_currency:
             logger.warning(
@@ -1517,7 +1488,9 @@ class Portfolio:
             else None
         )
 
-        daily_benchmark_data = benchmark_period("daily")
+        daily_benchmark_data = benchmark_model.get_benchmark_historical_data(
+            self._benchmark_toolkit, "daily"
+        )
 
         if daily_benchmark_data.empty:
             logger.error(
@@ -1552,7 +1525,9 @@ class Portfolio:
                 self._benchmark_toolkit._start_date : self._benchmark_toolkit._end_date
             ]  # type: ignore[union-attr]
             if main_currency in conversions
-            else benchmark_period("weekly")
+            else benchmark_model.get_benchmark_historical_data(
+                self._benchmark_toolkit, "weekly"
+            )
         )
 
         benchmark_closes = {}
@@ -1636,43 +1611,6 @@ class Portfolio:
             self._portfolio_dataset.index.get_level_values(0), freq="D"
         )
 
-        def conversion_factors(reporting_currency: str) -> pd.Series:
-            # The factor that turns a price of each transaction into the reporting currency at the rate of its day.  # noqa: E501
-            _, reporting_units = portfolio_model.get_price_unit(reporting_currency)
-            rate_tickers = {
-                currency: portfolio_model.get_exchange_rate_ticker(
-                    reporting_currency, currency
-                )
-                for currency in set(known)
-            }
-            exchange_rates = self._get_exchange_rates(
-                list(rate_tickers.values()), self._start_date
-            )
-            # A transaction without a known currency is taken to be in the reporting currency (see the warning above).  # noqa: E501
-            factors = pd.Series(1.0, index=self._portfolio_dataset.index)
-            for currency, rate_ticker in rate_tickers.items():
-                rows = (currencies == currency).to_numpy()
-                _, units = portfolio_model.get_price_unit(currency)
-                rate: np.ndarray | float = 1.0
-                if rate_ticker is not None:
-                    # The rate of each transaction's day, or the last one before it.
-                    rate = (
-                        portfolio_model.align_exchange_rate(
-                            exchange_rates[rate_ticker], dates[rows]
-                        ).to_numpy(dtype=float)
-                        if rate_ticker in exchange_rates.columns
-                        else np.full(rows.sum(), np.nan)
-                    )
-                    if np.isnan(rate).any():
-                        missing = dates[rows][np.isnan(rate)].min()
-                        raise ValueError(
-                            f"Transactions in {currency} cannot be converted to the reporting "
-                            f"currency {reporting_currency} without the exchange rate "
-                            f"{rate_ticker} on or before {missing}."
-                        )
-                factors[rows] = reporting_units / units / rate
-            return factors
-
         if self._currency:
             reporting_currency = self._currency
         elif len(majors) == 1:
@@ -1684,7 +1622,18 @@ class Portfolio:
                 * self._portfolio_dataset[self._volume_column]
             ).abs()
             try:
-                invested = invested * conversion_factors("USD")
+                invested = invested * portfolio_model.get_conversion_factors(
+                    currencies,
+                    dates,
+                    "USD",
+                    self._get_exchange_rates(
+                        [
+                            portfolio_model.get_exchange_rate_ticker("USD", currency)
+                            for currency in set(known)
+                        ],
+                        self._start_date,
+                    ),
+                )
             except ValueError:
                 # Without the dollar rates, the amounts are compared in the major units of their own currency.  # noqa: E501
                 invested = invested / [
@@ -1706,7 +1655,20 @@ class Portfolio:
             totals = invested.groupby(major_currencies, sort=False).sum()
             reporting_currency = str(totals.idxmax())
 
-        factors = conversion_factors(reporting_currency)
+        factors = portfolio_model.get_conversion_factors(
+            currencies,
+            dates,
+            reporting_currency,
+            self._get_exchange_rates(
+                [
+                    portfolio_model.get_exchange_rate_ticker(
+                        reporting_currency, currency
+                    )
+                    for currency in set(known)
+                ],
+                self._start_date,
+            ),
+        )
 
         for column in (self._price_column, self._costs_column):
             if column in self._portfolio_dataset.columns:
@@ -1909,19 +1871,15 @@ class Portfolio:
             self._start_date,
         )
 
-        def convert(historical_data: pd.DataFrame) -> pd.DataFrame:
-            # Every price, dividend and return of the historical data is expressed in the
-            # currency of the transactions, so the two can be compared and added up.
-            if not currency_conversions or historical_data.empty:
-                return historical_data
-            return portfolio_model.convert_historical_data(
-                historical_data,
+        # Every price, dividend and return of the historical data is expressed in the
+        # currency of the transactions, so the two can be compared and added up.
+        if currency_conversions and not self._daily_historical_data.empty:
+            self._daily_historical_data = portfolio_model.convert_historical_data(
+                self._daily_historical_data,
                 currency_conversions,
                 exchange_rates,
                 self._cfg["adjustments"]["currency_adjustment_columns"],
             )
-
-        self._daily_historical_data = convert(self._daily_historical_data)
         self._restate_split_transactions()
 
         # The weekly data is aggregated from the converted daily data, so each day's Open, High,
@@ -2355,7 +2313,6 @@ class Portfolio:
                 betas=self._portfolio_beta,
                 include_portfolio=include_portfolio,
                 asset_returns=self._daily_historical_data["Return"],
-                # The dividends per unit paid after every transaction up to the latest date.
                 dividends=self._dividends_since_transactions(cumulative_dividends),
                 benchmark_dividends=self._dividends_since_transactions(
                     self._benchmark_dividends_per_ticker

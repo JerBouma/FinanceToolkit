@@ -430,6 +430,35 @@ def get_bill_analytics(days_to_maturity: int, price: float) -> tuple[float, floa
     return yield_to_maturity, duration
 
 
+def get_security_analytics(
+    security: pd.Series, price_date: date
+) -> tuple[float, float]:
+    """
+    Calculate the yield to maturity and modified duration of a Treasury security from its
+    price: a bill as a discount security, a note or bond from its coupons, and nothing for
+    a floating rate note, whose yield follows its index rate.
+
+    Args:
+        security (pd.Series): The Security Type, Coupon, Maturity (a timestamp) and Price
+            (per 100 face value) of the security.
+        price_date (date): The date of the price.
+
+    Returns:
+        tuple[float, float]: The yield to maturity and the modified duration, NaN for a
+        floating rate note.
+    """
+    maturity = security["Maturity"].date()
+    if security["Security Type"] == "FRN":
+        return np.nan, np.nan
+    if security["Security Type"] == "Bill":
+        return get_bill_analytics((maturity - price_date).days, security["Price"])
+    return get_bond_analytics(
+        security["Coupon"],
+        get_years_to_maturity(price_date, maturity),
+        security["Price"],
+    )
+
+
 def interpolate_curve(curve: pd.Series, years: pd.Series) -> pd.Series:
     """
     The yield of a curve at each maturity, interpolated linearly between its maturities

@@ -299,7 +299,6 @@ class BondsFixedIncome(MarketsFixedIncome):
                     else bond_data_model.get_years_to_maturity(
                         pd.Timestamp(price_date).date(),
                         pd.Timestamp(maturity).date(),
-                        # Treasuries count actual days, US corporate bonds 30/360.
                         day_count=(
                             "30/360" if security_type == "Corporate" else "act/act"
                         ),

@@ -299,7 +299,6 @@ class ConstraintsModels:
                 total_assets=total_assets,
                 market_value_of_equity=market_value_of_equity,
                 common_equity=common_equity,
-                # A company without deferred tax liabilities reports none (or 0).
                 deferred_taxes=self._rows(balance, "Deferred Tax Liabilities").fillna(
                     0
                 ),

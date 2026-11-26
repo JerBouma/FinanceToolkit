@@ -3550,7 +3550,6 @@ def get_nested_clustered_optimization_weights(
     across = optimize(
         within.T @ expected_returns.reindex(covariance.index),
         within.T @ covariance @ within,
-        # The returns of the clusters' portfolios.
         history @ within if history is not None else None,
     )
 
@@ -5723,6 +5722,83 @@ def get_schur_complementary_weights(
             weights[right] *= 1 - alpha
 
     return _as_series(weights, covariance.index)
+
+
+def get_stacking_method_weights(
+    window: pd.DataFrame,
+    method: str,
+    risk_free_rate: Callable[[pd.Index], float],
+    periods_per_year: float,
+    covariance: str,
+    covariance_span: int,
+    expected_returns: str,
+    expected_returns_span: int,
+    benchmark: pd.Series | None,
+    factors: pd.DataFrame | None,
+) -> pd.Series:
+    """
+    Set the weights of one optimizer of a stacking portfolio from the returns of a window,
+    with the expected returns and covariance matrix estimated from that window.
+
+    Args:
+        window (pd.DataFrame): The returns of the window, one column per asset.
+        method (str): The optimizer, such as "equal_weight", "minimum_variance" or
+            "maximum_sharpe"; any other method sets hierarchical risk parity weights.
+        risk_free_rate (Callable[[pd.Index], float]): Gives the annualized risk free rate over
+            the dates of a window.
+        periods_per_year (float): The number of return periods in a year.
+        covariance (str): The covariance estimator.
+        covariance_span (int): The span of an exponentially weighted covariance.
+        expected_returns (str): The expected returns estimator.
+        expected_returns_span (int): The span of exponentially weighted expected returns.
+        benchmark (pd.Series | None): The benchmark returns, for the CAPM expected returns and
+            the single factor covariance.
+        factors (pd.DataFrame | None): The factor returns, for the factor covariance.
+
+    Returns:
+        pd.Series: The weight per asset.
+    """
+    if method == "equal_weight":
+        return pd.Series(1 / window.shape[1], index=window.columns)
+    if method == "minimum_cvar":
+        return get_minimum_cvar_weights(window)
+    if method == "minimum_drawdown":
+        return get_minimum_drawdown_weights(window)
+    if method in ("minimum_mad", "minimum_semideviation"):
+        return get_mean_risk_weights(
+            window, risk_measure=method.removeprefix("minimum_")
+        )
+    window_risk_free_rate = risk_free_rate(window.index)
+    mu, sigma = get_expected_returns_and_covariance(
+        window,
+        periods_per_year,
+        covariance,
+        covariance_span,
+        expected_returns,
+        expected_returns_span,
+        benchmark,
+        window_risk_free_rate,
+        factors,
+    )
+    if method == "minimum_variance":
+        return get_minimum_variance_weights(sigma)
+    if method == "maximum_sharpe":
+        return get_maximum_sharpe_weights(mu, sigma, window_risk_free_rate)
+    if method == "risk_parity":
+        return get_risk_parity_weights(sigma)
+    if method == "inverse_volatility":
+        return get_inverse_volatility_weights(sigma)
+    if method == "maximum_diversification":
+        return get_maximum_diversification_weights(sigma)
+    if method == "hierarchical_equal_risk_contribution":
+        return get_hierarchical_equal_risk_contribution_weights(sigma)
+    if method == "nested_clustered_optimization":
+        return get_nested_clustered_optimization_weights(
+            mu, sigma, risk_free_rate=window_risk_free_rate
+        )
+    if method == "schur_complementary":
+        return get_schur_complementary_weights(sigma)
+    return get_hierarchical_risk_parity_weights(sigma)
 
 
 def get_stacking_weights(

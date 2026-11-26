@@ -331,7 +331,6 @@ class PricesEconomics:
             standardize=standardize,
             axis="rows",
             row_slice=True,
-            # Rows empty for every selected country, e.g. a month only another source has.
             dropna=not oecd_source
             and period is not None
             and period.lower() == "monthly",
@@ -505,7 +504,6 @@ class PricesEconomics:
             standardize=standardize,
             axis="rows",
             row_slice=True,
-            # Rows empty for every selected country, e.g. a month only another source has.
             dropna=period == "monthly",
         )
 
@@ -793,7 +791,6 @@ class PricesEconomics:
             standardize=standardize,
             axis="rows",
             row_slice=True,
-            # Rows empty for every selected country, e.g. a month only another source has.
             dropna=True,
         )
 
@@ -918,7 +915,6 @@ class PricesEconomics:
             standardize=standardize,
             axis="rows",
             row_slice=True,
-            # Rows empty for every selected country, e.g. a month only another source has.
             dropna=True,
         )
 
@@ -1042,7 +1038,6 @@ class PricesEconomics:
             standardize=standardize,
             axis="rows",
             row_slice=True,
-            # Rows empty for every selected country, e.g. a month only another source has.
             dropna=True,
         )
 

@@ -420,3 +420,35 @@ def get_survey_inflation_expectations(start_date: str, end_date: str) -> pd.Data
         end_date,
         "Q",
     )
+
+
+def get_period_survey_inflation_expectations(
+    start_date: str, end_date: str, period: str = "quarterly"
+) -> pd.DataFrame:
+    """
+    Retrieves the longer-term euro area inflation the ECB's Survey of Professional
+    Forecasters expects (see get_survey_inflation_expectations) quarterly, or monthly with
+    each survey round holding until the next.
+
+    Args:
+        start_date (str): The start date (YYYY-MM-DD).
+        end_date (str): The end date (YYYY-MM-DD).
+        period (str, optional): Options are: "monthly", "quarterly". Defaults to
+            "quarterly".
+
+    Returns:
+        pd.DataFrame: The expected inflation as a decimal, indexed by month or quarter with
+        a "5Y" column.
+    """
+    survey = get_survey_inflation_expectations(start_date, end_date).rename(
+        columns={"Euro Area": "5Y"}
+    )
+
+    if survey.empty or period == "quarterly":
+        return survey
+
+    # A survey round holds until the next one, a quarter later.
+    survey.index = survey.index.asfreq("M", how="start")
+    months = pd.period_range(survey.index[0], survey.index[-1] + 2, freq="M")
+
+    return survey.reindex(months).ffill(limit=2)

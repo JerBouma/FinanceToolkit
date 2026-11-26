@@ -2,6 +2,7 @@
 
 __docformat__ = "google"
 
+import functools
 from collections.abc import Callable
 
 import pandas as pd
@@ -22,7 +23,6 @@ from financetoolkit.economics.sources import (
     gmdb_model,
     stoxx_model,
 )
-from financetoolkit.utilities import error_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
 from financetoolkit.utilities.error_model import (
     check_option,
@@ -751,37 +751,18 @@ class StabilityEconomics:
             period, ["daily", "weekly", "monthly"], "implied volatility"
         )
 
-        def cboe(maturities: dict[str, str]) -> Callable[[str], pd.DataFrame]:
-            return lambda start: pd.DataFrame(
-                {
-                    maturity: cboe_model.get_index(symbol)
-                    for maturity, symbol in maturities.items()
-                }
-            )
-
         # Financial Modeling Prep failing for the MOVE (unreachable, rate limited, which it
         # logs) would fail alike for the JGB VIX, after its own retries, so it is not asked.
         fmp_failed: list[str] = []
 
-        def fmp(symbol: str, scale: float) -> Callable[[str], pd.DataFrame]:
-            def collect(start: str) -> pd.DataFrame:
-                if fmp_failed:
-                    return pd.DataFrame()
-                failures_before = error_model.get_request_failures()
-                history = economics_fmp_model.get_index_history(
-                    symbol, self._api_key, start, self._end_date
-                )
-                if (
-                    history.empty
-                    and error_model.get_request_failures() != failures_before
-                ):
-                    fmp_failed.append(symbol)
-                return (history * scale).to_frame("1M")
-
-            return collect
+        fmp = functools.partial(
+            economics_fmp_model.get_volatility_index,
+            end_date=self._end_date,
+            failed=fmp_failed,
+        )
 
         sources: dict[str, Callable[[str], pd.DataFrame]] = {
-            "US Equity": cboe(
+            "US Equity": lambda start: cboe_model.get_term_structure(
                 {
                     "9D": "VIX9D",
                     "1M": "VIX",
@@ -791,17 +772,25 @@ class StabilityEconomics:
                 }
             ),
             "Euro Area Equity": lambda start: stoxx_model.get_vstoxx_term_structure(),
-            "Emerging Markets Equity": cboe({"1M": "VXEEM"}),
-            "US Equity Volatility": cboe({"1M": "VVIX"}),
-            "US Treasury Bonds": cboe({"1M": "VXTLT"}),
-            "Crude Oil": cboe({"1M": "OVX"}),
-            "Gold": cboe({"1M": "GVZ"}),
+            "Emerging Markets Equity": lambda start: cboe_model.get_term_structure(
+                {"1M": "VXEEM"}
+            ),
+            "US Equity Volatility": lambda start: cboe_model.get_term_structure(
+                {"1M": "VVIX"}
+            ),
+            "US Treasury Bonds": lambda start: cboe_model.get_term_structure(
+                {"1M": "VXTLT"}
+            ),
+            "Crude Oil": lambda start: cboe_model.get_term_structure({"1M": "OVX"}),
+            "Gold": lambda start: cboe_model.get_term_structure({"1M": "GVZ"}),
         }
         keyed: dict[str, Callable[[str], pd.DataFrame]] = {
             # The MOVE is in basis points and the JGB VIX in percent; both are divided by
             # 100 below with the other indices, so the MOVE is first divided by another 100.
-            "US Treasury Rates": fmp("^MOVE", 0.01),
-            "Japan Government Bonds": fmp("^SPJGBV", 1),
+            "US Treasury Rates": functools.partial(fmp, "^MOVE", 0.01, self._api_key),
+            "Japan Government Bonds": functools.partial(
+                fmp, "^SPJGBV", 1, self._api_key
+            ),
         }
 
         if markets is None and self._api_key:

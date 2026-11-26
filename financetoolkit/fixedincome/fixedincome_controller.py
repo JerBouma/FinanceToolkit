@@ -5,8 +5,6 @@ __docformat__ = "google"
 import os
 from datetime import datetime, timedelta
 
-import pandas as pd
-
 from financetoolkit.cache.cache_controller import Cache, resolve_cache, set_active_cache
 from financetoolkit.economics.sources import (
     boe_model,
@@ -39,26 +37,6 @@ from financetoolkit.utilities.dataframe_model import filter_shown_columns
 from financetoolkit.utilities.sources_model import track_sources
 
 logger = logger_model.get_logger()
-
-
-# The Treasury's names for the maturities of the US par yield curve, in the labels the
-# government bond yield curve uses for every country.
-TREASURY_MATURITIES = {
-    "1 Mo": "1M",
-    "1.5 Month": "1.5M",
-    "2 Mo": "2M",
-    "3 Mo": "3M",
-    "4 Mo": "4M",
-    "6 Mo": "6M",
-    "1 Yr": "1Y",
-    "2 Yr": "2Y",
-    "3 Yr": "3Y",
-    "5 Yr": "5Y",
-    "7 Yr": "7Y",
-    "10 Yr": "10Y",
-    "20 Yr": "20Y",
-    "30 Yr": "30Y",
-}
 
 
 FRED_API_KEY: str = os.environ.get("FRED_API_KEY", "")
@@ -178,38 +156,20 @@ class FixedIncomeBase:
         """
         end_date = self._end_date
 
-        def united_states() -> pd.DataFrame:
-            curve = treasury_model.get_yield_curve("nominal", start_date, end_date)
-            return curve.rename(columns=TREASURY_MATURITIES)[
-                [
-                    label
-                    for column, label in TREASURY_MATURITIES.items()
-                    if column in curve
-                ]
-            ]
-
-        def australia() -> pd.DataFrame:
-            # The Reserve Bank of Australia publishes one file with the history from 2013.
-            curve = rba_model.get_yield_curve()
-            return curve.loc[pd.Period(start_date, "D") :] if not curve.empty else curve
-
-        def japan() -> pd.DataFrame:
-            # The Ministry of Finance publishes one file with the full history.
-            curve = mof_model.get_government_bond_yields()
-            return curve.loc[pd.Period(start_date, "D") :] if not curve.empty else curve
-
         return {
-            "United States": united_states,
+            "United States": lambda: treasury_model.get_labelled_yield_curve(
+                start_date, end_date
+            ),
             "Euro Area": lambda: economics_ecb_model.get_yield_curve(
                 start_date, end_date
             ),
             "Germany": lambda: bundesbank_model.get_yield_curve(start_date, end_date),
             "United Kingdom": lambda: boe_model.get_yield_curve(start_date, end_date),
-            "Japan": japan,
+            "Japan": lambda: mof_model.get_government_bond_yields(start_date),
             "Canada": lambda: boc_model.get_yield_curve(start_date, end_date),
             "Sweden": lambda: riksbank_model.get_yield_curve(start_date, end_date),
             "Norway": lambda: norgesbank_model.get_yield_curve(start_date, end_date),
-            "Australia": australia,
+            "Australia": lambda: rba_model.get_yield_curve(start_date),
         }
 
 

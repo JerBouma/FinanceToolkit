@@ -7,7 +7,7 @@ import io
 import pandas as pd
 
 from financetoolkit.cache import policy_model
-from financetoolkit.economics.helpers import collect_cached_data
+from financetoolkit.economics.helpers import collect_cached_data, resample_to_period
 from financetoolkit.utilities.requests_model import TOOLKIT_HEADERS, get_request
 
 # The RBA publishes each statistical table as one CSV file with its full history, a block
@@ -123,12 +123,54 @@ def get_corporate_bond_yields() -> pd.DataFrame:
     return yields
 
 
-def get_yield_curve() -> pd.DataFrame:
+def get_yield_curve(start_date: str | None = None) -> pd.DataFrame:
     """
     Retrieves the yields of Australian government bonds interpolated to 2, 3, 5 and 10
     years, daily from 2013.
 
+    Args:
+        start_date (str | None, optional): The first date to keep (YYYY-MM-DD). Defaults to
+            None, the full history.
+
     Returns:
         pd.DataFrame: The yields as decimals, indexed by day with a column per maturity.
     """
-    return _select("f2", GOVERNMENT_BOND_YIELDS)
+    # The Reserve Bank of Australia publishes one file with the history from 2013.
+    curve = _select("f2", GOVERNMENT_BOND_YIELDS)
+    return (
+        curve.loc[pd.Period(start_date, "D") :]
+        if start_date and not curve.empty
+        else curve
+    )
+
+
+def get_corporate_bond_spreads() -> pd.DataFrame:
+    """
+    Retrieves the spreads of Australian non-financial corporate bonds rated A and BBB over
+    the Australian government bond yield of the same tenor, monthly from 2005.
+
+    Returns:
+        pd.DataFrame: The spreads as decimals, indexed by month with a column per rating and
+        tenor, e.g. "BBB 10Y".
+    """
+    yields = get_corporate_bond_yields()
+
+    if yields.empty:
+        return yields
+
+    government = get_yield_curve()
+
+    if government.empty:
+        return pd.DataFrame()
+
+    # The government yields on the last trading day of each month, at the tenors
+    # of the corporate bonds.
+    government = resample_to_period(government, "monthly")
+    government["7Y"] = (government["5Y"] * 3 + government["10Y"] * 2) / 5
+
+    return pd.DataFrame(
+        {
+            column: yields[column] - government[column.split(" ")[1]]
+            for column in yields.columns
+        }
+    ).dropna(how="all")

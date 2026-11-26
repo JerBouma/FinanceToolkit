@@ -89,7 +89,6 @@ def _get_year(year: int, failures: dict[str, str]) -> pd.DataFrame:
         entity=str(year),
         fetch=fetch,
         description=description,
-        # get_carbon_price reports every year without prices, with its reason, in one line.
         expect_empty=True,
         failures=failures,
     )

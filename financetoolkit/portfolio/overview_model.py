@@ -490,7 +490,6 @@ def create_portfolio_overview(
     portfolio_overview_grouped.insert(
         2,
         "Price",
-        # The volume-weighted price actually paid for the units that were bought.
         divide_by_capital(
             portfolio_overview_grouped["Buy Value"],
             portfolio_overview_grouped["Buy Volume"],

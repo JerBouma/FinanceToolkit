@@ -5,9 +5,11 @@ __docformat__ = "google"
 import numpy as np
 import pandas as pd
 
+from financetoolkit.technicals.helpers import get_observations_per_year
 from financetoolkit.technicals.momentum import momentum_model
 from financetoolkit.technicals.overlap import overlap_model
 from financetoolkit.technicals.volatility import volatility_model
+from financetoolkit.utilities.statistics_model import PERIODS_PER_YEAR
 
 # The first candle each pattern is evaluated on: the previous candles its reference sizes average plus the candles
 # before its last one. This is the warm-up of TA-Lib's CDL functions, which also gives the engulfing 2 and the
@@ -1592,6 +1594,80 @@ def get_signals(
             "New High/Low": new_high_low,
         }
     )
+
+
+# The signals of get_signals, in its order.
+SIGNAL_NAMES = [
+    "Moving Average Crossover",
+    "MACD Crossover",
+    "RSI Overbought",
+    "RSI Oversold",
+    "Upper Bollinger Band",
+    "Lower Bollinger Band",
+    "New High/Low",
+]
+
+
+def get_period_signals(
+    prices: pd.Series,
+    period: str,
+    short_window: int,
+    long_window: int,
+    macd_short_window: int,
+    macd_long_window: int,
+    macd_signal_window: int,
+    rsi_window: int,
+    rsi_overbought: float,
+    rsi_oversold: float,
+    bollinger_window: int,
+    bollinger_std_dev: float,
+    high_low_window: int | None = None,
+) -> pd.DataFrame:
+    """
+    Detect the signals of get_signals on the prices of one ticker, with a year of periods as
+    the window of the new highs and lows unless another window is given.
+
+    Args:
+        prices (pd.Series): The prices of one ticker, NaN on the dates it did not trade.
+        period (str): The period of the prices, such as "daily" or "weekly".
+        short_window (int): The window of the short moving average.
+        long_window (int): The window of the long moving average.
+        macd_short_window (int): The short window of the MACD.
+        macd_long_window (int): The long window of the MACD.
+        macd_signal_window (int): The signal window of the MACD.
+        rsi_window (int): The window of the RSI.
+        rsi_overbought (float): The RSI level above which the price is overbought.
+        rsi_oversold (float): The RSI level below which the price is oversold.
+        bollinger_window (int): The window of the Bollinger Bands.
+        bollinger_std_dev (float): The number of standard deviations of the Bollinger Bands.
+        high_low_window (int | None, optional): The window of the new highs and lows.
+            Defaults to None, a year of periods.
+
+    Returns:
+        pd.DataFrame: The signals on the dates of the prices.
+    """
+    # A year of periods, which is 365 days for a ticker that trades on weekends.
+    if high_low_window is not None:
+        window = high_low_window
+    elif period in ("daily", "intraday"):
+        window = get_observations_per_year(prices)
+    else:
+        window = PERIODS_PER_YEAR[period]
+
+    return get_signals(
+        prices.dropna(),
+        short_window=short_window,
+        long_window=long_window,
+        macd_short_window=macd_short_window,
+        macd_long_window=macd_long_window,
+        macd_signal_window=macd_signal_window,
+        rsi_window=rsi_window,
+        rsi_overbought=rsi_overbought,
+        rsi_oversold=rsi_oversold,
+        bollinger_window=bollinger_window,
+        bollinger_std_dev=bollinger_std_dev,
+        high_low_window=window,
+    ).reindex(prices.index)
 
 
 def get_indicator_summary(

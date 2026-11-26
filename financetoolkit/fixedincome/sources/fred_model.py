@@ -826,3 +826,29 @@ def get_moodys_corporate_bond_spreads(
     spreads["Baa - Aaa"] = spreads["Baa"] - spreads["Aaa"]
 
     return spreads.dropna(how="all")
+
+
+def get_moodys_aaa_baa_corporate_bonds(
+    frequency: str, start_date: str, end_date: str, api_key: str, spread: bool = False
+) -> pd.DataFrame:
+    """
+    Retrieves Moody's seasoned Aaa and Baa corporate bond yields from FRED, or their spreads
+    over the 10-year Treasury yield.
+
+    Args:
+        frequency (str): The frequency. Options are: "daily", "monthly".
+        start_date (str): Start date in YYYY-MM-DD format.
+        end_date (str): End date in YYYY-MM-DD format.
+        api_key (str): FRED API key.
+        spread (bool, optional): Whether to return the spreads. Defaults to False.
+
+    Returns:
+        pd.DataFrame: The "Aaa" and "Baa" yields or spreads as decimals.
+    """
+    moodys = (
+        get_moodys_corporate_bond_spreads(frequency, start_date, end_date, api_key)
+        if spread
+        else get_moodys_corporate_bond_yields(frequency, start_date, end_date, api_key)
+    )
+
+    return moodys[[column for column in ("Aaa", "Baa") if column in moodys]]

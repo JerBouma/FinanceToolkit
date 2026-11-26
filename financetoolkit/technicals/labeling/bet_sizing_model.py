@@ -848,3 +848,65 @@ def get_target_bet_sizes(
         {"Bet Size": bet_size, "Target Position": target, "Limit Price": limit},
         index=frame.index,
     )
+
+
+def get_bet_sizes(
+    prices: pd.Series,
+    labels: pd.DataFrame,
+    method: str = "budget",
+    step_size: float | None = None,
+    minimum_labels: int = 20,
+    runs: int = 100,
+    seed: int = 0,
+) -> pd.DataFrame:
+    """
+    Calculate the bet sizes of one ticker from its meta-labels: the budget, reserve or
+    probability bet size, optionally rounded to a step size.
+
+    Args:
+        prices (pd.Series): The closes of the ticker, named after the ticker.
+        labels (pd.DataFrame): Meta-labels with a Side, Holding Period and (for "probability")
+            Label per date and ticker.
+        method (str, optional): "budget", "reserve" or "probability". Defaults to "budget".
+        step_size (float | None, optional): The step the bet sizes are rounded to. Defaults to
+            None, unrounded.
+        minimum_labels (int, optional): The number of closed bets the hit rate of
+            "probability" needs before it sizes a bet. Defaults to 20.
+        runs (int, optional): The number of random starting points of the EF3M fit of
+            "reserve". Defaults to 100.
+        seed (int, optional): The seed of the starting points of the EF3M fit. Defaults to 0.
+
+    Returns:
+        pd.DataFrame: The bet sizes of the ticker per date.
+    """
+    ticker = prices.name
+    holding_periods = (
+        labels["Holding Period"]
+        .get(ticker, pd.Series(dtype=float))
+        .reindex(prices.index)
+    )
+    sides = labels["Side"].get(ticker, pd.Series(dtype=float)).reindex(prices.index)
+    if method == "budget":
+        sizes = get_budget_bet_size(holding_periods, sides)
+    elif method == "reserve":
+        sizes = get_reserve_bet_size(holding_periods, sides, runs=runs, seed=seed)
+    else:
+        outcomes = labels["Label"].get(ticker, pd.Series(dtype=float))
+        hit_rate = get_hit_rate(
+            outcomes.reindex(prices.index), holding_periods, minimum_labels
+        )
+        # The bets placed while the hit rate is unknown are left out of the average.
+        placed = sides.notna() & holding_periods.notna() & hit_rate.notna()
+        bet_sizes = get_probability_bet_size(
+            hit_rate.where(hit_rate > 0.5, 1 - hit_rate),  # noqa: PLR2004
+            predictions=(hit_rate > 0.5).astype(float),  # noqa: PLR2004
+            sides=sides,
+        ).where(placed)
+        sizes = get_concurrent_sides(holding_periods.where(placed), sides)
+        sizes["Hit Rate"] = hit_rate
+        sizes["Bet Size"] = get_average_active_bet_size(
+            bet_sizes, holding_periods.where(placed)
+        )
+    if step_size is not None:
+        sizes["Bet Size"] = get_discrete_bet_size(sizes["Bet Size"], step_size)
+    return sizes

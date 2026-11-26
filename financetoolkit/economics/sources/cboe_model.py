@@ -61,3 +61,20 @@ def get_index(symbol: str) -> pd.Series:
     )
 
     return index[symbol] if not index.empty else pd.Series(dtype=float)
+
+
+def get_term_structure(maturities: dict[str, str]) -> pd.DataFrame:
+    """
+    Retrieves the daily closing values of several Cboe indices, one per maturity, such as
+    the VIX9D, VIX and VIX3M of the S&P 500's implied volatility.
+
+    Args:
+        maturities (dict[str, str]): The index per maturity, e.g. {"1M": "VIX"}.
+
+    Returns:
+        pd.DataFrame: The closing values as published, indexed by day with a column per
+        maturity.
+    """
+    return pd.DataFrame(
+        {maturity: get_index(symbol) for maturity, symbol in maturities.items()}
+    )

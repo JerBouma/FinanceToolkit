@@ -126,7 +126,6 @@ def _query(
         ),
         fetch=fetch,
         description=description,
-        # The periods before an agency reported to CEREP have no statistics.
         expect_empty=True,
     )
 

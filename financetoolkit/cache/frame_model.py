@@ -8,7 +8,11 @@ from datetime import date
 import numpy as np
 import pandas as pd
 
+from financetoolkit.cache import serialization_model
 from financetoolkit.cache.coverage_model import Interval, normalize_date
+from financetoolkit.utilities import logger_model
+
+logger = logger_model.get_logger()
 
 
 def get_date_axis(data: pd.DataFrame | pd.Series, date_axis: int = 0) -> pd.Index:
@@ -327,3 +331,50 @@ def merge_frames(
         merged = merged.sort_index(axis=sort_axis)
 
     return tidy_date_axis(merged, date_axis)
+
+
+def merge_payload(
+    existing_payload: bytes | None,
+    data: pd.DataFrame | pd.Series,
+    date_axis: int,
+    coverage: Interval | None,
+    source: str,
+    dataset: str,
+    entity: str,
+) -> bytes:
+    """
+    Merge the incoming frame into whatever the cache holds right now.
+
+    Args:
+        existing_payload (bytes | None): The payload stored under the write lock, or None
+            when the entity has never been cached.
+        data (pd.DataFrame | pd.Series): The incoming frame.
+        date_axis (int): The axis that holds the dates, 0 for rows and 1 for columns.
+        coverage (Interval | None): The range the incoming frame covers, see merge_frames.
+        source (str): The source of the data, for the log message.
+        dataset (str): The dataset of the data, for the log message.
+        entity (str): The entity of the data, for the log message.
+
+    Returns:
+        bytes: The payload to store in its place.
+    """
+    # A payload that can't be read (another format, such as a pickle) or merged
+    # (a frame of another layout) is replaced by the incoming frame, rather than
+    # failing the write and leaving the broken payload in place.
+    if existing_payload is not None:
+        try:
+            existing = serialization_model.decode_dataframe(existing_payload)
+
+            return serialization_model.encode_dataframe(
+                merge_frames(existing, data, date_axis, coverage)
+            )
+        except Exception as error:  # noqa: BLE001
+            logger.debug(
+                "Replacing the cached %s.%s for %s that could not be merged: %s",
+                source,
+                dataset,
+                entity,
+                error,
+            )
+
+    return serialization_model.encode_dataframe(merge_frames(None, data, date_axis))

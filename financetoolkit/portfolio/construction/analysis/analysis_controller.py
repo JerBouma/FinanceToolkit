@@ -2,7 +2,7 @@
 
 __docformat__ = "google"
 
-from collections.abc import Callable
+import functools
 from typing import Literal
 
 import numpy as np
@@ -941,124 +941,39 @@ class AnalysisConstruction:
         # The estimates of a window are the same for every method, so they are made once.
         estimates: dict = {}
 
-        def window_estimates(window: pd.DataFrame) -> tuple:
-            if window.index[-1] not in estimates:
-                risk_free_rate = self._get_risk_free_rate("daily", window.index)
-                estimates[window.index[-1]] = (
-                    risk_free_rate,
-                    *optimization_model.get_expected_returns_and_covariance(
-                        window,
-                        periods_per_year,
-                        covariance,
-                        covariance_span,
-                        expected_returns,
-                        expected_returns_span,
-                        (
-                            benchmark
-                            if expected_returns == "capm"
-                            or covariance == "ledoit_wolf_single_factor"
-                            else None
-                        ),
-                        risk_free_rate,
-                        factors,
-                    ),
-                )
-            return estimates[window.index[-1]]
-
-        def strategy(method: str) -> Callable[[pd.DataFrame], pd.Series]:
-            # One generator per backtest, drawing a new portfolio on every date.
-            generator = np.random.default_rng(RANDOM_BACKTEST_SEED)
-
-            def weights(window: pd.DataFrame) -> pd.Series:
-                if method == "equal_weight":
-                    return pd.Series(1 / window.shape[1], index=window.columns)
-                if method == "random":
-                    return optimization_model.get_random_weights(
-                        window.columns, generator
-                    )
-                if method in ("minimum_mad", "minimum_semideviation"):
-                    return optimization_model.get_mean_risk_weights(
-                        window,
-                        risk_measure=method.removeprefix("minimum_"),
-                        minimum_weight=minimum_weight,
-                        maximum_weight=maximum_weight,
-                    )
-                if method == "minimum_cvar":
-                    return optimization_model.get_minimum_cvar_weights(
-                        window,
-                        minimum_weight=minimum_weight,
-                        maximum_weight=maximum_weight,
-                    )
-                if method == "minimum_drawdown":
-                    return optimization_model.get_minimum_drawdown_weights(
-                        window,
-                        minimum_weight=minimum_weight,
-                        maximum_weight=maximum_weight,
-                    )
-                risk_free_rate, mu, sigma = window_estimates(window)
-                if method == "maximum_omega":
-                    return optimization_model.get_maximum_omega_weights(
-                        window,
-                        minimum_weight=minimum_weight,
-                        maximum_weight=maximum_weight,
-                        expected_returns=mu / periods_per_year,
-                    )
-                if method == "maximum_cvar_ratio":
-                    return optimization_model.get_maximum_cvar_ratio_weights(
-                        window,
-                        risk_free_rate=risk_free_rate / periods_per_year,
-                        minimum_weight=minimum_weight,
-                        maximum_weight=maximum_weight,
-                        expected_returns=mu / periods_per_year,
-                    )
-                if method == "hierarchical_equal_risk_contribution":
-                    return optimization_model.get_hierarchical_equal_risk_contribution_weights(
-                        sigma,
-                        minimum_weight=minimum_weight,
-                        maximum_weight=maximum_weight,
-                    )
-                if method == "nested_clustered_optimization":
-                    return optimization_model.get_nested_clustered_optimization_weights(
-                        mu, sigma, risk_free_rate=risk_free_rate
-                    )
-                if method == "inverse_volatility":
-                    return optimization_model.get_inverse_volatility_weights(sigma)
-                if method == "hierarchical_risk_parity":
-                    return optimization_model.get_hierarchical_risk_parity_weights(
-                        sigma,
-                        minimum_weight=minimum_weight,
-                        maximum_weight=maximum_weight,
-                    )
-                if method == "risk_parity":
-                    return optimization_model.get_risk_parity_weights(
-                        sigma,
-                        minimum_weight=minimum_weight,
-                        maximum_weight=maximum_weight,
-                    )
-                if method == "minimum_variance":
-                    return optimization_model.get_minimum_variance_weights(
-                        sigma, minimum_weight, maximum_weight
-                    )
-                if method == "maximum_diversification":
-                    return optimization_model.get_maximum_diversification_weights(
-                        sigma, minimum_weight, maximum_weight
-                    )
-                if method == "maximum_sharpe":
-                    return optimization_model.get_maximum_sharpe_weights(
-                        mu, sigma, risk_free_rate, minimum_weight, maximum_weight
-                    )
-                return optimization_model.get_mean_variance_weights(
-                    mu,
-                    sigma,
-                    minimum_weight=minimum_weight,
-                    maximum_weight=maximum_weight,
-                )
-
-            return weights
+        estimate = functools.partial(
+            backtest_model.get_window_estimates,
+            estimates=estimates,
+            risk_free_rate=functools.partial(self._get_risk_free_rate, "daily"),
+            periods_per_year=periods_per_year,
+            covariance=covariance,
+            covariance_span=covariance_span,
+            expected_returns=expected_returns,
+            expected_returns_span=expected_returns_span,
+            benchmark=(
+                benchmark
+                if expected_returns == "capm"
+                or covariance == "ledoit_wolf_single_factor"
+                else None
+            ),
+            factors=factors,
+        )
+        strategies = {
+            BACKTEST_METHODS[method]: functools.partial(
+                backtest_model.get_strategy_weights,
+                method=method,
+                generator=np.random.default_rng(RANDOM_BACKTEST_SEED),
+                estimate=estimate,
+                periods_per_year=periods_per_year,
+                minimum_weight=minimum_weight,
+                maximum_weight=maximum_weight,
+            )
+            for method in methods
+        }
 
         net_returns, weights_table, turnover = backtest_model.get_walk_forward_backtest(
             returns,
-            {BACKTEST_METHODS[method]: strategy(method) for method in methods},
+            strategies,
             backtest_model.get_rebalancing_dates(returns.index, rebalancing, lookback),
             lookback,
             transaction_cost,
@@ -1087,7 +1002,7 @@ class AnalysisConstruction:
         # between the promise and the realised return shows in one table.
         for date in weights_table.index:
             position = returns.index.get_loc(date)
-            window_estimates(returns.iloc[position - lookback + 1 : position + 1])
+            estimate(returns.iloc[position - lookback + 1 : position + 1])
         summary = summary.join(
             backtest_model.get_in_sample_expectations(weights_table, estimates)
         )
@@ -3006,63 +2921,35 @@ class AnalysisConstruction:
         returns = self._get_returns(period, include_benchmark)
         periods_per_year = self._get_periods_per_year(period, returns.index)
 
-        def per_period(views: dict | None, scale) -> dict | None:
-            # The views are annualized; the scenarios are returns per period.
-            if not views:
-                return None
-            return {
-                name: (
-                    scale(value)
-                    if isinstance(value, int | float)
-                    else (value[0], scale(value[1]))
-                )
-                for name, value in views.items()
-            }
-
-        def posterior(opinion: dict) -> pd.Series:
-            unknown = set(opinion) - {
-                "views",
-                "volatility_views",
-                "correlation_views",
-                "ranking",
-            }
-            if unknown:
-                raise ValueError(
-                    "An opinion holds views, volatility_views, correlation_views and "
-                    f"ranking, not {', '.join(sorted(unknown))}."
-                )
-            return estimation_model.get_entropy_pooling(
-                returns,
-                per_period(
-                    opinion.get("views"), lambda value: value / periods_per_year
-                ),
-                per_period(
-                    opinion.get("volatility_views"),
-                    lambda value: value / np.sqrt(periods_per_year),
-                ),
-                opinion.get("correlation_views") or None,
-                ranking=opinion.get("ranking"),
-            )
-
         if opinions:
             if views or volatility_views or correlation_views or ranking:
                 raise ValueError(
                     "Pass the views either directly or as opinions, not both."
                 )
             probabilities = estimation_model.get_opinion_pooling(
-                pd.concat([posterior(opinion) for opinion in opinions], axis=1),
+                pd.concat(
+                    [
+                        estimation_model.get_opinion_entropy_pooling(
+                            returns, opinion, periods_per_year
+                        )
+                        for opinion in opinions
+                    ],
+                    axis=1,
+                ),
                 opinion_weights,
                 pooling,
                 divergence_penalty,
             )
         else:
-            probabilities = posterior(
+            probabilities = estimation_model.get_opinion_entropy_pooling(
+                returns,
                 {
                     "views": views,
                     "volatility_views": volatility_views,
                     "correlation_views": correlation_views,
                     "ranking": ranking,
-                }
+                },
+                periods_per_year,
             )
 
         weights = probabilities.to_numpy()

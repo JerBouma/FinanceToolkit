@@ -2,6 +2,7 @@
 
 __docformat__ = "google"
 
+import functools
 from datetime import datetime, timedelta
 
 import pandas as pd
@@ -749,62 +750,29 @@ class CreditFixedIncome:
         """
         start_date = buffered_start_date(self._start_date, "monthly")
 
-        def germany() -> pd.DataFrame:
-            yields = bundesbank_model.get_corporate_bond_yield(
-                start_date, self._end_date
-            )
-
-            if yields.empty:
-                return yields
-
-            corporate = (
-                yields["Corporate"] - yields["Public"]
+        sources = {
+            "Germany": functools.partial(
+                bundesbank_model.get_all_ratings_corporate_bond_yield,
+                start_date,
+                self._end_date,
+                spread,
+            ),
+            "Australia": (
+                rba_model.get_corporate_bond_spreads
                 if spread
-                else yields["Corporate"]
-            )
-
-            return corporate.to_frame("All ratings")
-
-        def australia() -> pd.DataFrame:
-            yields = rba_model.get_corporate_bond_yields()
-
-            if yields.empty or not spread:
-                return yields
-
-            government = rba_model.get_yield_curve()
-
-            if government.empty:
-                return pd.DataFrame()
-
-            # The government yields on the last trading day of each month, at the tenors
-            # of the corporate bonds.
-            government = resample_to_period(government, "monthly")
-            government["7Y"] = (government["5Y"] * 3 + government["10Y"] * 2) / 5
-
-            return pd.DataFrame(
-                {
-                    column: yields[column] - government[column.split(" ")[1]]
-                    for column in yields.columns
-                }
-            ).dropna(how="all")
-
-        def united_states() -> pd.DataFrame:
-            moodys = (
-                fred_model.get_moodys_corporate_bond_spreads(
-                    "monthly", start_date, self._end_date, self._fred_api_key
-                )
-                if spread
-                else fred_model.get_moodys_corporate_bond_yields(
-                    "monthly", start_date, self._end_date, self._fred_api_key
-                )
-            )
-
-            return moodys[[column for column in ("Aaa", "Baa") if column in moodys]]
-
-        sources = {"Germany": germany, "Australia": australia}
+                else rba_model.get_corporate_bond_yields
+            ),
+        }
 
         if self._fred_api_key:
-            sources["United States"] = united_states
+            sources["United States"] = functools.partial(
+                fred_model.get_moodys_aaa_baa_corporate_bonds,
+                "monthly",
+                start_date,
+                self._end_date,
+                self._fred_api_key,
+                spread,
+            )
 
         requested = (
             list(sources)

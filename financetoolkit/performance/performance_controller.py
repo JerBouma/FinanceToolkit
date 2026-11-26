@@ -2747,7 +2747,6 @@ class Performance:
                 end_date=self._end_date,
                 default_rounding=self._rounding,
                 rounding=rounding,
-                # One number per ticker over the whole date range, with no dates to slice.
                 apply_slice=False,
             )
 
@@ -4209,7 +4208,6 @@ class Performance:
                 end_date=self._end_date,
                 default_rounding=self._rounding,
                 rounding=rounding,
-                # One number per ticker over the whole date range, with no dates to slice.
                 apply_slice=False,
             )
 
@@ -4388,7 +4386,6 @@ class Performance:
                 end_date=self._end_date,
                 default_rounding=self._rounding,
                 rounding=rounding,
-                # One number per ticker over the whole date range, with no dates to slice.
                 apply_slice=False,
             )
 
@@ -5305,7 +5302,6 @@ class Performance:
             standardize=standardize,
             axis="rows",
             row_slice=True,
-            # The rolling ratio starts after the first full window.
             dropna=bool(rolling),
         )
 
@@ -5461,7 +5457,6 @@ class Performance:
             standardize=standardize,
             axis="rows",
             row_slice=True,
-            # The rolling ratio starts after the first full window.
             dropna=bool(rolling),
         )
 
@@ -6278,7 +6273,6 @@ class Performance:
             standardize=standardize,
             axis="rows",
             row_slice=True,
-            # Over the whole period the stability is one number per ticker, with no dates to slice.
             apply_slice=within_period,
             dropna=True,
         )
@@ -7063,7 +7057,6 @@ class Performance:
             standardize=standardize,
             axis="rows",
             row_slice=True,
-            # Over the whole period the ratio is one number per ticker, with no dates to slice.
             apply_slice=bool(rolling) or within_period,
         )
 
@@ -7232,7 +7225,6 @@ class Performance:
             standardize=standardize,
             axis="rows",
             row_slice=True,
-            # Over the whole range the measure is one number per ticker, with no dates to slice.
             apply_slice=bool(rolling) or within_period,
         )
 
@@ -7471,7 +7463,6 @@ class Performance:
             standardize=standardize,
             axis="rows",
             row_slice=True,
-            # Over the whole period the ratio is one number per ticker, with no dates to slice.
             apply_slice=within_period,
         )
 
@@ -7578,7 +7569,6 @@ class Performance:
             standardize=standardize,
             axis="rows",
             row_slice=True,
-            # Over the whole period the ratio is one number per ticker, with no dates to slice.
             apply_slice=within_period,
             dropna=True,
         )
@@ -7702,7 +7692,6 @@ class Performance:
             standardize=standardize,
             axis="rows",
             row_slice=True,
-            # Over the whole period the ratio is one number per ticker, with no dates to slice.
             apply_slice=within_period,
             dropna=True,
         )
@@ -7973,7 +7962,6 @@ class Performance:
             standardize=standardize,
             axis="rows",
             row_slice=True,
-            # Over the whole period the criterion is one number per ticker, with no dates to slice.
             apply_slice=bool(rolling) or within_period,
         )
 
@@ -9399,7 +9387,6 @@ class Performance:
             standardize=standardize,
             axis="rows",
             row_slice=True,
-            # Over the whole period the ratio is one number per ticker, with no dates to slice.
             apply_slice=within_period,
             dropna=True,
         )
@@ -10770,7 +10757,6 @@ class Performance:
             standardize=standardize,
             axis="rows",
             row_slice=True,
-            # Over the whole period the ratio is one number per ticker, with no dates to slice.
             apply_slice=within_period,
             dropna=True,
         )
@@ -11688,7 +11674,6 @@ class Performance:
             standardize=standardize,
             axis="rows",
             row_slice=True,
-            # Over the whole period the VWR is one number per ticker, with no dates to slice.
             apply_slice=within_period,
         )
 

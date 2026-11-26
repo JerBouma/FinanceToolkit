@@ -2,6 +2,7 @@
 
 __docformat__ = "google"
 
+import functools
 from typing import Literal
 
 import numpy as np
@@ -905,7 +906,6 @@ class OptimizationConstruction:
         weights = optimization_model.get_mean_variance_weights(
             expected,
             covariance_matrix,
-            # The target is that of the portfolio, the cash at the risk free rate included.
             (
                 target_return - (1 - net_exposure) * risk_free_rate
                 if target_return is not None
@@ -1941,61 +1941,27 @@ class OptimizationConstruction:
         )
         factors = self._get_factor_returns(period) if covariance == "factor" else None
 
-        def optimizer(method: str):
-            def weights(window: pd.DataFrame) -> pd.Series:
-                if method == "equal_weight":
-                    return pd.Series(1 / window.shape[1], index=window.columns)
-                if method == "minimum_cvar":
-                    return optimization_model.get_minimum_cvar_weights(window)
-                if method == "minimum_drawdown":
-                    return optimization_model.get_minimum_drawdown_weights(window)
-                if method in ("minimum_mad", "minimum_semideviation"):
-                    return optimization_model.get_mean_risk_weights(
-                        window, risk_measure=method.removeprefix("minimum_")
-                    )
-                window_risk_free_rate = self._get_risk_free_rate(period, window.index)
-                mu, sigma = optimization_model.get_expected_returns_and_covariance(
-                    window,
-                    self._get_periods_per_year(period, returns.index),
-                    covariance,
-                    covariance_span,
-                    expected_returns,
-                    expected_returns_span,
-                    benchmark,
-                    window_risk_free_rate,
-                    factors,
-                )
-                if method == "minimum_variance":
-                    return optimization_model.get_minimum_variance_weights(sigma)
-                if method == "maximum_sharpe":
-                    return optimization_model.get_maximum_sharpe_weights(
-                        mu, sigma, window_risk_free_rate
-                    )
-                if method == "risk_parity":
-                    return optimization_model.get_risk_parity_weights(sigma)
-                if method == "inverse_volatility":
-                    return optimization_model.get_inverse_volatility_weights(sigma)
-                if method == "maximum_diversification":
-                    return optimization_model.get_maximum_diversification_weights(sigma)
-                if method == "hierarchical_equal_risk_contribution":
-                    return optimization_model.get_hierarchical_equal_risk_contribution_weights(
-                        sigma
-                    )
-                if method == "nested_clustered_optimization":
-                    return optimization_model.get_nested_clustered_optimization_weights(
-                        mu, sigma, risk_free_rate=window_risk_free_rate
-                    )
-                if method == "schur_complementary":
-                    return optimization_model.get_schur_complementary_weights(sigma)
-                return optimization_model.get_hierarchical_risk_parity_weights(sigma)
-
-            return weights
-
+        optimizer = functools.partial(
+            optimization_model.get_stacking_method_weights,
+            risk_free_rate=functools.partial(self._get_risk_free_rate, period),
+            periods_per_year=self._get_periods_per_year(period, returns.index),
+            covariance=covariance,
+            covariance_span=covariance_span,
+            expected_returns=expected_returns,
+            expected_returns_span=expected_returns_span,
+            benchmark=benchmark,
+            factors=factors,
+        )
         weights, method_weights, final_weights = (
             optimization_model.get_stacking_weights(
                 returns,
-                {STACKING_METHODS[method]: optimizer(method) for method in methods},
-                optimizer(final_method),
+                {
+                    STACKING_METHODS[method]: functools.partial(
+                        optimizer, method=method
+                    )
+                    for method in methods
+                },
+                functools.partial(optimizer, method=final_method),
                 folds,
             )
         )

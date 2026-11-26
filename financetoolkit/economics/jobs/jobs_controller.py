@@ -460,7 +460,6 @@ class JobsEconomics:
             standardize=standardize,
             axis="rows",
             row_slice=True,
-            # Rows empty for every selected country, e.g. a month only another source has.
             dropna=monthly,
         )
 
@@ -704,7 +703,6 @@ class JobsEconomics:
             standardize=standardize,
             axis="rows",
             row_slice=True,
-            # Rows empty for every selected country, e.g. a quarter only one source has.
             dropna=True,
         )
 

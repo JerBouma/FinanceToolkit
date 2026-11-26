@@ -462,6 +462,33 @@ def calculate_per_ticker(
     return pd.concat(results, axis=1).swaplevel(1, 0, axis=1).sort_index(axis=1)
 
 
+def calculate_on_complete_bars(
+    *prices: pd.Series,
+    indicator: Callable[..., pd.Series | pd.DataFrame],
+    **kwargs,
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculates an indicator over the bars of one ticker that have every price, and places the
+    result back on every date of the prices, NaN on the incomplete bars. A pattern compares
+    neighbouring bars, so an incomplete bar (a later listing or a missing day) would shift
+    the bars it compares.
+
+    Args:
+        *prices (pd.Series): The prices the function takes, in its order, e.g. the Open,
+            High, Low and Close of one ticker.
+        indicator (Callable[..., pd.Series | pd.DataFrame]): The indicator, which takes a
+            Series per price followed by `kwargs`.
+        **kwargs: The further keyword arguments of the indicator.
+
+    Returns:
+        pd.Series | pd.DataFrame: The indicator on the dates of the prices.
+    """
+    bars = pd.concat(prices, axis=1).dropna()
+    return indicator(
+        *(bars.iloc[:, column] for column in range(bars.shape[1])), **kwargs
+    ).reindex(prices[0].index)
+
+
 def apply_on_own_closes(
     prices_close: pd.DataFrame, function: Callable[[pd.Series], pd.Series]
 ) -> pd.DataFrame:

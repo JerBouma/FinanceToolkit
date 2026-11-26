@@ -1514,19 +1514,7 @@ class ETF:
             prices.index = prices.index.to_timestamp()
         prices = prices.reindex(columns=tickers)
 
-        def close(
-            frame: pd.DataFrame, before: pd.Timestamp, inclusive: bool = True
-        ) -> pd.Series:
-            # The last close up to a date, per ticker: a holding that did not trade on the
-            # date (a holiday on its exchange) keeps its last close.
-            rows = frame.loc[
-                frame.index <= before if inclusive else frame.index < before
-            ]
-            if rows.empty:
-                return pd.Series(float("nan"), index=frame.columns)
-            return rows.ffill().iloc[-1]
-
-        if close(prices, start, inclusive=False).isna().all():
+        if etf_model.get_last_prices(prices, start, inclusive=False).isna().all():
             raise ValueError(
                 "There are no prices before the start date to measure the period from."
             )
@@ -1560,9 +1548,13 @@ class ETF:
                     fund_currencies.get(fund),
                     pd.DatetimeIndex(prices.index),
                 )
-            start_prices = close(fund_prices, start, inclusive=False)
-            end_prices = close(fund_prices, end)
-            weight_date_prices = close(fund_prices, weight_dates[fund])
+            start_prices = etf_model.get_last_prices(
+                fund_prices, start, inclusive=False
+            )
+            end_prices = etf_model.get_last_prices(fund_prices, end)
+            weight_date_prices = etf_model.get_last_prices(
+                fund_prices, weight_dates[fund]
+            )
             table = etf_model.get_contribution(
                 fund_weights[symbols[fund]],
                 start_prices,

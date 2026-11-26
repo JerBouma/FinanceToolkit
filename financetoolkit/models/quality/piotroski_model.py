@@ -487,3 +487,56 @@ def get_piotroski_score(
     )
 
     return piotroski_score
+
+
+def get_reported_mask(
+    reported: pd.DataFrame, comparison_lag: int, piotroski_results: pd.DataFrame
+) -> pd.DataFrame:
+    """
+    Which values of the Piotroski results rest on reported statements: a criterion needs
+    its period reported, and the five criteria that compare against the same period a year
+    earlier (and the score) need that period reported too, or NaN > x resolves False.
+
+    Args:
+        reported (pd.DataFrame): Per ticker and period, whether every field feeding the
+            criteria is reported.
+        comparison_lag (int): The number of periods in a year.
+        piotroski_results (pd.DataFrame): The criteria and the score with (ticker,
+            criterion) rows and a column per period.
+
+    Returns:
+        pd.DataFrame: True where a value of the results is reported, shaped like the
+        results.
+    """
+    change_based_criteria = {
+        "Change in Return on Assets Criteria",
+        "Change in Leverage Criteria",
+        "Change in Current Ratio Criteria",
+        "Gross Margin Criteria",
+        "Asset Turnover Criteria",
+        "Piotroski Score",
+    }
+
+    def broadcast(mask: pd.DataFrame) -> pd.DataFrame:
+        return (
+            mask.reindex(
+                index=piotroski_results.index.get_level_values(0),
+                columns=piotroski_results.columns,
+            )
+            .fillna(False)
+            .astype(bool)
+            .set_axis(piotroski_results.index)
+        )
+
+    reported_previous_period = broadcast(reported.shift(comparison_lag, axis=1))
+    reported = broadcast(reported)
+
+    needs_previous_period = piotroski_results.index.get_level_values(1).isin(
+        change_based_criteria
+    )
+    full_mask = reported.copy()
+    full_mask.loc[needs_previous_period] = (
+        reported.loc[needs_previous_period]
+        & reported_previous_period.loc[needs_previous_period]
+    )
+    return full_mask

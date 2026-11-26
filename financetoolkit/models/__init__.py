@@ -143,6 +143,7 @@ _MODULES = {
         "get_number_of_shares_criteria",
         "get_operating_cashflow_criteria",
         "get_piotroski_score",
+        "get_reported_mask",
         "get_return_on_assets_criteria",
     ],
     "financetoolkit.models.quality.quality_model": [
@@ -332,6 +333,7 @@ __all__ = [
     "get_reinvestment_rate",
     "get_relative_size",
     "get_relevered_beta",
+    "get_reported_mask",
     "get_research_and_development_asset",
     "get_residual_income",
     "get_residual_sigma",
@@ -505,6 +507,7 @@ if TYPE_CHECKING:
         get_number_of_shares_criteria,
         get_operating_cashflow_criteria,
         get_piotroski_score,
+        get_reported_mask,
         get_return_on_assets_criteria,
     )
     from financetoolkit.models.quality.quality_model import (

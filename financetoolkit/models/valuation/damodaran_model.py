@@ -264,7 +264,6 @@ def get_industry_statistics(dataset: str, region: str) -> pd.DataFrame:
         entity=file_name,
         fetch=fetch,
         description=description,
-        # An answer that is not a workbook is reported below; a workbook always holds rows.
         expect_empty=True,
     )
 

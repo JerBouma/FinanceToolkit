@@ -355,6 +355,54 @@ def get_put_call_parity(
     return forward_differential
 
 
+def get_put_call_parity_gap(
+    strike_price: float | np.ndarray,
+    time_to_expiration: float | np.ndarray,
+    stock_price: float,
+    risk_free_rate: float,
+    volatility: float,
+    dividend_yield: float = 0,
+) -> float | np.ndarray:
+    """
+    Calculate the put-call parity gap of the Black-Scholes call and put prices: by how much
+    the call minus the put differs from the stock price minus the discounted strike price.
+
+    Args:
+        strike_price (float | np.ndarray): The strike price(s).
+        time_to_expiration (float | np.ndarray): The time(s) to expiration in years.
+        stock_price (float): The current stock price.
+        risk_free_rate (float): The continuously compounded risk free rate.
+        volatility (float): The volatility of the stock.
+        dividend_yield (float, optional): The continuously compounded dividend yield.
+            Defaults to 0.
+
+    Returns:
+        float | np.ndarray: The parity gap per strike price and time to expiration.
+    """
+    # The call and put of every strike price and expiration on arrays at once.
+    call_price, put_price = (
+        get_black_scholes(
+            stock_price=stock_price,
+            strike_price=strike_price,
+            risk_free_rate=risk_free_rate,
+            volatility=volatility,
+            time_to_expiration=time_to_expiration,
+            dividend_yield=dividend_yield,
+            put_option=put,
+        )
+        for put in (False, True)
+    )
+    return get_put_call_parity(
+        stock_price=stock_price,
+        strike_price=strike_price,
+        risk_free_rate=risk_free_rate,
+        time_to_expiration=time_to_expiration,
+        dividend_yield=dividend_yield,
+        call_price=call_price,
+        put_price=put_price,
+    )
+
+
 def get_garman_kohlhagen(
     stock_price: float | pd.Series,
     strike_price: float | pd.Series,

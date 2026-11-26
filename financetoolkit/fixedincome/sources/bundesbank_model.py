@@ -480,6 +480,31 @@ def get_survey_inflation_expectations(start_date: str, end_date: str) -> pd.Data
     return (yields - real_rates).dropna(how="all")
 
 
+def get_period_survey_inflation_expectations(
+    start_date: str, end_date: str, period: str = "monthly"
+) -> pd.DataFrame:
+    """
+    Derives the inflation Consensus Economics' survey expects for Germany over 5 and 10
+    years (see get_survey_inflation_expectations) monthly, or quarterly as the last month
+    of each quarter.
+
+    Args:
+        start_date (str): The start date (YYYY-MM-DD).
+        end_date (str): The end date (YYYY-MM-DD).
+        period (str, optional): Options are: "monthly", "quarterly". Defaults to "monthly".
+
+    Returns:
+        pd.DataFrame: The expected inflation as decimals, indexed by month or quarter with
+        the columns "5Y" and "10Y".
+    """
+    expectations = get_survey_inflation_expectations(start_date, end_date)
+
+    if expectations.empty or period == "monthly":
+        return expectations
+
+    return expectations.groupby(expectations.index.asfreq("Q")).last()
+
+
 # The monthly average yields on debt securities outstanding issued by German non-MFI
 # corporations, from 1957, and by the public sector, from 1955. Their difference is a
 # long history of the German corporate credit spread; the Bundesbank does not split the
@@ -551,3 +576,32 @@ def get_corporate_bond_yield(start_date: str, end_date: str) -> pd.DataFrame:
         end_date=end_date,
         description=description,
     )
+
+
+def get_all_ratings_corporate_bond_yield(
+    start_date: str, end_date: str, spread: bool = False
+) -> pd.DataFrame:
+    """
+    Retrieves the monthly average yield of German corporate bonds of all ratings, or its
+    spread over the yield of the public sector.
+
+    Args:
+        start_date (str): The start date (YYYY-MM-DD).
+        end_date (str): The end date (YYYY-MM-DD).
+        spread (bool, optional): Whether to return the spread over the public sector.
+            Defaults to False.
+
+    Returns:
+        pd.DataFrame: The yield or spread as decimals, indexed by month in the column
+        "All ratings".
+    """
+    yields = get_corporate_bond_yield(start_date, end_date)
+
+    if yields.empty:
+        return yields
+
+    corporate = (
+        yields["Corporate"] - yields["Public"] if spread else yields["Corporate"]
+    )
+
+    return corporate.to_frame("All ratings")

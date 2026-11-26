@@ -236,3 +236,20 @@ def get_secured_overnight_financing_rate() -> pd.DataFrame:
     )
 
     return secured_overnight_financing_rate
+
+
+def get_overnight_rate() -> pd.DataFrame:
+    """
+    Get the Secured Overnight Financing Rate (SOFR), the overnight rate of the United
+    States, as a "United States" column next to the overnight rates of other countries.
+
+    Returns:
+        pd.DataFrame: The daily rate as a decimal in the column "United States".
+    """
+    # The New York Fed publishes the full history of SOFR in one file.
+    rate = get_secured_overnight_financing_rate()
+    return (
+        rate[["Rate"]].rename(columns={"Rate": "United States"})
+        if not rate.empty
+        else rate
+    )

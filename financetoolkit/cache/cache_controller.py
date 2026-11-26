@@ -3,6 +3,7 @@
 __docformat__ = "google"
 
 import contextlib
+import functools
 import os
 import platform
 import time
@@ -602,46 +603,20 @@ class Cache:
             if coverage_start <= coverage_end:
                 coverage = (coverage_start, coverage_end)
 
-        def merge_payload(existing_payload: bytes | None) -> bytes:
-            """
-            Merge the incoming frame into whatever the cache holds right now.
-
-            Args:
-                existing_payload (bytes | None): The payload stored under the write
-                    lock, or None when the entity has never been cached.
-
-            Returns:
-                bytes: The payload to store in its place.
-            """
-            # A payload that can't be read (another format, such as a pickle) or merged
-            # (a frame of another layout) is replaced by the incoming frame, rather than
-            # failing the write and leaving the broken payload in place.
-            if existing_payload is not None:
-                try:
-                    existing = serialization_model.decode_dataframe(existing_payload)
-
-                    return serialization_model.encode_dataframe(
-                        frame_model.merge_frames(existing, data, date_axis, coverage)
-                    )
-                except Exception as error:  # noqa: BLE001
-                    logger.debug(
-                        "Replacing the cached %s.%s for %s that could not be merged: %s",
-                        source,
-                        dataset,
-                        entity,
-                        error,
-                    )
-
-            return serialization_model.encode_dataframe(
-                frame_model.merge_frames(None, data, date_axis)
-            )
-
         try:
             # The payload and the range it covers are only true together, so they are written in a single transaction that another writer has to wait for.  # noqa: E501
             self._backend.store_series_and_coverage(
                 key,
                 entity,
-                merge_payload,
+                functools.partial(
+                    frame_model.merge_payload,
+                    data=data,
+                    date_axis=date_axis,
+                    coverage=coverage,
+                    source=source,
+                    dataset=dataset,
+                    entity=entity,
+                ),
                 coverage=coverage,
                 source=source,
                 dataset=dataset,

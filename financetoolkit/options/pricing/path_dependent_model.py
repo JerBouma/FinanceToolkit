@@ -351,7 +351,6 @@ def get_geometric_asian_option(
     with np.errstate(divide="ignore", invalid="ignore"):
         value = np.where(
             np.asarray(time_to_expiration) <= 0,
-            # At expiration the option pays its exercise value.
             np.maximum((strike_price - stock_price) * (1 if put_option else -1), 0.0),
             _lognormal_option(
                 np.exp(mean + 0.5 * variance),
@@ -2295,3 +2294,83 @@ def get_double_touch_option(
         return float(cash_payout * discount * stay)
 
     return float(cash_payout * discount * (1 - stay))
+
+
+def get_barrier_option_value(
+    strike_price: float | np.ndarray,
+    time_to_expiration: float | np.ndarray,
+    stock_price: float,
+    risk_free_rate: float,
+    volatility: float,
+    dividend_yield: float,
+    put_option: bool,
+    knock_type: str,
+    barrier_direction: str,
+    barrier: float,
+    upper_barrier: float,
+    second_barrier: float | None = None,
+    barrier_window: str = "full",
+    window_share: float = 0.5,
+    rebate: float = 0.0,
+) -> float | np.ndarray:
+    """
+    Calculate the price of the barrier option a barrier setup describes: a double barrier
+    option, a partial-time barrier option when the barrier is watched in a window, a soft
+    barrier option when a second barrier is given, and a single barrier option otherwise.
+
+    Args:
+        strike_price (float | np.ndarray): The strike price(s).
+        time_to_expiration (float | np.ndarray): The time(s) to expiration in years.
+        stock_price (float): The current stock price.
+        risk_free_rate (float): The continuously compounded risk free rate.
+        volatility (float): The volatility of the stock.
+        dividend_yield (float): The continuously compounded dividend yield.
+        put_option (bool): Whether the option is a put.
+        knock_type (str): Whether the barrier knocks the option "in" or "out".
+        barrier_direction (str): "down", "up" or "double".
+        barrier (float): The barrier, the lower barrier of a double barrier option and the
+            first barrier of a soft barrier option.
+        upper_barrier (float): The upper barrier of a double barrier option.
+        second_barrier (float | None, optional): The second barrier of a soft barrier option.
+            Defaults to None, no soft barrier.
+        barrier_window (str, optional): The part of the option's life the barrier is watched:
+            "full", "start" or "end". Defaults to "full".
+        window_share (float, optional): The share of the option's life a partial-time window
+            covers. Defaults to 0.5.
+        rebate (float, optional): The rebate of a single barrier option. Defaults to 0.0.
+
+    Returns:
+        float | np.ndarray: The price of the option per strike price and time to expiration.
+    """
+    arguments = {
+        "stock_price": stock_price,
+        "strike_price": strike_price,
+        "risk_free_rate": risk_free_rate,
+        "volatility": volatility,
+        "time_to_expiration": time_to_expiration,
+        "dividend_yield": dividend_yield,
+        "put_option": put_option,
+        "knock_type": knock_type,
+    }
+    if barrier_direction == "double":
+        return get_double_barrier_option(
+            **arguments, lower_barrier=barrier, upper_barrier=upper_barrier
+        )
+    if barrier_window != "full":
+        return get_partial_time_barrier_option(
+            **arguments,
+            barrier=barrier,
+            barrier_direction=barrier_direction,
+            barrier_window=barrier_window,
+            window_share=window_share,
+        )
+    if second_barrier is not None:
+        return get_soft_barrier_option(
+            **arguments,
+            first_barrier=barrier,
+            second_barrier=second_barrier,
+            barrier_direction=barrier_direction,
+        )
+    return get_barrier_option(
+        **arguments, barrier=barrier, barrier_direction=barrier_direction, rebate=rebate
+    )

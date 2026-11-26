@@ -289,6 +289,29 @@ def get_tracking(
     )
 
 
+def get_last_prices(
+    prices: pd.DataFrame, before: pd.Timestamp, inclusive: bool = True
+) -> pd.Series:
+    """
+    The last close up to a date, per ticker: a holding that did not trade on the date (a
+    holiday on its exchange) keeps its last close.
+
+    Args:
+        prices (pd.DataFrame): The closes, a column per ticker, with a DatetimeIndex.
+        before (pd.Timestamp): The date.
+        inclusive (bool, optional): Whether the close of the date itself counts. Defaults
+            to True.
+
+    Returns:
+        pd.Series: The last close per ticker, NaN for every ticker when there is no close
+        up to the date.
+    """
+    rows = prices.loc[prices.index <= before if inclusive else prices.index < before]
+    if rows.empty:
+        return pd.Series(float("nan"), index=prices.columns)
+    return rows.ffill().iloc[-1]
+
+
 def get_contribution(
     weights: pd.Series,
     start_prices: pd.Series,

@@ -898,10 +898,7 @@ class ToolkitProvider:
                 benchmark_ticker=benchmark_ticker,
                 risk_free_rate=toolkit_risk_free_rate,
                 basket=toolkit_basket,
-                # The same database the provider opened, or False when running uncached.
                 use_cached_data=self._use_cached_data,
-                # Unrounded, as the answer is rounded to significant digits when formatted,
-                # so small values (a daily variance) keep their precision.
                 rounding=None,
             )
             return self._toolkit_cache.keep(cache_key, toolkit_instance)

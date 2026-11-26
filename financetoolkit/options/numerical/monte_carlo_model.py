@@ -837,7 +837,6 @@ def get_longstaff_schwartz_option_prices(
                 paths[rows, date + 1] / strike, basis, degree
             ),
             discount,
-            # The Black-Scholes value of the option for the life left after the date.
             lambda date, rows, strike=strike: np.asarray(
                 get_black_scholes(
                     paths[rows, date + 1],

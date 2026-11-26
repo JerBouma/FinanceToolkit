@@ -824,3 +824,16 @@ def test_liquidity_sweep_matches_pandas_ta_classic_on_the_test_data():
             candles["Open"], candles["High"], candles["Low"], candles["Close"]
         )
         assert (int(sweeps.eq(1).sum()), int(sweeps.eq(-1).sum())) == counts
+
+
+def test_the_signal_names_are_the_columns_get_signals_gives():
+    prices = pd.Series(
+        np.linspace(100, 120, 300),
+        index=pd.period_range("2024-01-01", periods=300, freq="D"),
+    )
+
+    signals = pattern_model.get_signals(
+        prices, 50, 200, 12, 26, 9, 14, 70, 30, 20, 2, 252
+    )
+
+    assert list(signals.columns) == pattern_model.SIGNAL_NAMES

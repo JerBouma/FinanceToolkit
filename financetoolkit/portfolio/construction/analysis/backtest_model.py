@@ -7,6 +7,7 @@ from collections.abc import Callable
 import numpy as np
 import pandas as pd
 
+from financetoolkit.portfolio.construction.optimization import optimization_model
 from financetoolkit.portfolio.construction.optimization.optimization_model import (
     ZERO_VOLATILITY_TOLERANCE,
 )
@@ -352,3 +353,170 @@ def get_in_sample_expectations(weights: pd.DataFrame, estimates: dict) -> pd.Dat
         }
 
     return pd.DataFrame(expectations).T
+
+
+def get_window_estimates(
+    window: pd.DataFrame,
+    estimates: dict,
+    risk_free_rate: Callable[[pd.Index], float],
+    periods_per_year: float,
+    covariance: str,
+    covariance_span: int,
+    expected_returns: str,
+    expected_returns_span: int,
+    benchmark: pd.Series | None,
+    factors: pd.DataFrame | None,
+) -> tuple:
+    """
+    Estimate the risk free rate, expected returns and covariance matrix of an estimation
+    window of a walk-forward backtest. The estimates of a window are the same for every
+    method, so they are made once and kept in estimates per last date of the window.
+
+    Args:
+        window (pd.DataFrame): The returns of the estimation window, one column per asset.
+        estimates (dict): The estimates made so far per last date of their window, to which
+            this window's are added.
+        risk_free_rate (Callable[[pd.Index], float]): Gives the annualized risk free rate over
+            the dates of a window.
+        periods_per_year (float): The number of return periods in a year.
+        covariance (str): The covariance estimator.
+        covariance_span (int): The span of an exponentially weighted covariance.
+        expected_returns (str): The expected returns estimator.
+        expected_returns_span (int): The span of exponentially weighted expected returns.
+        benchmark (pd.Series | None): The benchmark returns, for the CAPM expected returns and
+            the single factor covariance.
+        factors (pd.DataFrame | None): The factor returns, for the factor covariance.
+
+    Returns:
+        tuple: The annualized risk free rate, the expected returns (pd.Series) and the
+        covariance matrix (pd.DataFrame) of the window.
+    """
+    if window.index[-1] not in estimates:
+        rate = risk_free_rate(window.index)
+        estimates[window.index[-1]] = (
+            rate,
+            *optimization_model.get_expected_returns_and_covariance(
+                window,
+                periods_per_year,
+                covariance,
+                covariance_span,
+                expected_returns,
+                expected_returns_span,
+                benchmark,
+                rate,
+                factors,
+            ),
+        )
+    return estimates[window.index[-1]]
+
+
+def get_strategy_weights(
+    window: pd.DataFrame,
+    method: str,
+    generator: np.random.Generator,
+    estimate: Callable[[pd.DataFrame], tuple],
+    periods_per_year: float,
+    minimum_weight: float,
+    maximum_weight: float,
+) -> pd.Series:
+    """
+    Set the weights of one weighting method of a walk-forward backtest from the returns of
+    its estimation window.
+
+    Args:
+        window (pd.DataFrame): The returns of the estimation window, one column per asset.
+        method (str): The weighting method, such as "equal_weight", "random",
+            "minimum_variance" or "maximum_sharpe"; any other method sets mean-variance
+            weights.
+        generator (np.random.Generator): The random generator of the "random" method, one
+            per backtest, drawing a new portfolio on every date.
+        estimate (Callable[[pd.DataFrame], tuple]): Gives the annualized risk free rate,
+            expected returns and covariance matrix of a window (see get_window_estimates).
+        periods_per_year (float): The number of return periods in a year.
+        minimum_weight (float): The minimum weight of an asset.
+        maximum_weight (float): The maximum weight of an asset.
+
+    Returns:
+        pd.Series: The weight per asset.
+    """
+    if method == "equal_weight":
+        return pd.Series(1 / window.shape[1], index=window.columns)
+    if method == "random":
+        return optimization_model.get_random_weights(window.columns, generator)
+    if method in ("minimum_mad", "minimum_semideviation"):
+        return optimization_model.get_mean_risk_weights(
+            window,
+            risk_measure=method.removeprefix("minimum_"),
+            minimum_weight=minimum_weight,
+            maximum_weight=maximum_weight,
+        )
+    if method == "minimum_cvar":
+        return optimization_model.get_minimum_cvar_weights(
+            window,
+            minimum_weight=minimum_weight,
+            maximum_weight=maximum_weight,
+        )
+    if method == "minimum_drawdown":
+        return optimization_model.get_minimum_drawdown_weights(
+            window,
+            minimum_weight=minimum_weight,
+            maximum_weight=maximum_weight,
+        )
+    risk_free_rate, mu, sigma = estimate(window)
+    if method == "maximum_omega":
+        return optimization_model.get_maximum_omega_weights(
+            window,
+            minimum_weight=minimum_weight,
+            maximum_weight=maximum_weight,
+            expected_returns=mu / periods_per_year,
+        )
+    if method == "maximum_cvar_ratio":
+        return optimization_model.get_maximum_cvar_ratio_weights(
+            window,
+            risk_free_rate=risk_free_rate / periods_per_year,
+            minimum_weight=minimum_weight,
+            maximum_weight=maximum_weight,
+            expected_returns=mu / periods_per_year,
+        )
+    if method == "hierarchical_equal_risk_contribution":
+        return optimization_model.get_hierarchical_equal_risk_contribution_weights(
+            sigma,
+            minimum_weight=minimum_weight,
+            maximum_weight=maximum_weight,
+        )
+    if method == "nested_clustered_optimization":
+        return optimization_model.get_nested_clustered_optimization_weights(
+            mu, sigma, risk_free_rate=risk_free_rate
+        )
+    if method == "inverse_volatility":
+        return optimization_model.get_inverse_volatility_weights(sigma)
+    if method == "hierarchical_risk_parity":
+        return optimization_model.get_hierarchical_risk_parity_weights(
+            sigma,
+            minimum_weight=minimum_weight,
+            maximum_weight=maximum_weight,
+        )
+    if method == "risk_parity":
+        return optimization_model.get_risk_parity_weights(
+            sigma,
+            minimum_weight=minimum_weight,
+            maximum_weight=maximum_weight,
+        )
+    if method == "minimum_variance":
+        return optimization_model.get_minimum_variance_weights(
+            sigma, minimum_weight, maximum_weight
+        )
+    if method == "maximum_diversification":
+        return optimization_model.get_maximum_diversification_weights(
+            sigma, minimum_weight, maximum_weight
+        )
+    if method == "maximum_sharpe":
+        return optimization_model.get_maximum_sharpe_weights(
+            mu, sigma, risk_free_rate, minimum_weight, maximum_weight
+        )
+    return optimization_model.get_mean_variance_weights(
+        mu,
+        sigma,
+        minimum_weight=minimum_weight,
+        maximum_weight=maximum_weight,
+    )

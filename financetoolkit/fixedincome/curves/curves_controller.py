@@ -420,27 +420,12 @@ class CurvesFixedIncome:
             self._latest_yield_curve(country, date), country, interpolation
         )
 
-        def spot_rates(years: float) -> pd.Series:
-            # The spot rates (compounded at the coupon frequency) the par yield discounts
-            # with: on the bootstrap's coupon dates for linear_par, between which it
-            # interpolates them linearly, and otherwise read from the interpolated curve
-            # at the bond's own coupon dates.
-            times = (
-                maturities
-                if interpolation == "linear_par"
-                else bond_model.get_cash_flow_periods(years, frequency) / frequency
-            )
-            discount = interpolation_model.get_discount_factors(
-                maturities, zero_rates, times, interpolation
-            )
-            return pd.Series(
-                frequency * (discount ** (-1 / (times * frequency)) - 1), index=times
-            )
-
         par_yields = pd.Series(
             {
                 years: yieldcurve_model.get_par_yield(
-                    spot_rates=spot_rates(years),
+                    spot_rates=interpolation_model.get_coupon_spot_rates(
+                        maturities, zero_rates, years, frequency, interpolation
+                    ),
                     years_to_maturity=years,
                     frequency=frequency,
                 )

@@ -370,7 +370,6 @@ class UtilityToolRegistry:
                         exclude={"title"}, exclude_none=True
                     ),
                 ),
-                # Text only, so the answer is not sent a second time as structured content.
                 structured_output=False,
             )
             # A misspelt or foreign argument is named in the answer rather than dropped.

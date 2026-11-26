@@ -183,7 +183,6 @@ class ValuationModels:
             cash_and_cash_equivalents=self._balance_sheet_statement.loc[
                 :, "Cash and Cash Equivalents", :
             ],
-            # Deducted with the cash, as in the Ratios module's Enterprise Value.
             short_term_investments=(
                 self._balance_sheet_statement.loc[:, "Short Term Investments", :]
                 if "Short Term Investments"
@@ -467,8 +466,6 @@ class ValuationModels:
 
         return wacc_model.get_weighted_average_cost_of_capital(
             share_price=share_prices,
-            # The capital weights are market values at the end of the period, so the shares
-            # and the debt are those of the period, not averages over the trailing periods.
             total_shares_outstanding=average_shares,
             interest_expense=trailing_sum(
                 self._income_statement.loc[:, "Interest Expense", :], trailing
@@ -2158,9 +2155,6 @@ class ValuationModels:
                 growth_rate=growth_rate_float,
                 perpetual_growth_rate=perpetual_growth_rate_float,
                 weighted_average_cost_of_capital=weighted_average_cost_of_capital_float,
-                # The cash and short term investments added, the debt, minority interest
-                # and preferred stock deducted, as get_enterprise_value_breakdown does the
-                # reverse.
                 **{
                     name: value
                     for name, value in self._latest_capital(ticker).items()

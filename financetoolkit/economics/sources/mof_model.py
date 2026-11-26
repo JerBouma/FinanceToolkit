@@ -18,10 +18,14 @@ FILES = ["historical/jgbcme_all.csv", "jgbcme.csv"]
 COUNTRY = "Japan"
 
 
-def get_government_bond_yields() -> pd.DataFrame:
+def get_government_bond_yields(start_date: str | None = None) -> pd.DataFrame:
     """
     Retrieves the daily yields of Japanese government bonds (JGBs) for every maturity
     from 1 to 40 years, as published by the Ministry of Finance since 1974.
+
+    Args:
+        start_date (str | None, optional): The first date to keep (YYYY-MM-DD). Defaults to
+            None, the full history.
 
     Returns:
         pd.DataFrame: The yields as decimals, indexed by day with a column per maturity
@@ -57,12 +61,19 @@ def get_government_bond_yields() -> pd.DataFrame:
         # The Ministry of Finance publishes the yields in percent; a "-" is no issue.
         return yields / 100
 
-    return collect_cached_data(
+    yields = collect_cached_data(
         source=policy_model.JAPAN_MINISTRY_OF_FINANCE,
         dataset="yields",
         entity="jgbcme",
         fetch=fetch,
         description=description,
+    )
+
+    # The Ministry of Finance publishes one file with the full history.
+    return (
+        yields.loc[pd.Period(start_date, "D") :]
+        if start_date and not yields.empty
+        else yields
     )
 
 

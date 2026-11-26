@@ -4536,8 +4536,6 @@ class ToolRegistry:
                     idempotentHint=True,
                     openWorldHint=True,
                 ),
-                # The answer is text only: an output schema would make every answer arrive
-                # twice, as text and as structured content holding the same text.
                 structured_output=False,
             )
             index_cat = spec.index_category or spec.module_name

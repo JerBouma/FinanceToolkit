@@ -673,6 +673,130 @@ def convert_prices(
     return converted
 
 
+def get_first_close(closes: pd.DataFrame, symbol: str, day: pd.Timestamp) -> float:
+    """
+    The price of a transaction: the first close of the ticker's own trading days on or
+    after its date, as the positions, the benchmark and the dividends use. The previous
+    close would price a weekend purchase on Friday while its position starts on Monday.
+
+    Args:
+        closes (pd.DataFrame): The daily closes per ticker, with a DatetimeIndex and NaN on
+            the days a ticker did not trade.
+        symbol (str): The ticker of the transaction.
+        day (pd.Timestamp): The date of the transaction.
+
+    Returns:
+        float: The close, the latest one for a trade after the latest close, or NaN when
+        the ticker has no closes.
+    """
+    if symbol not in closes.columns or pd.isna(day):
+        return float("nan")
+    available = closes[symbol].dropna()
+    following = available.loc[day.normalize() :]
+    if not following.empty:
+        return float(following.iloc[0])
+    # A trade after the latest close (the weekend after it, or today before the provider has today's bar) takes the latest close, the day its position, benchmark and dividends start on as well.  # noqa: E501
+    if available.empty:
+        return float("nan")
+    logger.warning(
+        "The %s transaction of %s has no close on or after that date and is priced at the last close of %s.",
+        symbol,
+        day.strftime("%Y-%m-%d"),
+        available.index[-1].strftime("%Y-%m-%d"),
+    )
+    return float(available.iloc[-1])
+
+
+def get_conversion_factors(
+    currencies: pd.Series,
+    dates: pd.PeriodIndex,
+    reporting_currency: str,
+    exchange_rates: pd.DataFrame,
+) -> pd.Series:
+    """
+    The factor that turns the price of each transaction into the reporting currency at the
+    exchange rate of its day, or the last one before it. A transaction without a known
+    currency is taken to be in the reporting currency.
+
+    Args:
+        currencies (pd.Series): The currency of each transaction, NaN when unknown.
+        dates (pd.PeriodIndex): The date of each transaction.
+        reporting_currency (str): The currency to express the transactions in.
+        exchange_rates (pd.DataFrame): The daily exchange rates, one column per rate such as
+            USDGBP=X (see `get_exchange_rate_ticker`).
+
+    Returns:
+        pd.Series: The conversion factor of each transaction.
+
+    Raises:
+        ValueError: When a transaction has no exchange rate on or before its date.
+    """
+    _, reporting_units = get_price_unit(reporting_currency)
+    factors = pd.Series(1.0, index=currencies.index)
+    for currency in set(currencies.dropna().astype(str)):
+        rate_ticker = get_exchange_rate_ticker(reporting_currency, currency)
+        rows = (currencies == currency).to_numpy()
+        _, units = get_price_unit(currency)
+        rate: np.ndarray | float = 1.0
+        if rate_ticker is not None:
+            # The rate of each transaction's day, or the last one before it.
+            rate = (
+                align_exchange_rate(exchange_rates[rate_ticker], dates[rows]).to_numpy(
+                    dtype=float
+                )
+                if rate_ticker in exchange_rates.columns
+                else np.full(rows.sum(), np.nan)
+            )
+            if np.isnan(rate).any():
+                missing = dates[rows][np.isnan(rate)].min()
+                raise ValueError(
+                    f"Transactions in {currency} cannot be converted to the reporting "
+                    f"currency {reporting_currency} without the exchange rate "
+                    f"{rate_ticker} on or before {missing}."
+                )
+        factors[rows] = reporting_units / units / rate
+    return factors
+
+
+def convert_benchmark_data(
+    data: pd.DataFrame,
+    currency: str | None,
+    conversions: set[str],
+    benchmark_name: str,
+    benchmark_currency: str,
+    exchange_rates: pd.DataFrame,
+    columns: list[str],
+) -> pd.DataFrame:
+    """
+    The historical data of the benchmark expressed in the currency of a transaction, so a
+    transaction in euros buys benchmark units priced in euros.
+
+    Args:
+        data (pd.DataFrame): The historical data of the benchmark, one column per field.
+        currency (str | None): The currency to express the data in.
+        conversions (set[str]): The currencies that differ from the benchmark's (in unit).
+        benchmark_name (str): The ticker of the benchmark.
+        benchmark_currency (str): The currency the benchmark is quoted in.
+        exchange_rates (pd.DataFrame): The daily exchange rates, see `convert_prices`.
+        columns (list[str]): The columns to convert, see `convert_historical_data`.
+
+    Returns:
+        pd.DataFrame: The converted historical data, or the data as it is when the currency
+        needs no conversion.
+    """
+    if data.empty or currency not in conversions:
+        return data
+    data = data.copy()
+    data.columns = pd.MultiIndex.from_product([data.columns, [benchmark_name]])
+    data = convert_historical_data(
+        data,
+        {benchmark_name: (str(benchmark_currency), str(currency))},
+        exchange_rates,
+        columns,
+    )
+    return data.droplevel(1, axis=1)
+
+
 def convert_historical_data(
     historical_data: pd.DataFrame,
     conversions: dict[str, tuple[str, str]],

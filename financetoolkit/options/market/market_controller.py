@@ -330,18 +330,13 @@ class MarketOptions:
         | ('AAPL', '2026-11-25') |                    9 |      357.5 |        352.78 |                 0.0134 |
         """
 
-        def calculate(calls, puts, stock_price, *_):
-            max_pain = market_metrics_model.get_max_pain(calls, puts)
-            return pd.Series(
-                {
-                    "Max Pain": max_pain,
-                    "Stock Price": stock_price,
-                    "Distance to Max Pain": max_pain / stock_price - 1,
-                }
-            )
-
         return self._per_expiry(
-            calculate, expiration_dates, number_of_expirations, rounding
+            lambda calls, puts, stock_price, *_: market_metrics_model.get_max_pain_distance(
+                calls, puts, stock_price
+            ),
+            expiration_dates,
+            number_of_expirations,
+            rounding,
         )
 
     @handle_errors
@@ -1168,22 +1163,13 @@ class MarketOptions:
         | ('AAPL', '2026-11-25') |       0.2763 |    -1.4946 |     8.8768 |
         """
 
-        def calculate(calls, puts, _, time, rate, *__):
-            strip, forward = market_metrics_model.get_model_free_strip(
-                calls, puts, time, rate
-            )
-            moments = market_metrics_model.get_risk_neutral_moments(
-                strip.index.to_numpy(dtype=float),
-                strip["Call Price"].to_numpy(),
-                strip["Put Price"].to_numpy(),
-                forward,
-                rate,
-                time,
-            )
-            return pd.concat([pd.Series({"Forward Price": forward}), moments])
-
         return self._per_expiry(
-            calculate, expiration_dates, number_of_expirations, rounding
+            lambda calls, puts, _, time, rate, *__: market_metrics_model.get_chain_risk_neutral_moments(
+                calls, puts, time, rate
+            ),
+            expiration_dates,
+            number_of_expirations,
+            rounding,
         )
 
     def _skew_index(self, ticker: str, days: int) -> pd.Series:
@@ -1477,82 +1463,20 @@ class MarketOptions:
 
         prices = self._daily_historical["Adj Close"]
 
-        def calculate(ticker, expiration_date, calls, puts, _, time, rate, __):
-            strip, forward = market_metrics_model.get_model_free_strip(
-                calls, puts, time, rate
-            )
-            if strip.empty:
-                logger.warning(
-                    "%s has no bid quotes for its %s options to build the strip from.",
+        return self._per_expiry(
+            lambda ticker, expiration_date, calls, puts, _, time, rate, __: (
+                market_metrics_model.get_variance_swap_terms(
+                    calls,
+                    puts,
+                    time,
+                    rate,
+                    prices,
                     ticker,
                     expiration_date,
+                    strike,
+                    trade_date,
                 )
-            below = strip.index[strip.index <= forward]
-            boundary = float(below.max()) if len(below) else np.nan
-            fair = (
-                np.nan
-                if strip.empty
-                else market_metrics_model.get_variance_swap_fair_strike(
-                    strip.index.to_numpy(dtype=float),
-                    strip["Call Price"].to_numpy(),
-                    strip["Put Price"].to_numpy(),
-                    forward,
-                    rate,
-                    time,
-                    boundary,
-                )
-            )
-            cboe, _ = market_metrics_model.get_model_free_variance(
-                calls, puts, time, rate
-            )
-            result = {
-                "Forward Price": forward,
-                "Boundary Strike": boundary,
-                "Fair Variance": fair,
-                "Fair Volatility": np.sqrt(fair) if fair > 0 else np.nan,
-                "Cboe Variance": cboe,
-            }
-            if strike is None:
-                return pd.Series(result)
-
-            history = prices[ticker].dropna()
-            last_date = history.index[-1].to_timestamp()
-            # The weekdays after the last historical date up to and including the expiry.
-            remaining = int(
-                np.busday_count(
-                    (last_date + pd.Timedelta(days=1)).date(),
-                    (pd.Timestamp(expiration_date) + pd.Timedelta(days=1)).date(),
-                )
-            )
-            realized, observed = np.nan, 0
-            if trade_date is not None:
-                since = history[history.index >= pd.Period(trade_date, freq="D")]
-                if since.empty:
-                    raise ValueError(
-                        f"The historical data of {ticker} ends before the trade date {trade_date}."
-                    )
-                observed = len(since) - 1
-                realized = float(market_metrics_model.get_realized_variance(since))
-            elapsed = observed / (observed + remaining) if observed + remaining else 1.0
-            result.update(
-                {
-                    "Variance Strike": strike**2,
-                    "Realized Variance": realized,
-                    "Elapsed Fraction": elapsed,
-                    "Variance Swap Value": market_metrics_model.get_variance_swap_value(
-                        realized_variance=realized,
-                        fair_variance=fair,
-                        variance_strike=strike**2,
-                        elapsed_fraction=elapsed,
-                        remaining_time=time,
-                        risk_free_rate=rate,
-                    ),
-                }
-            )
-            return pd.Series(result)
-
-        return self._per_expiry(
-            calculate,
+            ),
             expiration_dates,
             number_of_expirations,
             rounding,

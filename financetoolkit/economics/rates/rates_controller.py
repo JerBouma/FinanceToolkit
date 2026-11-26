@@ -2,6 +2,7 @@
 
 __docformat__ = "google"
 
+import functools
 import itertools
 
 import pandas as pd
@@ -346,7 +347,6 @@ class RatesEconomics:
             standardize=standardize,
             axis="rows",
             row_slice=True,
-            # The BIS lists weekends and holidays without a rate.
             dropna=period in ("daily", "weekly") or end_of_period,
         )
 
@@ -754,7 +754,6 @@ class RatesEconomics:
             standardize=standardize,
             axis="rows",
             row_slice=True,
-            # Rows empty for every selected country, e.g. a month only another source has.
             dropna=period != "yearly",
         )
 
@@ -1078,7 +1077,6 @@ class RatesEconomics:
             standardize=standardize,
             axis="rows",
             row_slice=True,
-            # Rows empty for every selected country, e.g. a month only another source has.
             dropna=period in ("daily", "weekly"),
         )
 
@@ -1418,7 +1416,6 @@ class RatesEconomics:
             standardize=standardize,
             axis="rows",
             row_slice=True,
-            # Months empty for every selected country, e.g. one without inflation yet.
             dropna=period == "monthly",
         )
 
@@ -2476,31 +2473,20 @@ class RatesEconomics:
         )
         start_date = buffered_start_date(self._start_date, "monthly")
 
-        def euro_area() -> pd.DataFrame:
-            survey = ecb_model.get_survey_inflation_expectations(
-                start_date, self._end_date
-            ).rename(columns={"Euro Area": "5Y"})
-
-            if survey.empty or period == "quarterly":
-                return survey
-
-            # A survey round holds until the next one, a quarter later.
-            survey.index = survey.index.asfreq("M", how="start")
-            months = pd.period_range(survey.index[0], survey.index[-1] + 2, freq="M")
-
-            return survey.reindex(months).ffill(limit=2)
-
-        def germany() -> pd.DataFrame:
-            expectations = bundesbank_model.get_survey_inflation_expectations(
-                start_date, self._end_date
-            )
-
-            if expectations.empty or period == "monthly":
-                return expectations
-
-            return expectations.groupby(expectations.index.asfreq("Q")).last()
-
-        sources = {"Germany": germany, "Euro Area": euro_area}
+        sources = {
+            "Germany": functools.partial(
+                bundesbank_model.get_period_survey_inflation_expectations,
+                start_date,
+                self._end_date,
+                period,
+            ),
+            "Euro Area": functools.partial(
+                ecb_model.get_period_survey_inflation_expectations,
+                start_date,
+                self._end_date,
+                period,
+            ),
+        }
 
         if countries is not None and not isinstance(countries, str | list | tuple):
             raise TypeError(

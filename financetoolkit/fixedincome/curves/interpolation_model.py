@@ -3,6 +3,7 @@
 __docformat__ = "google"
 
 import numpy as np
+import pandas as pd
 from scipy.interpolate import CubicHermiteSpline, CubicSpline
 
 from financetoolkit.fixedincome.bonds import bond_model
@@ -331,6 +332,40 @@ def get_discount_factors(
     log_discount, _ = _read(maturities, zero_rates, years, interpolation)
 
     return np.exp(-log_discount)
+
+
+def get_coupon_spot_rates(
+    maturities: np.ndarray | list,
+    zero_rates: np.ndarray | list,
+    years_to_maturity: float,
+    frequency: int,
+    interpolation: str = "monotone_convex",
+) -> pd.Series:
+    """
+    Calculate the spot rates, compounded at the coupon frequency, that a par yield discounts
+    with: on the bootstrap's coupon dates for linear par, between which it interpolates them
+    linearly, and otherwise read from the interpolated curve at the bond's own coupon dates.
+
+    Args:
+        maturities (np.ndarray | list): The maturities of the curve in years.
+        zero_rates (np.ndarray | list): The continuously compounded zero rates.
+        years_to_maturity (float): The maturity of the bond in years.
+        frequency (int): The number of coupons a year.
+        interpolation (str, optional): How the curve is read between its maturities, see
+            get_discount_factors. Defaults to "monotone_convex".
+
+    Returns:
+        pd.Series: The spot rates, indexed by time in years.
+    """
+    times = (
+        np.asarray(maturities, dtype=float)
+        if interpolation == "linear_par"
+        else bond_model.get_cash_flow_periods(years_to_maturity, frequency) / frequency
+    )
+    discount = get_discount_factors(maturities, zero_rates, times, interpolation)
+    return pd.Series(
+        frequency * (discount ** (-1 / (times * frequency)) - 1), index=times
+    )
 
 
 def get_instantaneous_forward_rates(

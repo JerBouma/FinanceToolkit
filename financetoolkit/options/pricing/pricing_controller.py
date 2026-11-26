@@ -2,6 +2,7 @@
 
 __docformat__ = "google"
 
+import functools
 import numbers
 from typing import Literal
 
@@ -547,7 +548,6 @@ class PricingOptions:
             stock_price=stock_price,
             strike_step_size=strike_step_size,
             strike_price_range=strike_price_range,
-            # A tree per strike holds (time_steps + 1)² values.
             values_per_strike=(time_steps + 1) ** 2,
         )
 
@@ -990,34 +990,16 @@ class PricingOptions:
                 else self._dividend_yield_on(ticker, start_date)
             )
 
-            inputs = {
-                "stock_price": float(stock_price.loc[ticker]),
-                "risk_free_rate": risk_free_rate,
-                "dividend_yield": dividend_yield_value[ticker],
-            }
-
-            def parity(strike_price, time_to_expiration, inputs=inputs, ticker=ticker):
-                # The call and put of every strike price and expiration on arrays at once.
-                call_price, put_price = (
-                    black_scholes_model.get_black_scholes(
-                        **inputs,
-                        strike_price=strike_price,
-                        volatility=volatility.loc[ticker],
-                        time_to_expiration=time_to_expiration,
-                        put_option=put,
-                    )
-                    for put in (False, True)
-                )
-                return black_scholes_model.get_put_call_parity(
-                    **inputs,
-                    strike_price=strike_price,
-                    time_to_expiration=time_to_expiration,
-                    call_price=call_price,
-                    put_price=put_price,
-                )
-
             parity_gap[ticker] = helpers.evaluate_on_grid(
-                parity, strike_prices, time_to_expiration_list
+                functools.partial(
+                    black_scholes_model.get_put_call_parity_gap,
+                    stock_price=float(stock_price.loc[ticker]),
+                    risk_free_rate=risk_free_rate,
+                    volatility=volatility.loc[ticker],
+                    dividend_yield=dividend_yield_value[ticker],
+                ),
+                strike_prices,
+                time_to_expiration_list,
             )
 
         parity_gap_df = helpers.create_greek_dataframe(
@@ -2914,58 +2896,27 @@ class PricingOptions:
                         ),
                     )
                 ]
-                inputs = {
-                    "stock_price": ticker_price,
-                    "risk_free_rate": float(risk_free_rate),
-                    "volatility": ticker_volatility,
-                    "dividend_yield": float(dividend_yield_value[ticker]),
-                    "put_option": put_option,
-                    "knock_type": knock_type,
-                }
-
-                def barrier_value(
-                    strike_price, time_to_expiration, inputs=inputs, barriers=barriers
-                ):
-                    # Every strike price and time to expiration in one call on arrays.
-                    arguments = {
-                        **inputs,
-                        "strike_price": strike_price,
-                        "time_to_expiration": time_to_expiration,
-                    }
-                    if barrier_direction == "double":
-                        return path_dependent_model.get_double_barrier_option(
-                            **arguments,
-                            lower_barrier=barriers[0],
-                            upper_barrier=barriers[1],
-                        )
-                    if barrier_window != "full":
-                        return path_dependent_model.get_partial_time_barrier_option(
-                            **arguments,
-                            barrier=barriers[0],
-                            barrier_direction=barrier_direction,
-                            barrier_window=barrier_window,
-                            window_share=window_share,
-                        )
-                    if soft_barrier_percentage is not None:
-                        return path_dependent_model.get_soft_barrier_option(
-                            **arguments,
-                            first_barrier=barriers[0],
-                            second_barrier=barriers[2],
-                            barrier_direction=barrier_direction,
-                        )
-                    return exotics_model.get_barrier_option(
-                        **arguments,
-                        barrier=(
-                            barriers[0]
-                            if interval
-                            else stock_price.loc[ticker] * barrier_percentage
-                        ),
-                        barrier_direction=barrier_direction,
-                        rebate=rebate,
-                    )
-
                 barrier_option[ticker] = helpers.evaluate_on_grid(
-                    barrier_value, strike_prices, time_to_expiration_list
+                    functools.partial(
+                        path_dependent_model.get_barrier_option_value,
+                        stock_price=ticker_price,
+                        risk_free_rate=float(risk_free_rate),
+                        volatility=ticker_volatility,
+                        dividend_yield=float(dividend_yield_value[ticker]),
+                        put_option=put_option,
+                        knock_type=knock_type,
+                        barrier_direction=barrier_direction,
+                        barrier=barriers[0],
+                        upper_barrier=barriers[1],
+                        second_barrier=(
+                            barriers[2] if soft_barrier_percentage is not None else None
+                        ),
+                        barrier_window=barrier_window,
+                        window_share=window_share,
+                        rebate=rebate,
+                    ),
+                    strike_prices,
+                    time_to_expiration_list,
                 )
             except InvalidArgumentError:
                 raise

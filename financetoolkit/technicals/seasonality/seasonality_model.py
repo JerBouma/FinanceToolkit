@@ -7,7 +7,9 @@ import calendar
 import numpy as np
 import pandas as pd
 
+from financetoolkit.technicals.helpers import get_observations_per_year
 from financetoolkit.utilities.error_model import InvalidArgumentError
+from financetoolkit.utilities.statistics_model import PERIODS_PER_YEAR
 
 # The weights of the 3, 6, 9 and 12-month returns in the relative strength rating, so the
 # latest quarter weighs most. Investor's Business Daily keeps its own rating's formula to itself; this weighting
@@ -125,6 +127,50 @@ def get_relative_strength(
     relative = relative / relative.bfill().iloc[0]
     mansfield = relative / relative.rolling(window).mean() - 1
     return relative, mansfield
+
+
+def get_period_relative_strength(
+    prices: pd.Series,
+    benchmark_prices: pd.Series,
+    period: str,
+    window: int | None = None,
+) -> pd.DataFrame:
+    """
+    Calculate the relative strength and the Mansfield relative strength of one ticker
+    against the Benchmark, see get_relative_strength, over a year of periods unless another
+    window is given.
+
+    Args:
+        prices (pd.Series): The prices of the ticker.
+        benchmark_prices (pd.Series): The prices of the Benchmark.
+        period (str): The period of the prices, such as "daily" or "weekly".
+        window (int | None, optional): The window of the Mansfield relative strength.
+            Defaults to None, a year of periods.
+
+    Returns:
+        pd.DataFrame: The Relative Strength and Mansfield Relative Strength per date.
+    """
+    # A year of periods whatever the period: 252 periods would be almost five years of weekly and 21 years of monthly prices, leaving most histories without a value. A ticker that trades on weekends has 365 daily periods a year.  # noqa: E501
+    relative, mansfield = get_relative_strength(
+        prices,
+        benchmark_prices.reindex(prices.index),
+        (
+            window
+            if window is not None
+            else (
+                get_observations_per_year(prices)
+                if period == "daily"
+                else PERIODS_PER_YEAR[period]
+            )
+        ),
+    )
+    return pd.concat(
+        {
+            "Relative Strength": relative,
+            "Mansfield Relative Strength": mansfield,
+        },
+        axis=1,
+    )
 
 
 def get_relative_strength_score(

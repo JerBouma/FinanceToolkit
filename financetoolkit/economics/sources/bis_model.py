@@ -333,7 +333,6 @@ def get_residential_property_prices(
     def fetch(fetch_start: str, fetch_end: str) -> pd.DataFrame:
         text = request_csv(
             f"{BASE_URL}WS_SPP/~/Q.{country_code}.{value}.628?format=csv&detail=dataonly"
-            # Quarters are written as "2026-Q2".
             f"&startPeriod={str(pd.Period(fetch_start, 'Q')).replace('Q', '-Q')}"
             f"&endPeriod={str(pd.Period(fetch_end, 'Q')).replace('Q', '-Q')}",
             timeout=120,
@@ -433,7 +432,6 @@ def get_commercial_property_prices(start_date: str, end_date: str) -> pd.DataFra
     def fetch(fetch_start: str, fetch_end: str) -> pd.DataFrame:
         text = request_csv(
             f"{BASE_URL}WS_CPP/~/Q.......?format=csv&detail=dataonly"
-            # Quarters are written as "2026-Q2".
             f"&startPeriod={str(pd.Period(fetch_start, 'Q')).replace('Q', '-Q')}"
             f"&endPeriod={str(pd.Period(fetch_end, 'Q')).replace('Q', '-Q')}",
             timeout=120,
@@ -525,7 +523,6 @@ def get_credit_statistics(
     def fetch(fetch_start: str, fetch_end: str) -> pd.DataFrame:
         text = request_csv(
             f"{BASE_URL}{dataflow}/~/{key}?format=csv&detail=dataonly"
-            # Quarters are written as "2026-Q2".
             f"&startPeriod={str(pd.Period(fetch_start, 'Q')).replace('Q', '-Q')}"
             f"&endPeriod={str(pd.Period(fetch_end, 'Q')).replace('Q', '-Q')}",
             timeout=120,

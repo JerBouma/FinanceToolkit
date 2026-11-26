@@ -284,41 +284,11 @@ class QualityModels:
             & common_stock_issued.notna()
         )
 
-        # Five criteria compare against the same period a year earlier; require it reported too, or NaN > x resolves False.  # noqa: E501
-        reported_previous_period = reported.shift(comparison_lag, axis=1)
-        change_based_criteria = {
-            "Change in Return on Assets Criteria",
-            "Change in Leverage Criteria",
-            "Change in Current Ratio Criteria",
-            "Gross Margin Criteria",
-            "Asset Turnover Criteria",
-            "Piotroski Score",
-        }
-
-        def _broadcast(mask: pd.DataFrame) -> pd.DataFrame:
-            return (
-                mask.reindex(
-                    index=piotroski_results.index.get_level_values(0),
-                    columns=piotroski_results.columns,
-                )
-                .fillna(False)
-                .astype(bool)
-                .set_axis(piotroski_results.index)
+        piotroski_results = piotroski_results.astype(float).where(
+            piotroski_model.get_reported_mask(
+                reported, comparison_lag, piotroski_results
             )
-
-        reported = _broadcast(reported)
-        reported_previous_period = _broadcast(reported_previous_period)
-
-        needs_previous_period = piotroski_results.index.get_level_values(1).isin(
-            change_based_criteria
         )
-        full_mask = reported.copy()
-        full_mask.loc[needs_previous_period] = (
-            reported.loc[needs_previous_period]
-            & reported_previous_period.loc[needs_previous_period]
-        )
-
-        piotroski_results = piotroski_results.astype(float).where(full_mask)
 
         # Keep only the periods with a score for at least one ticker. The beginning total assets make the first period (or `trailing` periods) incomplete and the change-based criteria need the period a year earlier complete as well, so a period with only the level criteria is dropped rather than reported without a score.  # noqa: E501
         piotroski_results = piotroski_results.loc[
@@ -1023,8 +993,6 @@ class QualityModels:
             property_plant_and_equipment=inputs["Property, Plant and Equipment"],
             revenue=inputs["Revenue"],
             net_income=inputs["Net Income"],
-            # The gross issuance where the statements report it (Yahoo Finance's do), the
-            # net issuance otherwise.
             debt_issued=inputs["Gross Long Term Debt Issued"].fillna(
                 inputs["Long Term Debt Issued"]
             ),
@@ -1299,11 +1267,6 @@ class QualityModels:
             ]
         }
 
-        def score_row(scores: pd.DataFrame, row: str) -> pd.DataFrame:
-            return scores.xs(row, level=1).reindex(
-                index=self._tickers, columns=total_assets.columns
-            )
-
         period = "quarterly" if self._quarterly else "yearly"
         returns = self._within_historical_data[period]["Return"]
         # Periods by tickers, as the tickers are at least three.
@@ -1317,12 +1280,12 @@ class QualityModels:
                 index=self._tickers, columns=total_assets.columns
             ),
             "Low Leverage": -(total_debt / total_assets),
-            "Low Ohlson O-Score": -score_row(
-                self.get_ohlson_o_score(trailing=trailing), "Ohlson O-Score"
-            ),
-            "Altman Z-Score": score_row(
-                self.get_altman_z_score(trailing=trailing), "Altman Z-Score"
-            ),
+            "Low Ohlson O-Score": -self.get_ohlson_o_score(trailing=trailing)
+            .xs("Ohlson O-Score", level=1)
+            .reindex(index=self._tickers, columns=total_assets.columns),
+            "Altman Z-Score": self.get_altman_z_score(trailing=trailing)
+            .xs("Altman Z-Score", level=1)
+            .reindex(index=self._tickers, columns=total_assets.columns),
             "Low Earnings Volatility": -profitability["Return on Equity"]
             .T.rolling(growth_lag, min_periods=growth_lag)
             .std()

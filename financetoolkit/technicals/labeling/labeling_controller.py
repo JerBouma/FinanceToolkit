@@ -2,6 +2,7 @@
 
 __docformat__ = "google"
 
+import functools
 from collections.abc import Callable
 from typing import Literal
 
@@ -393,29 +394,20 @@ class LabelingTechnicals:
                 )
             side = signals[side]
 
-        def get_labels(prices: pd.Series) -> pd.DataFrame:
-            ticker = prices.name
-            return labeling_model.get_triple_barrier_labels(
-                prices,
-                labeling_model.get_daily_volatility(prices, span),
+        labels = _per_ticker(
+            closes,
+            functools.partial(
+                labeling_model.get_volatility_triple_barrier_labels,
+                span=span,
                 horizon=horizon,
                 profit_taking=profit_taking,
                 stop_loss=stop_loss,
-                events=(
-                    None
-                    if events is None
-                    else events.get(ticker, pd.Series(dtype=float))
-                ),
-                side=(
-                    None
-                    if side is None
-                    else side.get(ticker, pd.Series(dtype=float)).reindex(prices.index)
-                ),
+                events=events,
+                side=side,
                 vertical_barrier_zero=vertical_barrier_zero,
                 minimum_target=minimum_target,
-            )
-
-        labels = _per_ticker(closes, get_labels).loc[self._start_date : self._end_date]
+            ),
+        ).loc[self._start_date : self._end_date]
 
         return apply_rounding(
             labels, rounding if rounding is not None else self._rounding
@@ -802,13 +794,15 @@ class LabelingTechnicals:
         if closes.shape[1] < 2:  # noqa: PLR2004
             raise ValueError("The tail-set labels need at least two tickers to rank.")
 
-        def get_scores(prices: pd.Series) -> pd.Series:
-            forward_returns = labeling_model.get_forward_returns(prices, horizon)
-            if not volatility_adjusted:
-                return forward_returns
-            return forward_returns / labeling_model.get_daily_volatility(prices, span)
-
-        scores = apply_on_own_closes(closes, get_scores)
+        scores = apply_on_own_closes(
+            closes,
+            lambda prices: labeling_model.get_forward_returns(prices, horizon),
+        )
+        if volatility_adjusted:
+            scores = scores / apply_on_own_closes(
+                closes,
+                lambda prices: labeling_model.get_daily_volatility(prices, span),
+            )
         labels = pd.concat(
             {
                 "Score": scores,
@@ -1037,18 +1031,12 @@ class LabelingTechnicals:
             labels, period, close_column
         )
 
-        def get_uniqueness(prices: pd.Series) -> pd.DataFrame:
-            spans = holding_periods[prices.name].reindex(prices.index)
-            return pd.DataFrame(
-                {
-                    "Concurrency": labeling_model.get_label_concurrency(spans),
-                    "Average Uniqueness": labeling_model.get_average_uniqueness(spans),
-                }
-            )
-
-        uniqueness = _per_ticker(closes, get_uniqueness).loc[
-            self._start_date : self._end_date
-        ]
+        uniqueness = _per_ticker(
+            closes,
+            lambda prices: labeling_model.get_label_uniqueness(
+                holding_periods[prices.name].reindex(prices.index)
+            ),
+        ).loc[self._start_date : self._end_date]
 
         return apply_rounding(
             uniqueness, rounding if rounding is not None else self._rounding
@@ -1166,17 +1154,15 @@ class LabelingTechnicals:
             labels, period, close_column
         )
 
-        def get_weights(prices: pd.Series) -> pd.Series:
-            spans = holding_periods[prices.name].reindex(prices.index)
-            if method == "return":
-                return labeling_model.get_return_attribution_weights(prices, spans)
-            return labeling_model.get_time_decay_weights(
-                labeling_model.get_average_uniqueness(spans), decay
-            )
-
-        weights = apply_on_own_closes(closes, get_weights).loc[
-            self._start_date : self._end_date
-        ]
+        weights = apply_on_own_closes(
+            closes,
+            lambda prices: labeling_model.get_sample_weights(
+                prices,
+                holding_periods[prices.name].reindex(prices.index),
+                method,
+                decay,
+            ),
+        ).loc[self._start_date : self._end_date]
 
         return apply_rounding(
             weights, rounding if rounding is not None else self._rounding
@@ -1352,50 +1338,18 @@ class LabelingTechnicals:
                 "get_triple_barrier_labels with a side (meta-labels)."
             )
 
-        def get_sizes(prices: pd.Series) -> pd.DataFrame:
-            ticker = prices.name
-            holding_periods = (
-                labels["Holding Period"]
-                .get(ticker, pd.Series(dtype=float))
-                .reindex(prices.index)
-            )
-            sides = (
-                labels["Side"].get(ticker, pd.Series(dtype=float)).reindex(prices.index)
-            )
-            if method == "budget":
-                sizes = bet_sizing_model.get_budget_bet_size(holding_periods, sides)
-            elif method == "reserve":
-                sizes = bet_sizing_model.get_reserve_bet_size(
-                    holding_periods, sides, runs=runs, seed=seed
-                )
-            else:
-                outcomes = labels["Label"].get(ticker, pd.Series(dtype=float))
-                hit_rate = bet_sizing_model.get_hit_rate(
-                    outcomes.reindex(prices.index), holding_periods, minimum_labels
-                )
-                # The bets placed while the hit rate is unknown are left out of the average.
-                placed = sides.notna() & holding_periods.notna() & hit_rate.notna()
-                bet_sizes = bet_sizing_model.get_probability_bet_size(
-                    hit_rate.where(hit_rate > 0.5, 1 - hit_rate),  # noqa: PLR2004
-                    predictions=(hit_rate > 0.5).astype(float),  # noqa: PLR2004
-                    sides=sides,
-                ).where(placed)
-                sizes = bet_sizing_model.get_concurrent_sides(
-                    holding_periods.where(placed), sides
-                )
-                sizes["Hit Rate"] = hit_rate
-                sizes["Bet Size"] = bet_sizing_model.get_average_active_bet_size(
-                    bet_sizes, holding_periods.where(placed)
-                )
-            if step_size is not None:
-                sizes["Bet Size"] = bet_sizing_model.get_discrete_bet_size(
-                    sizes["Bet Size"], step_size
-                )
-            return sizes
-
-        bet_sizes = _per_ticker(closes, get_sizes).loc[
-            self._start_date : self._end_date
-        ]
+        bet_sizes = _per_ticker(
+            closes,
+            functools.partial(
+                bet_sizing_model.get_bet_sizes,
+                labels=labels,
+                method=method,
+                step_size=step_size,
+                minimum_labels=minimum_labels,
+                runs=runs,
+                seed=seed,
+            ),
+        ).loc[self._start_date : self._end_date]
 
         return apply_rounding(
             bet_sizes, rounding if rounding is not None else self._rounding

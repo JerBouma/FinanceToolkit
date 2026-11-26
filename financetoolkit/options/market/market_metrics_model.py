@@ -6,6 +6,9 @@ import numpy as np
 import pandas as pd
 
 from financetoolkit.options.greeks import greeks_model
+from financetoolkit.utilities import logger_model
+
+logger = logger_model.get_logger()
 
 # One option contract covers one hundred shares.
 CONTRACT_SIZE = 100
@@ -131,6 +134,31 @@ def get_max_pain(calls: pd.DataFrame, puts: pd.DataFrame) -> float:
     ]
 
     return float(strikes[int(np.argmin(payout))])
+
+
+def get_max_pain_distance(
+    calls: pd.DataFrame, puts: pd.DataFrame, stock_price: float
+) -> pd.Series:
+    """
+    Calculate the max pain strike of one expiry and how far it lies from the stock price.
+
+    Args:
+        calls (pd.DataFrame): The calls of one expiry, indexed by strike, with Open Interest.
+        puts (pd.DataFrame): The puts of the same expiry.
+        stock_price (float): The price of the underlying.
+
+    Returns:
+        pd.Series: The Max Pain strike, the Stock Price and the Distance to Max Pain as a
+        fraction of the price.
+    """
+    max_pain = get_max_pain(calls, puts)
+    return pd.Series(
+        {
+            "Max Pain": max_pain,
+            "Stock Price": stock_price,
+            "Distance to Max Pain": max_pain / stock_price - 1,
+        }
+    )
 
 
 def get_gamma_exposure(
@@ -754,6 +782,39 @@ def get_risk_neutral_moments(
     )
 
 
+def get_chain_risk_neutral_moments(
+    calls: pd.DataFrame,
+    puts: pd.DataFrame,
+    time_to_expiration: float,
+    risk_free_rate: float,
+) -> pd.Series:
+    """
+    Calculate the forward price and the risk-neutral volatility, skewness and kurtosis of one
+    expiry from its option chain, through the model-free strip of out-of-the-money options.
+
+    Args:
+        calls (pd.DataFrame): The calls of one expiry, indexed by strike.
+        puts (pd.DataFrame): The puts of the same expiry.
+        time_to_expiration (float): The time to expiration in years.
+        risk_free_rate (float): The continuously compounded risk free rate.
+
+    Returns:
+        pd.Series: The Forward Price followed by the moments of get_risk_neutral_moments.
+    """
+    strip, forward = get_model_free_strip(
+        calls, puts, time_to_expiration, risk_free_rate
+    )
+    moments = get_risk_neutral_moments(
+        strip.index.to_numpy(dtype=float),
+        strip["Call Price"].to_numpy(),
+        strip["Put Price"].to_numpy(),
+        forward,
+        risk_free_rate,
+        time_to_expiration,
+    )
+    return pd.concat([pd.Series({"Forward Price": forward}), moments])
+
+
 def get_cboe_skewness(
     strike_prices: np.ndarray,
     call_prices: np.ndarray,
@@ -1102,3 +1163,109 @@ def get_variance_swap_value(
         * np.exp(-risk_free_rate * remaining_time)
         * (expected_variance - variance_strike)
     )
+
+
+def get_variance_swap_terms(
+    calls: pd.DataFrame,
+    puts: pd.DataFrame,
+    time_to_expiration: float,
+    risk_free_rate: float,
+    prices: pd.DataFrame,
+    ticker: str,
+    expiration_date: str,
+    strike: float | None = None,
+    trade_date: str | None = None,
+) -> pd.Series:
+    """
+    Calculate the fair strike of a variance swap on one expiry and, given a strike, the
+    swap's value from the variance realized since the trade date.
+
+    Args:
+        calls (pd.DataFrame): The calls of one expiry, indexed by strike.
+        puts (pd.DataFrame): The puts of the same expiry.
+        time_to_expiration (float): The time to expiration in years.
+        risk_free_rate (float): The continuously compounded risk free rate.
+        prices (pd.DataFrame): The daily (adjusted) close prices per ticker, with a daily
+            PeriodIndex, for the realized variance.
+        ticker (str): The ticker of the underlying.
+        expiration_date (str): The expiration date of the swap.
+        strike (float | None, optional): The volatility strike of the swap. Defaults to None,
+            which returns the fair strike only.
+        trade_date (str | None, optional): The date the swap was traded on. Defaults to None,
+            a swap that starts today.
+
+    Returns:
+        pd.Series: The Forward Price, Boundary Strike, Fair Variance, Fair Volatility and Cboe
+        Variance and, given a strike, the Variance Strike, Realized Variance, Elapsed Fraction
+        and Variance Swap Value.
+    """
+    strip, forward = get_model_free_strip(
+        calls, puts, time_to_expiration, risk_free_rate
+    )
+    if strip.empty:
+        logger.warning(
+            "%s has no bid quotes for its %s options to build the strip from.",
+            ticker,
+            expiration_date,
+        )
+    below = strip.index[strip.index <= forward]
+    boundary = float(below.max()) if len(below) else np.nan
+    fair = (
+        np.nan
+        if strip.empty
+        else get_variance_swap_fair_strike(
+            strip.index.to_numpy(dtype=float),
+            strip["Call Price"].to_numpy(),
+            strip["Put Price"].to_numpy(),
+            forward,
+            risk_free_rate,
+            time_to_expiration,
+            boundary,
+        )
+    )
+    cboe, _ = get_model_free_variance(calls, puts, time_to_expiration, risk_free_rate)
+    result = {
+        "Forward Price": forward,
+        "Boundary Strike": boundary,
+        "Fair Variance": fair,
+        "Fair Volatility": np.sqrt(fair) if fair > 0 else np.nan,
+        "Cboe Variance": cboe,
+    }
+    if strike is None:
+        return pd.Series(result)
+
+    history = prices[ticker].dropna()
+    last_date = history.index[-1].to_timestamp()
+    # The weekdays after the last historical date up to and including the expiry.
+    remaining = int(
+        np.busday_count(
+            (last_date + pd.Timedelta(days=1)).date(),
+            (pd.Timestamp(expiration_date) + pd.Timedelta(days=1)).date(),
+        )
+    )
+    realized, observed = np.nan, 0
+    if trade_date is not None:
+        since = history[history.index >= pd.Period(trade_date, freq="D")]
+        if since.empty:
+            raise ValueError(
+                f"The historical data of {ticker} ends before the trade date {trade_date}."
+            )
+        observed = len(since) - 1
+        realized = float(get_realized_variance(since))
+    elapsed = observed / (observed + remaining) if observed + remaining else 1.0
+    result.update(
+        {
+            "Variance Strike": strike**2,
+            "Realized Variance": realized,
+            "Elapsed Fraction": elapsed,
+            "Variance Swap Value": get_variance_swap_value(
+                realized_variance=realized,
+                fair_variance=fair,
+                variance_strike=strike**2,
+                elapsed_fraction=elapsed,
+                remaining_time=time_to_expiration,
+                risk_free_rate=risk_free_rate,
+            ),
+        }
+    )
+    return pd.Series(result)

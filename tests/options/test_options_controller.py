@@ -823,6 +823,51 @@ def test_get_implied_move(recorder, option_market):
     recorder.capture(stable(module.get_implied_move(), labels))
 
 
+def test_the_implied_move_warns_about_a_leg_priced_from_its_last_trade(
+    caplog, monkeypatch, option_market
+):
+    import logging  # noqa: PLC0415
+
+    from financetoolkit.options import options_model  # noqa: PLC0415
+
+    module, labels = option_market
+    expiry = list(labels)[0]
+    original = options_model.get_option_chains
+
+    def stale_call(tickers, expiration_date, put_option=False):
+        chains = original(tickers, expiration_date, put_option)
+        chains["Last Trade Date"] = "2026-11-09"
+        if not put_option:
+            # Every call loses its quote; only the open interest keeps its last trade.
+            chains[["Bid", "Ask", "Open Interest"]] = [0.0, 1.75, 1.0]
+        return chains
+
+    monkeypatch.setattr(options_model, "get_option_chains", stale_call)
+    with caplog.at_level(logging.WARNING, logger="financetoolkit"):
+        moves = module.get_implied_move(expiration_dates=[expiry])
+
+    ticker = module._tickers[0]
+    strike = f"{moves.loc[(ticker, expiry), 'Straddle Strike']:g}"
+    assert (moves["Last Trade Legs"] == 1).all()
+    assert (
+        f"{ticker} {expiry}: the {strike} call has no two-sided quote and is priced at its "
+        "last trade of 2026-11-09 (open interest 1), and the put's bid-ask spread is"
+    ) in caplog.text
+    assert "may not reflect the live market" in caplog.text
+
+    def unquoted(tickers, expiration_date, put_option=False):
+        return original(tickers, expiration_date, put_option).assign(Bid=0.0, Ask=0.0)
+
+    monkeypatch.setattr(options_model, "get_option_chains", unquoted)
+    caplog.clear()
+    with caplog.at_level(logging.WARNING, logger="financetoolkit"):
+        module.get_implied_move(number_of_expirations=2)
+
+    # One warning for every expiry instead of one per expiry.
+    assert caplog.text.count("Outside US market hours") == 1
+    assert f"{ticker} {expiry}" in caplog.text
+
+
 def test_get_model_free_implied_volatility(recorder, option_market):
     module, labels = option_market
     recorder.capture(stable(module.get_model_free_implied_volatility(), labels))

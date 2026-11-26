@@ -1051,6 +1051,7 @@ def format_result(
     reason: str | None = None,
     max_characters: int | None = None,
     sources: list[str] | None = None,
+    outcome: list[str] | None = None,
 ) -> str:
     """Format a Finance Toolkit result as a compact JSON string for LLM consumption.
 
@@ -1066,6 +1067,9 @@ def format_result(
             most recent rows (or the first columns) with a note on how to narrow it.
         sources: Optional publishers the data comes from, such as FinancialModelingPrep or
             the Bank for International Settlements, included under a ``"_sources"`` key.
+        outcome: Optional list the kind of answer is appended to, for the usage statistics:
+            "empty" for an answer without data, "cut" for one cut to max_characters and
+            "data" for any other.
 
     Returns:
         A JSON string.  DataFrames become ``{"columns": [...], "rows": [[...], ...]}``
@@ -1074,6 +1078,11 @@ def format_result(
         scalars become ``{"value": <scalar>}``; missing data becomes
         ``{"error": "No data available."}``.
     """
+
+    def _answered(state: str, text: str) -> str:
+        if outcome is not None:
+            outcome.append(state)
+        return text
 
     def _inject(payload: Any) -> Any:
         """Wrap payload in a dict with ``_notes`` and ``_sources`` when present."""
@@ -1093,28 +1102,31 @@ def format_result(
         return payload
 
     if dataset is None:
-        return _no_data(reason, notes, sources)
+        return _answered("empty", _no_data(reason, notes, sources))
 
     if isinstance(dataset, pd.Series):
         dataset = dataset.to_frame()
 
     if isinstance(dataset, pd.DataFrame):
         if dataset.empty or not int(dataset.notna().to_numpy().sum()):
-            return _no_data(reason, notes, sources)
+            return _answered("empty", _no_data(reason, notes, sources))
         # The size a response may have is that of the table as records, so a cut keeps
         # the same rows whatever form the answer is sent in.
         if max_characters:
             records, cut_note = _fit_to_size(dataset, max_characters)
             if cut_note:
                 notes = [*(notes or []), cut_note]
-            return _dumps(_inject(_columnar(records)))
-        return _dumps(_inject(_columnar(_df_to_records(dataset))))
+            return _answered(
+                "cut" if cut_note else "data", _dumps(_inject(_columnar(records)))
+            )
+        return _answered("data", _dumps(_inject(_columnar(_df_to_records(dataset)))))
 
     if isinstance(dataset, dict):
         out: dict[str, Any] = {}
         tables = [
             value for value in dataset.values() if isinstance(value, pd.DataFrame)
         ]
+        state = "data"
         for key, value in dataset.items():
             if isinstance(value, pd.DataFrame):
                 if not value.empty and int(value.notna().to_numpy().sum()):
@@ -1126,22 +1138,27 @@ def format_result(
                         out[str(key)] = _columnar(records)
                         if cut_note:
                             notes = [*(notes or []), f"{key}: {cut_note}"]
+                            state = "cut"
                     else:
                         out[str(key)] = _columnar(_df_to_records(value))
                 else:
                     out[str(key)] = []
             else:
                 out[str(key)] = _clean(value)
-        return _dumps(_inject(out))
+        # Tables only, none of them with a value: a model whose every part is empty.
+        if tables and len(tables) == len(dataset) and not any(out.values()):
+            state = "empty"
+        return _answered(state, _dumps(_inject(out)))
 
     if isinstance(dataset, int | float | str):
-        return _dumps(_inject({"value": _clean(dataset)}))
+        return _answered("data", _dumps(_inject({"value": _clean(dataset)})))
 
     # A plain list of values, such as the expiration dates of an option chain.
     if isinstance(dataset, list | tuple):
         if not dataset:
-            return _no_data(reason, notes, sources)
+            return _answered("empty", _no_data(reason, notes, sources))
         values = [_clean(value) for value in dataset]
+        state = "data"
         # A list has no rows to cut by date, so it keeps its first values that fit.
         if max_characters and len(json.dumps(values, default=str)) > max_characters:
             kept = len(values)
@@ -1156,7 +1173,8 @@ def format_result(
                 "response size; use limit to choose which values are returned.",
             ]
             values = values[:kept]
-        return _dumps(_inject(values))
+            state = "cut"
+        return _answered(state, _dumps(_inject(values)))
 
     logger.warning("Unexpected result type: %s. Returning raw string.", type(dataset))
-    return _dumps(_inject({"value": str(dataset)}))
+    return _answered("data", _dumps(_inject({"value": str(dataset)})))

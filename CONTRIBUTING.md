@@ -4,7 +4,7 @@ First off all, thank you for taking the time to contribute (or at least read the
 The goal of the Finance Toolkit is to make any type of financial calculation as transparent and efficient as possible. I want to make these type of calculations as accessible to anyone as possible and seeing how many websites exists that do the same thing (but instead you have to pay) gave me plenty of reasons to work on this.
 ___ 
 
-<b><div align="center">Looking to learn how to create and maintain financial models with Python? Have a look at my in-depth guide <a href="https://www.jeroenbouma.com//modelling/introduction">here</a>.</div></b>
+<b><div align="center">Looking to learn how to create and maintain financial models with Python? Have a look at my in-depth guide <a href="https://www.jeroenbouma.com/modelling/introduction">here</a>.</div></b>
 ___
 
 ## Structure

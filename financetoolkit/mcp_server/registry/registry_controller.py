@@ -39,7 +39,9 @@ from financetoolkit.cache import policy_model
 from financetoolkit.fmp_model import log_server_errors_once, parse_fiscal_period
 from financetoolkit.helpers import rank_across_tickers
 from financetoolkit.mcp_server.analytics.analytics_model import (
+    UNKNOWN_INDICATOR,
     UsageAnalytics,
+    record_outcome,
     run_in_thread,
 )
 from financetoolkit.mcp_server.inspection.inspection_controller import (
@@ -56,6 +58,8 @@ from financetoolkit.mcp_server.registry.coercion_model import (
     validate_date,
 )
 from financetoolkit.mcp_server.registry.diagnostics_model import (
+    FMP_KEY_HINT,
+    FRED_KEY_HINT,
     call_input_info,
     capture_call_messages,
     current_call_messages,
@@ -2794,6 +2798,7 @@ class ToolRegistry:
                 dict.fromkeys(_split_values(kwargs.get("indicator") or ""))
             )
             if len(indicators) > MAX_INDICATORS:
+                record_outcome("invalid", tool_name)
                 return (
                     f"`{tool_name}` received {len(indicators)} indicators; at most "
                     f"{MAX_INDICATORS} can be calculated in one call. Split them over "
@@ -2835,6 +2840,7 @@ class ToolRegistry:
 
             raw_indicator = kwargs.pop("indicator", None)
             if not raw_indicator:
+                record_outcome("invalid", tool_name)
                 return (
                     f"Please specify an `indicator`. Available for `{tool_name}`: "
                     + ", ".join(f"`{m}`" for m in all_indicators)
@@ -2884,6 +2890,7 @@ class ToolRegistry:
                     candidate = near[0]
             if candidate not in method_param_names:
                 if elsewhere:
+                    record_outcome("invalid", tool_name, UNKNOWN_INDICATOR)
                     return (
                         f"`{candidate}` is not part of `{tool_name}`; it is an indicator of "
                         + " and ".join(f"`{tool}`" for tool in elsewhere)
@@ -2909,6 +2916,7 @@ class ToolRegistry:
                 suggestion = (
                     (" Did you mean: " + ", ".join(close) + "?") if close else ""
                 )
+                record_outcome("invalid", tool_name, UNKNOWN_INDICATOR)
                 return (
                     f"Unknown indicator `{raw_indicator}` for `{tool_name}`."
                     f"{suggestion}\n"
@@ -2938,6 +2946,7 @@ class ToolRegistry:
             )
             for name, entities in (("tickers", tickers), ("countries", countries)):
                 if entities and len(entities) > MAX_ENTITIES:
+                    record_outcome("invalid", tool_name, method_name)
                     return (
                         f"`{tool_name}` received {len(entities)} {name}; at most "
                         f"{MAX_ENTITIES} can be analyzed in one call. Split them over "
@@ -2946,6 +2955,7 @@ class ToolRegistry:
             if invalid := [
                 ticker for ticker in tickers or [] if not TICKER_PATTERN.match(ticker)
             ]:
+                record_outcome("invalid", tool_name, method_name)
                 return (
                     f"`{tool_name}` received an invalid ticker: {invalid[0][:40]!r}. A ticker "
                     "has at most 20 letters, digits and the characters . - = ^, e.g. 'AAPL', "
@@ -2995,6 +3005,7 @@ class ToolRegistry:
                     if pname.lower() in ("ticker", "symbol", "symbols")
                     and pname not in method_param_names[method_name]
                 ]
+                record_outcome("invalid", tool_name, method_name)
                 return (
                     (
                         f"`{misnamed[0]}` is not a parameter of `{method_name}`; pass the ticker symbols as `tickers`. "
@@ -3014,6 +3025,7 @@ class ToolRegistry:
                     portfolio_inputs = _portfolio_inputs(kwargs)
                 except ValueError as exc:
                     if method_name != "get_presets":
+                        record_outcome("invalid", tool_name, method_name)
                         return (
                             f"Invalid input for `{tool_name}` (`{method_name}`): {exc}"
                         )
@@ -3028,6 +3040,7 @@ class ToolRegistry:
                 and effective_category
                 == inspector.categories.get("standalone", "standalone")
             ):
+                record_outcome("invalid", tool_name, method_name)
                 return (
                     f"`{tool_name}` (`{method_name}`) works with countries, not tickers. "
                     "Please provide `countries`, e.g. `countries='United States'` or "
@@ -3041,6 +3054,7 @@ class ToolRegistry:
                 if given and not validation_model.is_valid_date(
                     str(given).replace("/", "-")
                 ):
+                    record_outcome("invalid", tool_name, method_name)
                     return (
                         f"Invalid `{date_parameter}` for `{tool_name}` (`{method_name}`): "
                         f"'{given}'. Please use a date written as YYYY-MM-DD, e.g. '2026-01-31'."
@@ -3080,6 +3094,7 @@ class ToolRegistry:
             elif benchmark_ticker is not None and not TICKER_PATTERN.match(
                 str(benchmark_ticker).strip().upper()
             ):
+                record_outcome("invalid", tool_name, method_name)
                 return (
                     f"Invalid `benchmark_ticker` for `{tool_name}` (`{method_name}`): "
                     f"{str(benchmark_ticker)[:40]!r}. Please use a ticker such as 'SPY' or "
@@ -3128,6 +3143,7 @@ class ToolRegistry:
                     toolkit_risk_free_rate
                     not in validation_model.RISK_FREE_RATE_OPTIONS
                 ):
+                    record_outcome("invalid", tool_name, method_name)
                     return (
                         f"Invalid `risk_free_rate` for `{tool_name}` (`{method_name}`): "
                         f"'{toolkit_risk_free_rate}'. Please use one of "
@@ -3151,6 +3167,7 @@ class ToolRegistry:
                     parse_base_window(raw_rebase_to) if raw_rebase_to else None
                 )
             except ValueError as exc:
+                record_outcome("invalid", tool_name, method_name)
                 return f"Invalid `rebase_to` for `{tool_name}` (`{method_name}`): {exc}"
 
             # show_columns is handled entirely here — never forwarded to methods
@@ -3170,6 +3187,7 @@ class ToolRegistry:
                 and "countries" in accepted_params
                 and method_name not in self._countries_optional
             ):
+                record_outcome("invalid", tool_name, method_name)
                 return (
                     f"`{tool_name}` (`{method_name}`) requires a `countries` parameter. "
                     "Please provide one or more countries, e.g. `countries='United States'` "
@@ -3183,6 +3201,7 @@ class ToolRegistry:
             try:
                 rows_limit = int(raw_limit) if raw_limit not in (None, "") else None
             except (TypeError, ValueError):
+                record_outcome("invalid", tool_name, method_name)
                 return (
                     f"Invalid input for `{tool_name}` (`{method_name}`): limit must be a "
                     f"whole number, e.g. 5 for the first five rows or -5 for the last "
@@ -3192,6 +3211,7 @@ class ToolRegistry:
             # answer (a 200-day average read weekly), before limit selects from those rows.
             sample = str(kwargs.pop("sample", None) or "").strip().lower() or None
             if sample is not None and sample not in SAMPLE_PERIODS:
+                record_outcome("invalid", tool_name, method_name)
                 return (
                     f"Invalid input for `{tool_name}` (`{method_name}`): sample must be one "
                     f"of {', '.join(SAMPLE_PERIODS)}, not {sample!r}."
@@ -3316,12 +3336,14 @@ class ToolRegistry:
                 self._parameter_limits,
                 method_name,
             ):
+                record_outcome("invalid", tool_name, method_name)
                 return (
                     f"Invalid input for `{tool_name}` (`{method_name}`): {size_problem}"
                 )
             if refused := refused_value_problem(
                 method_name, method_kwargs, self._parameter_limits
             ):
+                record_outcome("invalid", tool_name, method_name)
                 return f"`{tool_name}` (`{method_name}`): {refused}"
 
             # An indicator that needs inputs the caller left out is answered with which ones,
@@ -3342,6 +3364,7 @@ class ToolRegistry:
             )
             if missing_inputs:
                 listed = ", ".join(f"`{pname}`" for pname in missing_inputs)
+                record_outcome("invalid", tool_name, method_name)
                 return (
                     f"`{tool_name}` (`{method_name}`) requires {listed}. Please provide "
                     f"{'it' if len(missing_inputs) == 1 else 'them'}; search_metrics with "
@@ -3353,11 +3376,13 @@ class ToolRegistry:
             full_text = method_name in self._full_text_methods
             if full_text:
                 if tickers and len(tickers) > 1:
+                    record_outcome("invalid", tool_name, method_name)
                     return (
                         f"`{tool_name}` (`{method_name}`) returns the full text for one ticker "
                         f"at a time. Please call it once per ticker, e.g. `tickers='{tickers[0]}'`."
                     )
                 if method_kwargs.get("latest") is False:
+                    record_outcome("invalid", tool_name, method_name)
                     return (
                         f"`{tool_name}` (`{method_name}`) returns one full text at a time. "
                         "Please pick one with `fiscal_period`, e.g. `fiscal_period='2025Q4'`; "
@@ -3367,6 +3392,7 @@ class ToolRegistry:
                     try:
                         parse_fiscal_period(method_kwargs["fiscal_period"])
                     except ValueError as exc:
+                        record_outcome("invalid", tool_name, method_name)
                         return (
                             f"Invalid input for `{tool_name}` (`{method_name}`): {exc}"
                         )
@@ -3382,6 +3408,7 @@ class ToolRegistry:
                     INTRADAY_PERIODS if method_name == "get_intraday_data" else PERIODS
                 )
                 if str(method_kwargs["period"]).lower() not in known_periods:
+                    record_outcome("invalid", tool_name, method_name)
                     return (
                         f"Invalid `period` for `{tool_name}` (`{method_name}`): "
                         f"'{method_kwargs['period']}'. Please use one of: "
@@ -3414,6 +3441,7 @@ class ToolRegistry:
                         )
                         if period not in blocked_periods_for_tool
                     ]
+                    record_outcome("invalid", tool_name, method_name)
                     return (
                         f"`{tool_name}` (`{method_name}`) does not support "
                         f"`period='{requested_period}'` without a `rolling` window. "
@@ -3541,8 +3569,7 @@ class ToolRegistry:
                             f"{_period_name(requested_period)} is not the growth over that "
                             f"{_period_name(requested_period)}."
                             + (
-                                " year_over_year=true gives the growth over the past year "
-                                "for every row."
+                                " year_over_year=true gives the growth over the past year for every row."
                                 if "year_over_year" in accepted_params
                                 else ""
                             )
@@ -3764,8 +3791,7 @@ class ToolRegistry:
                             f"{_period_name(sample)} is not the growth over that "
                             f"{_period_name(sample)}."
                             + (
-                                " year_over_year=true gives the growth over the past year "
-                                "for every row."
+                                " year_over_year=true gives the growth over the past year for every row."
                                 if "year_over_year" in accepted_params
                                 else ""
                             )
@@ -4103,28 +4129,51 @@ class ToolRegistry:
                             f"{benchmark_ticker} is the benchmark, so it is left out as a "
                             "ticker; set benchmark_ticker to another ticker to include it."
                         )
+                reason = summarize_reasons(call_messages)
+                answer_outcome: list[str] = []
                 formatted = format_result(
                     result,
                     notes=notes or None,
                     sources=readable_sources(call_sources),
-                    reason=summarize_reasons(call_messages)
+                    reason=reason
                     or _short_window_reason(dispatch_category, start_date, end_date),
                     max_characters=None if full_text else answer_size,
+                    outcome=answer_outcome,
+                )
+                # An answer without data for want of an API key is a call that could not
+                # be made, not a request without data.
+                record_outcome(
+                    (
+                        "invalid"
+                        if answer_outcome == ["empty"]
+                        and reason in (FMP_KEY_HINT, FRED_KEY_HINT)
+                        else (answer_outcome[0] if answer_outcome else "data")
+                    ),
+                    tool_name,
+                    method_name,
                 )
                 return formatted
             except KeyError as exc:
                 # A missing key is missing data (a ticker, column or date the source did not
                 # return), not a mistake in the call.
+                record_outcome("empty", tool_name, method_name)
                 return f"No data for `{tool_name}` (`{method_name}`): {redact(exc)} is missing."
             except ValueError as exc:
+                # An InvalidArgumentError, a refused value or a missing API key: a mistake in
+                # the call (data errors are an empty answer through handle_errors).
+                record_outcome("invalid", tool_name, method_name)
                 return (
                     f"Invalid input for `{tool_name}` (`{method_name}`): {redact(exc)}"
                 )
             except TypeError as exc:
+                # The inputs an indicator requires are checked above, so this is unexpected.
+                record_outcome("error", tool_name, method_name)
                 return f"Parameter error for `{tool_name}` (`{method_name}`): {redact(exc)}"
             except ConnectionError as exc:
+                record_outcome("error", tool_name, method_name)
                 return f"API connection failed: {redact(exc)}"
             except Exception as exc:
+                record_outcome("error", tool_name, method_name)
                 # The traceback repeats the exception text, which can hold a request URL
                 # with the caller's API key, so both are redacted.
                 logger.warning(

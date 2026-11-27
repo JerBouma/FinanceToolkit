@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 
 from financetoolkit.models import helpers
+from financetoolkit.utilities.error_model import check_option
 
 # The coefficients of Model 1 of Dechow, Ge, Larson and Sloan (2011), and the share of firms
 # with a misstatement in their sample, which scales the probability into the F-Score.
@@ -101,10 +102,12 @@ def get_magic_formula(
     net_fixed_assets: pd.DataFrame,
 ) -> dict[str, pd.DataFrame]:
     """
-    Greenblatt's Magic Formula: companies are ranked on their earnings yield (EBIT divided by
-    enterprise value: how cheap they are) and their return on capital (EBIT divided by net
-    working capital plus net fixed assets: how good they are), and the two ranks are added.
-    The best combined rank buys good businesses at low prices.
+    Greenblatt's Magic Formula.
+
+    Companies are ranked on their earnings yield (EBIT divided by enterprise value: how
+    cheap they are) and their return on capital (EBIT divided by net working capital plus
+    net fixed assets: how good they are), and the two ranks are added. The best combined
+    rank buys good businesses at low prices.
 
     Args:
         operating_income (pd.DataFrame): EBIT per ticker (rows) and period (columns).
@@ -258,10 +261,11 @@ def get_dechow_f_score(
 ) -> dict[str, pd.DataFrame]:
     """
     The Dechow F-Score (Model 1 of Dechow, Ge, Larson and Sloan, 2011), the probability of
-    an accounting misstatement relative to the average firm. It combines accrual quality
-    (RSST accruals, changes in receivables and inventory, the share of soft assets),
-    performance (the change in cash sales and in return on assets) and the market incentive
-    to look good (issuing debt or equity):
+    an accounting misstatement relative to the average firm.
+
+    It combines accrual quality (RSST accruals, changes in receivables and inventory, the
+    share of soft assets), performance (the change in cash sales and in return on assets)
+    and the market incentive to look good (issuing debt or equity):
 
         Predicted Value = -7.893 + 0.790 RSST Accruals + 2.518 ΔReceivables +
                           1.191 ΔInventory + 1.979 Soft Assets + 0.171 ΔCash Sales -
@@ -449,9 +453,10 @@ def get_accruals_ratios(
 ) -> dict[str, pd.DataFrame]:
     """
     The accruals ratios: the part of earnings that is not backed by cash, scaled by the
-    average of the total assets at the start and the end of the period. Sloan (1996)
-    showed that companies with high accruals have less persistent earnings and lower
-    future returns.
+    average of the total assets at the start and the end of the period.
+
+    Sloan (1996) showed that companies with high accruals have less persistent earnings and
+    lower future returns.
 
     - Balance Sheet Accruals Ratio (Sloan, 1996): [(ΔCurrent Assets - ΔCash) - (ΔCurrent
       Liabilities - ΔShort-term Debt - ΔTaxes Payable) - Depreciation] / Average Total
@@ -516,8 +521,12 @@ def get_modified_jones_accruals(
 ) -> dict[str, pd.DataFrame]:
     """
     The discretionary accruals of the modified Jones model (Dechow, Sloan and Sweeney,
-    1995): the part of the total accruals that the change in revenues and the fixed assets
-    do not explain. Every term is scaled by the total assets at the start of the period:
+    1995).
+
+    It is the part of the total accruals that the change in revenues and the fixed assets do
+    not explain.
+
+    Every term is scaled by the total assets at the start of the period:
 
     - Total Accruals = (Net Income - Cash Flow from Operations) / Total Assets(t-1)
     - Estimation (Jones, 1991): Total Accruals = a1 × 1 / A(t-1) + a2 × ΔREV / A(t-1) +
@@ -526,16 +535,20 @@ def get_modified_jones_accruals(
       a3 × PPE / A(t-1)
     - Discretionary Accruals = Total Accruals - Non-Discretionary Accruals
 
-    With intercept=True a constant a0 is added to the estimation and to the non-discretionary
+    With an intercept a constant a0 is added to the estimation and to the non-discretionary
     accruals (Kothari, Leone and Wasley, 2005).
 
-    With method="time_series" the coefficients of every period are estimated on the
+    In the time series method the coefficients of every period are estimated on the
     ticker's own earlier periods (`lag` periods apart, so that quarterly trailing twelve
     months do not overlap), with the change in revenues as in Jones (1991), and the change in
     receivables is subtracted only for the period itself, as in Dechow, Sloan and Sweeney
-    (1995). With method="cross_section" they are estimated per period across the tickers,
+    (1995). In the cross-section method they are estimated per period across the tickers,
     with the change in revenues minus the change in receivables in the estimation as well,
     as in the cross-sectional modified Jones model of the later literature.
+
+    Referenced against:
+    - statsmodels, OLS (time series): https://www.statsmodels.org/stable/generated/statsmodels.regression.linear_model.OLS.html
+    - statsmodels, OLS (with an intercept): https://www.statsmodels.org/stable/generated/statsmodels.regression.linear_model.OLS.html
 
     Args:
         net_income (pd.DataFrame): Net income per ticker (rows) and period (columns).
@@ -548,7 +561,7 @@ def get_modified_jones_accruals(
         lag (int, optional): The number of periods back that the changes and the beginning
             assets are taken, one year: 1 for yearly statements and 4 for quarterly flows
             summed over the trailing twelve months. Defaults to 1.
-        method (str, optional): "time_series" (each ticker's earlier periods) or
+        method (str, optional): Options are: "time_series" (each ticker's earlier periods),
             "cross_section" (the tickers of each period). Defaults to "time_series".
         min_observations (int, optional): The fewest observations a regression is estimated
             on, earlier periods or tickers. Defaults to 10.
@@ -565,10 +578,7 @@ def get_modified_jones_accruals(
         Discretionary Accruals, scaled by the beginning total assets; the last two NaN where
         fewer than `min_observations` observations are available.
     """
-    if method not in {"time_series", "cross_section"}:
-        raise ValueError(
-            f"The method {method} is not supported, use 'time_series' or 'cross_section'."
-        )
+    check_option("method", method, ("cross_section", "time_series"))
     coefficient_count = len(JONES_REGRESSORS) + intercept
     if min_observations < coefficient_count:
         raise ValueError(
@@ -647,10 +657,12 @@ def get_modified_jones_accruals(
 
 def get_rank_z_score(frame: pd.DataFrame) -> pd.DataFrame:
     """
-    The cross-sectional z-score of the ranks of a ticker by period frame: in every period the
-    tickers are ranked (the average rank for ties) and the ranks are standardized to a mean
-    of 0 and a standard deviation of 1 (ddof=1) across the tickers with a value. Ranks make
-    the score robust to outliers, as in Asness, Frazzini and Pedersen (2019).
+    The cross-sectional z-score of the ranks of a ticker by period frame.
+
+    In every period the tickers are ranked (the average rank for ties) and the ranks are
+    standardized to a mean of 0 and a standard deviation of 1 (ddof=1) across the tickers
+    with a value. Ranks make the score robust to outliers, as in Asness, Frazzini and
+    Pedersen (2019).
 
     Args:
         frame (pd.DataFrame): the values with the tickers as the index and the periods as the columns.
@@ -692,3 +704,292 @@ def get_quality_minus_junk(
     total = reduce(operator.add, scores.values())
     scores["Quality Score"] = get_rank_z_score(total)
     return scores
+
+
+def get_accrual_quality(
+    working_capital_accruals: pd.DataFrame,
+    operating_cash_flow: pd.DataFrame,
+    window: int = 8,
+    lag: int = 1,
+    change_in_revenue: pd.DataFrame | None = None,
+    property_plant_and_equipment: pd.DataFrame | None = None,
+) -> pd.DataFrame:
+    """
+    The accrual quality of Dechow and Dichev (2002).
+
+    It is the standard deviation of the residuals of a regression of each company's working
+    capital accruals on its past, present and future operating cash flows. Accruals that do
+    not map into cash flows (large residuals) are of low quality, so a higher value means
+    lower quality. With the change in revenue and the property, plant and equipment it is
+    the model of McNichols (2002).
+
+    The regression, estimated per company over the `window` years before the period:
+
+        - ΔWC (t) = b0 + b1 CFO (t - 1) + b2 CFO (t) + b3 CFO (t + 1) [+ b4 ΔRev (t) + b5 PPE (t)] + e (t)
+        - Accrual Quality = σ(e), the standard deviation of the residuals (ddof=1)
+
+    Every variable is scaled by the average total assets of its year before it is passed in.
+
+    Args:
+        working_capital_accruals (pd.DataFrame): The increase in working capital (ΔWC) per ticker
+            (rows) and period (columns), scaled by the average total assets.
+        operating_cash_flow (pd.DataFrame): The cash flow from operations, scaled likewise.
+        window (int, optional): The number of years in every regression; Dechow and Dichev
+            required at least 8. Defaults to 8.
+        lag (int, optional): The number of columns in a year: 1 for yearly statements and 4 for
+            quarterly flows summed over the trailing twelve months. Defaults to 1.
+        change_in_revenue (pd.DataFrame | None, optional): The change in revenue, scaled, for the
+            McNichols model. Defaults to None.
+        property_plant_and_equipment (pd.DataFrame | None, optional): The property, plant and
+            equipment, scaled, for the McNichols model. Defaults to None.
+
+    Returns:
+        pd.DataFrame: The accrual quality per ticker and period: the regression of period T uses
+        the accruals of the `window` years up to T - 1 (whose future cash flow, that of T at the
+        latest, is known at T), so it never looks ahead. NaN with fewer complete years.
+
+    References:
+    - Dechow, P. M. and Dichev, I. D. (2002). "The Quality of Accruals and Earnings: The Role
+      of Accrual Estimation Errors." The Accounting Review, 77(Supplement), 35-59.
+    - McNichols, M. F. (2002). "Discussion of The Quality of Accruals and Earnings."
+      The Accounting Review, 77(Supplement), 61-69.
+    """
+    regressors = [
+        operating_cash_flow.shift(lag, axis=1),
+        operating_cash_flow,
+        operating_cash_flow.shift(-lag, axis=1),
+    ]
+    if change_in_revenue is not None and property_plant_and_equipment is not None:
+        regressors += [change_in_revenue, property_plant_and_equipment]
+    coefficient_count = len(regressors) + 1
+    if window <= coefficient_count:
+        raise ValueError(
+            f"The regression estimates {coefficient_count} coefficients and needs a window of "
+            f"more years, not {window}."
+        )
+
+    design = np.stack(
+        [np.ones(working_capital_accruals.shape)]
+        + [frame.to_numpy(float) for frame in regressors],
+        axis=-1,
+    )
+    dependent = working_capital_accruals.to_numpy(float)
+    quality = np.full(dependent.shape, np.nan)
+    tickers, periods = dependent.shape
+
+    for period in range(periods):
+        # The years T - 1, T - 2, ... of the window: their future cash flows are known at T.
+        years = np.arange(period - lag, period - lag * (window + 1), -lag)
+        if years.min() < 0:
+            continue
+        for ticker in range(tickers):
+            y, x = dependent[ticker, years], design[ticker, years]
+            if not (np.isfinite(y).all() and np.isfinite(x).all()):
+                continue
+            coefficients = helpers.least_squares_coefficients(y, x, window)
+            if np.isnan(coefficients).any():
+                continue
+            quality[ticker, period] = np.std(y - x @ coefficients, ddof=1)
+
+    return pd.DataFrame(
+        quality,
+        index=working_capital_accruals.index,
+        columns=working_capital_accruals.columns,
+    )
+
+
+def get_earnings_attributes(
+    earnings_per_share: pd.DataFrame,
+    earnings_to_assets: pd.DataFrame,
+    cash_flow_to_assets: pd.DataFrame,
+    window: int = 10,
+    lag: int = 1,
+) -> dict[str, pd.DataFrame]:
+    """
+    The accounting-based earnings attributes of Francis, LaFond, Olsson and Schipper (2004),
+    each over the `window` years up to the period:
+
+        - Persistence: φ1 of EPS (t) = φ0 + φ1 EPS (t - 1) + ν (t), estimated per company
+        - Predictability: sqrt(σ²(ν)), the square root of the error variance of that
+          regression, sqrt(Σ ν² / (N - 2))
+        - Smoothness: σ(Earnings / Total Assets (t - 1)) / σ(Cash Flow from Operations / Total
+          Assets (t - 1)) (ddof=1)
+
+    Higher persistence means more persistent earnings; higher predictability and smoothness
+    values mean less predictable and less smooth earnings (as in the paper, larger values are
+    less desirable).
+
+    Args:
+        earnings_per_share (pd.DataFrame): The earnings before extraordinary items per share, per
+            ticker (rows) and period (columns).
+        earnings_to_assets (pd.DataFrame): The earnings over the total assets at the start of the
+            year.
+        cash_flow_to_assets (pd.DataFrame): The cash flow from operations over the total assets
+            at the start of the year.
+        window (int, optional): The number of years in every window (Francis et al. use 10).
+            Defaults to 10.
+        lag (int, optional): The number of columns in a year: 1 for yearly statements and 4 for
+            quarterly flows summed over the trailing twelve months. Defaults to 1.
+
+    Returns:
+        dict[str, pd.DataFrame]: The Persistence, Predictability and Smoothness per ticker and
+        period, NaN unless every year of the window (and the year before it for the
+        persistence regression) is available.
+
+    References:
+    - Francis, J., LaFond, R., Olsson, P. M. and Schipper, K. (2004). "Costs of Equity and
+      Earnings Attributes." The Accounting Review, 79(4), 967-1010.
+    """
+    if window < 3:  # noqa: PLR2004
+        raise ValueError("The window needs at least 3 years for a regression.")
+
+    earnings = earnings_per_share.to_numpy(float)
+    previous_earnings = earnings_per_share.shift(lag, axis=1).to_numpy(float)
+    scaled_earnings = earnings_to_assets.to_numpy(float)
+    scaled_cash_flow = cash_flow_to_assets.to_numpy(float)
+    tickers, periods = earnings.shape
+    persistence = np.full(earnings.shape, np.nan)
+    predictability = np.full(earnings.shape, np.nan)
+    smoothness = np.full(earnings.shape, np.nan)
+
+    for period in range(periods):
+        years = np.arange(period, period - lag * window, -lag)
+        if years.min() < 0:
+            continue
+        for ticker in range(tickers):
+            y, x = earnings[ticker, years], previous_earnings[ticker, years]
+            if np.isfinite(y).all() and np.isfinite(x).all():
+                design = np.column_stack([np.ones(window), x])
+                coefficients = helpers.least_squares_coefficients(y, design, window)
+                if np.isfinite(coefficients).all():
+                    residuals = y - design @ coefficients
+                    persistence[ticker, period] = coefficients[1]
+                    predictability[ticker, period] = np.sqrt(
+                        (residuals**2).sum() / (window - 2)
+                    )
+            income, cash = (
+                scaled_earnings[ticker, years],
+                scaled_cash_flow[ticker, years],
+            )
+            if np.isfinite(income).all() and np.isfinite(cash).all():
+                cash_deviation = np.std(cash, ddof=1)
+                if cash_deviation > 0:
+                    smoothness[ticker, period] = np.std(income, ddof=1) / cash_deviation
+
+    def frame(values: np.ndarray) -> pd.DataFrame:
+        return pd.DataFrame(
+            values, index=earnings_per_share.index, columns=earnings_per_share.columns
+        )
+
+    return {
+        "Persistence": frame(persistence),
+        "Predictability": frame(predictability),
+        "Smoothness": frame(smoothness),
+    }
+
+
+def get_graham_criteria(
+    revenue: pd.DataFrame,
+    total_current_assets: pd.DataFrame,
+    total_current_liabilities: pd.DataFrame,
+    long_term_debt: pd.DataFrame,
+    net_income: pd.DataFrame,
+    dividends_paid: pd.DataFrame,
+    earnings_per_share: pd.DataFrame,
+    share_price: pd.DataFrame,
+    book_value_per_share: pd.DataFrame,
+    minimum_revenue: float = 800_000_000,
+    lag: int = 1,
+) -> dict[str, pd.DataFrame]:
+    """
+    The seven criteria Benjamin Graham sets for the stocks of the defensive investor,
+    whether each is met.
+
+    The criteria come from The Intelligent Investor (1973, chapter 14), each 1 when met, 0
+    when not and NaN when the data does not reach back far enough:
+
+        - Adequate Size: Revenue >= minimum_revenue
+        - Strong Financial Condition: Current Assets >= 2 * Current Liabilities and Long Term
+          Debt <= Current Assets - Current Liabilities
+        - Earnings Stability: a positive Net Income in each of the past 10 years
+        - Dividend Record: dividends paid in each of the past 20 years
+        - Earnings Growth: the average EPS of the last 3 years at least a third above the
+          average EPS of the 3 years ending ten years earlier
+        - Moderate Price to Earnings: Price <= 15 * the average EPS of the last 3 years
+        - Moderate Price to Assets: Price / Earnings (3-year average) * Price / Book Value <= 22.5
+
+    Args:
+        revenue (pd.DataFrame): The yearly revenue per ticker (rows) and period (columns).
+        total_current_assets (pd.DataFrame): The current assets.
+        total_current_liabilities (pd.DataFrame): The current liabilities.
+        long_term_debt (pd.DataFrame): The long-term debt.
+        net_income (pd.DataFrame): The yearly net income.
+        dividends_paid (pd.DataFrame): The yearly dividends paid (any sign).
+        earnings_per_share (pd.DataFrame): The yearly earnings per share.
+        share_price (pd.DataFrame): The share price at the end of the period.
+        book_value_per_share (pd.DataFrame): The book value per share.
+        minimum_revenue (float, optional): The revenue of the size criterion. Defaults to
+            800 million, Graham's $100 million of 1971 in 2025 prices.
+        lag (int, optional): The number of columns in a year: 1 for yearly statements and 4 for
+            quarterly flows summed over the trailing twelve months. Defaults to 1.
+
+    Returns:
+        dict[str, pd.DataFrame]: Every criterion per ticker and period.
+
+    References:
+    - Graham, B. (1973). "The Intelligent Investor." Harper & Row, 4th revised edition,
+      chapter 14.
+    """
+
+    def known(condition: pd.DataFrame, *frames: pd.DataFrame) -> pd.DataFrame:
+        # 1 or 0 where every input is known, NaN otherwise.
+        mask = reduce(operator.and_, [frame.notna() for frame in frames])
+        return condition.astype(float).where(mask)
+
+    def years(frame: pd.DataFrame, count: int, start: int = 0) -> list[pd.DataFrame]:
+        return [frame.shift((start + year) * lag, axis=1) for year in range(count)]
+
+    def every_year(frames: list[pd.DataFrame], test) -> pd.DataFrame:
+        passed = reduce(operator.and_, [test(frame) for frame in frames])
+        return known(passed, *frames)
+
+    working_capital = total_current_assets - total_current_liabilities
+    recent_earnings = sum(years(earnings_per_share, 3)) / 3
+    past_earnings = sum(years(earnings_per_share, 3, start=10)) / 3
+    price_to_earnings = share_price / recent_earnings.where(recent_earnings > 0)
+    price_to_book = share_price / book_value_per_share.where(book_value_per_share > 0)
+
+    return {
+        "Adequate Size": known(revenue >= minimum_revenue, revenue),
+        "Strong Financial Condition": known(
+            (total_current_assets >= 2 * total_current_liabilities)
+            & (long_term_debt <= working_capital),
+            total_current_assets,
+            total_current_liabilities,
+            long_term_debt,
+        ),
+        "Earnings Stability": every_year(
+            years(net_income, 10), lambda frame: frame > 0
+        ),
+        "Dividend Record": every_year(
+            years(dividends_paid, 20), lambda frame: frame != 0
+        ),
+        "Earnings Growth": known(
+            recent_earnings >= past_earnings + abs(past_earnings) / 3,
+            recent_earnings,
+            past_earnings,
+        ),
+        "Moderate Price to Earnings": known(
+            (price_to_earnings <= 15) & (recent_earnings > 0),  # noqa: PLR2004
+            share_price,
+            recent_earnings,
+        ),
+        "Moderate Price to Assets": known(
+            (price_to_earnings * price_to_book <= 22.5)  # noqa: PLR2004
+            & (recent_earnings > 0)
+            & (book_value_per_share > 0),
+            share_price,
+            recent_earnings,
+            book_value_per_share,
+        ),
+    }

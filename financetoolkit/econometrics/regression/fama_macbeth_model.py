@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 from scipy import stats
 
+from financetoolkit.econometrics.least_squares_model import get_pseudo_inverse
 from financetoolkit.econometrics.regression import regression_model
 
 # Second-pass identification needs strictly more assets than coefficients.
@@ -17,9 +18,11 @@ MINIMUM_PERIODS = 2
 
 def fama_macbeth_summary_table(result: dict) -> pd.DataFrame:
     """
-    Builds the coefficient table (Risk Premium, Std. Error, t-Statistic, P-Value)
-    from a `get_fama_macbeth_regression` result dict, indexed by factor name (plus
-    "Intercept" if present).
+    Build the risk premium table of a Fama-MacBeth regression: the Risk Premium, Standard
+    Error, t-Statistic and P-Value of every factor.
+
+    The table takes a `get_fama_macbeth_regression` result dict and is indexed by factor
+    name (plus "Intercept" if present).
 
     Args:
         result (dict): A fitted Fama-MacBeth result dict, as returned by
@@ -31,7 +34,7 @@ def fama_macbeth_summary_table(result: dict) -> pd.DataFrame:
     return pd.DataFrame(
         {
             "Risk Premium": result["risk_premia"],
-            "Std. Error": result["standard_errors"],
+            "Standard Error": result["standard_errors"],
             "t-Statistic": result["t_statistics"],
             "P-Value": result["p_values"],
         }
@@ -44,10 +47,8 @@ def get_fama_macbeth_regression(
     add_constant: bool = True,
 ) -> dict:
     """
-    Fit a Fama-MacBeth (1973) two-pass cross-sectional regression of `returns` on
-    `factors` -- the standard procedure for estimating factor risk premia and testing
-    whether a proposed risk factor is actually priced in the cross-section of asset
-    returns.
+    Fit a Fama-MacBeth (1973) two-pass cross-sectional regression: the risk premium of every
+    factor, and whether it is priced in the cross-section of asset returns.
 
     Also known as: two-pass regression, Fama-MacBeth procedure.
 
@@ -80,6 +81,9 @@ def get_fama_macbeth_regression(
       Tests." Journal of Political Economy, 81(3), 607-636.
     - Cochrane, J.H. (2005). "Asset Pricing." Princeton University Press, Chapter 12.
 
+    Shares similar logic:
+    - linearmodels, FamaMacBeth: https://bashtage.github.io/linearmodels/panel/panel/linearmodels.panel.model.FamaMacBeth.html
+
     Args:
         returns (pd.DataFrame): One column per asset, one row per period -- the
             cross-section of returns the risk premia are estimated from.
@@ -107,7 +111,7 @@ def get_fama_macbeth_regression(
         ValueError: If `returns` and `factors` share no overlapping periods, there are
         fewer than 2 overlapping periods, or there are not enough assets (columns of
         `returns`) to identify the cross-sectional regression (strictly more assets
-        than factors, plus an intercept if `add_constant=True`).
+        than factors, plus an intercept when a constant is added).
 
     Notes:
     - This implements the standard, simplified textbook variant using a SINGLE,
@@ -117,6 +121,8 @@ def get_fama_macbeth_regression(
       before each cross-sectional regression. The fixed-beta version is standard
       practice and materially simpler, at the cost of not letting betas drift over
       time within the sample.
+    - Unlike linearmodels' FamaMacBeth, which runs the cross-sectional regressions on given
+      regressors, the first pass here estimates the betas from the returns.
     - Verified by simulating a synthetic single-factor model with a known risk
       premium and confirming the estimated `risk_premia` recovers it closely, and by
       confirming a zero-premium (pure noise) factor's estimated risk premium is not
@@ -187,30 +193,29 @@ def get_fama_macbeth_regression(
             f"regression -- need at least {minimum_assets}."
         )
 
-    # First pass: one time-series regression per asset for its factor loadings.
+    # First pass: one time-series regression per asset for its factor loadings. Every asset
+    # is regressed on the same factors, so one pseudo-inverse of the design solves them all.
+    return_values = aligned_returns.to_numpy(dtype=float)
+    factor_design, _ = regression_model._to_design_matrix(
+        aligned_factors, add_constant=True
+    )
+    regression_model._validate_design(factor_design, return_values[:, 0])
     betas = pd.DataFrame(
-        {
-            asset: regression_model.get_ols(
-                aligned_returns[asset], aligned_factors, add_constant=True
-            )["coefficients"][1:]
-            for asset in asset_names
-        },
-        index=factor_names,
-    ).T
+        (get_pseudo_inverse(factor_design)[0] @ return_values)[1:].T,
+        index=asset_names,
+        columns=factor_names,
+    )
 
-    # Second pass: one cross-sectional regression of returns on first-pass betas.
+    # Second pass: one cross-sectional regression of returns on first-pass betas per period,
+    # all on the same betas, so again one pseudo-inverse solves every period at once.
     coefficient_names = (["Intercept"] if add_constant else []) + factor_names
-    cross_sectional_rows = {
-        date: regression_model.get_ols(
-            aligned_returns.loc[date, asset_names],
-            betas.loc[asset_names, factor_names],
-            add_constant=add_constant,
-        )["coefficients"]
-        for date in aligned.index
-    }
+    beta_design, _ = regression_model._to_design_matrix(betas, add_constant)
+    regression_model._validate_design(beta_design, return_values[0])
     cross_sectional_coefficients = pd.DataFrame(
-        cross_sectional_rows, index=coefficient_names
-    ).T
+        (get_pseudo_inverse(beta_design)[0] @ return_values.T).T,
+        index=aligned.index,
+        columns=coefficient_names,
+    )
 
     risk_premia = cross_sectional_coefficients.mean()
     standard_errors = cross_sectional_coefficients.std(ddof=1) / np.sqrt(n_periods)

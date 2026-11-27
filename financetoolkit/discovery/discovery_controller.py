@@ -2,17 +2,24 @@
 
 __docformat__ = "google"
 
+import numbers
 import os
+from collections.abc import Callable
 
+import numpy as np
 import pandas as pd
 
 from financetoolkit import fmp_model
 from financetoolkit.cache import cache_controller
 from financetoolkit.discovery import discovery_model
 from financetoolkit.models.valuation import damodaran_model
-from financetoolkit.utilities import logger_model, validation_model
+from financetoolkit.utilities import error_model, logger_model, validation_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
-from financetoolkit.utilities.error_model import handle_errors
+from financetoolkit.utilities.error_model import (
+    InvalidArgumentError,
+    check_option,
+    handle_errors,
+)
 from financetoolkit.utilities.sources_model import track_sources
 
 # ruff: noqa: E501
@@ -41,8 +48,8 @@ def _validate_arguments(
             of at least one (page, which starts at zero, at least zero).
 
     Raises:
-        ValueError: When a date cannot be read, the start is after the end, or a count is
-            out of range.
+        InvalidArgumentError: When a date cannot be read, the start is after the end, or a
+            count is out of range.
         TypeError: When a count is not a whole number.
     """
     for name, value in (
@@ -51,24 +58,150 @@ def _validate_arguments(
         ("date", date),
     ):
         if value is not None and not validation_model.is_valid_date(value):
-            raise ValueError(
+            raise InvalidArgumentError(
                 f"The {name} must be a date written as YYYY-MM-DD, such as '2026-09-01', not '{value}'."
             )
 
     if start_date and end_date and start_date > end_date:
-        raise ValueError(
+        raise InvalidArgumentError(
             f"The start_date {start_date} must be on or before the end_date {end_date}."
         )
 
     for name, value in counts.items():
         if value is None:
             continue
-        if isinstance(value, bool) or not isinstance(value, int):
-            raise TypeError(f"The {name} must be a whole number, not {value!r}.")
+        if isinstance(value, bool) or not isinstance(value, numbers.Integral):
+            raise InvalidArgumentError(
+                f"The {name} must be a whole number, not {value!r}. Please pass a whole "
+                f"number as {name}."
+            )
         if value < (0 if name == "page" else 1):
-            raise ValueError(
+            raise InvalidArgumentError(
                 f"The {name} must be {'zero or more' if name == 'page' else 'one or more'}, not {value}."
             )
+
+
+def _check_symbols(symbols: str | list[str] | None) -> None:
+    """
+    Checks that a news search names at least one symbol; None searches the defaults.
+
+    Args:
+        symbols (str | list[str] | None): The symbols, a comma-separated string or a list.
+
+    Raises:
+        InvalidArgumentError: When the symbols are empty, such as "" or [].
+    """
+    if symbols is not None and not [
+        symbol
+        for symbol in (symbols.split(",") if isinstance(symbols, str) else symbols)
+        if str(symbol).strip()
+    ]:
+        raise InvalidArgumentError(
+            f"Please pass at least one symbol, such as 'AAPL' or ['AAPL', 'MSFT'], or None, "
+            f"not {symbols!r}."
+        )
+
+
+# The exchanges the sector and industry endpoints average the companies of.
+SECTOR_EXCHANGES = ("NASDAQ", "NYSE", "AMEX")
+
+
+def _snapshot_date(
+    date: str | None, name: str, value: str | None, exchange: str
+) -> str | None:
+    """
+    Checks the arguments of a sector or industry method, which gives either a snapshot of
+    every sector (industry) on a date or the history of one, and the exchange.
+
+    Args:
+        date (str | None): The date of the snapshot.
+        name (str): "sector" or "industry".
+        value (str | None): The sector or industry of the history.
+        exchange (str): The exchange whose companies are averaged.
+
+    Returns:
+        str | None: The date of the snapshot: the latest business day when neither a date
+        nor a sector (industry) is given, and None for a history.
+
+    Raises:
+        InvalidArgumentError: When both a date and a sector (industry) are given, or the
+            exchange or sector is not one of the options.
+    """
+    check_option("exchange", exchange, SECTOR_EXCHANGES)
+    if name == "sector" and value:
+        check_option("sector", value, discovery_model.FMP_SECTORS)
+    if date and value:
+        raise InvalidArgumentError(
+            f"Please pass either a date (a snapshot of every {name}) or a {name} (its "
+            "history), not both."
+        )
+    if not date and not value:
+        return (
+            f"{pd.offsets.BDay().rollback(pd.Timestamp.today().normalize()):%Y-%m-%d}"
+        )
+    return date
+
+
+# The business days a default snapshot steps back when the latest has none: FinancialModelingPrep publishes a day's snapshot after the close, and none for a market holiday, so the latest business day can be empty.  # noqa: E501
+SNAPSHOT_LOOKBACK_DAYS = 5
+
+
+def _collect_snapshot(
+    collect: Callable[[str | None], pd.DataFrame],
+    date: str | None,
+    name: str,
+    value: str | None,
+    exchange: str,
+) -> pd.DataFrame:
+    """
+    Collects a sector or industry snapshot (or the history of one), stepping back from the
+    latest business day when no date is given and that day has no snapshot yet.
+
+    Args:
+        collect (Callable[[str | None], pd.DataFrame]): Retrieves the data for a date, or the
+            history when the date is None.
+        date (str | None): The date of the snapshot, kept as given.
+        name (str): "sector" or "industry".
+        value (str | None): The sector or industry of the history.
+        exchange (str): The exchange whose companies are averaged.
+
+    Returns:
+        pd.DataFrame: The snapshot or history, empty (with a warning) when the default date
+        and the business days before it have no snapshot.
+
+    Raises:
+        InvalidArgumentError: When both a date and a sector (industry) are given, or the
+            exchange or sector is not one of the options.
+    """
+    snapshot_date = _snapshot_date(date, name, value, exchange)
+
+    # Only this call's failed requests count: on the MCP server, a concurrent request that
+    # failed must not stop this call from stepping back.
+    with error_model.count_request_failures() as failed_requests:
+        data = collect(snapshot_date)
+
+        if date or value or snapshot_date is None:
+            return data
+
+        latest = snapshot_date
+        for _ in range(SNAPSHOT_LOOKBACK_DAYS):
+            # A failed request (logged where it failed) is not a day without a snapshot.
+            if not data.empty or failed_requests():
+                return data
+            snapshot_date = str(np.busday_offset(snapshot_date, -1, roll="backward"))
+            data = collect(snapshot_date)
+
+    if data.empty and not failed_requests():
+        logger.warning(
+            "Financial Modeling Prep has no %s snapshot of %s for the business days from "
+            "%s to %s, such as on market holidays. Please pass another date.",
+            name,
+            exchange,
+            snapshot_date,
+            latest,
+        )
+
+    return data
 
 
 # Used as the Toolkit's default API key when set as an environment variable.
@@ -156,8 +289,10 @@ class Discovery:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        The search instruments function allows you to search for a company or financial instrument
-        by name. It returns a dataframe with all the symbols that match the query.
+        Search for companies and other financial instruments by name or symbol, returning every symbol that matches
+        the query.
+
+        It returns a dataframe with all the symbols that match the query.
 
         An ISIN or CUSIP search returns every listing of the security, most traded first, so
         the primary listing leads (e.g. AAPL before AAPL.MX). The Market Cap of each listing
@@ -166,9 +301,10 @@ class Discovery:
         Also known as: find companies, lookup stocks, ticker search, instrument search.
 
         Args:
-            query (str): A query to search for, e.g. 'META'.
-            search_method (str, optional): The field to search against. Valid options are 'symbol', 'name',
-                'cik', 'cusip', and 'isin'. Defaults to 'name'.
+            query (str | None, optional): A query to search for, e.g. 'META'. Defaults to None, but a query is required.
+            search_method (str, optional): The field to search against. Options are: "symbol" (the ticker
+                symbol), "name" (the name), "cik" (the SEC CIK number), "cusip" (the CUSIP), "isin" (the ISIN).
+                Defaults to "name".
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -197,13 +333,13 @@ class Discovery:
         | MCAPUSD  | Meta Capital USD | USD        | CCC                   | CRYPTO          |
 
         """
-        if search_method not in ["symbol", "name", "cik", "cusip", "isin"]:
-            raise ValueError(
-                "Please enter a valid search method. Valid options are: 'symbol', 'name', 'cik', 'cusip', 'isin'. "
-            )
-        if not query:
-            raise ValueError(
-                "Please enter a query to search for, e.g. search_instruments(query='META'). "
+        check_option(
+            "search_method", search_method, ("symbol", "name", "cik", "cusip", "isin")
+        )
+        if not isinstance(query, str) or not query.strip():
+            raise InvalidArgumentError(
+                "Please pass a query to search for, e.g. search_instruments(query='META'), "
+                f"not {query!r}."
             )
 
         symbol_list = discovery_model.get_instruments(
@@ -242,18 +378,19 @@ class Discovery:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Screen stocks based on a set of criteria. This can be useful to find companies that match
-        a specific criteria or your analysis. Further filtering can be done by utilising the
-        Finance Toolkit and calculating the relevant ratios to filter by. This can be:
+        Screen stocks based on a set of criteria.
 
-        - Market capitalization (market_cap_higher, market_cap_lower)
-        - Price (price_higher, price_lower)
-        - Beta (beta_higher, beta_lower)
-        - Volume (volume_higher, volume_lower)
-        - Dividend (dividend_higher, dividend_lower)
-        - Classification (sector, industry, country, exchange, is_etf)
+        This can be useful to find companies that match a specific criteria or your analysis. Further filtering can be
+        done by utilising the Finance Toolkit and calculating the relevant ratios to filter by. This can be:
 
-        The result is capped at `limit` companies, the largest first, 1000 by default. When more
+        - Market capitalization (a lower and an upper bound)
+        - Price (a lower and an upper bound)
+        - Beta (a lower and an upper bound)
+        - Volume (a lower and an upper bound)
+        - Dividend (a lower and an upper bound)
+        - Classification (sector, industry, country, exchange and whether it is an ETF)
+
+        The result is capped at the limit, the largest companies first, 1000 by default. When more
         companies match, the log warns that the list was truncated; narrow the criteria or raise
         the limit to see the remainder.
 
@@ -280,8 +417,9 @@ class Discovery:
             dividend_higher (float | None): The minimum dividend of the stock, as an amount per share
                 over the last annual period rather than as a yield. Defaults to None, which applies no filter.
             dividend_lower (float | None): The maximum dividend of the stock. Defaults to None, which applies no filter.
-            sector (str | None): The sector to restrict the screen to, e.g. "Energy". Defaults to None, which applies no
-                filter.
+            sector (str | None): The sector to restrict the screen to. Options are: "Basic Materials", "Communication
+                Services", "Consumer Cyclical", "Consumer Defensive", "Energy", "Financial Services", "Healthcare",
+                "Industrials", "Real Estate", "Technology", "Utilities". Defaults to None, which applies no filter.
             industry (str | None): The industry to restrict the screen to, e.g. "Biotechnology". Defaults to None, which
                 applies no filter.
             country (str | None): The country to restrict the screen to, as a two-letter code ("US")
@@ -349,6 +487,22 @@ class Discovery:
 
         """
         _validate_arguments(limit=limit)
+        for name, higher, lower in (
+            ("market_cap", market_cap_higher, market_cap_lower),
+            ("price", price_higher, price_lower),
+            ("beta", beta_higher, beta_lower),
+            ("volume", volume_higher, volume_lower),
+            ("dividend", dividend_higher, dividend_lower),
+        ):
+            # The higher bound is the minimum and the lower bound the maximum, so a minimum
+            # above the maximum matches nothing.
+            if higher is not None and lower is not None and higher > lower:
+                raise InvalidArgumentError(
+                    f"{name}_higher ({higher}) is the minimum and {name}_lower ({lower}) the "
+                    f"maximum, so {name}_higher has to be at most {name}_lower."
+                )
+        if sector is not None:
+            check_option("sector", sector, discovery_model.FMP_SECTORS)
 
         stock_screener = discovery_model.get_stock_screener(
             api_key=self._api_key,
@@ -378,8 +532,10 @@ class Discovery:
         self, show_columns: str | list[str] | None = None
     ) -> pd.DataFrame:
         """
-        The stock list function returns a complete list of all the symbols that can be used
-        in the Finance Toolkit. These are over 60.000 symbols.
+        Get the complete list of stock symbols that can be used in the Finance Toolkit, with their name, price and
+        exchange.
+
+        These are over 60.000 symbols.
 
         Args:
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -429,10 +585,12 @@ class Discovery:
         self, show_columns: str | list[str] | None = None
     ) -> pd.DataFrame:
         """
-        Returns the shares float for each company. The shares float is the number of shares
-        available for trading for each company. It also includes the number of shares
-        outstanding and the date. The free float is the share of the outstanding shares that
-        is available for trading, as a decimal (0.85 is 85%).
+        Get the shares float of every company: the number of shares available for trading next to the shares
+        outstanding.
+
+        The shares float is the number of shares available for trading for each company. It also includes the number
+        of shares outstanding and the date. The free float is the share of the outstanding shares that is available
+        for trading, as a decimal (0.85 is 85%).
 
         Args:
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -493,15 +651,15 @@ class Discovery:
         is made per sector.
 
         Without a date range the API hands back only the earliest days it holds, so the
-        last year up to today is retrieved unless `start_date` and `end_date` say otherwise.
+        last year up to today is retrieved unless a start and end date say otherwise.
 
         Args:
             start_date (str | None): The start date to filter data with, e.g. "2024-01-01".
                 Defaults to None, which uses the date a year ago.
             end_date (str | None): The end date to filter data with, e.g. "2024-12-31".
                 Defaults to None, which uses today.
-            exchange (str, optional): The exchange whose companies are averaged, "NASDAQ", "NYSE"
-                or "AMEX". Defaults to "NASDAQ".
+            exchange (str, optional): The exchange whose companies are averaged. Options are: "NASDAQ" (Nasdaq),
+                "NYSE" (New York Stock Exchange), "AMEX" (NYSE American). Defaults to "NASDAQ".
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -533,6 +691,7 @@ class Discovery:
         | 2026-11-16 00:00:00 |       -0.0105583  |             -0.0261657   |         -0.0172101  |         -0.000317526 | -0.0207931   |          -0.004043   |  -0.0177063  |   -0.0092908  |   0.000393979 |  -0.0123701  | -0.00394424 |
         """
         _validate_arguments(start_date=start_date, end_date=end_date)
+        check_option("exchange", exchange, SECTOR_EXCHANGES)
 
         sectors_performance = discovery_model.get_sectors_performance(
             api_key=self._api_key,
@@ -548,9 +707,10 @@ class Discovery:
         self, show_columns: str | list[str] | None = None
     ) -> pd.DataFrame:
         """
-        Returns the biggest gainers for the day. This includes the symbol, the name,
-        the price, the change and the change percentage. The change percentage ("Change %")
-        is a decimal (0.0125 is +1.25%).
+        Get the stocks whose price rose the most today.
+
+        This includes the symbol, the name, the price, the change and the change percentage. The change percentage
+        ("Change %") is a decimal (0.0125 is +1.25%).
 
         Args:
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -598,9 +758,10 @@ class Discovery:
         self, show_columns: str | list[str] | None = None
     ) -> pd.DataFrame:
         """
-        Returns the biggest losers for the day. This includes the symbol, the name,
-        the price, the change and the change percentage. The change percentage ("Change %")
-        is a decimal (0.0125 is +1.25%).
+        Get the stocks whose price fell the most today.
+
+        This includes the symbol, the name, the price, the change and the change percentage. The change percentage
+        ("Change %") is a decimal (0.0125 is +1.25%).
 
         Args:
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -649,9 +810,10 @@ class Discovery:
         self, show_columns: str | list[str] | None = None
     ) -> pd.DataFrame:
         """
-        Returns the most active stocks for the day. This includes the symbol, the name,
-        the price, the change and the change percentage. The change percentage ("Change %")
-        is a decimal (0.0125 is +1.25%).
+        Get the stocks traded the most today.
+
+        This includes the symbol, the name, the price, the change and the change percentage. The change percentage
+        ("Change %") is a decimal (0.0125 is +1.25%).
 
         Args:
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -707,7 +869,7 @@ class Discovery:
         the IPO and delisted date.
 
         The endpoint hands out at most 100 rows per call, so this is one page of the list
-        rather than the whole of it. Walk `page` upwards until an empty frame comes back to
+        rather than the whole of it. Walk the pages upwards until an empty frame comes back to
         collect everything.
 
         Args:
@@ -763,8 +925,9 @@ class Discovery:
         self, show_columns: str | list[str] | None = None
     ) -> pd.DataFrame:
         """
-        The crypto list function returns a complete list of all crypto symbols that can be
-        used in the Finance Toolkit. These are over 4.000 symbols.
+        Get the complete list of cryptocurrency symbols that can be used in the Finance Toolkit.
+
+        These are over 4.000 symbols.
 
         Args:
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -812,8 +975,9 @@ class Discovery:
         self, show_columns: str | list[str] | None = None
     ) -> pd.DataFrame:
         """
-        The forex list function returns a complete list of all forex symbols that can be
-        used in the Finance Toolkit. These are over 1.000 symbols.
+        Get the complete list of currency pair symbols that can be used in the Finance Toolkit.
+
+        These are over 1.000 symbols.
 
         Args:
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -1010,16 +1174,16 @@ class Discovery:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Returns the constituents of an index (the S&P 500, the NASDAQ 100 or the Dow Jones
-        Industrial Average), today's or those on a past date, with their sector, sub-sector,
-        headquarters, the date they were added, CIK and founding year. The symbols make a
-        Toolkit of the whole index, for example to measure market breadth from every
-        constituent (`toolkit.technicals.get_market_breadth`) or to rank them by relative
-        strength.
+        Get the members of the S&P 500, the NASDAQ 100 or the Dow Jones Industrial Average, today or on a past date.
+
+        Returns the constituents of an index (the S&P 500, the NASDAQ 100 or the Dow Jones Industrial Average),
+        today's or those on a past date, with their sector, sub-sector, headquarters, the date they were added, CIK
+        and founding year. The symbols make a Toolkit of the whole index, for example to measure market breadth from
+        every constituent (`toolkit.technicals.get_market_breadth`) or to rank them by relative strength.
 
         Today's members alone bias any history computed from them: the companies removed from
         the index since, often after falling behind, are left out (survivorship bias), the
-        more so the further back it goes. With `date`, the members on that date are returned
+        more so the further back it goes. With a date, the members on that date are returned
         instead: today's members with every later change undone, from the newest back, using
         the dated changes of `get_index_constituent_changes`. A company added since is taken
         out and a company removed since is put back, with the date it left the index ('Date
@@ -1029,8 +1193,8 @@ class Discovery:
         survivorship-free index membership, point-in-time index constituents.
 
         Args:
-            index (str, optional): "S&P 500", "NASDAQ 100" or "Dow Jones". Defaults to
-                "S&P 500".
+            index (str, optional): The index. Options are: "S&P 500" (the S&P 500), "NASDAQ 100" (the NASDAQ 100),
+                "Dow Jones" (the Dow Jones Industrial Average). Defaults to "S&P 500".
             date (str | None, optional): The date (YYYY-MM-DD) to list the members of. A
                 change takes effect on its own date, so the members on a change's date include
                 it. Defaults to None, today's members.
@@ -1098,12 +1262,13 @@ class Discovery:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Returns the dated changes to the members of an index (the S&P 500, the NASDAQ 100 or
-        the Dow Jones Industrial Average): the company added, the company removed, the kind of
-        change (an addition, a removal or a replacement of one by the other) and its reason,
-        such as an acquisition or a change in market capitalization.
+        Get the dated additions to and removals from the S&P 500, the NASDAQ 100 or the Dow Jones Industrial Average.
 
-        These are the changes `get_index_constituents(date=...)` undoes to reconstruct the
+        Returns the dated changes to the members of an index (the S&P 500, the NASDAQ 100 or the Dow Jones Industrial
+        Average): the company added, the company removed, the kind of change (an addition, a removal or a replacement
+        of one by the other) and its reason, such as an acquisition or a change in market capitalization.
+
+        These are the changes `get_index_constituents` undoes to reconstruct the
         members on a past date. They also show the turnover of an index and the companies
         that left it, which today's members leave out (survivorship bias).
 
@@ -1111,8 +1276,8 @@ class Discovery:
         changes.
 
         Args:
-            index (str, optional): "S&P 500", "NASDAQ 100" or "Dow Jones". Defaults to
-                "S&P 500".
+            index (str, optional): The index. Options are: "S&P 500" (the S&P 500), "NASDAQ 100" (the NASDAQ 100),
+                "Dow Jones" (the Dow Jones Industrial Average). Defaults to "S&P 500".
             start_date (str | None, optional): The first date (YYYY-MM-DD) to include.
                 Defaults to None, the first change recorded.
             end_date (str | None, optional): The last date (YYYY-MM-DD) to include. Defaults
@@ -1182,8 +1347,9 @@ class Discovery:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Returns the latest stock market news articles. This includes the ticker symbol
-        (when applicable), publisher, title, a short snippet, and the article URL.
+        Get the latest stock market news articles.
+
+        This includes the ticker symbol (when applicable), publisher, title, a short snippet, and the article URL.
 
         Also known as: stock news feed, market news headlines.
 
@@ -1191,8 +1357,9 @@ class Discovery:
             pages (int, optional): The number of pages to collect, each page is a
                 separate API call, e.g. pages=5 makes 5 calls. Defaults to 1.
             limit (int, optional): The number of articles to return per page. Defaults to 100.
-            start_date (str, optional): The start date to filter data with.
-            end_date (str, optional): The end date to filter data with.
+            start_date (str | None, optional): The start date to filter data with.
+                Defaults to None, which sets no start date.
+            end_date (str | None, optional): The end date to filter data with. Defaults to None, which sets no end date.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -1313,8 +1480,9 @@ class Discovery:
             pages (int, optional): The number of pages to collect, each page is a
                 separate API call, e.g. pages=5 makes 5 calls. Defaults to 1.
             limit (int, optional): The number of articles to return per page. Defaults to 100.
-            start_date (str, optional): The start date to filter data with.
-            end_date (str, optional): The end date to filter data with.
+            start_date (str | None, optional): The start date to filter data with.
+                Defaults to None, which sets no start date.
+            end_date (str | None, optional): The end date to filter data with. Defaults to None, which sets no end date.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -1493,8 +1661,9 @@ class Discovery:
             pages (int, optional): The number of pages to collect, each page is a
                 separate API call, e.g. pages=5 makes 5 calls. Defaults to 1.
             limit (int, optional): The number of articles to return per page. Defaults to 100.
-            start_date (str, optional): The start date to filter data with.
-            end_date (str, optional): The end date to filter data with.
+            start_date (str | None, optional): The start date to filter data with.
+                Defaults to None, which sets no start date.
+            end_date (str | None, optional): The end date to filter data with. Defaults to None, which sets no end date.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -1529,6 +1698,7 @@ class Discovery:
             start_date=start_date, end_date=end_date, limit=limit, pages=pages
         )
 
+        _check_symbols(symbols)
         if symbols is None:
             return self.get_stock_news(
                 pages=pages, limit=limit, start_date=start_date, end_date=end_date
@@ -1567,8 +1737,9 @@ class Discovery:
             pages (int, optional): The number of pages to collect, each page is a
                 separate API call, e.g. pages=5 makes 5 calls. Defaults to 1.
             limit (int, optional): The number of articles to return per page. Defaults to 100.
-            start_date (str, optional): The start date to filter data with.
-            end_date (str, optional): The end date to filter data with.
+            start_date (str | None, optional): The start date to filter data with.
+                Defaults to None, which sets no start date.
+            end_date (str | None, optional): The end date to filter data with. Defaults to None, which sets no end date.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -1600,6 +1771,7 @@ class Discovery:
             start_date=start_date, end_date=end_date, limit=limit, pages=pages
         )
 
+        _check_symbols(symbols)
         if symbols is None:
             return self.get_press_releases(
                 pages=pages, limit=limit, start_date=start_date, end_date=end_date
@@ -1638,8 +1810,9 @@ class Discovery:
             pages (int, optional): The number of pages to collect, each page is a
                 separate API call, e.g. pages=5 makes 5 calls. Defaults to 1.
             limit (int, optional): The number of articles to return per page. Defaults to 100.
-            start_date (str, optional): The start date to filter data with.
-            end_date (str, optional): The end date to filter data with.
+            start_date (str | None, optional): The start date to filter data with.
+                Defaults to None, which sets no start date.
+            end_date (str | None, optional): The end date to filter data with. Defaults to None, which sets no end date.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -1674,6 +1847,7 @@ class Discovery:
             start_date=start_date, end_date=end_date, limit=limit, pages=pages
         )
 
+        _check_symbols(symbols)
         crypto_news = discovery_model.search_crypto_news(
             api_key=self._api_key,
             symbols=symbols if symbols is not None else ["BTCUSD", "ETHUSD"],
@@ -1707,8 +1881,9 @@ class Discovery:
             pages (int, optional): The number of pages to collect, each page is a
                 separate API call, e.g. pages=5 makes 5 calls. Defaults to 1.
             limit (int, optional): The number of articles to return per page. Defaults to 100.
-            start_date (str, optional): The start date to filter data with.
-            end_date (str, optional): The end date to filter data with.
+            start_date (str | None, optional): The start date to filter data with.
+                Defaults to None, which sets no start date.
+            end_date (str | None, optional): The end date to filter data with. Defaults to None, which sets no end date.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -1743,6 +1918,7 @@ class Discovery:
             start_date=start_date, end_date=end_date, limit=limit, pages=pages
         )
 
+        _check_symbols(symbols)
         forex_news = discovery_model.search_forex_news(
             api_key=self._api_key,
             symbols=(
@@ -1774,17 +1950,19 @@ class Discovery:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Returns the calendar of upcoming and recent initial public offerings (IPOs),
-        including expected pricing, exchange, and share count. This is distinct from
-        the "IPO Date" field on a company's profile, which only shows a single past date.
+        Returns the calendar of upcoming and recent initial public offerings (IPOs), including expected pricing,
+        exchange, and share count.
+
+        This is distinct from the "IPO Date" field on a company's profile, which only shows a single past date.
 
         A date range longer than 90 days is retrieved in parts of 90 days, one request each.
 
         Also known as: IPO pipeline, upcoming listings.
 
         Args:
-            start_date (str, optional): The start date to filter data with.
-            end_date (str, optional): The end date to filter data with.
+            start_date (str | None, optional): The start date to filter data with.
+                Defaults to None, which sets no start date.
+            end_date (str | None, optional): The end date to filter data with. Defaults to None, which sets no end date.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -1833,15 +2011,17 @@ class Discovery:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Returns IPO disclosure filings — the regulatory filings made ahead of an IPO,
-        including filing dates, effectiveness dates, and CIK numbers, with direct links
-        to the official SEC documents.
+        Get the regulatory filings companies make ahead of an initial public offering (IPO).
+
+        Returns IPO disclosure filings — the regulatory filings made ahead of an IPO, including filing dates,
+        effectiveness dates, and CIK numbers, with direct links to the official SEC documents.
 
         Also known as: pre-IPO SEC filings, IPO regulatory disclosures.
 
         Args:
-            start_date (str, optional): The start date to filter data with.
-            end_date (str, optional): The end date to filter data with.
+            start_date (str | None, optional): The start date to filter data with.
+                Defaults to None, which sets no start date.
+            end_date (str | None, optional): The end date to filter data with. Defaults to None, which sets no end date.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -1890,15 +2070,17 @@ class Discovery:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Returns IPO prospectus filings, including public offering price, discounts and
-        commissions, and proceeds before expenses, with links to the official SEC
-        prospectus documents.
+        Get the prospectuses of initial public offerings (IPOs): the price of the offering and the proceeds it raises.
+
+        Returns IPO prospectus filings, including public offering price, discounts and commissions, and proceeds
+        before expenses, with links to the official SEC prospectus documents.
 
         Also known as: IPO pricing details, S-1/424B4 filings.
 
         Args:
-            start_date (str, optional): The start date to filter data with.
-            end_date (str, optional): The end date to filter data with.
+            start_date (str | None, optional): The start date to filter data with.
+                Defaults to None, which sets no start date.
+            end_date (str | None, optional): The end date to filter data with. Defaults to None, which sets no end date.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -1944,17 +2126,19 @@ class Discovery:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Returns the calendar of upcoming and recent stock splits across all companies,
-        including the split date and ratio. Same calendar pattern as the earnings and
-        dividend calendars.
+        Returns the calendar of upcoming and recent stock splits across all companies, including the split date and
+        ratio.
+
+        Same calendar pattern as the earnings and dividend calendars.
 
         A date range longer than 90 days is retrieved in parts of 90 days, one request each.
 
         Also known as: split schedule, upcoming stock splits.
 
         Args:
-            start_date (str, optional): The start date to filter data with.
-            end_date (str, optional): The end date to filter data with.
+            start_date (str | None, optional): The start date to filter data with.
+                Defaults to None, which sets no start date.
+            end_date (str | None, optional): The end date to filter data with. Defaults to None, which sets no end date.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -2006,22 +2190,27 @@ class Discovery:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Returns sector performance — the average price change, as a decimal (0.0125 means
-        +1.25%), of the companies listed on an exchange (NASDAQ by default) in each sector.
-        Provide exactly one of `date` (a snapshot across all sectors on that date) or `sector`
-        (the historical time series for one sector).
+        Get the average daily price change of the companies in each sector of an exchange, as a decimal (0.0125 means
+        +1.25%).
+
+        Pass a date (a snapshot across all sectors on that date) or a sector (the historical time series for one
+        sector), not both. Without either, it is the snapshot of the latest business day that has one,
+        looking back up to five business days (a market holiday has none).
 
         Also known as: sector performance snapshot, sector performance history, sector trend.
 
         Args:
-            date (str, optional): The date to retrieve a snapshot for, e.g. "2024-02-01". Defaults to None.
-            sector (str, optional): The sector to retrieve the history for, e.g. "Energy". Defaults to None.
+            date (str, optional): The date to retrieve a snapshot for, e.g. "2024-02-01". Defaults to None,
+                which uses the latest business day with a snapshot unless a sector is given.
+            sector (str, optional): The sector to retrieve the history for. Options are: "Basic Materials",
+                "Communication Services", "Consumer Cyclical", "Consumer Defensive", "Energy", "Financial Services",
+                "Healthcare", "Industrials", "Real Estate", "Technology", "Utilities". Defaults to None.
             start_date (str, optional): The start of the history of one sector. Defaults to None,
                 which uses the date a year ago.
             end_date (str, optional): The end of the history of one sector. Defaults to None, which
                 uses today.
-            exchange (str, optional): The exchange whose companies are averaged, "NASDAQ", "NYSE"
-                or "AMEX". Defaults to "NASDAQ".
+            exchange (str, optional): The exchange whose companies are averaged. Options are: "NASDAQ" (Nasdaq),
+                "NYSE" (New York Stock Exchange), "AMEX" (NYSE American). Defaults to "NASDAQ".
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -2058,15 +2247,20 @@ class Discovery:
         | 2026-10-23 00:00:00 | Energy   | NASDAQ     |       0.0308545  |
         """
         _validate_arguments(date=date, start_date=start_date, end_date=end_date)
-
-        sector_performance = discovery_model.get_sector_performance(
-            api_key=self._api_key,
-            date=date,
-            sector=sector,
-            start_date=start_date,
-            end_date=end_date,
-            user_subscription=self._fmp_plan,
-            exchange=exchange,
+        sector_performance = _collect_snapshot(
+            lambda snapshot_date: discovery_model.get_sector_performance(
+                api_key=self._api_key,
+                date=snapshot_date,
+                sector=sector,
+                start_date=start_date,
+                end_date=end_date,
+                user_subscription=self._fmp_plan,
+                exchange=exchange,
+            ),
+            date,
+            "sector",
+            sector,
+            exchange,
         )
 
         return sector_performance
@@ -2081,22 +2275,25 @@ class Discovery:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Returns industry performance — the average price change, as a decimal (0.0125 means
-        +1.25%), of the companies listed on an exchange (NASDAQ by default) in each industry.
-        Provide exactly one of `date` (a snapshot across all industries on that date) or
-        `industry` (the historical time series for one industry).
+        Get the average daily price change of the companies in each industry of an exchange, as a decimal (0.0125
+        means +1.25%).
+
+        Pass a date (a snapshot across all industries on that date) or an industry (the historical time series for
+        one industry), not both. Without either, it is the snapshot of the latest business day that has one,
+        looking back up to five business days (a market holiday has none).
 
         Also known as: industry performance snapshot, industry performance history, industry trend.
 
         Args:
-            date (str, optional): The date to retrieve a snapshot for, e.g. "2024-02-01". Defaults to None.
+            date (str, optional): The date to retrieve a snapshot for, e.g. "2024-02-01". Defaults to None,
+                which uses the latest business day with a snapshot unless an industry is given.
             industry (str, optional): The industry to retrieve the history for, e.g. "Biotechnology". Defaults to None.
             start_date (str, optional): The start of the history of one industry. Defaults to None,
                 which uses the date a year ago.
             end_date (str, optional): The end of the history of one industry. Defaults to None, which
                 uses today.
-            exchange (str, optional): The exchange whose companies are averaged, "NASDAQ", "NYSE"
-                or "AMEX". Defaults to "NASDAQ".
+            exchange (str, optional): The exchange whose companies are averaged. Options are: "NASDAQ" (Nasdaq),
+                "NYSE" (New York Stock Exchange), "AMEX" (NYSE American). Defaults to "NASDAQ".
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -2133,15 +2330,20 @@ class Discovery:
         | 2026-10-23 00:00:00 | Biotechnology | NASDAQ     |      -0.00890932 |
         """
         _validate_arguments(date=date, start_date=start_date, end_date=end_date)
-
-        industry_performance = discovery_model.get_industry_performance(
-            api_key=self._api_key,
-            date=date,
-            industry=industry,
-            start_date=start_date,
-            end_date=end_date,
-            user_subscription=self._fmp_plan,
-            exchange=exchange,
+        industry_performance = _collect_snapshot(
+            lambda snapshot_date: discovery_model.get_industry_performance(
+                api_key=self._api_key,
+                date=snapshot_date,
+                industry=industry,
+                start_date=start_date,
+                end_date=end_date,
+                user_subscription=self._fmp_plan,
+                exchange=exchange,
+            ),
+            date,
+            "industry",
+            industry,
+            exchange,
         )
 
         return industry_performance
@@ -2156,21 +2358,27 @@ class Discovery:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Returns sector price-to-earnings (P/E) ratios of the companies listed on an exchange
-        (NASDAQ by default) in each sector. Provide exactly one of `date` (a snapshot across all
-        sectors on that date) or `sector` (the historical time series for one sector).
+        Get the price-to-earnings (P/E) ratio of the companies in each sector of an exchange, how richly each sector
+        is valued.
+
+        Pass a date (a snapshot across all sectors on that date) or a sector (the historical time series for one
+        sector), not both. Without either, it is the snapshot of the latest business day that has one,
+        looking back up to five business days (a market holiday has none).
 
         Also known as: sector P/E snapshot, sector P/E history, sector valuation trend.
 
         Args:
-            date (str, optional): The date to retrieve a snapshot for, e.g. "2024-02-01". Defaults to None.
-            sector (str, optional): The sector to retrieve the history for, e.g. "Energy". Defaults to None.
+            date (str, optional): The date to retrieve a snapshot for, e.g. "2024-02-01". Defaults to None,
+                which uses the latest business day with a snapshot unless a sector is given.
+            sector (str, optional): The sector to retrieve the history for. Options are: "Basic Materials",
+                "Communication Services", "Consumer Cyclical", "Consumer Defensive", "Energy", "Financial Services",
+                "Healthcare", "Industrials", "Real Estate", "Technology", "Utilities". Defaults to None.
             start_date (str, optional): The start of the history of one sector. Defaults to None,
                 which uses the date a year ago.
             end_date (str, optional): The end of the history of one sector. Defaults to None, which
                 uses today.
-            exchange (str, optional): The exchange whose companies are averaged, "NASDAQ", "NYSE"
-                or "AMEX". Defaults to "NASDAQ".
+            exchange (str, optional): The exchange whose companies are averaged. Options are: "NASDAQ" (Nasdaq),
+                "NYSE" (New York Stock Exchange), "AMEX" (NYSE American). Defaults to "NASDAQ".
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -2207,15 +2415,20 @@ class Discovery:
         | 2026-10-23 00:00:00 | Energy   | NASDAQ     |    14.8163 |
         """
         _validate_arguments(date=date, start_date=start_date, end_date=end_date)
-
-        sector_pe = discovery_model.get_sector_pe(
-            api_key=self._api_key,
-            date=date,
-            sector=sector,
-            start_date=start_date,
-            end_date=end_date,
-            user_subscription=self._fmp_plan,
-            exchange=exchange,
+        sector_pe = _collect_snapshot(
+            lambda snapshot_date: discovery_model.get_sector_pe(
+                api_key=self._api_key,
+                date=snapshot_date,
+                sector=sector,
+                start_date=start_date,
+                end_date=end_date,
+                user_subscription=self._fmp_plan,
+                exchange=exchange,
+            ),
+            date,
+            "sector",
+            sector,
+            exchange,
         )
 
         return sector_pe
@@ -2230,22 +2443,25 @@ class Discovery:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Returns industry price-to-earnings (P/E) ratios of the companies listed on an exchange
-        (NASDAQ by default) in each industry. Provide exactly one of `date` (a snapshot across
-        all industries on that date) or `industry` (the historical time series for one
-        industry).
+        Get the price-to-earnings (P/E) ratio of the companies in each industry of an exchange, how richly each
+        industry is valued.
+
+        Pass a date (a snapshot across all industries on that date) or an industry (the historical time series for
+        one industry), not both. Without either, it is the snapshot of the latest business day that has one,
+        looking back up to five business days (a market holiday has none).
 
         Also known as: industry P/E snapshot, industry P/E history, industry valuation trend.
 
         Args:
-            date (str, optional): The date to retrieve a snapshot for, e.g. "2024-02-01". Defaults to None.
+            date (str, optional): The date to retrieve a snapshot for, e.g. "2024-02-01". Defaults to None,
+                which uses the latest business day with a snapshot unless an industry is given.
             industry (str, optional): The industry to retrieve the history for, e.g. "Biotechnology". Defaults to None.
             start_date (str, optional): The start of the history of one industry. Defaults to None,
                 which uses the date a year ago.
             end_date (str, optional): The end of the history of one industry. Defaults to None, which
                 uses today.
-            exchange (str, optional): The exchange whose companies are averaged, "NASDAQ", "NYSE"
-                or "AMEX". Defaults to "NASDAQ".
+            exchange (str, optional): The exchange whose companies are averaged. Options are: "NASDAQ" (Nasdaq),
+                "NYSE" (New York Stock Exchange), "AMEX" (NYSE American). Defaults to "NASDAQ".
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -2282,15 +2498,20 @@ class Discovery:
         | 2026-10-23 00:00:00 | Biotechnology | NASDAQ     |    15.0327 |
         """
         _validate_arguments(date=date, start_date=start_date, end_date=end_date)
-
-        industry_pe = discovery_model.get_industry_pe(
-            api_key=self._api_key,
-            date=date,
-            industry=industry,
-            start_date=start_date,
-            end_date=end_date,
-            user_subscription=self._fmp_plan,
-            exchange=exchange,
+        industry_pe = _collect_snapshot(
+            lambda snapshot_date: discovery_model.get_industry_pe(
+                api_key=self._api_key,
+                date=snapshot_date,
+                industry=industry,
+                start_date=start_date,
+                end_date=end_date,
+                user_subscription=self._fmp_plan,
+                exchange=exchange,
+            ),
+            date,
+            "industry",
+            industry,
+            exchange,
         )
 
         return industry_pe
@@ -2302,12 +2523,12 @@ class Discovery:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Returns Aswath Damodaran's industry averages: betas, the cost of capital, margins
-        and valuation multiples for each of his roughly 95 industries and the market as a
-        whole, per region. They are the inputs of a bottom-up valuation: a company's beta
-        is better estimated from the unlevered beta of its industry, relevered at its own
-        debt-to-equity ratio, than from a regression on its own noisy returns, and its
-        multiples and margins read best next to those of its industry.
+        Returns Aswath Damodaran's industry averages: betas, the cost of capital, margins and valuation multiples for
+        each of his roughly 95 industries and the market as a whole, per region.
+
+        They are the inputs of a bottom-up valuation: a company's beta is better estimated from the unlevered beta of
+        its industry, relevered at its own debt-to-equity ratio, than from a regression on its own noisy returns, and
+        its multiples and margins read best next to those of its industry.
 
         Damodaran computes the averages from the financial statements and prices of all
         listed companies (about 6,000 in the United States and 48,000 globally) at the
@@ -2345,12 +2566,15 @@ class Discovery:
         margins, industry multiples, sector EV/EBITDA, industry PE.
 
         Args:
-            dataset (str, optional): The dataset: "betas", "total_betas", "cost_of_capital",
-                "margins", "price_to_earnings", "price_to_book", "price_to_sales" or
-                "enterprise_value_multiples". Defaults to "cost_of_capital".
-            region (str, optional): The region: "United States", "Europe", "Japan",
-                "Australia, New Zealand and Canada", "Emerging Markets", "China", "India" or
-                "Global". Defaults to "United States".
+            dataset (str, optional): The dataset. Options are: "betas" (levered and unlevered betas),
+                "total_betas" (betas that include the firm-specific risk), "cost_of_capital" (cost of equity, debt
+                and capital), "margins" (operating and net margins), "price_to_earnings" (price-to-earnings
+                ratios), "price_to_book" (price-to-book ratios), "price_to_sales" (price-to-sales ratios),
+                "enterprise_value_multiples" (enterprise value multiples). Defaults to "cost_of_capital".
+            region (str, optional): The region. Options are: "United States" (United States), "Europe"
+                (Europe), "Japan" (Japan), "Australia, New Zealand and Canada" (Australia, New Zealand and
+                Canada), "Emerging Markets" (emerging markets), "China" (China), "India" (India), "Global" (the
+                world). Defaults to "United States".
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -2474,25 +2698,22 @@ class Discovery:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Returns the earnings releases of all companies in a date range: the reported and
-        estimated earnings per share (EPS) and revenue, with the company name, the exchange
-        of the listing and the company's market capitalisation in US dollars.
-        Upcoming releases only have the estimates, so this also shows which companies
-        report in the coming days. This is the market-wide counterpart of
-        Toolkit.get_earnings_calendar, which covers the tickers of a Toolkit instance over
-        their full history.
+        Get the earnings releases of all companies in a date range, reported and expected.
 
-        A week holds thousands of releases, most of them small companies, and every listing
-        of a company appears (Cisco in New York, Frankfurt and Hong Kong). To see the
-        largest reporters, keep the primary listing of each company (its most traded one)
-        with `primary_only=True` and sort by market cap with `sort_by="market_cap"`, or set
-        a `min_market_cap`. The listings of a company can show a release on different days
-        (Berkshire Hathaway's in Frankfurt two days after New York), so the primary listing
-        is chosen from the releases of the week before and after the range as well. Every
-        listing of a company has the market cap of its primary listing, since the one
-        reported for a depositary receipt or a secondary listing is often far off. The
-        country filter uses the country of the company, so it also keeps a company's
-        listings abroad.
+        Returns the earnings releases of all companies in a date range: the reported and estimated earnings per share
+        (EPS) and revenue, with the company name, the exchange of the listing and the company's market capitalisation
+        in US dollars. Upcoming releases only have the estimates, so this also shows which companies report in the
+        coming days. This is the market-wide counterpart of Toolkit.get_earnings_calendar, which covers the tickers of
+        a Toolkit instance over their full history.
+
+        A week holds thousands of releases, most of them small companies, and every listing of a company appears
+        (Cisco in New York, Frankfurt and Hong Kong). To see the largest reporters, keep only the primary listing of
+        each company (its most traded one) and sort by market cap, or set a minimum market cap. The listings of a
+        company can show a release on different days (Berkshire Hathaway's in Frankfurt two days after New York), so
+        the primary listing is chosen from the releases of the week before and after the range as well. Every listing
+        of a company has the market cap of its primary listing, since the one reported for a depositary receipt or a
+        secondary listing is often far off. The country filter uses the country of the company, so it also keeps a
+        company's listings abroad.
 
         The EPS and revenue figures are in the currency the source reports them in for each
         listing, which is the reporting currency for some listings and the trading currency
@@ -2520,8 +2741,8 @@ class Discovery:
                 "XETRA". Defaults to None.
             primary_only (bool, optional): Whether to keep only the primary listing (the most
                 traded one) of each company. Defaults to False.
-            sort_by (str, optional): "date" to sort by date and symbol, or "market_cap" to put
-                the largest companies first. Defaults to "date".
+            sort_by (str, optional): The order of the releases. Options are: "date" (by date and symbol),
+                "market_cap" (the largest companies first). Defaults to "date".
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -2579,10 +2800,11 @@ class Discovery:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Returns the most recent 8-K filings with the SEC. Companies file an 8-K to
-        announce a material event between their periodic reports, such as results, an
-        acquisition, a change of management or a new financing, which makes the stream
-        of 8-K filings an early signal of company news.
+        Get the most recent 8-K filings with the SEC, the announcements of material company events.
+
+        Companies file an 8-K to announce a material event between their periodic reports, such as results, an
+        acquisition, a change of management or a new financing, which makes the stream of 8-K filings an early signal
+        of company news.
 
         Also known as: current reports, material event filings, SEC filings.
 
@@ -2646,10 +2868,11 @@ class Discovery:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Returns the most recent trades by company insiders (officers, directors and
-        shareholders owning more than 10%), as reported in their Form 4 filings: who
-        traded, the type of transaction, the number of shares and the price. Insiders know
-        their company best, so clusters of buying in particular can be worth a closer look.
+        Get the most recent trades by company insiders, as reported in their Form 4 filings.
+
+        Returns the most recent trades by company insiders (officers, directors and shareholders owning more than
+        10%), as reported in their Form 4 filings: who traded, the type of transaction, the number of shares and the
+        price. Insiders know their company best, so clusters of buying in particular can be worth a closer look.
 
         Also known as: insider trades, Form 4 filings, insider transactions.
 

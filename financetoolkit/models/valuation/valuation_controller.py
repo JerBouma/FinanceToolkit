@@ -3,13 +3,22 @@
 __docformat__ = "google"
 
 from functools import cache
+from typing import Literal
 
+import numpy as np
 import pandas as pd
 
-from financetoolkit.helpers import calendar_periods, trailing_mean, trailing_sum
+from financetoolkit.helpers import (
+    calendar_periods,
+    check_trailing,
+    require_input,
+    trailing_mean,
+    trailing_sum,
+)
 from financetoolkit.models import helpers
 from financetoolkit.models.profitability import growth_model
 from financetoolkit.models.valuation import (
+    cfroi_model,
     easton_model,
     enterprise_model,
     eva_model,
@@ -19,7 +28,12 @@ from financetoolkit.models.valuation import (
 from financetoolkit.performance.performance_model import get_beta
 from financetoolkit.ratios import valuation_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
-from financetoolkit.utilities.error_model import handle_errors
+from financetoolkit.utilities.error_model import (
+    InvalidArgumentError,
+    check_option,
+    handle_errors,
+    validate_window,
+)
 from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import (
@@ -44,6 +58,7 @@ LONG_RUN_GROWTH_RATE = 0.025
 GRAHAM_MAXIMUM_GROWTH_RATE = 0.20
 
 
+@check_trailing
 @filter_shown_columns
 @track_sources
 class ValuationModels:
@@ -82,8 +97,9 @@ class ValuationModels:
 
         The formula is as follows:
 
-        - Market Capitalization = Share Price * Weighted Average Shares Diluted (Weighted Average Shares
-          when diluted=False), with the share price the traded close at the end of each quarter or year
+        - Market Capitalization = Share Price * Weighted Average Shares Diluted (Weighted
+          Average Shares without dilution), with the share price the traded close at the end of
+          each quarter or year
         - Enterprise Value = Market Capitalization + Total Debt + Preferred Equity + Minority Interest -
           Cash and Cash Equivalents - Short Term Investments
 
@@ -167,7 +183,6 @@ class ValuationModels:
             cash_and_cash_equivalents=self._balance_sheet_statement.loc[
                 :, "Cash and Cash Equivalents", :
             ],
-            # Deducted with the cash, as in the Ratios module's Enterprise Value.
             short_term_investments=(
                 self._balance_sheet_statement.loc[:, "Short Term Investments", :]
                 if "Short Term Investments"
@@ -451,8 +466,6 @@ class ValuationModels:
 
         return wacc_model.get_weighted_average_cost_of_capital(
             share_price=share_prices,
-            # The capital weights are market values at the end of the period, so the shares
-            # and the debt are those of the period, not averages over the trailing periods.
             total_shares_outstanding=average_shares,
             interest_expense=trailing_sum(
                 self._income_statement.loc[:, "Interest Expense", :], trailing
@@ -483,10 +496,12 @@ class ValuationModels:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        The Weighted Average Cost of Capital (WACC) is a financial metric used to estimate
-        the cost of capital for a company. It represents the average rate of return a company
-        must pay to its investors for using their capital. WACC takes into account the cost of
-        both equity and debt, weighted by their respective proportions in the company's capital structure.
+        The Weighted Average Cost of Capital (WACC) is a financial metric used to estimate the
+        cost of capital for a company.
+
+        It represents the average rate of return a company must pay to its investors for using
+        their capital. WACC takes into account the cost of both equity and debt, weighted by
+        their respective proportions in the company's capital structure.
 
         The formula is as follows:
 
@@ -565,10 +580,11 @@ class ValuationModels:
         data, which a short or strong sample makes large: about 15% a year for the S&P 500 over
         2022-2026. Set `market_risk_premium` to use one premium for every company. Beta is estimated
         from the period's daily returns. With quarterly data the rates are per quarter, the risk-free yield divided by four.
-        - With `trailing` set, the Interest Expense is summed over the trailing periods, so the Cost of
-        Debt covers that span, the risk-free rate and premium of the Cost of Equity are the per-period
-        rates times `trailing` and the Beta is estimated from the daily returns of the trailing periods.
-        With quarterly data and trailing=4, every rate is an annual rate on a year of daily returns.
+        - With `trailing` set, the Interest Expense is summed over the trailing periods, so the
+          Cost of Debt covers that span, the risk-free rate and premium of the Cost of Equity
+          are the per-period rates times `trailing` and the Beta is estimated from the daily
+          returns of the trailing periods. With quarterly data and four trailing quarters, every
+          rate is an annual rate on a year of daily returns.
         - The Market Value of Debt is approximated as the Total Debt.
         - The capital weights are taken at the end of the fiscal period, also with `trailing` set: the
         Market Value of Equity is the closing share price on that day times the period's weighted
@@ -660,11 +676,14 @@ class ValuationModels:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculate Easton's (2004) implied cost of equity capital, the expected rate of return
-        on equity at which the share price equals the value of the next two years of earnings
-        expected by analysts. Where the Cost of Equity of `get_weighted_average_cost_of_capital`
-        is the return the Capital Asset Pricing Model (CAPM) requires from a beta and a market
-        risk premium, this is the return the market price itself implies (ex-ante).
+        Calculate Easton's (2004) implied cost of equity capital: the return on equity the share
+        price implies.
+
+        It is the expected rate of return on equity at which the share price equals the value of
+        the next two years of earnings expected by analysts. Where the Cost of Equity of
+        `get_weighted_average_cost_of_capital` is the return the Capital Asset Pricing Model
+        (CAPM) requires from a beta and a market risk premium, this is the return the market
+        price itself implies (ex-ante).
 
         The formula is as follows:
 
@@ -685,6 +704,8 @@ class ValuationModels:
         The estimates are the analysts' consensus from FinancialModelingPrep, the same estimates
         as `get_forward_price_earnings_ratio` of the Ratios module uses, which requires an
         `api_key` and a Premium FMP subscription. They are fetched once per Toolkit instance.
+        These are the current analyst estimates, also for past periods, so the result of every
+        period, the example below included, changes as analysts revise their estimates.
 
         Also known as: implied cost of capital, ICC, PEG / MPEG cost of equity, Easton model.
 
@@ -754,9 +775,9 @@ class ValuationModels:
 
         |      |   2021 |   2022 |     2023 |   2024 |   2025 |
         |:-----|-------:|-------:|---------:|-------:|-------:|
-        | KO   | 0.0736 | 0.0665 |   0.0665 | 0.0921 | 0.0685 |
+        | KO   | 0.0736 | 0.0665 |   0.0665 | 0.0927 | 0.0679 |
         | MDLZ | 0.0793 | 0.0653 | nan      | 0.0695 | 0.0944 |
-        | PEP  | 0.0803 | 0.071  | nan      | 0.0639 | 0.0588 |
+        | PEP  | 0.0803 | 0.071  | nan      | 0.0641 | 0.0589 |
         """
         analyst_estimates = self._analyst_estimates
 
@@ -861,23 +882,35 @@ class ValuationModels:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Economic Value Added (EVA) is a measure of a company's financial performance that
-        represents the value created in excess of the required return of the company's capital
-        providers. It captures whether a company is generating returns above its true cost of
-        capital, which distinguishes it from purely accounting-based measures such as Net Income.
+        Economic Value Added (EVA) shows the value a company creates above the return its
+        capital providers require.
+
+        It captures whether a company is generating returns above its true cost of capital,
+        which distinguishes it from purely accounting-based measures such as Net Income.
 
         The formula is as follows:
 
             - NOPAT = EBIT * (1 - Corporate Tax Rate)
             - Invested Capital = Total Equity + Total Debt
-            - EVA = NOPAT - (Weighted Average Cost of Capital * Invested Capital)
+            - Return on Invested Capital = NOPAT / Invested Capital
+            - EVA Spread = Return on Invested Capital - Weighted Average Cost of Capital
+            - EVA = NOPAT - (Weighted Average Cost of Capital * Invested Capital) = EVA Spread * Invested Capital
 
         EVA is mostly used to compare value creation across business units or companies and over time, and
         as a basis for management compensation. It is equivalent to (Return on Invested Capital - WACC) *
         Invested Capital, so a company with a high return on capital but a small capital base can create
         less EVA than a larger, less profitable one.
 
-        Also known as: EVA, economic profit.
+        The EVA Spread, the return on capital above its cost (Stewart, 1991), compares value creation
+        between companies of different sizes.
+
+        For more information, see the following sources:
+
+        - Stewart, G. B. (1991). "The Quest for Value." HarperBusiness.
+        - Stern, J. M., Stewart, G. B. and Chew, D. H. (1995). "The EVA Financial Management
+          System." Journal of Applied Corporate Finance, 8(2), 32-46.
+
+        Also known as: EVA, economic profit, EVA spread, economic spread, ROIC minus WACC.
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to None.
@@ -902,7 +935,8 @@ class ValuationModels:
                 exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
-            pd.DataFrame: DataFrame containing the EVA and its components.
+            pd.DataFrame: DataFrame containing the EVA and its components: NOPAT, Invested Capital, the
+            WACC, the Return on Invested Capital, the EVA Spread and the EVA.
 
         Notes:
         - A positive EVA indicates that the company is generating returns in excess of its cost of
@@ -918,10 +952,11 @@ class ValuationModels:
         `trailing` set), i.e. the capital employed over the course of the period rather than its
         closing balance, consistent with the Return on Invested Capital calculation in the Ratios
         module.
-        - The Weighted Average Cost of Capital comes from `get_weighted_average_cost_of_capital`,
-        with the market risk premium given by `market_risk_premium` (by default the equity risk
-        premium of the company's country) and the same `trailing`, so that it
-        covers the span of the NOPAT (an annual rate for trailing=4 with quarterly data).
+        - The Weighted Average Cost of Capital comes from
+          `get_weighted_average_cost_of_capital`, with the market risk premium given by
+          `market_risk_premium` (by default the equity risk premium of the company's country)
+          and the same `trailing`, so that it covers the span of the NOPAT (an annual rate for
+          four trailing quarters).
 
         As an example:
 
@@ -940,11 +975,11 @@ class ValuationModels:
 
         Which returns:
 
-        |    |        2022 |        2023 |        2024 |          2025 |
-        |:---|------------:|------------:|------------:|--------------:|
-        | HD | 1.51586e+10 | 1.23634e+10 | 1.21182e+10 | nan           |
-        | MA | 8.78616e+09 | 9.83484e+09 | 1.15047e+10 |   1.32979e+10 |
-        | V  | 1.14346e+10 | 1.30385e+10 | 1.54653e+10 |   1.5322e+10  |
+        |    |        2022 |        2023 |        2024 |         2025 |
+        |:---|------------:|------------:|------------:|-------------:|
+        | HD | 1.51589e+10 | 1.23635e+10 | 1.2118e+10  | nan          |
+        | MA | 8.7863e+09  | 9.8349e+09  | 1.15046e+10 |   1.3298e+10 |
+        | V  | 1.1435e+10  | 1.30387e+10 | 1.5465e+10  |   1.5322e+10 |
         """
         eva = {}
 
@@ -990,6 +1025,15 @@ class ValuationModels:
             ).loc[:, "Weighted Average Cost of Capital", :]
         )
 
+        invested_capital = eva["Invested Capital"]
+        eva["Return on Invested Capital"] = eva[
+            "Net Operating Profit After Taxes"
+        ] / invested_capital.where(invested_capital > 0)
+        eva["Economic Value Added Spread"] = eva_model.get_economic_value_added_spread(
+            return_on_invested_capital=eva["Return on Invested Capital"],
+            weighted_average_cost_of_capital=eva["Weighted Average Cost of Capital"],
+        )
+
         eva["Economic Value Added"] = eva_model.get_economic_value_added(
             net_operating_profit_after_taxes=eva["Net Operating Profit After Taxes"],
             weighted_average_cost_of_capital=eva["Weighted Average Cost of Capital"],
@@ -1010,12 +1054,14 @@ class ValuationModels:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Market Value Added (MVA) is a measure of a company's financial performance that
-        represents the difference between the current market value of a company (both its
-        equity and its debt) and the total capital that has historically been invested in it.
-        It is the market-priced counterpart to Economic Value Added (EVA): where EVA measures
-        a single period's excess return over the cost of capital, MVA reflects the market's
-        cumulative, forward-looking verdict on all of a company's expected future EVA.
+        Market Value Added (MVA) shows the difference between a company's market value and the
+        capital invested in it.
+
+        The market value is that of both its equity and its debt, and the capital is all that
+        has historically been invested. It is the market-priced counterpart to Economic Value
+        Added (EVA): where EVA measures a single period's excess return over the cost of
+        capital, MVA reflects the market's cumulative, forward-looking verdict on all of a
+        company's expected future EVA.
 
         The formula is as follows:
 
@@ -1131,6 +1177,708 @@ class ValuationModels:
         return self._finalize_components(mva, rounding, growth, lag, standardize)
 
     @handle_errors
+    def get_return_on_incremental_invested_capital(
+        self,
+        years: int = 1,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the Return on Incremental Invested Capital (ROIIC): the growth in after-tax
+        operating profit over the capital invested to produce it.
+
+        Where the Return on Invested Capital measures the return on all the capital in place,
+        ROIIC measures the return on the newest investments, which shows whether growth creates
+        value: growth adds value only while the ROIIC exceeds the cost of capital.
+
+        The formula is as follows, with n the number of years:
+
+            - NOPAT = EBIT * (1 - Tax Rate)
+            - Invested Capital = Total Equity + Total Debt
+            - ROIIC (t) = (NOPAT (t) - NOPAT (t - n)) / (Invested Capital (t - 1) - Invested Capital (t - 1 - n))
+
+        Following Mauboussin and Callahan, the invested capital is lagged by a year: the capital
+        invested in a year earns its profit in the years after. A longer span (`years`, often 3 or
+        5) smooths the lumpy year-to-year changes.
+
+        For more information, see the following sources:
+
+        - Mauboussin, M. J. and Callahan, D. (2014). "Calculating Return on Invested Capital."
+          Credit Suisse Global Financial Strategies.
+        - Koller, T., Goedhart, M. and Wessels, D. (2020). "Valuation: Measuring and Managing the
+          Value of Companies." Wiley, 7th edition.
+
+        Also known as: ROIIC, incremental ROIC, return on new invested capital, RONIC.
+
+        Args:
+            years (int, optional): The number of years n the changes span, at least 1. Defaults to 1.
+            rounding (int, optional): The number of decimals to round the results to. Defaults to None.
+            growth (bool, optional): Whether to calculate the growth of the values. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            trailing (int | None, optional): The number of periods to sum the NOPAT over. The window
+                counts calendar periods, so a period without a report makes it NaN. Defaults to None,
+                which is 4 on quarterly data (a trailing twelve months, with every lag counted in
+                years of four quarters) and single years on yearly data.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: Per ticker the Net Operating Profit After Taxes, the Change in NOPAT, the
+            Invested Capital (a year earlier), the Change in Invested Capital and the Return on
+            Incremental Invested Capital (a decimal).
+
+        Notes:
+        - NOPAT and the Invested Capital are those of `get_economic_value_added` (the effective tax
+        rate kept within 0 and 1, EBIT the reported Operating Income), with the Invested Capital at
+        the period end rather than averaged, as its change is what was invested.
+        - The ROIIC is NaN where the invested capital did not grow: a ratio on shrinking capital
+        has no meaning as a return (a fall in NOPAT on less capital would show as a positive return).
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["COST", "WMT", "TGT"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.models.get_return_on_incremental_invested_capital().xs(
+            "Return on Incremental Invested Capital", level=1
+        )
+        ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |     2023 |    2024 |   2025 |
+        |:-----|-------:|-------:|---------:|--------:|-------:|
+        | COST |    nan |    nan |   0.0657 |  0.2493 |    nan |
+        | TGT  |    nan |    nan |   1.3141 | -0.0469 |    nan |
+        | WMT  |    nan |    nan | nan      |  0.264  |    nan |
+        """
+        validate_window("years", years, 1)
+        trailing, periods_per_year = self._annual_trailing(trailing)
+        span = years * periods_per_year
+
+        nopat = self._net_operating_profit_after_taxes(trailing).reindex(self._tickers)
+        invested_capital = (
+            self._rows(self._balance_sheet_statement, "Total Equity")
+            + self._rows(self._balance_sheet_statement, "Total Debt")
+        ).shift(periods_per_year, axis=1)
+
+        components = {}
+        components["Net Operating Profit After Taxes"] = nopat
+        components["Change in NOPAT"] = nopat - nopat.shift(span, axis=1)
+        components["Invested Capital"] = invested_capital
+        components["Change in Invested Capital"] = invested_capital - (
+            invested_capital.shift(span, axis=1)
+        )
+        components["Return on Incremental Invested Capital"] = (
+            eva_model.get_return_on_incremental_invested_capital(
+                change_in_net_operating_profit_after_taxes=components[
+                    "Change in NOPAT"
+                ],
+                change_in_invested_capital=components["Change in Invested Capital"],
+            )
+        )
+
+        return self._finalize_components(components, rounding, growth, lag, standardize)
+
+    @handle_errors
+    def get_owner_earnings(
+        self,
+        method: Literal["total", "greenwald"] = "total",
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate Warren Buffett's owner earnings: the cash a business could pay its owners
+        while keeping its competitive position and unit volume.
+
+        Buffett defines them in the 1986 Berkshire Hathaway letter as the reported earnings plus
+        depreciation, depletion and amortization and other non-cash charges, less the average
+        yearly capital expenditure the business needs to keep its position (and any additional
+        working capital that requires).
+
+        The formula is as follows:
+
+            - Owner Earnings = Net Income + Depreciation and Amortization - Maintenance Capital
+              Expenditure - Change in Working Capital
+            - Owner Earnings per Share = Owner Earnings / Weighted Average Shares Diluted
+
+        The statements do not split the capital expenditure into maintenance and growth, which
+        Buffett himself calls a guess. There are two estimates of the maintenance part:
+
+            - Total: all the capital expenditure, the conservative estimate (owner earnings then
+              differ from the free cash flow only by the non-cash items other than depreciation).
+            - Greenwald: the capital expenditure minus the growth capital expenditure, the
+              investment the growth in revenue required at the company's ratio of property, plant
+              and equipment to revenue a year earlier (Greenwald et al., 2001):
+              Maintenance Capital Expenditure = Capital Expenditure - PP&E / Revenue (t - 1) *
+              max(Change in Revenue, 0), at least 0.
+
+        For more information, see the following sources:
+
+        - Buffett, W. E. (1986). "Chairman's Letter." Berkshire Hathaway Inc. Annual Report 1986,
+          appendix on purchase-price accounting adjustments and owner earnings.
+        - Greenwald, B. C. N., Kahn, J., Sonkin, P. D. and van Biema, M. (2001). "Value Investing:
+          From Graham to Buffett and Beyond." Wiley, chapter 6.
+
+        Also known as: owner earnings, Buffett owner earnings, maintenance free cash flow.
+
+        Args:
+            method (str, optional): The estimate of the maintenance capital expenditure. Options are: "total" (all
+                the capital expenditure), "greenwald" (the capital expenditure minus the growth capital expenditure,
+                Greenwald et al., 2001). Defaults to "total".
+            rounding (int, optional): The number of decimals to round the results to. Defaults to None.
+            growth (bool, optional): Whether to calculate the growth of the values. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            trailing (int | None, optional): The number of periods to sum the flows over. The window
+                counts calendar periods, so a period without a report makes it NaN. Defaults to None,
+                which uses single periods (per quarter on quarterly data).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: Per ticker the Net Income, Depreciation and Amortization, Capital
+            Expenditure, Maintenance Capital Expenditure, Change in Working Capital, Owner Earnings
+            and Owner Earnings per Share.
+
+        Notes:
+        - The Change in Working Capital is that of the cash flow statement with its sign turned, so
+        an increase in working capital (a use of cash) is positive and lowers the owner earnings.
+        - Depreciation and Amortization is that of the cash flow statement; other non-cash charges
+        (such as share-based compensation) are not added back, as Buffett adds back only the
+        charges that do not reflect an economic cost.
+        - With Greenwald's estimate on quarterly data, the change in revenue is measured against
+          the same period a year earlier and divided over the four quarters of that year when
+          `trailing` is not set.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["KO", "PEP", "MDLZ"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.models.get_owner_earnings().xs("Owner Earnings", level=1)
+        ```
+
+        Which returns:
+
+        |      |       2021 |      2022 |      2023 |      2024 |      2025 |
+        |:-----|-----------:|----------:|----------:|----------:|----------:|
+        | KO   | 1.1181e+10 | 8.713e+09 | 9.144e+09 | 3.408e+09 | 4.837e+09 |
+        | MDLZ | 3.799e+09  | 2.405e+09 | 4.553e+09 | 3.557e+09 | 1.556e+09 |
+        | PEP  | 6.926e+09  | 6.095e+09 | 6.737e+09 | 6.379e+09 | 6.358e+09 |
+        """
+        method = method.lower()
+        check_option("method", method, ("total", "greenwald"))
+        periods_per_year = 4 if self._quarterly else 1
+
+        def flow(statement: pd.DataFrame, row: str) -> pd.DataFrame:
+            return trailing_sum(self._rows(statement, row), trailing)
+
+        capital_expenditure = -flow(self._cash_flow_statement, "Capital Expenditure")
+
+        if method == "total":
+            maintenance_capital_expenditure = capital_expenditure
+        else:
+            revenue = self._rows(self._income_statement, "Revenue")
+            # The change in revenue over the window the capital expenditure covers: compared with a year earlier, a year's change divided over its quarters for a single quarter.  # noqa: E501
+            window = trailing or 1
+            yearly_revenue = trailing_sum(revenue, periods_per_year)
+            change_in_revenue = (
+                (yearly_revenue - yearly_revenue.shift(periods_per_year, axis=1))
+                * window
+                / periods_per_year
+            )
+            ppe_to_revenue = (
+                self._rows(
+                    self._balance_sheet_statement, "Property, Plant and Equipment"
+                )
+                / yearly_revenue.where(yearly_revenue > 0)
+            ).shift(periods_per_year, axis=1)
+            maintenance_capital_expenditure = (
+                intrinsic_model.get_greenwald_maintenance_capital_expenditure(
+                    capital_expenditure=capital_expenditure,
+                    property_plant_and_equipment_to_revenue=ppe_to_revenue,
+                    change_in_revenue=change_in_revenue,
+                )
+            )
+
+        components = {}
+        components["Net Income"] = flow(self._income_statement, "Net Income")
+        components["Depreciation and Amortization"] = flow(
+            self._cash_flow_statement, "Depreciation and Amortization"
+        )
+        components["Capital Expenditure"] = capital_expenditure
+        components["Maintenance Capital Expenditure"] = maintenance_capital_expenditure
+        components["Change in Working Capital"] = -flow(
+            self._cash_flow_statement, "Change in Working Capital"
+        )
+        components["Owner Earnings"] = intrinsic_model.get_owner_earnings(
+            net_income=components["Net Income"],
+            depreciation_and_amortization=components["Depreciation and Amortization"],
+            maintenance_capital_expenditure=maintenance_capital_expenditure,
+            change_in_working_capital=components["Change in Working Capital"],
+        )
+        components["Owner Earnings per Share"] = components["Owner Earnings"] / (
+            self._rows(self._income_statement, "Weighted Average Shares Diluted")
+        )
+
+        return self._finalize_components(components, rounding, growth, lag, standardize)
+
+    @handle_errors
+    def get_unlevered_beta(
+        self,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the unlevered (asset) beta of Hamada (1972): the beta each company's shares
+        would have without debt, its business risk apart from its financial leverage.
+
+        Unlevered betas can be compared across companies with different amounts of debt,
+        averaged over an industry and relevered at a company's own leverage (Damodaran's
+        bottom-up beta, see `wacc_model.get_relevered_beta`).
+
+        The formula is as follows:
+
+            - Levered Beta = the regression beta of the shares against the benchmark over the period
+            - Debt to Equity = Total Debt / Market Value of Equity
+            - Unlevered Beta = Levered Beta / (1 + (1 - Tax Rate) * Debt to Equity)
+
+        For more information, see the following sources:
+
+        - Hamada, R. S. (1972). "The Effect of the Firm's Capital Structure on the Systematic Risk
+          of Common Stocks." The Journal of Finance, 27(2), 435-452.
+        - Damodaran, A. (2012). "Investment Valuation." Wiley, 3rd edition, chapter 8.
+
+        Also known as: asset beta, unlevered beta, Hamada equation, business risk beta.
+
+        Args:
+            rounding (int, optional): The number of decimals to round the results to. Defaults to None.
+            growth (bool, optional): Whether to calculate the growth of the values. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            trailing (int | None, optional): The number of periods the beta is measured over (and the
+                taxes summed over). The window counts calendar periods, so a period without a report
+                makes it NaN. Defaults to None, which is a single period.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: Per ticker the Levered Beta, Debt to Equity, Tax Rate and Unlevered Beta.
+
+        Notes:
+        - The Levered Beta, the market value of equity and the tax rate are those of
+        `get_weighted_average_cost_of_capital`: the beta of the daily returns within the period
+        against the benchmark, the closing price at the fiscal period end times the diluted
+        weighted average shares, and the effective tax rate kept within 0 and 1 (0 without a
+        pre-tax profit). The debt is the book value of Total Debt, the usual stand-in for its
+        market value.
+        - The debt is assumed to carry no market risk (a debt beta of zero), as Hamada and
+        Damodaran's bottom-up betas do. Damodaran also corrects the unlevered beta for the cash a
+        company holds (Unlevered Beta / (1 - Cash / Firm Value)), which this leaves out.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["F", "GM", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.models.get_unlevered_beta().xs("Unlevered Beta", level=1)
+        ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|
+        | F    | 0.4549 | 0.3568 | 0.3472 | 0.2686 | 0.1996 |
+        | GM   | 0.6333 | 0.4549 | 0.4088 | 0.3555 | 0.3454 |
+        | TSLA | 1.9416 | 1.7191 | 2.223  | 2.3614 | 2.2258 |
+        """
+        years = self._cash_flow_statement.columns
+        beta = self._beta_per_period(str(years[0]), str(years[-1]), trailing).T
+        wacc = self._weighted_average_cost_of_capital(trailing=trailing)
+
+        market_value_equity = wacc.xs("Market Value Equity", level=1).reindex(
+            self._tickers
+        )
+        debt_to_equity = self._rows(
+            self._balance_sheet_statement, "Total Debt"
+        ) / market_value_equity.where(market_value_equity > 0)
+        tax_rate = wacc.xs("Corporate Tax Rate", level=1).reindex(self._tickers)
+
+        components = {}
+        components["Levered Beta"] = beta.reindex(
+            index=self._tickers, columns=debt_to_equity.columns
+        )
+        components["Debt to Equity"] = debt_to_equity
+        components["Tax Rate"] = tax_rate
+        components["Unlevered Beta"] = wacc_model.get_unlevered_beta(
+            levered_beta=components["Levered Beta"],
+            debt_to_equity=debt_to_equity,
+            tax_rate=tax_rate,
+        )
+
+        return self._finalize_components(components, rounding, growth, lag, standardize)
+
+    @handle_errors
+    def get_capitalized_research_and_development(
+        self,
+        amortization_years: int = 5,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Capitalize the research and development expenses as Aswath Damodaran does: accounting
+        treats R&D as an expense, while it is an investment whose benefit lasts several years.
+
+        Every year's R&D becomes an asset amortized straight-line over its amortizable life,
+        which changes the operating income, the net income, the book equity, the invested
+        capital and with them the return on capital of research-intensive companies.
+
+        The formula is as follows, with n the amortizable life in years:
+
+            - Research Asset (t) = Σ (k = 0 .. n - 1) R&D (t - k) * (n - k) / n
+            - Amortization (t) = Σ (k = 1 .. n) R&D (t - k) / n
+            - Adjusted Operating Income = Operating Income + R&D - Amortization
+            - Adjusted Net Income = Net Income + R&D - Amortization
+            - Adjusted Total Equity = Total Equity + Research Asset
+            - Adjusted Invested Capital = Total Equity + Total Debt + Research Asset
+            - Adjusted Return on Invested Capital = Adjusted Operating Income * (1 - Tax Rate) /
+              Adjusted Invested Capital at the beginning of the period
+
+        The expense of the current year is not amortized yet, and that of n years ago is written
+        off in full this year, as in Damodaran's R&D converter.
+
+        For more information, see the following sources:
+
+        - Damodaran, A. (2012). "Investment Valuation." Wiley, 3rd edition, chapter 9.
+        - Damodaran, A. "R&D Converter" (R&D.xls),
+          https://pages.stern.nyu.edu/~adamodar/New_Home_Page/spreadsh.htm
+        - Lev, B. and Sougiannis, T. (1996). "The Capitalization, Amortization, and Value-Relevance
+          of R&D." Journal of Accounting and Economics, 21(1), 107-138.
+
+        Also known as: R&D capitalization, research asset, capitalized R&D, adjusted operating
+        income for R&D.
+
+        Args:
+            amortization_years (int, optional): The amortizable life n of the research asset in
+                years, at least 1. Damodaran uses 2 years for software, 3 to 5 for most industries and up
+                to 10 for pharmaceuticals (the life it takes to turn research into products). Defaults to 5.
+            rounding (int, optional): The number of decimals to round the results to. Defaults to None.
+            growth (bool, optional): Whether to calculate the growth of the values. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: Per ticker the Research and Development Expenses, Research Asset,
+            Amortization of Research Asset, Adjusted Operating Income, Adjusted Net Income,
+            Adjusted Total Equity, Adjusted Invested Capital and Adjusted Return on Invested Capital.
+
+        Notes:
+        - The asset needs the expenses of the n years before: with a start date less than n years
+        back the results are NaN (set an earlier start_date). A year without a reported R&D expense
+        leaves the years that include it NaN rather than counting it as zero.
+        - On quarterly data every quarter holds the expenses of the trailing year, the asset and
+        amortization are those of the years ending with the quarter, and the adjusted incomes are
+        trailing twelve months figures.
+        - The tax rate is the effective tax rate kept within 0 and 1 (0 without a pre-tax profit),
+        as in `get_economic_value_added`. Damodaran notes that the tax benefit of R&D stays that of
+        the expense, which these adjustments keep by not changing the taxes.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["MRK", "PFE", "LLY"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2015-01-01",
+            end_date="2025-12-31",
+        )
+
+        # The last four years, the first with ten years of spending behind them
+        toolkit.models.get_capitalized_research_and_development(
+            amortization_years=10
+        ).loc["MRK"].iloc[:, -4:]
+        ```
+
+        Which returns:
+
+        |                                     |         2022 |          2023 |        2024 |        2025 |
+        |:------------------------------------|-------------:|--------------:|------------:|------------:|
+        | Research and Development Expenses   |   1.3548e+10 |   3.0531e+10  | 1.7938e+10  | 1.2514e+10  |
+        | Research Asset                      | nan          |   8.18812e+10 | 8.74511e+10 | 8.65212e+10 |
+        | Amortization of Research Asset      | nan          |   1.00653e+10 | 1.23681e+10 | 1.34439e+10 |
+        | Adjusted Operating Income           | nan          |   2.34197e+10 | 2.57909e+10 | 2.25561e+10 |
+        | Adjusted Net Income                 | nan          |   2.08307e+10 | 2.26869e+10 | 1.73241e+10 |
+        | Adjusted Total Equity               | nan          |   1.19516e+11 | 1.33823e+11 | 1.39183e+11 |
+        | Adjusted Invested Capital           | nan          |   1.55784e+11 | 1.72093e+11 | 1.89717e+11 |
+        | Adjusted Return on Invested Capital | nan          | nan           | 0.1423      | 0.1136      |
+        """
+        validate_window("amortization_years", amortization_years, 1)
+        periods_per_year = 4 if self._quarterly else 1
+        trailing = periods_per_year if self._quarterly else None
+
+        def flow(statement: pd.DataFrame, row: str) -> pd.DataFrame:
+            return trailing_sum(self._rows(statement, row), trailing)
+
+        research_and_development = flow(
+            self._income_statement, "Research and Development Expenses"
+        )
+
+        # Companies that report no research and development have nothing to capitalize,
+        # which would otherwise only show as empty rows.
+        without_research = research_and_development.index[
+            research_and_development.isna().all(axis=1)
+        ]
+        if len(without_research):
+            logger.warning(
+                "No Research and Development Expenses are reported for %s, so there is no "
+                "research asset to capitalize and their adjusted figures are not calculated.",
+                ", ".join(map(str, without_research)),
+            )
+        research_asset, amortization = eva_model.get_research_and_development_asset(
+            research_and_development=research_and_development,
+            amortization_years=amortization_years,
+            periods_per_year=periods_per_year,
+        )
+        adjustment = research_and_development - amortization
+        balance = self._balance_sheet_statement
+
+        components = {}
+        components["Research and Development Expenses"] = research_and_development
+        components["Research Asset"] = research_asset
+        components["Amortization of Research Asset"] = amortization
+        components["Adjusted Operating Income"] = (
+            flow(self._income_statement, "Operating Income") + adjustment
+        )
+        components["Adjusted Net Income"] = (
+            flow(self._income_statement, "Net Income") + adjustment
+        )
+        components["Adjusted Total Equity"] = (
+            self._rows(balance, "Total Equity") + research_asset
+        )
+        components["Adjusted Invested Capital"] = (
+            self._rows(balance, "Total Equity")
+            + self._rows(balance, "Total Debt")
+            + research_asset
+        )
+        tax_rate = wacc_model.get_corporate_tax_rate(
+            income_tax_expense=flow(self._income_statement, "Income Tax Expense"),
+            income_before_tax=flow(self._income_statement, "Income Before Tax"),
+        )
+        beginning_capital = components["Adjusted Invested Capital"].shift(
+            periods_per_year, axis=1
+        )
+        components["Adjusted Return on Invested Capital"] = (
+            components["Adjusted Operating Income"]
+            * (1 - tax_rate)
+            / beginning_capital.where(beginning_capital > 0)
+        )
+
+        return self._finalize_components(components, rounding, growth, lag, standardize)
+
+    @handle_errors
+    def get_cash_flow_return_on_investment(
+        self,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the Cash Flow Return on Investment (CFROI) of Bartley Madden (the HOLT model):
+        the internal rate of return of a company's assets seen as one project.
+
+        The gross investment buys a gross cash flow for every year of the life of the
+        depreciating assets, and the non-depreciating assets (working capital) come back at the
+        end. Where the return on invested capital divides an accounting profit by depreciated
+        book values, the CFROI compares cash flows with the original cost of the assets, which
+        makes companies with old and new assets comparable.
+
+        The formula is as follows, solved for the CFROI:
+
+            - Gross Cash Flow = Net Income + Depreciation and Amortization + Interest Expense
+            - Depreciating Assets = Gross Property, Plant and Equipment (Net Property, Plant and
+              Equipment where the gross amount is not reported)
+            - Non-Depreciating Assets = Total Current Assets - (Total Current Liabilities - Short
+              Term Debt)
+            - Gross Investment = Depreciating Assets + Non-Depreciating Assets
+            - Asset Life = Depreciating Assets / Depreciation and Amortization
+            - Gross Investment = Σ (t = 1 .. Asset Life) Gross Cash Flow / (1 + CFROI)^t +
+              Non-Depreciating Assets / (1 + CFROI)^Asset Life
+
+        This is the simplified, nominal form of Madden's model that the statements allow. HOLT's
+        CFROI also restates the gross investment and the cash flows for inflation (a real
+        return), capitalizes operating leases and R&D and adds the rental expense to the cash flow;
+        practitioner versions differ in these choices, so the levels are best compared between
+        companies and over time rather than with a published CFROI.
+
+        For more information, see the following sources:
+
+        - Madden, B. J. (1999). "CFROI Valuation: A Total System Approach to Valuing the Firm."
+          Butterworth-Heinemann.
+        - Madden, B. J. (2010). "Wealth Creation: A Systems Mindset for Building and Investing in
+          Businesses for the Long Term." Wiley.
+
+        Also known as: CFROI, HOLT CFROI, cash flow return on investment, Madden CFROI.
+
+        Args:
+            rounding (int, optional): The number of decimals to round the results to. Defaults to None.
+            growth (bool, optional): Whether to calculate the growth of the values. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: Per ticker the Gross Cash Flow, Depreciating Assets, Non-Depreciating
+            Assets, Gross Investment, Asset Life (years) and the Cash Flow Return on Investment (a
+            decimal per year, annually compounded).
+
+        Notes:
+        - The balance sheet items are averaged over the period ends that open and close the year,
+        as the invested capital of `get_economic_value_added`. On quarterly data the flows are
+        those of the trailing twelve months, so the CFROI stays a yearly rate.
+        - FinancialModelingPrep reports the property, plant and equipment net of depreciation. The
+        net amount understates the original cost and its life (Net PP&E / Depreciation) is the
+        remaining life of the assets, which gives a remaining-life CFROI. Where the statements
+        report the gross amount (Yahoo Finance), the gross amount and the full life are used.
+        - The CFROI is NaN where the life or the gross investment is not positive or no rate
+        between -99% and 1,000% solves the equation (such as a gross cash flow that never
+        returns the investment).
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["HD", "LOW"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.models.get_cash_flow_return_on_investment().loc["HD"]
+        ```
+
+        Which returns:
+
+        |                                |         2021 |         2022 |        2023 |       2024 |
+        |:-------------------------------|-------------:|-------------:|------------:|-----------:|
+        | Gross Cash Flow                |  2.0642e+10  |  2.1697e+10  |  2.0333e+10 | 2.0888e+10 |
+        | Depreciating Assets            |  3.0917e+10  |  3.18695e+10 |  3.3305e+10 | 3.4666e+10 |
+        | Non-Depreciating Assets        |  5.2855e+09  |  7.218e+09   |  9.86e+09   | 8.524e+09  |
+        | Gross Investment               |  3.62025e+10 |  3.90875e+10 |  4.3165e+10 | 4.319e+10  |
+        | Asset Life                     | 10.8026      | 10.7124      | 10.2572     | 9.2172     |
+        | Cash Flow Return on Investment |  0.5664      |  0.551       |  0.4637     | 0.4726     |
+        """
+        periods_per_year = 4 if self._quarterly else 1
+        trailing = periods_per_year if self._quarterly else None
+        balance = self._balance_sheet_statement
+
+        def flow(statement: pd.DataFrame, row: str) -> pd.DataFrame:
+            return trailing_sum(self._rows(statement, row), trailing)
+
+        def average(row: str) -> pd.DataFrame:
+            # The opening and closing balance of the year.
+            values = self._rows(balance, row)
+            return (values + values.shift(periods_per_year, axis=1)) / 2
+
+        depreciation = flow(self._income_statement, "Depreciation and Amortization")
+        gross_property = average("Gross Property, Plant and Equipment")
+        depreciating_assets = gross_property.combine_first(
+            average("Property, Plant and Equipment")
+        )
+        non_depreciating_assets = average("Total Current Assets") - (
+            average("Total Current Liabilities") - average("Short Term Debt").fillna(0)
+        )
+
+        components = {}
+        components["Gross Cash Flow"] = (
+            flow(self._income_statement, "Net Income")
+            + depreciation
+            + flow(self._income_statement, "Interest Expense").abs().fillna(0)
+        )
+        components["Depreciating Assets"] = depreciating_assets
+        components["Non-Depreciating Assets"] = non_depreciating_assets
+        components["Gross Investment"] = depreciating_assets + non_depreciating_assets
+        components["Asset Life"] = depreciating_assets / depreciation.where(
+            depreciation > 0
+        )
+        components["Cash Flow Return on Investment"] = (
+            cfroi_model.get_cash_flow_return_on_investment(
+                gross_investment=components["Gross Investment"],
+                gross_cash_flow=components["Gross Cash Flow"],
+                non_depreciating_assets=non_depreciating_assets,
+                asset_life=components["Asset Life"],
+            )
+        )
+
+        return self._finalize_components(components, rounding, growth, lag, standardize)
+
+    @handle_errors
     def get_intrinsic_valuation(
         self,
         growth_rate: float | list | dict[str, float] | None = None,
@@ -1144,12 +1892,15 @@ class ValuationModels:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Intrinsic value is a fundamental concept in finance and investing that represents the
-        true worth or value of an asset, security, or investment, independent of its current
-        market price or prevailing market sentiment. It is a concept often associated with
-        the value investing philosophy, made famous by legendary investors like Benjamin Graham
-        and Warren Buffett. Understanding intrinsic value is crucial for investors looking to make
-        informed decisions about where to allocate their capital.
+        Intrinsic value shows what a share is worth by its discounted future cash flows,
+        independent of its market price.
+
+        It is a fundamental concept in finance and investing that represents the true worth of
+        an asset, security, or investment, independent of prevailing market sentiment. It is a
+        concept often associated with the value investing philosophy, made famous by legendary
+        investors like Benjamin Graham and Warren Buffett. Understanding intrinsic value is
+        crucial for investors looking to make informed decisions about where to allocate their
+        capital.
 
         This functionality uses DCF, or Discounted Cash Flow which is a widely used financial
         valuation method that allows investors and analysts to estimate the intrinsic value of
@@ -1162,8 +1913,11 @@ class ValuationModels:
             - Cash Flow Projection_t = Cash Flow_t-1 * (1 + Growth Rate)
             - Terminal Value = Last Cash Flow Projection * (1 + Perpetual Growth Rate) /
             (Weighted Average Cost of Capital — Perpetual Growth Rate)
-            - Enterprise Value = Sum of Present Value of Cash Flow Projections + Terminal Value /
-            (1 + Weighted Average Cost of Capital)^Periods
+            - Present Value of Cash Flows = Sum of Cash Flow Projection_t / (1 + Weighted Average
+            Cost of Capital)^t for t = 1 to Periods
+            - Present Value of Terminal Value = Terminal Value / (1 + Weighted Average Cost of
+            Capital)^Periods
+            - Enterprise Value = Present Value of Cash Flows + Present Value of Terminal Value
             - Equity Value = Enterprise Value + Cash and Cash Equivalents + Short Term Investments —
             Total Debt — Minority Interest — Preferred Stock
             - Intrinsic Value = Equity Value / Weighted Average Shares Diluted
@@ -1196,11 +1950,13 @@ class ValuationModels:
             ticker. Defaults to None, which uses the Weighted Average Cost of Capital of each company of the
             period valued, calculated over a year (the last 4 quarters with quarterly data, with a beta of
             their daily returns).
-            periods (int, optional): The number of periods to use for the cash flow projections. Defaults to 5.
-            cash_flow_type (str, optional): The type of cash flow to use for the cash flow projections.
-            Defaults to "Free Cash Flow to Firm". The other options are "Free Cash Flow" and "Operating
-            Cash Flow" as reported on the cash flow statement; both are after interest, so discounting
-            them at the WACC and subtracting the debt counts the cost of debt twice.
+            periods (int, optional): The number of periods to use for the cash flow projections, at least 1.
+                Defaults to 5.
+            cash_flow_type (str, optional): The type of cash flow to use for the cash flow projections. Both
+                reported cash flows are after interest, so discounting them at the WACC and subtracting the debt
+                counts the cost of debt twice. Options are: "Free Cash Flow to Firm", "Free Cash Flow" (as
+                reported on the cash flow statement), "Operating Cash Flow" (as reported on the cash flow
+                statement). Defaults to "Free Cash Flow to Firm".
             trailing (int | None, optional): The number of trailing periods to sum for the base cash flow.
                 The window counts calendar periods, so a period without a report makes it NaN.
             When set, uses the sum of the latest N consecutive calendar periods that are all reported instead
@@ -1217,8 +1973,11 @@ class ValuationModels:
                 exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
-            pd.DataFrame: DataFrame containing the intrinsic value and its components for each ticker, or
-            with `historical=True` the intrinsic value per share for each ticker (rows) and period (columns).
+            pd.DataFrame: DataFrame containing per ticker the Terminal Value, the Cash Flow
+            Projection (the last projected cash flow), the Present Value of Cash Flows, the
+            Present Value of Terminal Value, the Enterprise Value, the Equity Value and the
+            Intrinsic Value, or for the historical valuation the intrinsic value per share for
+            each ticker (rows) and period (columns).
 
         Notes:
         - The results are highly dependent on the input. Therefore, think carefully about each input parameter to
@@ -1231,14 +1990,19 @@ class ValuationModels:
         - The WACC must be greater than the perpetual growth rate; otherwise the terminal value is infinite
         and the valuation is not calculated. Within 2 percentage points of it the valuation is calculated
         with a warning, as a tenth of a percentage point on either rate then moves it by about 5%.
+        - The cash flows are discounted at the end of each period and the Terminal Value at the end
+        of the last projected period, so the Present Value of Cash Flows and the Present Value of
+        Terminal Value add up to the Enterprise Value and show how much of it the terminal value
+        carries.
         - The Total Debt, Cash and Cash Equivalents and Short Term Investments are those of the most
         recent period. Short Term Investments are added back with the cash, the same cash and marketable
         securities `get_enterprise_value_breakdown` deducts, and count as 0 when the balance sheet has no
         such row.
         - The Equity Value is divided by the Weighted Average Shares Diluted of the most recent period.
-        - With `historical=True` no period uses figures reported after it, so the series shows what this
-        DCF gave at each period end, with the growth and WACC known at that period end when they are not given. A period whose cash flow, cash, debt or
-        shares are missing is NaN, while the single valuation takes the most recent value of each.
+        - In the historical valuation no period uses figures reported after it, so the series
+          shows what this DCF gave at each period end, with the growth and WACC known at that
+          period end when they are not given. A period whose cash flow, cash, debt or shares are
+          missing is NaN, while the single valuation takes the most recent value of each.
 
         As an example:
 
@@ -1263,7 +2027,7 @@ class ValuationModels:
         | CRM  |       67.9174 |
         | INTU |      172.144  |
 
-        And the same valuation for every period with `historical=True`:
+        And the same valuation for every period:
 
         ```python
         toolkit.models.get_intrinsic_valuation(historical=True)
@@ -1277,15 +2041,12 @@ class ValuationModels:
         | CRM  |  18.2502 |  11.8861 |  51.1607 |  67.9382 | nan     |
         | INTU | 102.101  |  60.4477 |  99.9192 |  97.2924 | 173.485 |
         """
-        if cash_flow_type not in [
-            "Free Cash Flow to Firm",
-            "Free Cash Flow",
-            "Operating Cash Flow",
-        ]:
-            raise ValueError(
-                "Invalid cash flow type. Please choose from the following: 'Free Cash Flow to Firm', "
-                "'Free Cash Flow', 'Operating Cash Flow'"
-            )
+        check_option(
+            "cash_flow_type",
+            cash_flow_type,
+            ["Free Cash Flow to Firm", "Free Cash Flow", "Operating Cash Flow"],
+        )
+        validate_window("periods", periods, 1)
 
         # The growth and discount rates are annual, so a quarterly base cash flow is the trailing twelve months.
         if trailing is None and self._quarterly:
@@ -1297,13 +2058,12 @@ class ValuationModels:
                 trailing,
             )
 
-        cash_flows = (
-            self.get_free_cash_flow_to_firm(rounding=15).xs(
-                "Free Cash Flow to Firm", level=1
-            )
-            if cash_flow_type == "Free Cash Flow to Firm"
-            else self._cash_flow_statement.loc[:, cash_flow_type, :]
-        )
+        if cash_flow_type == "Free Cash Flow to Firm":
+            free_cash_flow_to_firm = self.get_free_cash_flow_to_firm(rounding=15)
+            require_input(free_cash_flow_to_firm, "free cash flow to firm")
+            cash_flows = free_cash_flow_to_firm.xs("Free Cash Flow to Firm", level=1)
+        else:
+            cash_flows = self._cash_flow_statement.loc[:, cash_flow_type, :]
 
         operating_growth = cache(self._operating_growth)
 
@@ -1395,9 +2155,6 @@ class ValuationModels:
                 growth_rate=growth_rate_float,
                 perpetual_growth_rate=perpetual_growth_rate_float,
                 weighted_average_cost_of_capital=weighted_average_cost_of_capital_float,
-                # The cash and short term investments added, the debt, minority interest
-                # and preferred stock deducted, as get_enterprise_value_breakdown does the
-                # reverse.
                 **{
                     name: value
                     for name, value in self._latest_capital(ticker).items()
@@ -1516,11 +2273,13 @@ class ValuationModels:
     ) -> pd.DataFrame:
         """
         Free Cash Flow to the Firm (FCFF) is the cash flow available to all providers of
-        capital, both debt and equity holders, after the company has paid all of its
-        operating expenses and invested in the assets needed to sustain its operations.
-        Because it is measured before any financing cash flows, FCFF is capital-structure
-        neutral, making it the cash flow base typically discounted at the Weighted Average
-        Cost of Capital (WACC) when valuing the Enterprise Value of a company directly.
+        capital, both debt and equity holders.
+
+        It is what is left after the company has paid all of its operating expenses and invested
+        in the assets needed to sustain its operations. Because it is measured before any
+        financing cash flows, FCFF is capital-structure neutral, making it the cash flow base
+        typically discounted at the Weighted Average Cost of Capital (WACC) when valuing the
+        Enterprise Value of a company directly.
 
         The formula is as follows:
 
@@ -1643,11 +2402,13 @@ class ValuationModels:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Free Cash Flow to Equity (FCFE) is the cash flow available to a company's common
-        equity holders after all operating expenses, reinvestment needs, and net payments to
-        (or from) debt holders have been accounted for. Unlike FCFF, FCFE is a levered cash
-        flow measure and should be discounted at the Cost of Equity, not the Weighted Average
-        Cost of Capital, when used to value equity directly.
+        Free Cash Flow to Equity (FCFE) is the cash flow available to a company's common equity
+        holders.
+
+        It is what is left after all operating expenses, reinvestment needs, and net payments to
+        (or from) debt holders have been accounted for. Unlike FCFF, FCFE is a levered cash flow
+        measure and should be discounted at the Cost of Equity, not the Weighted Average Cost of
+        Capital, when used to value equity directly.
 
         The formula is as follows:
 
@@ -1807,9 +2568,11 @@ class ValuationModels:
         show_columns: str | list[str] | None = None,
     ):
         """
-        The Gordon Growth Model, also known as the Dividend Discount Model (DDM) with Constant Growth,
-        is a method used to estimate the intrinsic value of a stock based on its expected future dividends.
-        The model assumes that dividends will grow at a constant rate indefinitely.
+        The Gordon Growth Model shows the intrinsic value of a stock from its expected future
+        dividends.
+
+        It is also known as the Dividend Discount Model (DDM) with Constant Growth. The model
+        assumes that dividends will grow at a constant rate indefinitely.
 
         The formula is as follows:
 
@@ -1987,11 +2750,12 @@ class ValuationModels:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        The Two-Stage Dividend Discount Model extends the (single-stage) Gordon Growth Model
-        to companies that are not expected to grow at a constant rate forever. It explicitly
-        projects and discounts dividends over an initial high-growth phase, and then values
-        everything from the end of that phase onward as a perpetuity growing at a lower,
-        more sustainable stable rate (a Gordon Growth terminal value).
+        The Two-Stage Dividend Discount Model extends the (single-stage) Gordon Growth Model to
+        companies that are not expected to grow at a constant rate forever.
+
+        It explicitly projects and discounts dividends over an initial high-growth phase, and
+        then values everything from the end of that phase onward as a perpetuity growing at a
+        lower, more sustainable stable rate (a Gordon Growth terminal value).
 
         The formula is as follows:
 
@@ -2149,13 +2913,15 @@ class ValuationModels:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        The H-Model of Fuller and Hsia (1984) values a stock whose dividend growth starts at
-        a high rate and declines linearly to a stable rate over a number of years, after
-        which it grows at the stable rate forever. It is a closed-form approximation of the
-        three-stage dividend discount model (see `get_two_stage_dividend_discount_model` with
-        `transition_periods`): the Gordon Growth Model at the stable rate plus the value of
-        the extra growth during the decline, which is about half the high-growth period (H)
-        times the extra growth.
+        The H-Model of Fuller and Hsia (1984) shows the value of a stock whose dividend growth
+        declines linearly to a stable rate.
+
+        The growth starts at a high rate and declines over a number of years, after which it
+        grows at the stable rate forever. It is a closed-form approximation of the three-stage
+        dividend discount model (see `get_two_stage_dividend_discount_model` with
+        `transition_periods`): the Gordon Growth Model at the stable rate plus the value of the
+        extra growth during the decline, which is about half the high-growth period (H) times
+        the extra growth.
 
         The formula is as follows:
 
@@ -2305,9 +3071,11 @@ class ValuationModels:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        The justified multiples are the Price-to-Earnings and Price-to-Book ratios the
-        dividend discount and residual income models imply for a company with a constant
-        payout ratio, Return on Equity and growth rate. Comparing them with the actual
+        The justified multiples are the Price-to-Earnings and Price-to-Book ratios that a
+        company's fundamentals justify.
+
+        They are the multiples the dividend discount and residual income models imply for a
+        constant payout ratio, Return on Equity and growth rate. Comparing them with the actual
         multiples shows whether the market prices a company above or below what its
         profitability, payout and growth justify at a given required rate of return.
 
@@ -2414,7 +3182,7 @@ class ValuationModels:
             # valuations.
             growth = growth_model.get_sustainable_growth_rate(
                 return_on_equity=return_on_equity,
-                retention_ratio=valuation_model.get_reinvestment_ratio(
+                retention_ratio=valuation_model.get_retention_ratio(
                     dividend_payout_ratio=payout_ratio
                 ),
             ).clip(lower=0, upper=LONG_RUN_GROWTH_RATE)
@@ -2465,12 +3233,13 @@ class ValuationModels:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Residual Income is a measure of the profit a company generates in excess of the
-        return required by its equity holders. It is the equity-side counterpart to Economic
-        Value Added (EVA), and underpins the Residual Income Model, an alternative equity
-        valuation lens to a traditional Discounted Cash Flow (DCF) that is particularly
-        useful when a company's free cash flows are negative or unpredictable but its
-        accounting earnings are more stable.
+        Residual Income is a measure of the profit a company generates in excess of the return
+        required by its equity holders.
+
+        It is the equity-side counterpart to Economic Value Added (EVA), and underpins the
+        Residual Income Model, an alternative equity valuation lens to a traditional Discounted
+        Cash Flow (DCF) that is particularly useful when a company's free cash flows are
+        negative or unpredictable but its accounting earnings are more stable.
 
         The formula is as follows:
 
@@ -2505,12 +3274,12 @@ class ValuationModels:
         Income indicates the company failed to earn its equity holders' required return, even
         if it still reported a positive Net Income.
         - The Cost of Equity follows from the Capital Asset Pricing Model (CAPM), as in
-        `get_weighted_average_cost_of_capital`: the risk-free rate of the period plus Beta times
-        the market risk premium, by default the equity risk premium of the company's country
-        (see `market_risk_premium`). It covers the span of the Net Income: a
-        quarter with quarterly data, and the per-period rate times `trailing` when the Net Income
-        is a trailing sum (an annual rate for trailing twelve months, trailing=4 with quarterly data),
-        with the Beta estimated from the daily returns of the same trailing periods.
+          `get_weighted_average_cost_of_capital`: the risk-free rate of the period plus Beta
+          times the market risk premium, by default the equity risk premium of the company's
+          country (see `market_risk_premium`). It covers the span of the Net Income: a quarter
+          with quarterly data, and the per-period rate times `trailing` when the Net Income is a
+          trailing sum (an annual rate for the trailing twelve months of quarterly data), with
+          the Beta estimated from the daily returns of the same trailing periods.
         - The Book Value of Equity is the Total Shareholder Equity minus Preferred Stock at the
         beginning of the period (the previous period's closing balance, or that of `trailing` periods
         back with `trailing` set), the capital the shareholders had invested while the Net Income was
@@ -2607,10 +3376,12 @@ class ValuationModels:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        The Present Value of Growth Opportunities (PVGO) is a financial metric that represents the
-        present value of a company's future growth opportunities. It is calculated as the difference
-        between the share price and the value of the company's current earnings as a perpetuity without
-        growth, i.e. Earnings per Share divided by the Cost of Equity.
+        The Present Value of Growth Opportunities (PVGO) is a financial metric that represents
+        the present value of a company's future growth opportunities.
+
+        It is calculated as the difference between the share price and the value of the
+        company's current earnings as a perpetuity without growth, i.e. Earnings per Share
+        divided by the Cost of Equity.
 
         The formula is as follows:
 
@@ -2651,8 +3422,9 @@ class ValuationModels:
         the share price and the Earnings per Share are equity-only, per-share quantities (Brealey, Myers
         and Allen, "Principles of Corporate Finance"; Bodie, Kane and Marcus, "Investments"). The Cost of
         Equity is the CAPM Cost of Equity of `get_weighted_average_cost_of_capital`.
-        - The Cost of Equity uses the same `trailing` as the Earnings per Share, so both cover the same
-        span (with quarterly data, a quarter without `trailing` and a year with trailing=4).
+        - The Cost of Equity uses the same `trailing` as the Earnings per Share, so both cover
+          the same span (with quarterly data, a quarter without `trailing` and a year with four
+          trailing quarters).
         - When the Earnings per Share is negative, the no-growth value is negative and the PVGO
         exceeds the share price, which has no meaningful interpretation.
 
@@ -2703,7 +3475,10 @@ class ValuationModels:
             preferred_dividends = trailing_sum(dividends, trailing)
         else:
             preferred_dividends = 0
+        # Without shares (0 reported) there are no earnings per share, rather than infinite
+        # ones that would make the growth opportunities infinite.
         avg_shares = trailing_mean(average_shares, trailing)
+        avg_shares = avg_shares.where(avg_shares > 0)
 
         earnings_per_share = valuation_model.get_earnings_per_share(
             net_income=net_income,
@@ -2813,8 +3588,8 @@ class ValuationModels:
         Notes:
         - Graham's limits of 15 times earnings and 1.5 times book value refer to annual earnings, so
         with quarterly data the Earnings per Share are the sum of the last four quarters by default.
-        - Earnings and Book Value per Share use the Weighted Average Shares Diluted (or the Weighted
-        Average Shares with diluted=False).
+        - Earnings and Book Value per Share use the Weighted Average Shares Diluted (or the
+          Weighted Average Shares without dilution).
         - Only the Earnings per Share are trailing: the earnings are a flow over the trailing periods,
         divided by the average shares over those periods. The Book Value per Share is a stock, the Total
         Shareholder Equity minus the Preferred Stock at the end of the period divided by the shares of
@@ -2894,16 +3669,15 @@ class ValuationModels:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculate the intrinsic value of a share with Benjamin Graham's growth formula, the
-        value of a growth stock from its earnings, their expected growth and the yield of high
-        grade corporate bonds.
+        Calculate the intrinsic value of a share with Benjamin Graham's growth formula.
 
-        Graham gave the formula in The Intelligent Investor (fourth revised edition, 1973,
-        chapter 11) as Earnings per Share x (8.5 + 2g), with 8.5 the price-to-earnings ratio of
-        a company without growth and g the growth rate of its earnings expected over the next
-        7 to 10 years, in percent. In 1974 he scaled it by 4.4 / Y, with 4.4 the average yield
-        of AAA corporate bonds in 1962 and Y their current yield, so that the value falls when
-        interest rates rise.
+        It is the value of a growth stock from its earnings, their expected growth and the yield
+        of high grade corporate bonds. Graham gave the formula in The Intelligent Investor
+        (fourth revised edition, 1973, chapter 11) as Earnings per Share x (8.5 + 2g), with 8.5
+        the price-to-earnings ratio of a company without growth and g the growth rate of its
+        earnings expected over the next 7 to 10 years, in percent. In 1974 he scaled it by 4.4 /
+        Y, with 4.4 the average yield of AAA corporate bonds in 1962 and Y their current yield,
+        so that the value falls when interest rates rise.
 
         The formula is as follows:
 
@@ -2957,10 +3731,10 @@ class ValuationModels:
             pd.DataFrame: DataFrame containing the intrinsic value per share.
 
         Notes:
-        - Graham's formula takes the earnings of the last twelve months, so with quarterly data the
-        Earnings per Share are the sum of the last four quarters by default; it is the Net Income divided
-        by the Weighted Average Shares Diluted (or the Weighted Average Shares with diluted=False), as in
-        `get_graham_number`.
+        - Graham's formula takes the earnings of the last twelve months, so with quarterly data
+          the Earnings per Share are the sum of the last four quarters by default; it is the Net
+          Income divided by the Weighted Average Shares Diluted (or the Weighted Average Shares
+          without dilution), as in `get_graham_number`.
         - The default growth rate looks back, while Graham's g is the growth expected ahead: pass a
         growth_rate (e.g. from analyst estimates, see `toolkit.get_analyst_estimates`) to value on a
         forecast. Each period only uses the earnings up to it, and the bond yield of the end of that
@@ -3327,8 +4101,7 @@ class ValuationModels:
         reported Free Cash Flow and Operating Cash Flow are after interest.
         """
         valid = ["Free Cash Flow to Firm", "Free Cash Flow", "Operating Cash Flow"]
-        if cash_flow_type not in valid:
-            raise ValueError(f"The cash flow type must be one of: {', '.join(valid)}.")
+        check_option("cash_flow_type", cash_flow_type, valid)
 
         def summed(statement: pd.DataFrame, row: str) -> pd.DataFrame:
             return self._calendar_sum(statement, row, trailing)
@@ -3373,12 +4146,13 @@ class ValuationModels:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculate the growth rate the share price implies, a reverse Discounted Cash Flow
-        (DCF). Instead of estimating growth to arrive at a value, it takes the current share
-        price as given and solves for the yearly cash flow growth over the projection
-        periods at which the DCF value per share equals that price. The answer is the
-        market's expectation, which can then be compared with the company's history: an
-        implied growth far above what the company has achieved signals optimism.
+        Calculate the growth rate the share price implies, a reverse Discounted Cash Flow (DCF).
+
+        Instead of estimating growth to arrive at a value, it takes the current share price as
+        given and solves for the yearly cash flow growth over the projection periods at which
+        the DCF value per share equals that price. The answer is the market's expectation, which
+        can then be compared with the company's history: an implied growth far above what the
+        company has achieved signals optimism.
 
         The DCF is the same as in `get_intrinsic_valuation`, by default on the Free Cash
         Flow to the Firm:
@@ -3391,7 +4165,7 @@ class ValuationModels:
 
         For more information, see the following book:
 
-        - Mauboussin, M.J. and Rappaport, A. (2001). "Expectations Investing: Reading Stock
+        - Rappaport, A. and Mauboussin, M.J. (2001). "Expectations Investing: Reading Stock
           Prices for Better Returns." Harvard Business School Press.
 
         Also known as: reverse DCF, market-implied growth, expectations investing.
@@ -3405,13 +4179,12 @@ class ValuationModels:
                 which uses the latest Weighted Average Cost of Capital of each company,
                 calculated over a year (the last 4 quarters with quarterly data) whatever
                 `trailing` the cash flows use, as the rate is a yearly one.
-            periods (int, optional): The number of projection periods. Defaults to 5.
-            cash_flow_type (str, optional): The cash flow to project: "Free Cash Flow to
-                Firm" (see `get_free_cash_flow_to_firm`), the cash flow to debt and equity
-                holders that the WACC discounts into an enterprise value; or "Free Cash Flow"
-                or "Operating Cash Flow" as reported, which are after interest (cash flows
-                to equity), so that discounting them at the WACC and subtracting the debt
-                counts the cost of debt twice. Defaults to "Free Cash Flow to Firm".
+            periods (int, optional): The number of projection periods, at least 1. Defaults to 5.
+            cash_flow_type (str, optional): The cash flow to project. The reported cash flows are after interest
+                (cash flows to equity), so that discounting them at the WACC and subtracting the debt counts the
+                cost of debt twice. Options are: "Free Cash Flow to Firm" (see get_free_cash_flow_to_firm, the cash
+                flow to debt and equity holders that the WACC discounts into an enterprise value), "Free Cash Flow"
+                (as reported), "Operating Cash Flow" (as reported). Defaults to "Free Cash Flow to Firm".
             trailing (int | None, optional): Sum the cash flow over this many periods (e.g.
                 4 quarters) instead of taking the latest one. The window counts calendar
                 periods, so a period without a report makes it NaN. Defaults to None, which
@@ -3429,7 +4202,9 @@ class ValuationModels:
             Average Cost of Capital, the Perpetual Growth Rate, the Implied Growth Rate and,
             for comparison, the Historical Growth Rate (the compound annual growth of the
             cash flow as used, so summed over `trailing` periods where set, from the first
-            to the latest reported period).
+            to the latest reported period) with the Historical Growth Period it covers, the
+            first and latest period such as "2021-2025" (or "2024Q1-2025Q3" with quarterly
+            data).
 
         Notes:
         - A negative cash flow, or a discount rate at or below the perpetual growth rate,
@@ -3437,7 +4212,8 @@ class ValuationModels:
         - The Historical Growth Rate counts four quarters as a year with quarterly data and
           is NaN when the first or latest cash flow is not positive. The years are those
           between the first and the latest cash flow on the calendar, and a trailing sum
-          that includes a missing period is NaN rather than one over more periods.
+          that includes a missing period is NaN rather than one over more periods. The
+          Historical Growth Period is empty (NaN) where the Historical Growth Rate is.
 
         As an example:
 
@@ -3456,12 +4232,14 @@ class ValuationModels:
 
         Which returns:
 
-        |      |   Share Price |   Cash Flow |   Weighted Average Cost of Capital |   Perpetual Growth Rate |   Implied Growth Rate |   Historical Growth Rate |
-        |:-----|--------------:|------------:|-----------------------------------:|------------------------:|----------------------:|-------------------------:|
-        | AAPL |        271.86 | 8.62639e+10 |                               0.09 |                   0.025 |                0.3068 |                   0.0545 |
-        | MSFT |        483.62 | 7.0121e+10  |                               0.09 |                   0.025 |                0.328  |                   0.1183 |
-        | NVDA |        186.5  | 5.98933e+10 |                               0.09 |                   0.025 |                0.4431 |                   1.0031 |
+        |      |   Share Price |   Cash Flow |   Weighted Average Cost of Capital |   Perpetual Growth Rate |   Implied Growth Rate |   Historical Growth Rate | Historical Growth Period   |
+        |:-----|--------------:|------------:|-----------------------------------:|------------------------:|----------------------:|-------------------------:|:---------------------------|
+        | AAPL |        271.86 | 8.62639e+10 |                               0.09 |                   0.025 |                0.3068 |                   0.0545 | 2020-2025                  |
+        | MSFT |        483.62 | 7.0121e+10  |                               0.09 |                   0.025 |                0.328  |                   0.1183 | 2020-2025                  |
+        | NVDA |        186.5  | 5.98933e+10 |                               0.09 |                   0.025 |                0.4431 |                   1.0031 | 2020-2024                  |
         """
+        validate_window("periods", periods, 1)
+
         perpetual = helpers.rates_per_ticker(
             perpetual_growth_rate, self._tickers, "perpetual growth rate"
         )
@@ -3479,6 +4257,7 @@ class ValuationModels:
         cash_flows = self._valuation_cash_flows(cash_flow_type, trailing)
 
         rows = {}
+        without_price = []
         for ticker in self._tickers:
             # Summed on the calendar periods before the NaNs are dropped, so that a missing
             # period does not stretch a trailing sum over more periods than `trailing`.
@@ -3487,6 +4266,8 @@ class ValuationModels:
                 continue
             cash_flow = float(history.iloc[-1])
             share_price = self._latest_price(ticker)
+            if np.isnan(share_price):
+                without_price.append(ticker)
             implied = intrinsic_model.get_implied_growth_rate(
                 share_price=share_price,
                 cash_flow=cash_flow,
@@ -3515,10 +4296,30 @@ class ValuationModels:
                 "Perpetual Growth Rate": perpetual[ticker],
                 "Implied Growth Rate": implied,
                 "Historical Growth Rate": historical,
+                # The first and latest period the Historical Growth Rate is measured over.
+                "Historical Growth Period": (
+                    f"{history.index[0]}-{history.index[-1]}"
+                    if not np.isnan(historical)
+                    else np.nan
+                ),
             }
 
+        # A date range after the prices (or without them) still has the statements of the
+        # year before it, so the result would otherwise show cash flows without a reason for
+        # the missing implied growth rate.
+        if without_price:
+            logger.warning(
+                "%s has no share price between %s and %s, so the implied growth rate is NaN and the "
+                "cash flow is the latest one before the end date. Please choose a date range with prices.",
+                ", ".join(without_price),
+                self._start_date,
+                self._end_date,
+            )
+
+        # Built per row so that the numbers keep a float dtype next to the period labels.
         return apply_rounding(
-            pd.DataFrame(rows).T, rounding if rounding is not None else self._rounding
+            pd.DataFrame.from_dict(rows, orient="index"),
+            rounding if rounding is not None else self._rounding,
         )
 
     @handle_errors
@@ -3531,11 +4332,12 @@ class ValuationModels:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculate the Earnings Power Value (EPV), the value of a company's current earnings
-        if they never grew. Bruce Greenwald uses it to separate what is known (today's
-        earnings power) from what is speculative (growth): the operating margin is averaged
-        over several years and applied to the latest yearly revenue, taxed, and capitalized
-        at the cost of capital.
+        Calculate the Earnings Power Value (EPV), the value of a company's current earnings if
+        they never grew.
+
+        Bruce Greenwald uses it to separate what is known (today's earnings power) from what is
+        speculative (growth): the operating margin is averaged over several years and applied to
+        the latest yearly revenue, taxed, and capitalized at the cost of capital.
 
             - Normalized Operating Income = Average Operating Margin * Latest Revenue
             - NOPAT = Normalized Operating Income * (1 - Average Tax Rate)
@@ -3563,7 +4365,7 @@ class ValuationModels:
                 are averaged over; with `trailing`, the number of trailing sums, `trailing`
                 calendar periods apart so that they do not overlap, counted back from the
                 latest reported one. A sum that includes a missing period is left out of
-                the average. Defaults to 5.
+                the average. At least 1. Defaults to 5.
             trailing (int | None, optional): Sum the revenue, operating income, taxes and
                 income before tax over this many periods (e.g. 4 quarters), so that the
                 margin is applied to a year of revenue. The window counts calendar periods,
@@ -3612,6 +4414,8 @@ class ValuationModels:
         | KO   |                     0.2534 |                   1.21476e+10 |     0.1861 |        9.88662e+09 |                               0.08 |            1.23583e+11 |    8.81348e+10 |                          20.4347 |         69.91 |         3.4211 |
         | MSFT |                     0.4314 |                   1.2153e+11  |     0.1636 |        1.01652e+11 |                               0.08 |            1.27066e+12 |    1.25303e+12 |                         167.853  |        483.62 |         2.8812 |
         """
+        validate_window("periods", periods, 1)
+
         # The NOPAT is capitalized as a yearly amount, so quarterly figures are summed into a
         # year (a trailing twelve months) before the margin is applied to the revenue.
         if trailing is None and self._quarterly:
@@ -3667,8 +4471,12 @@ class ValuationModels:
                     pd.Series(
                         {
                             "Share Price": share_price,
-                            "Price to EPV": share_price
-                            / result["Earnings Power Value per Share"],
+                            # No ratio to an Earnings Power Value of 0 (or none per share).
+                            "Price to EPV": (
+                                share_price / result["Earnings Power Value per Share"]
+                                if result["Earnings Power Value per Share"] != 0
+                                else np.nan
+                            ),
                         }
                     ),
                 ]
@@ -3698,12 +4506,14 @@ class ValuationModels:
     ) -> pd.DataFrame:
         """
         Calculate the distribution of the intrinsic value per share when the inputs of the
-        Discounted Cash Flow model are uncertain. A single DCF value hides how sensitive it
-        is to its assumptions; here the growth rate, the perpetual growth rate and the
-        discount rate are drawn from normal distributions around their expected values in
-        every simulation, and the DCF of `get_intrinsic_valuation` is calculated for each
-        draw. The spread of the outcomes, and the probability that the value exceeds the
-        share price, show how robust the conclusion is.
+        Discounted Cash Flow model are uncertain.
+
+        A single DCF value hides how sensitive it is to its assumptions; here the growth rate,
+        the perpetual growth rate and the discount rate are drawn from normal distributions
+        around their expected values in every simulation, and the DCF of
+        `get_intrinsic_valuation` is calculated for each draw. The spread of the outcomes, and
+        the probability that the value exceeds the share price, show how robust the conclusion
+        is.
 
         Draws in which the discount rate does not exceed the perpetual growth rate by at
         least half a percentage point are redrawn, as the terminal value is undefined there.
@@ -3721,27 +4531,26 @@ class ValuationModels:
                 to None, which uses the growth the company's reinvestment supports, as in
                 `get_intrinsic_valuation`.
             growth_rate_volatility (float, optional): The standard deviation of the growth
-                rate. Defaults to 0.02.
+                rate, 0 or more. Defaults to 0.02.
             perpetual_growth_rate (float | dict[str, float] | None, optional): The expected
                 growth after the projection periods. Defaults to None, which uses the company's
                 growth kept within 0 and the long-run growth rate of 2.5% (2.5% where it has none).
-            perpetual_growth_rate_volatility (float, optional): Its standard deviation.
-                Defaults to 0.005.
+            perpetual_growth_rate_volatility (float, optional): Its standard deviation, 0 or
+                more. Defaults to 0.005.
             weighted_average_cost_of_capital (float | dict[str, float] | None, optional):
                 The expected discount rate. Defaults to None, which uses the latest Weighted
                 Average Cost of Capital of each company, calculated over a year (the last 4
                 quarters with quarterly data) whatever `trailing` the cash flows use, as the
                 rate is a yearly one.
             weighted_average_cost_of_capital_volatility (float, optional): Its standard
-                deviation. Defaults to 0.01.
-            periods (int, optional): The number of projection periods. Defaults to 5.
+                deviation, 0 or more. Defaults to 0.01.
+            periods (int, optional): The number of projection periods, at least 1. Defaults to 5.
             simulations (int, optional): The number of simulations. Defaults to 10,000.
-            cash_flow_type (str, optional): The cash flow to project: "Free Cash Flow to
-                Firm" (see `get_free_cash_flow_to_firm`), the cash flow to debt and equity
-                holders that the WACC discounts into an enterprise value; or "Free Cash Flow"
-                or "Operating Cash Flow" as reported, which are after interest (cash flows
-                to equity), so that discounting them at the WACC and subtracting the debt
-                counts the cost of debt twice. Defaults to "Free Cash Flow to Firm".
+            cash_flow_type (str, optional): The cash flow to project. The reported cash flows are after interest
+                (cash flows to equity), so that discounting them at the WACC and subtracting the debt counts the
+                cost of debt twice. Options are: "Free Cash Flow to Firm" (see get_free_cash_flow_to_firm, the cash
+                flow to debt and equity holders that the WACC discounts into an enterprise value), "Free Cash Flow"
+                (as reported), "Operating Cash Flow" (as reported). Defaults to "Free Cash Flow to Firm".
             trailing (int | None, optional): Sum the cash flow over this many periods (e.g.
                 4 quarters) instead of taking the latest one. The window counts calendar
                 periods, so a period without a report makes it NaN. Defaults to None, which
@@ -3783,6 +4592,21 @@ class ValuationModels:
         | AAPL |  83.9988 |              16.3235 |          62.3819 |           72.7029 |           81.6781 |           92.6049 |           113.888 |        271.86 |                    0.0001 |
         | MSFT | 209.732  |              54.4736 |         146.029  |          174.188  |          199.786  |          233.56   |           305.64  |        483.62 |                    0.0026 |
         """
+        validate_window("periods", periods, 1)
+        for name, volatility in (
+            ("growth_rate_volatility", growth_rate_volatility),
+            ("perpetual_growth_rate_volatility", perpetual_growth_rate_volatility),
+            (
+                "weighted_average_cost_of_capital_volatility",
+                weighted_average_cost_of_capital_volatility,
+            ),
+        ):
+            if not volatility >= 0:
+                raise InvalidArgumentError(
+                    f"{name} is a standard deviation, which is 0 or more, not {volatility!r}. "
+                    f"Please pass 0 or a positive number as {name}."
+                )
+
         operating_growth = cache(lambda: self._latest(self._operating_growth()))
         growth = helpers.rates_per_ticker(
             growth_rate, self._tickers, "growth rate", operating_growth
@@ -3855,17 +4679,18 @@ class ValuationModels:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Compare every company with its peers on valuation, profitability, growth and
-        leverage. For each metric it shows the company's latest value, the median and mean
-        of its peers and the company's percentile among them (the share of peers with a
-        lower value), which tells at a glance whether a company is expensive or cheap,
-        and better or worse run, than comparable companies.
+        Compare every company with its peers on valuation, profitability, growth and leverage.
+
+        For each metric it shows the company's latest value, the median and mean of its peers
+        and the company's percentile among them (the share of peers with a lower value), which
+        tells at a glance whether a company is expensive or cheap, and better or worse run, than
+        comparable companies.
 
         The metrics are the Price-to-Earnings, EV-to-EBITDA, Price-to-Book and
         Price-to-Sales ratios, the Gross, Operating and Net Profit Margin, the Return on
         Equity and on Invested Capital, Revenue Growth, the Debt-to-Equity ratio and the
         Dividend Yield, all of the latest period up to the Toolkit's end date: the fiscal year,
-        or with quarterly=True the quarter, with the ratios over the trailing year and the
+        or with quarterly data the quarter, with the ratios over the trailing year and the
         Revenue Growth over the same quarter a year earlier. The peers are retrieved with the
         Toolkit's settings (quarterly, point_in_time and convert_currency), so the Company
         column equals the Toolkit's own ratios of that period.
@@ -3940,7 +4765,10 @@ class ValuationModels:
         | ('MSFT', 'Dividend Yield')             |    0.0065 |        0.008  |      0.009  |          0.5 |      10 |
         """
         if self._peer_function is None:
-            raise ValueError("Peer data is not available for this Toolkit.")
+            raise InvalidArgumentError(
+                "The peer data comes from the Toolkit. Please use this method from a Toolkit "
+                "(toolkit.models), or pass peer_function when creating the Models class."
+            )
 
         result = self._peer_function(peers)
         return apply_rounding(

@@ -5,6 +5,7 @@ import pandas as pd
 import pytest
 
 from financetoolkit import Econometrics
+from financetoolkit.utilities.error_model import InvalidArgumentError
 
 
 @pytest.fixture(scope="module")
@@ -19,7 +20,7 @@ def monthly_rates():
 def test_standalone_econometrics_on_any_data(monthly_rates):
     econometrics = Econometrics(data=monthly_rates, changes="difference")
 
-    adf = econometrics.get_augmented_dickey_fuller()
+    adf = econometrics.get_unit_root_test()
     assert list(adf.columns) == ["United States", "Germany"]
     # The series are analyzed at the dates they are observed: 240 months.
     assert adf.loc["Observations"].max() <= 240  # noqa: PLR2004
@@ -27,7 +28,7 @@ def test_standalone_econometrics_on_any_data(monthly_rates):
     ols = econometrics.get_ols(dependent_ticker="Germany", column="Level")
     assert ols.loc["United States", "Coefficient"] == pytest.approx(0.5, abs=0.05)
 
-    yearly = econometrics.get_augmented_dickey_fuller(period="yearly", column="Change")
+    yearly = econometrics.get_unit_root_test(period="yearly", column="Change")
     assert yearly.loc["Observations"].max() < 20  # noqa: PLR2004
 
 
@@ -70,7 +71,7 @@ def test_new_methods_on_the_toolkit(econometrics_module):
     parameters = econometrics_module.get_dcc_garch(parameters=True)
     assert "DCC Alpha" in parameters.index
 
-    pairs = econometrics_module.get_pairs_trading(window=60)
+    pairs = econometrics_module.get_pairs_trading(rolling=60)
     assert pairs.index.names == ["Dependent", "Independent"]
     assert {"Hedge Ratio", "Half-Life", "Cointegration P-Value"} <= set(pairs.columns)
     series = econometrics_module.get_pairs_trading(time_series=True)
@@ -98,7 +99,7 @@ def test_standalone_mixed_monthly_and_daily_series():
     # Every series is tested on its own observations, not only on the dates both share.
     jarque_bera = econometrics.get_jarque_bera_test()
     assert jarque_bera.loc["P-Value"].notna().all()
-    adf = econometrics.get_augmented_dickey_fuller(column="Level", max_lag=0)
+    adf = econometrics.get_unit_root_test(column="Level", max_lag=0)
     assert adf.loc["Observations", "Daily"] == len(days) - 1
     assert adf.loc["Observations", "Monthly"] == 71  # noqa: PLR2004
 
@@ -216,7 +217,8 @@ def test_spreads_and_streaks_on_any_data():
     assert rises.loc["Producer Price Index YoY", "Run Length"] == 3  # noqa: PLR2004
 
     # An unknown series or a spread without a second series is explained.
-    assert econometrics.get_streaks(spread_over="Unemployment").empty
+    with pytest.raises(InvalidArgumentError, match="not one of the series"):
+        econometrics.get_streaks(spread_over="Unemployment")
     assert (
         Econometrics(data=prices[["Inflation Rate YoY"]])
         .get_level_significance(spread_over="Inflation Rate YoY")

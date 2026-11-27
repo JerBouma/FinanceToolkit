@@ -20,7 +20,8 @@ def get_delta(
     put_option: bool = False,
 ) -> float:
     """
-    Calculate the Option Delta using the Black-Scholes formula.
+    Calculate the Option Delta using the Black-Scholes formula: how much the option value
+    changes for a 1.00 change in the price of the underlying asset.
 
     Args:
         stock_price (float): Series of stock prices.
@@ -63,7 +64,8 @@ def get_dual_delta(
     put_option: bool = False,
 ) -> float:
     """
-    Calculate Dual Delta using the Black-Scholes formula.
+    Calculate Dual Delta using the Black-Scholes formula: how much the option value changes
+    for a 1.00 change in the strike price.
 
     Args:
         stock_price (float): Current stock price.
@@ -109,7 +111,8 @@ def get_vega(
     dividend_yield: float = 0.0,
 ) -> float:
     """
-    Calculate the Option Vega using the Black-Scholes formula.
+    Calculate the Option Vega using the Black-Scholes formula: how much the option value
+    changes for a 1.00 change in the volatility of the underlying asset.
 
     Args:
         stock_price (float): Current stock price.
@@ -160,7 +163,8 @@ def get_theta(
     put_option: bool = False,
 ) -> float:
     """
-    Calculate the Option Theta using the Black-Scholes formula.
+    Calculate the Option Theta using the Black-Scholes formula: how much the option value
+    changes as time passes, its time decay.
 
     Args:
         stock_price (float): Current stock price.
@@ -269,7 +273,8 @@ def get_rho(
     put_option: bool = False,
 ) -> float:
     """
-    Calculate the Option Rho using the Black-Scholes formula.
+    Calculate the Option Rho using the Black-Scholes formula: how much the option value
+    changes for a 1.00 change in the risk free rate.
 
     Args:
         stock_price (float): Current stock price.
@@ -330,9 +335,11 @@ def get_epsilon(
     put_option: bool = False,
 ) -> float:
     """
-    Calculate the Option Epsilon using the Black-Scholes formula: the derivative of the
-    option value with respect to the dividend yield, ∂V/∂q. It is the change in the
-    option value per 1.00 change in the dividend yield, not a percentage change.
+    Calculate the Option Epsilon using the Black-Scholes formula: how much the option value
+    changes for a 1.00 change in the dividend yield.
+
+    It is the derivative of the option value with respect to the dividend yield, ∂V/∂q, per
+    1.00 change in the dividend yield, not a percentage change.
 
     - Call Epsilon = —S * t * e^(—q * t) * N(d1)
     - Put Epsilon = S * t * e^(—q * t) * N(—d1)
@@ -376,7 +383,7 @@ def get_epsilon(
     return epsilon
 
 
-@np.errstate(divide="ignore", invalid="ignore")
+@np.errstate(divide="ignore", over="ignore", invalid="ignore")
 def get_lambda(
     stock_price: float,
     strike_price: float,
@@ -387,7 +394,9 @@ def get_lambda(
     put_option: bool = False,
 ) -> float:
     """
-    Calculate the Option Lambda using the Black-Scholes formula.
+    Calculate the Option Lambda using the Black-Scholes formula: the percentage change in
+    the option value per percentage change in the price of the underlying asset, the
+    leverage the option gives.
 
     Args:
         stock_price (float): Current stock price.
@@ -399,7 +408,8 @@ def get_lambda(
         put_option (bool): True if it's a put option, False for a call option.
 
     Returns:
-        float: Option Lambda value.
+        float: Option Lambda value, NaN where the option is worth nothing or so little that
+            the elasticity is not finite.
     """
     delta = get_delta(
         stock_price=stock_price,
@@ -421,11 +431,13 @@ def get_lambda(
         put_option=put_option,
     )
 
-    # An option worth nothing (out of the money at expiration) has no finite elasticity;
-    # np.divide gives inf or NaN for it instead of raising for a float price of 0.
-    lambda_value = delta * np.divide(stock_price, option_price)
+    # An option worth nothing (out of the money at expiration, or deep out of the money) has
+    # no elasticity, so its lambda is NaN rather than the inf of a division by zero. A price so
+    # small it underflows (about 1e-300 a day before expiry) overflows the division the same way.
+    lambda_value = np.asarray(delta * np.divide(stock_price, option_price), dtype=float)
+    lambda_value = np.where(np.isfinite(lambda_value), lambda_value, np.nan)
 
-    return lambda_value
+    return float(lambda_value) if lambda_value.ndim == 0 else lambda_value
 
 
 @np.errstate(divide="ignore", invalid="ignore")
@@ -438,7 +450,8 @@ def get_gamma(
     dividend_yield: float = 0.0,
 ) -> float:
     """
-    Calculate the Option Gamma using the Black-Scholes formula.
+    Calculate the Option Gamma using the Black-Scholes formula: how much the delta changes
+    for a 1.00 change in the price of the underlying asset.
 
     Args:
         stock_price (float): Series of stock prices.
@@ -486,7 +499,8 @@ def get_dual_gamma(
     dividend_yield: float = 0.0,
 ) -> float:
     """
-    Calculate Dual Gamma using the Black-Scholes formula.
+    Calculate Dual Gamma using the Black-Scholes formula: how much the dual delta changes
+    for a 1.00 change in the strike price.
 
     Args:
         stock_price (float): Current stock price.
@@ -540,7 +554,9 @@ def get_vanna(
     dividend_yield: float = 0.0,
 ) -> float:
     """
-    Calculate Vanna using the Black-Scholes formula.
+    Calculate Vanna using the Black-Scholes formula: how much the delta changes for a 1.00
+    change in the volatility, or equally the vega for a 1.00 change in the price of the
+    underlying asset.
 
     Args:
         stock_price (float): Current stock price.
@@ -593,7 +609,8 @@ def get_charm(
     put_option: bool = False,
 ) -> float:
     """
-    Calculate Charm using the Black-Scholes formula.
+    Calculate Charm using the Black-Scholes formula: how much the delta changes as time
+    passes, the delta decay.
 
     Args:
         stock_price (float): Current stock price.
@@ -681,7 +698,8 @@ def get_vomma(
     dividend_yield: float = 0.0,
 ) -> float:
     """
-    Calculate Vomma using the Black-Scholes formula.
+    Calculate Vomma using the Black-Scholes formula: how much the vega changes for a 1.00
+    change in the volatility, the convexity of the option value in the volatility.
 
     Args:
         stock_price (float): Current stock price.
@@ -738,7 +756,8 @@ def get_vera(
     dividend_yield: float = 0.0,
 ) -> float:
     """
-    Calculate Vera using the Black-Scholes formula.
+    Calculate Vera using the Black-Scholes formula: how much the rho changes for a 1.00
+    change in the volatility.
 
     Args:
         stock_price (float): Current stock price.
@@ -795,7 +814,8 @@ def get_veta(
     dividend_yield: float = 0.0,
 ) -> float:
     """
-    Calculate Veta using the Black-Scholes formula.
+    Calculate Veta using the Black-Scholes formula: how much the vega changes as time
+    passes.
 
     Args:
         stock_price (float): Current stock price.
@@ -875,8 +895,9 @@ def get_second_order_partial_derivative(
     dividend_yield: float,
 ) -> float:
     """
-    Calculate the second order partial derivative of the Black-Scholes model
-    with respect to the Strike Price.
+    Calculate the second order partial derivative of the Black-Scholes model with respect to
+    the Strike Price: how fast the dual delta changes with the strike price, the second
+    derivative of the option value with respect to the strike price.
 
     Args:
         stock_price (float): The current stock price.
@@ -890,6 +911,8 @@ def get_second_order_partial_derivative(
         float: The second order partial derivative of the Black-Scholes model with
         respect to the strike price.
     """
+    # The density is per unit of strike and in logarithms of both prices.
+    helpers.validate_positive_inputs(stock_price=stock_price, strike_price=strike_price)
     # The variance up to expiration as a NumPy value, so that a time to expiration or a
     # volatility of 0.0 divides to inf (and the limit below) instead of raising.
     variance = np.multiply(volatility**2, time_to_expiration)
@@ -932,7 +955,8 @@ def get_speed(
     dividend_yield: float = 0.0,
 ) -> float:
     """
-    Calculate Speed using the Black-Scholes formula.
+    Calculate Speed using the Black-Scholes formula: how much the gamma changes for a 1.00
+    change in the price of the underlying asset.
 
     Args:
         stock_price (float): Current stock price.
@@ -983,7 +1007,8 @@ def get_zomma(
     dividend_yield: float = 0.0,
 ) -> float:
     """
-    Calculate Zomma using the Black-Scholes formula.
+    Calculate Zomma using the Black-Scholes formula: how much the gamma changes for a 1.00
+    change in the volatility.
 
     Args:
         stock_price (float): Current stock price.
@@ -1036,7 +1061,8 @@ def get_color(
     dividend_yield: float = 0.0,
 ) -> float:
     """
-    Calculate Color using the Black-Scholes formula.
+    Calculate Color using the Black-Scholes formula: how much the gamma changes as time
+    passes.
 
     Args:
         stock_price (float): Current stock price.
@@ -1124,7 +1150,8 @@ def get_ultima(
     dividend_yield: float = 0.0,
 ) -> float:
     """
-    Calculate Ultima using the Black-Scholes formula.
+    Calculate Ultima using the Black-Scholes formula: how much the vomma changes for a 1.00
+    change in the volatility.
 
     Args:
         stock_price (float): Current stock price.

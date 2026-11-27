@@ -26,9 +26,10 @@ NOT_FOUND = 404
 
 def request_csv(url: str, timeout: int) -> str:
     """
-    Request a BIS dataset as CSV. The BIS answers a period it has not published yet (such as
-    the current month) with a 404 rather than an empty body, so that counts as no data and
-    the cached history is served without an error.
+    Request a BIS dataset as CSV.
+
+    The BIS answers a period it has not published yet (such as the current month) with a 404 rather than an empty
+    body, so that counts as no data and the cached history is served without an error.
 
     Args:
         url (str): The URL of the BIS dataset request.
@@ -47,10 +48,10 @@ def request_csv(url: str, timeout: int) -> str:
 
 def get_central_bank_policy_rate(start_date: str, end_date: str) -> pd.DataFrame:
     """
-    Retrieves the daily policy rates of the central banks the BIS covers, which includes
-    the Federal Reserve, the European Central Bank, the Bank of England, the Bank of
-    Japan and around forty more, with history back to the 1940s for some. Only the days
-    that are not cached yet are requested.
+    Retrieve the daily policy rates of the central banks the BIS covers: the Federal Reserve, the European Central
+    Bank, the Bank of England, the Bank of Japan and around forty more.
+
+    The history reaches back to the 1940s for some. Only the days that are not cached yet are requested.
 
     The euro area is published as "Euro Area"; the euro area members keep a column for
     the years before they adopted the euro, which ends when they did.
@@ -106,9 +107,10 @@ CONSUMER_PRICE_UNITS = {"inflation_rate": "771", "consumer_price_index": "628"}
 
 def get_consumer_prices(measure: str, start_date: str, end_date: str) -> pd.DataFrame:
     """
-    Retrieves the monthly consumer prices the BIS compiles from national sources for
-    around sixty countries, including China, India, Brazil, the United States and the
-    other G20 economies. Only the months that are not cached yet are requested.
+    Retrieves the monthly consumer prices the BIS compiles from national sources for around sixty countries, including
+    China, India, Brazil, the United States and the other G20 economies.
+
+    Only the months that are not cached yet are requested.
 
     Countries that publish their consumer prices quarterly, such as Australia and New
     Zealand, are spread over the three months of each quarter in the BIS data. Their
@@ -116,8 +118,8 @@ def get_consumer_prices(measure: str, start_date: str, end_date: str) -> pd.Data
     quarter is not counted three times and the change on the month before is not 0.
 
     Args:
-        measure (str): "inflation_rate" for the change on a year earlier or
-            "consumer_price_index" for the index (2010 = 100).
+        measure (str): The measure. Options are: "inflation_rate" (the change on a year earlier),
+            "consumer_price_index" (the index, 2010 = 100).
         start_date (str): The start date (YYYY-MM-DD).
         end_date (str): The end date (YYYY-MM-DD).
 
@@ -173,13 +175,13 @@ def get_exchange_rates(
     frequency: str, start_date: str, end_date: str, end_of_period: bool = True
 ) -> pd.DataFrame:
     """
-    Retrieves the exchange rates of national currencies against the US dollar the BIS
-    compiles from central banks: daily for around 80 currencies, with history back to 1945
-    for some, and monthly for around 190, back to 1940. Only the periods that are not
-    cached yet are requested.
+    Retrieves the exchange rates of national currencies against the US dollar the BIS compiles from central banks:
+    daily for around 80 currencies, with history back to 1945 for some, and monthly for around 190, back to 1940.
+
+    Only the periods that are not cached yet are requested.
 
     Args:
-        frequency (str): "daily" or "monthly".
+        frequency (str): The frequency of the data. Options are: "daily" (daily data), "monthly" (monthly data).
         start_date (str): The start date (YYYY-MM-DD).
         end_date (str): The end date (YYYY-MM-DD).
         end_of_period (bool): For monthly data, whether to return the rate at the end of
@@ -239,12 +241,12 @@ def get_monthly_average_exchange_rate(
     currency: str, start_date: str, end_date: str
 ) -> pd.Series:
     """
-    Retrieves the average of each month of one currency against the US dollar, the BIS
-    exchange rate series of the currency's economy (WS_XRU, collection A). The euro is the
-    euro area's series, which starts in June 1974; a currency several
-    economies share, such as the CFA franc, has the same rate in each, so the series with
-    the longest history is taken and the others fill its gaps. Only the months that are not
-    cached yet are requested.
+    Retrieves the average of each month of one currency against the US dollar, the BIS exchange rate series of the
+    currency's economy (WS_XRU, collection A).
+
+    The euro is the euro area's series, which starts in June 1974; a currency several economies share, such as the CFA
+    franc, has the same rate in each, so the series with the longest history is taken and the others fill its gaps.
+    Only the months that are not cached yet are requested.
 
     Args:
         currency (str): The ISO 4217 code of the currency, e.g. "EUR" or "JPY".
@@ -305,10 +307,11 @@ def get_residential_property_prices(
     country_code: str, inflation_adjusted: bool, start_date: str, end_date: str
 ) -> pd.Series:
     """
-    Retrieves the quarterly residential property price index of one economy from the BIS
-    selected series, which the BIS takes from the national source (for China the National
-    Bureau of Statistics' prices of newly built homes in 70 cities), as an index with
-    2010 = 100.
+    Retrieve the quarterly residential property price index of one economy from the BIS selected series: how house
+    prices move, as an index with 2010 = 100.
+
+    The BIS takes the index from the national source, for China the National Bureau of Statistics' prices of newly
+    built homes in 70 cities.
 
     Args:
         country_code (str): The two-letter code of the economy, e.g. "CN".
@@ -330,7 +333,6 @@ def get_residential_property_prices(
     def fetch(fetch_start: str, fetch_end: str) -> pd.DataFrame:
         text = request_csv(
             f"{BASE_URL}WS_SPP/~/Q.{country_code}.{value}.628?format=csv&detail=dataonly"
-            # Quarters are written as "2026-Q2".
             f"&startPeriod={str(pd.Period(fetch_start, 'Q')).replace('Q', '-Q')}"
             f"&endPeriod={str(pd.Period(fetch_end, 'Q')).replace('Q', '-Q')}",
             timeout=120,
@@ -377,9 +379,10 @@ REAL_PRICE_UNIT = "8"
 
 def get_commercial_property_prices(start_date: str, end_date: str) -> pd.DataFrame:
     """
-    Retrieves the quarterly commercial property price indices the BIS collects from
-    national sources, for around twenty economies including the euro area, from 1945 for
-    the United States and from the 1990s and 2000s for most others.
+    Retrieve the quarterly commercial property price indices the BIS collects from national sources for around twenty
+    economies: how the prices of offices, shops and other commercial property move.
+
+    They include the euro area and start in 1945 for the United States and in the 1990s and 2000s for most others.
 
     Per country one nominal index of commercial property is taken, chosen from every
     series the BIS publishes rather than from those with observations in the date range,
@@ -429,7 +432,6 @@ def get_commercial_property_prices(start_date: str, end_date: str) -> pd.DataFra
     def fetch(fetch_start: str, fetch_end: str) -> pd.DataFrame:
         text = request_csv(
             f"{BASE_URL}WS_CPP/~/Q.......?format=csv&detail=dataonly"
-            # Quarters are written as "2026-Q2".
             f"&startPeriod={str(pd.Period(fetch_start, 'Q')).replace('Q', '-Q')}"
             f"&endPeriod={str(pd.Period(fetch_end, 'Q')).replace('Q', '-Q')}",
             timeout=120,
@@ -499,12 +501,12 @@ def get_credit_statistics(
     dataflow: str, key: str, start_date: str, end_date: str
 ) -> pd.DataFrame:
     """
-    Retrieves one quarterly series per country from the BIS credit statistics: the
-    credit-to-GDP gaps (WS_CREDIT_GAP), the debt service ratios (WS_DSR) or the total
-    credit to the non-financial sector (WS_TC). The key selects the series within the
-    dataflow, such as the borrowing sector and the unit, and leaves the country open, so
-    that each country gives exactly one series. Aggregates such as "all reporting
-    economies" have no country and are left out.
+    Retrieves one quarterly series per country from the BIS credit statistics: the credit-to-GDP gaps (WS_CREDIT_GAP),
+    the debt service ratios (WS_DSR) or the total credit to the non-financial sector (WS_TC).
+
+    The key selects the series within the dataflow, such as the borrowing sector and the unit, and leaves the country
+    open, so that each country gives exactly one series. Aggregates such as "all reporting economies" have no country
+    and are left out.
 
     Args:
         dataflow (str): The BIS dataflow, e.g. "WS_DSR".
@@ -521,7 +523,6 @@ def get_credit_statistics(
     def fetch(fetch_start: str, fetch_end: str) -> pd.DataFrame:
         text = request_csv(
             f"{BASE_URL}{dataflow}/~/{key}?format=csv&detail=dataonly"
-            # Quarters are written as "2026-Q2".
             f"&startPeriod={str(pd.Period(fetch_start, 'Q')).replace('Q', '-Q')}"
             f"&endPeriod={str(pd.Period(fetch_end, 'Q')).replace('Q', '-Q')}",
             timeout=120,

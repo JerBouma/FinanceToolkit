@@ -1,0 +1,4 @@
+,Drawdowns,Average Drawdown,Drawdown Deviation,Average To Trough,Average To Recovery,Average Length,Average Length (Days),Average Recovery Ratio,Average Recovery Return,Coverage,Active Drawdown,Active Duration,Active Recovery Duration,Active Recovery Return,Active Recovery
+AAPL,32,-0.0554,0.0201,12.3438,10.5161,15.2581,22.0323,1.809,0.0698,0.9141,-0.2817,250.0,2.0,0.0309,0.0709
+MSFT,38,-0.0402,0.0189,10.2895,7.5676,11.6486,16.9189,1.494,0.0442,0.889,-0.2949,279.0,39.0,0.1222,0.2066
+Benchmark,57,-0.0221,0.0161,6.6667,4.7143,8.0179,11.5,1.2446,0.0246,0.8494,-0.1864,250.0,55.0,0.0776,0.2391

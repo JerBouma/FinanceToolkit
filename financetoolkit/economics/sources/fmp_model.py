@@ -10,7 +10,7 @@ import pandas as pd
 from financetoolkit import helpers
 from financetoolkit.discovery.discovery_model import get_cached_financial_data
 from financetoolkit.economics.helpers import COUNTRY_CODES
-from financetoolkit.utilities import validation_model
+from financetoolkit.utilities import error_model, validation_model
 from financetoolkit.utilities.logger_model import get_logger
 
 # The endpoint returns at most this many days per request, so longer ranges are split.
@@ -64,9 +64,10 @@ def get_economic_calendar(
     user_subscription: str = "Free",
 ) -> pd.DataFrame:
     """
-    Get the scheduled releases of economic data (such as inflation, employment and GDP
-    figures) with the previous value, the consensus estimate and, once published, the
-    actual value, optionally narrowed down to specific countries, currencies and impact.
+    Get the scheduled releases of economic data, such as inflation, employment and GDP figures, with the previous
+    value, the consensus estimate and the actual value.
+
+    The releases can be narrowed down to specific countries, currencies and impact.
 
     The endpoint returns at most 90 days per request, so a longer range is retrieved in
     90-day windows. Each window is cached the same way as the discovery calendars, since
@@ -82,8 +83,9 @@ def get_economic_calendar(
             or codes ("US"), in a list or comma-separated. Defaults to None, which keeps all.
         currencies (str | list[str], optional): The currencies to keep, e.g. "USD" or
             ["USD", "EUR"]. Defaults to None, which keeps all.
-        impact (str | list[str], optional): The market impact to keep: "Low", "Medium" and/or
-            "High", or "All" for every release. Defaults to None, which keeps all.
+        impact (str | list[str], optional): The market impact to keep, one or a list of them. Options are: "Low" (low
+            impact), "Medium" (medium impact), "High" (high impact), "All" (every release). Defaults to None, which
+            keeps all.
         events (str | list[str], optional): Parts of event names to keep, matched without
             regard to case, e.g. "PMI" or ["CPI", "Unemployment"]. Defaults to None, which
             keeps every event.
@@ -126,11 +128,21 @@ def get_economic_calendar(
             for window_start, window_end in _windows(start_date, end_date)
         ]
 
-    frames = helpers.run_in_parallel(
+    # The first window is asked on its own: when it fails (the source unreachable or the
+    # rate limit reached), which get_cached_financial_data logs, the other windows would
+    # fail alike, each after its own retries.
+    failures_before = error_model.get_request_failures()
+    first_frame = get_cached_financial_data(
+        url=urls[0], user_subscription=user_subscription
+    )
+    if first_frame.empty and error_model.get_request_failures() != failures_before:
+        return pd.DataFrame()
+
+    frames = [first_frame] + helpers.run_in_parallel(
         lambda url: get_cached_financial_data(
             url=url, user_subscription=user_subscription
         ),
-        [(url,) for url in urls],
+        [(url,) for url in urls[1:]],
     )
     frames = [frame for frame in frames if "event" in frame.columns]
 
@@ -279,9 +291,8 @@ MONTHS_PUBLISHED_AHEAD = 1
 
 def get_reference_period(event: str, release: pd.Timestamp) -> tuple[str, pd.Period]:
     """
-    Reads the event and the period a release covers from the event name of the economic
-    calendar, e.g. "Producer Price Index YoY (Oct)" released on 2026-11-09 is the
-    Producer Price Index YoY of October 2026.
+    Reads the event and the period a release covers from the event name of the economic calendar, e.g. "Producer Price
+    Index YoY (Oct)" released on 2026-11-09 is the Producer Price Index YoY of October 2026.
 
     The name only gives the month or quarter, so the year is the one that puts the period
     between ten months before and one month after the release month. Most releases cover
@@ -389,9 +400,8 @@ def _merge_joint_releases(releases: pd.DataFrame) -> pd.DataFrame:
 
 def get_economic_calendar_series(economic_calendar: pd.DataFrame) -> pd.DataFrame:
     """
-    Arranges the releases of the economic calendar as time series: the Actual value of
-    every event by the period it covers, with a column per country and event, and the
-    consensus Estimate next to it ("<event> Estimate").
+    Arranges the releases of the economic calendar as time series: the Actual value of every event by the period it
+    covers, with a column per country and event, and the consensus Estimate next to it ("<event> Estimate").
 
     The period is read from the event name (see get_reference_period). Several releases
     of the same period, such as a flash estimate followed by the final figure, keep the
@@ -545,3 +555,40 @@ def get_index_history(
     values.index = pd.PeriodIndex(pd.to_datetime(data["date"]), freq="D")
 
     return values.dropna().sort_index().rename(symbol)
+
+
+def get_volatility_index(
+    symbol: str,
+    scale: float,
+    api_key: str,
+    start_date: str,
+    end_date: str,
+    failed: list[str],
+) -> pd.DataFrame:
+    """
+    Retrieves the daily closing values of a volatility index, such as "^MOVE", scaled to
+    percent, unless the retrieval of another index already failed: Financial Modeling Prep
+    failing for one (unreachable, rate limited, which it logs) would fail alike for the
+    next, after its own retries.
+
+    Args:
+        symbol (str): The index symbol, e.g. "^MOVE".
+        scale (float): The factor that turns the closing values into percent, 0.01 for an
+            index in basis points.
+        api_key (str): the API key from Financial Modeling Prep.
+        start_date (str): The start date (YYYY-MM-DD).
+        end_date (str): The end date (YYYY-MM-DD).
+        failed (list[str]): The indices whose retrieval failed, to which this one is added
+            when it fails.
+
+    Returns:
+        pd.DataFrame: The scaled closing values, indexed by day in the column "1M", or an
+        empty DataFrame when a retrieval failed before.
+    """
+    if failed:
+        return pd.DataFrame()
+    failures_before = error_model.get_request_failures()
+    history = get_index_history(symbol, api_key, start_date, end_date)
+    if history.empty and error_model.get_request_failures() != failures_before:
+        failed.append(symbol)
+    return (history * scale).to_frame("1M")

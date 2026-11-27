@@ -9,7 +9,6 @@ from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 import pandas as pd
-from dateutil.relativedelta import relativedelta
 
 from financetoolkit import currencies_model, earnings_model, finra_model
 from financetoolkit.cache import cache_controller, policy_model, ticker_model
@@ -49,7 +48,6 @@ from financetoolkit.fmp_model import (
     get_ratios_ttm as _get_ratios_ttm,
     get_revenue_segmentation as _get_revenue_segmentation,
     get_shares_float as _get_shares_float,
-    get_sp500_market_value as _get_sp500_market_value,
     get_stock_grades as _get_stock_grades,
     get_stock_splits as _get_stock_splits,
 )
@@ -59,7 +57,9 @@ from financetoolkit.helpers import (
     add_basket_total,
     determine_availability_dates,
     determine_period_end_dates,
+    fill_diluted_shares,
     prepare_supplied_historical_data,
+    report_long_trailing,
     trailing_sum,
 )
 from financetoolkit.historical_model import (
@@ -74,11 +74,11 @@ from financetoolkit.normalization_model import (
 )
 from financetoolkit.utilities import logger_model, validation_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
+from financetoolkit.utilities.error_model import check_period, validate_window
 from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import (
     apply_rounding,
     calculate_growth,
-    normalize_country_name,
     shift_periods,
 )
 
@@ -111,6 +111,10 @@ logger = logger_model.get_logger()
 # moves the indicator by more than 0.04 points, enough for a 200-day moving average to exist
 # on the start date and a full year of dividends for the daily dividend yield.
 PRICE_LOOKBACK_DAYS = 366
+
+# The daily prices that give two returns, the fewest a spread, ratio or regression of returns
+# (and most technical indicators) has a value for.
+MINIMUM_DAILY_OBSERVATIONS = 3
 
 # Profile country codes (ISO 3166-1 alpha-2) whose name in Damodaran's equity risk premium
 # table (get_market_risk_premium) differs from economics.helpers.COUNTRY_CODES or is not
@@ -150,7 +154,7 @@ FRED_API_KEY: str = os.environ.get("FRED_API_KEY", "")
 class Toolkit:
     """
     The Finance Toolkit is an open-source toolkit in which
-    all 500+ financial methods
+    all 1100+ financial methods
     are written down in the most simplistic way allowing for complete transparency
     of the calculation method. This allows you to not have to rely on metrics
     from other providers and, given a financial statement, allow for efficient manual
@@ -598,7 +602,7 @@ class Toolkit:
             income=income,
             cash=cash,
             format_location=format_location,
-            start_date=self._start_date,
+            start_date=self._lookback_start_date,
             end_date=self._end_date,
             quarterly=self._quarterly,
             tickers=self._tickers,
@@ -665,8 +669,10 @@ class Toolkit:
     @property
     def ratios(self) -> "Ratios":
         """
-        The Ratios Module contains over 50+ ratios that can be used to analyse companies. These ratios
-        are divided into 5 categories which are efficiency, liquidity, profitability, solvency and
+        Give access to the Ratios module, the ratios that show the valuation, profitability, solvency, liquidity and
+        efficiency of companies.
+
+        These ratios are divided into 5 categories which are efficiency, liquidity, profitability, solvency and
         valuation. Each ratio is calculated using the data from the Toolkit module.
 
         Some examples of ratios are the Current Ratio, Debt to Equity Ratio, Return on Assets (ROA),
@@ -715,61 +721,25 @@ class Toolkit:
         | Return on Capital Employed                  |  0.4831 |  0.6009 |  0.5514 |   0.6534 |   0.6872 |
         | Return on Tangible Assets                   |  0.2806 |  0.2836 |  0.275  |   0.2613 |   0.3093 |
         | Income Quality Ratio                        |  1.0988 |  1.2239 |  1.1397 |   1.2616 |   0.9953 |
-        | Net Income per EBT                          |  0.867  |  0.838  |  0.8528 |   0.7591 |   0.8439 |
         | Free Cash Flow to Operating Cash Flow Ratio |  0.8935 |  0.9123 |  0.9009 |   0.9201 |   0.8859 |
-        | EBT to EBIT Ratio                           |  0.9764 |  0.976  |  0.9666 |   1      |   1      |
-        | EBIT to Revenue                             |  0.3058 |  0.3095 |  0.307  |   0.3158 |   0.3189 |
         | Cash Tax Rate                               |  0.2324 |  0.1643 |  0.1642 |   0.2114 |   0.3267 |
         | Tax Rate Divergence                         |  0.0994 |  0.0023 |  0.017  |  -0.0295 |   0.1706 |
 
         """
         # Imported when first used, so the Finance Toolkit loads only what is needed.
         from financetoolkit.ratios.ratios_controller import Ratios  # noqa: PLC0415
+        from financetoolkit.ratios.sources import (  # noqa: PLC0415
+            economics_model,
+            employees_model,
+        )
 
         # Every dataset is retrieved when a ratio first needs it, so a ratio downloads only
         # what it uses (the gross margin only the income statement).
         period = "quarterly" if self._quarterly else "yearly"
 
-        def gross_domestic_product() -> pd.DataFrame:
-            # Imported when first used, as only the market cap to GDP ratio needs it.
-            from financetoolkit.economics.economics_controller import (  # noqa: PLC0415
-                Economics,
-            )
-
-            # Every year, as each date is compared with the GDP of the year before it.
-            return Economics(
-                rounding=None,
-                allow_stale_oecd_cache=self._allow_stale_oecd_cache,
-                cache=self._cache,
-                api_key=self._api_key,
-            ).get_gross_domestic_product(usd=True)
-
-        def consumer_price_index(country: str) -> pd.Series:
-            # Imported when first used, as only the cyclically adjusted P/E needs it.
-            from financetoolkit.economics.economics_controller import (  # noqa: PLC0415
-                Economics,
-            )
-
-            # Every month of the Economics history, as the earnings go back up to decades.
-            consumer_price_index = Economics(
-                rounding=None,
-                allow_stale_oecd_cache=self._allow_stale_oecd_cache,
-                cache=self._cache,
-                api_key=self._api_key,
-            ).get_consumer_price_index(countries=country, period="monthly")
-
-            # Economics returns the name its sources use ("USA" gives "United States").
-            country = normalize_country_name(country, consumer_price_index.columns)
-
-            if country not in consumer_price_index.columns:
-                return pd.Series(dtype=float)
-
-            return consumer_price_index[country]
-
         ratios = Ratios(
             tickers=lambda: self._get_statement_tickers("Ratios")
             + (["Portfolio"] if "Portfolio" in self._tickers else []),
-            # The daily ratios use the prices from before the start date as well.
             historical=LazyDict(
                 lambda key: self._with_basket_prices(
                     self._get_module_historical_data(period)
@@ -794,8 +764,20 @@ class Toolkit:
                 self._get_module_statement("balance_sheet_statement", "Ratios")
             ),
             currency_function=self._get_listing_currencies,
-            gross_domestic_product_function=gross_domestic_product,
-            consumer_price_index_function=consumer_price_index,
+            gross_domestic_product_function=lambda: economics_model.get_gross_domestic_product(
+                self._allow_stale_oecd_cache, self._cache, self._api_key
+            ),
+            consumer_price_index_function=lambda country: economics_model.get_consumer_price_index(
+                country, self._allow_stale_oecd_cache, self._cache, self._api_key
+            ),
+            employee_count_function=lambda: employees_model.get_employee_count(
+                self._collect_employee_count(),
+                lambda: self._get_period_end_dates(
+                    self._get_module_statement("income_statement", "Ratios")
+                ),
+                quarterly=self._quarterly,
+            ),
+            profile=self._get_statement_profile,
         )
 
         if self._portfolio_weights:
@@ -806,9 +788,11 @@ class Toolkit:
     @property
     def models(self) -> "Models":
         """
-        Gives access to the Models module. The Models module is meant to execute well-known models
-        such as DUPONT and the Discounted Cash Flow (DCF) model. These models are also directly
-        related to the data retrieved from the Toolkit module.
+        Give access to the Models module, the valuation and decomposition models of companies, such as DuPont and the
+        discounted cash flow.
+
+        The Models module is meant to execute well-known models such as DUPONT and the Discounted Cash Flow (DCF)
+        model. These models are also directly related to the data retrieved from the Toolkit module.
 
         See the following link for more information: https://www.jeroenbouma.com/projects/financetoolkit/docs/models
 
@@ -825,7 +809,7 @@ class Toolkit:
             end_date="2025-12-31",
         )
 
-        dupont_analysis = toolkit.models.get_extended_dupont_analysis()
+        dupont_analysis = toolkit.models.get_dupont_analysis(method="extended")
 
         dupont_analysis.loc['AMZN']
         ```
@@ -843,142 +827,15 @@ class Toolkit:
         """
         # Imported when first used, so the Finance Toolkit loads only what is needed.
         from financetoolkit.models.models_controller import Models  # noqa: PLC0415
+        from financetoolkit.models.sources import (  # noqa: PLC0415
+            market_model,
+            peers_model,
+        )
 
         # Every dataset is retrieved when a model first needs it.
 
-        def compare_with_peers(peers: dict[str, list[str]] | None) -> pd.DataFrame:
-            # Imported when first used, as only the peer comparison needs them.
-            from financetoolkit.fmp_model import get_stock_peers  # noqa: PLC0415
-            from financetoolkit.models.valuation import peers_model  # noqa: PLC0415
-
-            tickers = self._get_statement_tickers("Models")
-
-            peer_map = {
-                ticker: list((peers or {}).get(ticker) or [])
-                or get_stock_peers(ticker, self._api_key, self._fmp_plan)
-                for ticker in tickers
-            }
-            universe = sorted(
-                set(tickers) | {peer for group in peer_map.values() for peer in group}
-            )
-            # The latest period up to this Toolkit's end date is what is compared, so three
-            # years before it suffice (the Toolkit adds the lookback that growth and trailing
-            # figures need). The settings that change the figures are this Toolkit's, so the
-            # Company column equals what its own ratios show for that period.
-            others = Toolkit(
-                tickers=universe,
-                api_key=self._api_key,
-                start_date=(
-                    datetime.strptime(self._end_date, "%Y-%m-%d")
-                    - relativedelta(years=3)
-                ).strftime("%Y-%m-%d"),
-                end_date=self._end_date,
-                quarterly=self._quarterly,
-                point_in_time=self._point_in_time,
-                convert_currency=self._convert_currency,
-                use_cached_data=self._cache,
-                enforce_source=self._enforce_source,
-                sleep_timer=self._sleep_timer,
-                benchmark_ticker=None,
-                progress_bar=False,
-                # Unrounded, as the comparison is calculated (and rounded) here.
-                rounding=None,
-            )
-            ratios = others.ratios
-            # Quarterly growth is over a year, as the growth of a quarter on the quarter before
-            # it mixes in the seasons.
-            income = others.get_income_statement(
-                growth=True, lag=4 if self._quarterly else 1
-            )
-            metrics = pd.DataFrame(
-                {
-                    "Price-to-Earnings": peers_model.get_latest_values(
-                        ratios.get_price_to_earnings_ratio()
-                    ),
-                    "EV-to-EBITDA": peers_model.get_latest_values(
-                        ratios.get_ev_to_ebitda_ratio()
-                    ),
-                    "Price-to-Book": peers_model.get_latest_values(
-                        ratios.get_price_to_book_ratio()
-                    ),
-                    "Price-to-Sales": peers_model.get_latest_values(
-                        ratios.get_price_to_sales_ratio()
-                    ),
-                    "Gross Margin": peers_model.get_latest_values(
-                        ratios.get_gross_margin()
-                    ),
-                    "Operating Margin": peers_model.get_latest_values(
-                        ratios.get_operating_margin()
-                    ),
-                    "Net Profit Margin": peers_model.get_latest_values(
-                        ratios.get_net_profit_margin()
-                    ),
-                    "Return on Equity": peers_model.get_latest_values(
-                        ratios.get_return_on_equity()
-                    ),
-                    "Return on Invested Capital": peers_model.get_latest_values(
-                        ratios.get_return_on_invested_capital()
-                    ),
-                    "Revenue Growth": peers_model.get_latest_values(
-                        income.loc[:, "Revenue", :]
-                    ),
-                    "Debt-to-Equity": peers_model.get_latest_values(
-                        ratios.get_debt_to_equity_ratio()
-                    ),
-                    "Dividend Yield": peers_model.get_latest_values(
-                        ratios.get_dividend_yield()
-                    ),
-                }
-            )
-            return pd.concat(
-                {
-                    ticker: peers_model.get_peer_comparison(
-                        metrics, ticker, peer_map[ticker]
-                    )
-                    for ticker in tickers
-                }
-            )
-
-        def sp500(start: str, end: str) -> tuple[pd.DataFrame, pd.Series]:
-            # The price index scales the total market value of the S&P 500 companies, known
-            # for the latest date only, back in time; the total return index is the market
-            # return.
-            historical = self._other_toolkit(
-                ["^GSPC", "^SP500TR"], start, end
-            ).get_historical_data(period="daily")
-            if historical.empty:
-                index_data = pd.DataFrame(columns=["Price Index", "Total Return Index"])
-            else:
-                index_data = (
-                    historical["Close"]
-                    .reindex(columns=["^GSPC", "^SP500TR"])
-                    .set_axis(["Price Index", "Total Return Index"], axis=1)
-                )
-                index_data.index = index_data.index.to_timestamp()
-            market_value = (
-                _get_sp500_market_value(self._api_key, self._fmp_plan)
-                if self._api_key
-                else pd.Series(dtype=float)
-            )
-            return index_data, market_value
-
-        def corporate_bond_yield(start: str, end: str) -> pd.Series:
-            # Imported when first used, as only the Graham intrinsic value needs it.
-            from financetoolkit.fixedincome.sources import fred_model  # noqa: PLC0415
-            from financetoolkit.helpers import require_fred_api_key  # noqa: PLC0415
-
-            require_fred_api_key(
-                self._fred_api_key,
-                "the Moody's Aaa corporate bond yield (or pass a bond_yield)",
-            )
-            return fred_model.get_moodys_corporate_bond_yields(
-                "daily", start, end, self._fred_api_key
-            )["Aaa"]
-
         return Models(
             tickers=lambda: self._get_statement_tickers("Models"),
-            # "lookback" is the daily data from a year before the start date, for the
-            # models that measure returns over the year before a period end.
             historical_data=LazyDict(
                 lambda key: self._with_basket_prices(
                     self._get_lookback_historical_data("daily")
@@ -996,25 +853,43 @@ class Toolkit:
             rounding=self._rounding,
             start_date=self._start_date,
             end_date=self._end_date,
-            peer_function=compare_with_peers,
+            peer_function=lambda peers: peers_model.compare_with_peers(
+                peers,
+                tickers=self._get_statement_tickers("Models"),
+                api_key=self._api_key,
+                user_subscription=self._fmp_plan,
+                end_date=self._end_date,
+                quarterly=self._quarterly,
+                point_in_time=self._point_in_time,
+                convert_currency=self._convert_currency,
+                cache=self._cache,
+                enforce_source=self._enforce_source,
+                sleep_timer=self._sleep_timer,
+            ),
             country_risk_premiums=self._get_country_risk_premiums,
             period_end_dates=lambda: self._get_daily_start_dates(
                 self._get_module_statement("balance_sheet_statement", "Models")
             ),
-            sp500_function=sp500,
+            sp500_function=lambda start, end: market_model.get_sp500_data(
+                start, end, self._other_toolkit, self._api_key, self._fmp_plan
+            ),
             # The same fetch and cache as the forward ratios, so the estimates are retrieved once; the lambda keeps the Ratios module from being built until a model asks for them.
             analyst_estimates=lambda: self.ratios._get_or_fetch_analyst_estimates(),  # noqa: PLW0108, SLF001
             profile=self._get_statement_profile,
-            corporate_bond_yield_function=corporate_bond_yield,
+            corporate_bond_yield_function=lambda start, end: market_model.get_corporate_bond_yield(
+                start, end, self._fred_api_key
+            ),
         )
 
     @property
     def options(self) -> "Options":
         """
-        This gives access to the Options module. The Options Module is meant to provide Options valuations
-        based on real market data. This includes the Black-Scholes model and in the future the Binomial model
-        and the Monte Carlo model. It also includes all available first-order, second-order and third-order
-        Greeks such as Delta, Gamma, Theta, Vega, Rho, Charm, Vanna, Vomma, Veta, Speed and Zomma.
+        Give access to the Options module, the option prices and Greeks of the tickers.
+
+        The Options Module is meant to provide Options valuations based on real market data. This includes the
+        Black-Scholes model and in the future the Binomial model and the Monte Carlo model. It also includes all
+        available first-order, second-order and third-order Greeks such as Delta, Gamma, Theta, Vega, Rho, Charm,
+        Vanna, Vomma, Veta, Speed and Zomma.
 
         It gives insights in the sensitivity of an option to changes in the underlying asset price, volatility,
         years to maturity, dividend yilds and interest rates and several derivatives of these sensitivities.
@@ -1069,27 +944,11 @@ class Toolkit:
         """
         # Imported when first used, so the Finance Toolkit loads only what is needed.
         from financetoolkit.options.options_controller import Options  # noqa: PLC0415
+        from financetoolkit.options.sources.earnings_model import (  # noqa: PLC0415
+            get_next_earnings_dates,
+        )
 
         # The prices and the risk free rate are retrieved when a calculation first needs them.
-
-        def next_earnings_dates() -> dict[str, str]:
-            # The first announcement from today on, per ticker, for the implied earnings
-            # move. The earnings calendar stops at the end date, so the dates are read
-            # from the announcements Financial Modeling Prep lists, estimates included.
-            from financetoolkit.fmp_model import (  # noqa: PLC0415
-                get_upcoming_earnings_date,
-            )
-
-            if not self._api_key:
-                return {}
-            dates = {}
-            for ticker in self._tickers:
-                upcoming = get_upcoming_earnings_date(
-                    ticker, self._api_key, self._fmp_plan
-                )
-                if upcoming:
-                    dates[ticker] = upcoming
-            return dates
 
         return Options(
             tickers=self._tickers,
@@ -1100,20 +959,23 @@ class Toolkit:
             rounding=self._rounding,
             start_date=self._start_date,
             end_date=self._end_date,
-            earnings_function=next_earnings_dates,
+            earnings_function=lambda: get_next_earnings_dates(
+                self._tickers, self._api_key, self._fmp_plan
+            ),
         )
 
     @property
     def technicals(self) -> "Technicals":
         """
-        This gives access to the Technicals module. The Technicals Module contains
-        nearly 50 Technical Indicators that can be used to analyse companies. These indicators are
-        divided into 3 categories: breadth, overlap and volatility. Each indicator is calculated using
-        the data from the Toolkit module, from a year of prices before the start date onwards, so that
-        averages smoothed over a window (RSI, ATR, ADX, MACD and moving averages) have their full history
-        on the start date and an indicator's value on a day doesn't depend on the start date. Running
-        totals (On-Balance Volume, Accumulation/Distribution Line, Negative and Positive Volume Index and
-        the market breadth totals) start at the start date.
+        Give access to the Technicals module, the technical indicators of the tickers' prices.
+
+        The Technicals Module contains nearly 50 Technical Indicators that can be used to analyse companies. These
+        indicators are divided into 3 categories: breadth, overlap and volatility. Each indicator is calculated using
+        the data from the Toolkit module, from a year of prices before the start date onwards, so that averages
+        smoothed over a window (RSI, ATR, ADX, MACD and moving averages) have their full history on the start date and
+        an indicator's value on a day doesn't depend on the start date. Running totals (On-Balance Volume,
+        Accumulation/Distribution Line, Negative and Positive Volume Index and the market breadth totals) start at the
+        start date.
 
         Some examples of technical indicators are the Average Directional Index (ADX), the
         Accumulation/Distribution Line (ADL), the Average True Range (ATR), the Bollinger Bands (BBANDS),
@@ -1161,6 +1023,7 @@ class Toolkit:
             rounding=self._rounding,
             start_date=self._start_date,
             end_date=self._end_date,
+            profile=self._get_statement_profile,
         )
 
         if self._portfolio_weights:
@@ -1171,9 +1034,10 @@ class Toolkit:
     @property
     def performance(self) -> "Performance":
         """
-        This gives access to the Performance module. The Performance Module is meant to calculate metrics related
-        to the risk-return relationship. These are things such as Beta, Sharpe Ratio, Sortino Ratio, CAPM,
-        Alpha and the Treynor Ratio.
+        Give access to the Performance module, the risk-adjusted returns of the tickers against a benchmark.
+
+        The Performance Module is meant to calculate metrics related to the risk-return relationship. These are things
+        such as Beta, Sharpe Ratio, Sortino Ratio, CAPM, Alpha and the Treynor Ratio.
 
         It gives insights in the performance a stock has to e.g. a benchmark that is not easily identified by
         looking at the raw data. This class is closely related to the Risk class which highlights things
@@ -1240,9 +1104,8 @@ class Toolkit:
             intraday_period=self._intraday_period,
             progress_bar=self._progress_bar,
             returns_function=self._other_returns,
-            # The daily market cap values the Residual of get_beta_implied_return; the
-            # statements are only retrieved when that method asks for it.
             market_cap_function=lambda: self.ratios.get_market_cap(show_daily=True),
+            profile=self._get_statement_profile,
         )
 
         if self._portfolio_weights:
@@ -1253,10 +1116,11 @@ class Toolkit:
     @property
     def risk(self) -> "Risk":
         """
-        This gives access to the Risk module. The Risk Module is meant to calculate metrics related to risk such
-        as Value at Risk (VaR), Conditional Value at Risk (cVaR), EMWA/GARCH models and similar models. It also
-        houses cross-asset systemic risk and liquidity measures (CoVaR, Marginal Expected Shortfall, SRISK,
-        Tail Dependence, Amihud Illiquidity, Roll Spread).
+        Give access to the Risk module, the measures of the downside and volatility of the tickers' returns.
+
+        The Risk Module is meant to calculate metrics related to risk such as Value at Risk (VaR), Conditional Value
+        at Risk (cVaR), EMWA/GARCH models and similar models. It also houses cross-asset systemic risk and liquidity
+        measures (CoVaR, Marginal Expected Shortfall, SRISK, Tail Dependence, Amihud Illiquidity, Roll Spread).
 
         Note that the time-series diagnostic and econometric tests (unit root tests, cointegration, Granger
         causality, ARCH-LM, Jarque-Bera and similar tests) live in the separate Econometrics module instead.
@@ -1292,6 +1156,9 @@ class Toolkit:
         """
         # Imported when first used, so the Finance Toolkit loads only what is needed.
         from financetoolkit.risk.risk_controller import Risk  # noqa: PLC0415
+        from financetoolkit.risk.sources.statements_model import (  # noqa: PLC0415
+            get_capital_shortfall_data,
+        )
 
         # The prices and risk free rate of a period are retrieved when a metric first asks
         # for that period.
@@ -1306,6 +1173,7 @@ class Toolkit:
             rounding=self._rounding,
             start_date=self._start_date,
             end_date=self._end_date,
+            profile=self._get_statement_profile,
         )
 
         # The Share Turnover divides the Volume by the share count of the statements, which
@@ -1321,50 +1189,23 @@ class Toolkit:
         risk._shares_outstanding_function = shares_outstanding
 
         # SRISK takes the debt from the balance sheet and the market cap from the diluted
-        # share count, as get_market_cap does, each from the day its period's figures apply.
-        def capital_shortfall() -> (
-            tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]
-        ):
-            balance_sheet = self._get_module_statement(
+        # share count. The arguments are evaluated in order: the statements are retrieved
+        # first, which sets the statistics statement and currencies read after them.
+        risk._capital_shortfall_function = lambda: get_capital_shortfall_data(
+            balance_sheet=self._get_module_statement(
                 "balance_sheet_statement", "Ratios"
-            )
-            income_statement = self._get_module_statement("income_statement", "Ratios")
+            ),
+            income_statement=self._get_module_statement("income_statement", "Ratios"),
+            start_dates=self._get_daily_start_dates,
+            statistics_statement=self._statistics_statement,
+            listing_currencies=self._get_listing_currencies,
+            converted=self._convert_currency and not self._statement_currencies.empty,
+        )
 
-            # Without a conversion the liabilities stay in the reported currency while the market
-            # cap is in the currency the ticker is listed in, so SRISK would mix the two.
-            if (
-                not (self._convert_currency and not self._statement_currencies.empty)
-                and not self._statistics_statement.empty
-            ):
-                reported = (
-                    self._statistics_statement.xs("Reported Currency", axis=0, level=1)
-                    .T.ffill()
-                    .iloc[-1]
-                )
-                listed = self._get_listing_currencies().reindex(reported.index)
-                mismatched = [
-                    f"{ticker} ({reported[ticker]} statements, {listed[ticker]} prices)"
-                    for ticker in reported.index
-                    if pd.notna(reported[ticker])
-                    and pd.notna(listed[ticker])
-                    and reported[ticker] != listed[ticker]
-                ]
-                if mismatched:
-                    logger.warning(
-                        "SRISK compares the liabilities with the market cap, but the statements "
-                        "are in another currency than the prices for %s; set convert_currency=True "
-                        "to convert the statements to the currency of the historical data.",
-                        ", ".join(mismatched),
-                    )
-
-            return (
-                balance_sheet.loc[:, "Total Liabilities", :],
-                self._get_daily_start_dates(balance_sheet),
-                income_statement.loc[:, "Weighted Average Shares Diluted", :],
-                self._get_daily_start_dates(income_statement),
-            )
-
-        risk._capital_shortfall_function = capital_shortfall
+        # A market or system ticker of the systemic risk measures is named as it trades: the
+        # benchmark is its "Benchmark" column and another ticker is retrieved for the same dates.
+        risk._benchmark_name = self._benchmark_ticker
+        risk._other_returns_function = self._other_returns
 
         if self._portfolio_weights:
             risk._portfolio_weights = self._portfolio_weights
@@ -1374,22 +1215,24 @@ class Toolkit:
     @property
     def econometrics(self) -> "Econometrics":
         """
-        This gives access to the Econometrics module, a thin wrapper that funnels this Toolkit's
-        price/return data through `statsmodels` and `linearmodels` -- regression (OLS/WLS/GLS/
-        Logit/Probit/Quantile), panel data (Fixed/Random Effects, Hausman), causal inference
-        (IV-2SLS, Difference-in-Differences, Regression Discontinuity, Propensity Score Matching),
-        specification/hypothesis tests (Breusch-Pagan, White, Durbin-Watson, VIF, RESET, Chow,
-        t/F/LR/Wald tests), stationarity (Augmented Dickey-Fuller, KPSS, Phillips-Perron,
-        Zivot-Andrews unit root tests), long-run equilibrium relationships (Engle-Granger and
-        Johansen cointegration), predictive lead-lag relationships (Granger causality), model/
-        residual diagnostics (ARCH-LM, Jarque-Bera, Ljung-Box, Variance Ratio, CUSUM), forecast
-        comparison (Diebold-Mariano), and time series forecasting (ARIMA, VAR, VECM).
+        Give access to the Econometrics module, the regressions and statistical tests of the tickers' returns.
+
+        The module runs this Toolkit's price/return data through least
+        squares and test statistics of its own and the estimators of `statsmodels` and `linearmodels` -- regression
+        (OLS/WLS/GLS/Logit/Probit/Quantile), panel data (Fixed/Random Effects, Hausman), causal inference (IV-2SLS,
+        Difference-in-Differences, Regression Discontinuity, Propensity Score Matching), specification/hypothesis
+        tests (Breusch-Pagan, White, Durbin-Watson, VIF, RESET, Chow, t/F/LR/Wald tests), stationarity (Augmented
+        Dickey-Fuller, KPSS, Phillips-Perron, Zivot-Andrews unit root tests), long-run equilibrium relationships
+        (Engle-Granger and Johansen cointegration), predictive lead-lag relationships (Granger causality), model/
+        residual diagnostics (ARCH-LM, Jarque-Bera, Ljung-Box, Variance Ratio, CUSUM), forecast comparison
+        (Diebold-Mariano), and time series forecasting (ARIMA, VAR, VECM).
 
         This class is closely related to the Risk class, which houses the risk measures (VaR,
         CVaR, GARCH) that these tests often inform the choice of.
 
-        Requires the optional `financetoolkit[econometrics]` extra (`statsmodels` and
-        `linearmodels`) -- install with `pip install financetoolkit[econometrics]`.
+        The module works without further installs. The methods built on `statsmodels` or
+        `linearmodels` need the optional extra, `pip install financetoolkit[econometrics]`, and
+        say so in their docstrings.
 
         See the following link for more information: https://www.jeroenbouma.com/projects/financetoolkit/docs/econometrics
 
@@ -1398,21 +1241,19 @@ class Toolkit:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2015-01-01",
+            end_date="2025-12-31",
+        )
 
-        toolkit.econometrics.get_augmented_dickey_fuller(period='yearly')
+        toolkit.econometrics.get_unit_root_test(period='yearly')
         ```
         """
-        try:
-            from financetoolkit.econometrics.econometrics_controller import (  # noqa: PLC0415
-                Econometrics,
-            )
-        except ImportError as error:
-            raise ImportError(
-                "The Econometrics module requires the optional 'econometrics' extra "
-                "(statsmodels and linearmodels). Install it with: "
-                "pip install financetoolkit[econometrics]"
-            ) from error
+        from financetoolkit.econometrics.econometrics_controller import (  # noqa: PLC0415
+            Econometrics,
+        )
 
         # The prices of a period are retrieved when a method first asks for that period.
         econometrics = Econometrics(
@@ -1465,10 +1306,11 @@ class Toolkit:
     @property
     def etf(self) -> "ETF":
         """
-        The ETF module analyzes the Toolkit's exchange traded funds (and other funds): their
-        holdings, sector and country weightings, profile and premium or discount to NAV, how closely
-        they track the Benchmark, how concentrated and how much alike they are, what their
-        holdings are valued at and how liquid they are.
+        Give access to the ETF module, the analysis of the funds of the Toolkit.
+
+        The ETF module analyzes the Toolkit's exchange traded funds (and other funds): their holdings, sector and
+        country weightings, profile and premium or discount to NAV, how closely they track the Benchmark, how
+        concentrated and how much alike they are, what their holdings are valued at and how liquid they are.
 
         See the following link for more information: https://www.jeroenbouma.com/projects/financetoolkit/docs/etf
 
@@ -1484,6 +1326,7 @@ class Toolkit:
         """
         # Imported when first used, so the Finance Toolkit loads only what is needed.
         from financetoolkit.etf.etf_controller import ETF  # noqa: PLC0415
+        from financetoolkit.etf.sources import holdings_model  # noqa: PLC0415
 
         if not self._start_date:
             self._start_date = (datetime.today() - timedelta(days=365 * 10)).strftime(
@@ -1497,63 +1340,39 @@ class Toolkit:
             self.get_historical_data(period="daily")
             return self._daily_historical_data
 
-        def ratios(tickers: list[str]) -> pd.DataFrame:
-            ratios_ttm, _ = _get_ratios_ttm(
-                tickers, api_key=self._api_key, user_subscription=self._fmp_plan
-            )
-            return ratios_ttm
-
-        def prices(tickers: list[str], start: str, end: str) -> pd.DataFrame:
-            # The traded (split-adjusted) close, as an index level is a price index.
-            historical = self._other_toolkit(tickers, start, end).get_historical_data(
-                period="daily"
-            )
-            if historical.empty:
-                return pd.DataFrame(columns=tickers)
-            close = historical["Close"]
-            return close.to_frame(tickers[0]) if isinstance(close, pd.Series) else close
-
-        def sectors(tickers: list[str]) -> pd.Series:
-            profile = self._other_toolkit(
-                tickers, self._start_date, self._end_date
-            ).get_profile()
-            if isinstance(profile, pd.Series):
-                return pd.Series({tickers[0]: profile.get("Sector")})
-            if profile.empty or "Sector" not in profile.index:
-                return pd.Series(dtype=object)
-            return profile.loc["Sector"]
-
-        def holding_currencies(tickers: list[str]) -> pd.Series:
-            # The holdings' prices are converted into the fund's currency for their contributions.
-            return self._other_toolkit(
-                tickers, self._start_date, self._end_date
-            )._get_listing_currencies()
-
         return ETF(
             tickers=self._tickers,
             historical_function=historical,
             fund_data_function=self._collect_fund_data,
-            ratios_function=ratios,
+            ratios_function=lambda tickers: _get_ratios_ttm(
+                tickers, api_key=self._api_key, user_subscription=self._fmp_plan
+            )[0],
             start_date=self._start_date,
             end_date=self._end_date,
             rounding=self._rounding,
             currency_function=self._get_listing_currencies,
-            prices_function=prices,
-            sector_function=sectors,
-            holding_currency_function=holding_currencies,
+            prices_function=lambda tickers, start, end: holdings_model.get_prices(
+                tickers, start, end, self._other_toolkit
+            ),
+            sector_function=lambda tickers: holdings_model.get_sectors(
+                tickers, self._start_date, self._end_date, self._other_toolkit
+            ),
+            holding_currency_function=lambda tickers: self._other_toolkit(
+                tickers, self._start_date, self._end_date
+            )._get_listing_currencies(),
             benchmark_ticker=self._benchmark_ticker,
         )
 
     @property
     def portfolio(self) -> "PortfolioConstruction":
         """
-        This gives access to the Portfolio Construction module, which builds and examines
-        portfolios from the assets of this Toolkit: optimal weights (minimum variance,
-        maximum Sharpe ratio, mean-variance, risk parity, Hierarchical Risk Parity,
-        inverse volatility, minimum CVaR, Black-Litterman, maximum diversification, minimum
-        tracking error and growth optimal), the efficient frontier, risk contributions,
-        historical stress tests, look-through exposure of funds and a Brinson-Fachler
-        attribution against the benchmark.
+        Give access to the Portfolio Construction module, the optimal weights and analysis of portfolios of the tickers.
+
+        The module builds and examines portfolios from the assets
+        of this Toolkit: optimal weights (minimum variance, maximum Sharpe ratio, mean-variance, risk parity,
+        Hierarchical Risk Parity, inverse volatility, minimum CVaR, Black-Litterman, maximum diversification, minimum
+        tracking error and growth optimal), the efficient frontier, risk contributions, historical stress tests,
+        look-through exposure of funds and a Brinson-Fachler attribution against the benchmark.
 
         When the Toolkit comes from a Portfolio (`Portfolio.toolkit`), the methods that take
         weights use the Portfolio's latest weights by default.
@@ -1582,6 +1401,7 @@ class Toolkit:
         from financetoolkit.portfolio.construction.construction_controller import (  # noqa: PLC0415
             PortfolioConstruction,
         )
+        from financetoolkit.portfolio.sources import funds_model  # noqa: PLC0415
 
         # The prices and the risk free rate of a period are retrieved when a calculation
         # first needs them.
@@ -1590,57 +1410,26 @@ class Toolkit:
             lambda period: self._get_module_risk_free_rate(period)["Adj Close"]
         )
 
-        def prices(tickers: list[str], start: str, end: str) -> pd.DataFrame:
-            historical = self._other_toolkit(tickers, start, end).get_historical_data(
-                period="daily"
-            )
-            if historical.empty:
-                return pd.DataFrame(columns=tickers)
-            adjusted = historical["Adj Close"]
-            if isinstance(adjusted, pd.Series):
-                adjusted = adjusted.to_frame(tickers[0])
-            return adjusted
-
-        def funds(kind: str, tickers: list[str]) -> pd.DataFrame:
-            own = set(tickers) <= set(self._tickers)
-            source = (
-                self
-                if own
-                else self._other_toolkit(tickers, self._start_date, self._end_date)
-            )
-            if kind == "sector":
-                result = source._collect_fund_data("sector_weightings")
-            elif kind == "country":
-                result = source._collect_fund_data("country_weightings")
-            else:
-                holdings = source._collect_fund_data("holdings")
-                if holdings is None or holdings.empty:
-                    return pd.DataFrame()
-                # One fund comes back indexed by holding, several by fund and holding.
-                if not isinstance(holdings.index, pd.MultiIndex):
-                    holdings = pd.concat({tickers[0]: holdings})
-                weights = pd.to_numeric(holdings["Weight"], errors="coerce")
-                result = pd.DataFrame(
-                    {
-                        fund: weights.loc[fund].groupby(level=0).sum()
-                        for fund in holdings.index.get_level_values(0).unique()
-                    }
-                )
-            if result is None:
-                return pd.DataFrame()
-            if isinstance(result, pd.Series):
-                result = result.to_frame(tickers[0])
-            return result
-
         portfolio = PortfolioConstruction(
             tickers=self._tickers,
             historical_data=historical_data,
             risk_free_rate_data=risk_free_rate_data,
             benchmark_name=self._benchmark_ticker,
             portfolio_weights=self._portfolio_weights,
-            price_function=prices,
-            profile_function=self.get_profile,
-            fund_function=funds,
+            price_function=lambda tickers, start, end: funds_model.get_prices(
+                tickers, start, end, self._other_toolkit
+            ),
+            profile_function=self.get_profile if self._api_key else lambda: None,
+            fund_function=lambda kind, tickers: funds_model.get_fund_weights(
+                kind,
+                tickers,
+                api_key=self._api_key,
+                own_tickers=self._tickers,
+                own_fund_data=self._collect_fund_data,
+                start=self._start_date,
+                end=self._end_date,
+                other_toolkit=self._other_toolkit,
+            ),
             rounding=self._rounding,
             start_date=self._start_date,
             end_date=self._end_date,
@@ -1651,10 +1440,11 @@ class Toolkit:
     @property
     def fixedincome(self) -> "FixedIncome":
         """
-        This gives access to the Fixed Income module. This module contains a wide variety of fixed income
-        related calculations such as the Effective Yield, the Macaulay Duration, the Modified Duration,
-        the Convexity, the Yield to Maturity and models such as Black and Bachelier to valuate derivative
-        instruments such as Swaptions.
+        Give access to the Fixed Income module, the bond prices, yields and rates.
+
+        This module contains a wide variety of fixed income related calculations such as the Effective Yield, the
+        Macaulay Duration, the Modified Duration, the Convexity, the Yield to Maturity and models such as Black and
+        Bachelier to valuate derivative instruments such as Swaptions.
 
         Next to that, it is also possible to acquire Central Bank Rates and ICE BofA Indices such as the
         ICE BofA US High Yield Index, the ICE BofA US Corporate Index and the ICE BofA US Treasury Index.
@@ -1713,10 +1503,11 @@ class Toolkit:
     @property
     def economics(self) -> "Economics":
         """
-        This gives access to the Economics module. This module contains a wide variety of economic data
-        obtained from OECD. These include things such as the Consumer Price Index (CPI), the Producer
-        Price Index (PPI), the Unemployment Rate, the GDP Growth Rate, the Long and Short Term Interest
-        Rate and the Consumer Confidence Index.
+        Give access to the Economics module, the macroeconomic data of countries.
+
+        This module contains a wide variety of economic data obtained from OECD. These include things such as the
+        Consumer Price Index (CPI), the Producer Price Index (PPI), the Unemployment Rate, the GDP Growth Rate, the
+        Long and Short Term Interest Rate and the Consumer Confidence Index.
 
         Note that this class can also be directly accessed by importing the Economics class directly via
         from financetoolkit import Economics. This is useful if you only want to use the Economics class
@@ -1889,9 +1680,10 @@ class Toolkit:
 
     def get_profile(self, show_columns: str | list[str] | None = None):
         """
-        Obtain the profile of the specified tickers. These include important metrics
-        such as the beta, market capitalization, currency, isin, industry, and ipo date
-        that give an overall understanding about the company.
+        Get the profile of every ticker: what the company is, where it is listed and how large it is.
+
+        These include important metrics such as the beta, market capitalization, currency, isin, industry, and ipo
+        date that give an overall understanding about the company.
 
         Also known as: company description, sector, industry, CEO, employee count.
 
@@ -1963,10 +1755,11 @@ class Toolkit:
 
     def get_quote(self, show_columns: str | list[str] | None = None):
         """
-        Get the quote of the specified tickers: the price and its change, the day's
-        open, low and high, the previous close, the year low and high, the 50 and 200
-        day average prices, the volume, the market capitalization, the exchange and the
-        time of the quote.
+        Get the latest quote of every ticker, its price and trading statistics.
+
+        Get the quote of the specified tickers: the price and its change, the day's open, low and high, the previous
+        close, the year low and high, the 50 and 200 day average prices, the volume, the market capitalization, the
+        exchange and the time of the quote.
 
         Also known as: real-time price, current stock price, live quote.
 
@@ -2036,8 +1829,10 @@ class Toolkit:
 
     def get_rating(self, show_columns: str | list[str] | None = None):
         """
-        Get the rating of the specified tickers: a letter rating and an overall score based on
-        six scores from 1 (weak) to 5 (strong). These scores are categorized as follows:
+        Get the rating of the specified tickers: a letter rating and an overall score based on six scores from 1
+        (weak) to 5 (strong).
+
+        These scores are categorized as follows:
 
         - An overall rating (the letter rating and the Rating Score)
         - Discounted Cash Flow (DCF)
@@ -2134,9 +1929,8 @@ class Toolkit:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Obtain analyst estimates regarding revenues, EBITDA, EBIT, Net Income
-        SGA Expenses and EPS, with the number of analysts behind the revenue
-        ("Number of Analysts Revenue") and the EPS ("Number of Analysts EPS") consensus.
+        Obtain analyst estimates regarding revenues, EBITDA, EBIT, Net Income SGA Expenses and EPS, with the number of
+        analysts behind the revenue ("Number of Analysts Revenue") and the EPS ("Number of Analysts EPS") consensus.
 
         The estimates are the current consensus for each fiscal period, labelled like the
         financial statements with the calendar year (or quarter) holding most of the fiscal
@@ -2145,7 +1939,7 @@ class Toolkit:
         The analyst counts show how much an estimate rests on: far-out years are often
         covered by a few analysts for EPS while many more still give a revenue estimate,
         and a consensus of one or two analysts is an opinion rather than a consensus. The
-        forward ratios (e.g. `get_forward_price_earnings_ratio`) take `min_analysts` to
+        forward ratios (e.g. `get_forward_price_earnings_ratio`) take a minimum number of analysts to
         leave such periods out.
 
         Note that this information requires a Premium FMP subscription.
@@ -2220,7 +2014,6 @@ class Toolkit:
                     api_key=self._api_key,
                     quarter=self._quarterly,
                     start_date=self._start_date,
-                    # Stored unrounded, so a later call can round differently.
                     rounding=None,
                     sleep_timer=self._sleep_timer,
                     user_subscription=self._fmp_plan,
@@ -2266,10 +2059,11 @@ class Toolkit:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Obtain Earnings Calendars for any range of companies. You have the option to
-        obtain the actual dates or to convert to the corresponding quarters.
+        Get the earnings releases of the tickers, the reported and expected earnings per share and revenue.
 
-        Filtered to this Toolkit instance's start_date and end_date; when the end_date is
+        You have the option to obtain the actual dates or to convert to the corresponding quarters.
+
+        Filtered to this Toolkit instance's start and end date; when the end date is
         today or later (the default), the scheduled releases after today are included too,
         with the estimates and without reported figures yet.
 
@@ -2395,8 +2189,8 @@ class Toolkit:
 
         - The EPS Surprise and Revenue Surprise are (reported - estimate) / |estimate|.
         - The SUE (standardized unexpected earnings) divides the EPS surprise (reported -
-          estimate) by the standard deviation (ddof=1) of the EPS surprises of the sue_window
-          announcements before it. Only surprises known at the time are used, so it can be
+          estimate) by the sample standard deviation of the EPS surprises of the
+          announcements in the SUE window before it. Only surprises known at the time are used, so it can be
           compared across companies and over time. This follows Livnat and Mendenhall (2006),
           "Comparing the Post-Earnings Announcement Drift for Surprises Calculated from Analyst
           and Time Series Forecasts", with the analyst consensus as the expectation. Bernard
@@ -2415,9 +2209,9 @@ class Toolkit:
         way: on day 0 for a report before the open and on day +1 for one after the close. This
         is the three-day window of the post-earnings drift literature.
 
-        Each ticker's own trading days are used. An announcement too close to the start_date
-        or end_date of the Toolkit for its window has no reaction, and the SUE needs sue_window
-        earlier announcements. The full reporting history is retrieved for this, so it is
+        Each ticker's own trading days are used. An announcement too close to the start date
+        or end date of the Toolkit for its window has no reaction, and the SUE needs as many
+        earlier announcements as its window. The full reporting history is retrieved for this, so it is
         usually available.
 
         Note that this information requires a Premium FMP subscription.
@@ -2551,10 +2345,11 @@ class Toolkit:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Obtain the latest news articles for the tickers of this Toolkit instance, whether
-        they are stocks, cryptocurrencies or currency pairs. Qualitative companion to the
-        toolkit's quantitative data. Automatically filtered to this Toolkit instance's
-        start_date and end_date.
+        Obtain the latest news articles for the tickers of this Toolkit instance, whether they are stocks,
+        cryptocurrencies or currency pairs.
+
+        Qualitative companion to the toolkit's quantitative data. Automatically filtered to this Toolkit instance's
+        start and end date.
 
         Each ticker is matched with the right news feed. A currency pair such as EURUSD or
         EURUSD=X is searched in the forex news. Any other ticker is searched in both the
@@ -2668,9 +2463,10 @@ class Toolkit:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Obtain the latest official company press releases for the tickers of this
-        Toolkit instance, such as earnings announcements and corporate communications.
-        Automatically filtered to this Toolkit instance's start_date and end_date.
+        Obtain the latest official company press releases for the tickers of this Toolkit instance, such as earnings
+        announcements and corporate communications.
+
+        Automatically filtered to this Toolkit instance's start and end date.
 
         Also known as: corporate announcements, company press release feed.
 
@@ -2928,7 +2724,9 @@ class Toolkit:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Returns historical data for the specified tickers. This contains the following columns:
+        Get the historical prices, volumes, dividends and returns of the tickers.
+
+        This contains the following columns:
             - Open: The opening price for the period.
             - High: The highest price for the period.
             - Low: The lowest price for the period.
@@ -2937,7 +2735,8 @@ class Toolkit:
             - Volume: The volume for the period.
             - Dividends: The dividends for the period.
             - Return: The return for the period.
-            - Cumulative Return: The cumulative return for the period.
+            - Cumulative Return: The growth of 1 invested at the start, the product of (1 + Return):
+              1.0 on the first date and 1.25 after a 25% gain.
 
         Volatility, Excess Return and Excess Volatility are not included here. These are available
         as dedicated calculations in the Risk module (e.g. toolkit.risk.get_volatility,
@@ -2948,19 +2747,20 @@ class Toolkit:
         By default this is set to "SPY" (S&P 500 Index) but can be any ticker. This is relevant for calculations
         for models such as CAPM, Alpha and Beta.
 
-        Important to note is that when an api_key is included in the Toolkit initialization that the data
+        Important to note is that when an API key is included in the Toolkit initialization that the data
         collection defaults to FinancialModelingPrep which is a more stable source and utilises your subscription.
-        However, if this is undesired, it can be disabled by setting enforce_source to "YahooFinance". If
+        However, if this is undesired, it can be disabled by enforcing Yahoo Finance as the source. If
         data collection fails from FinancialModelingPrep it automatically reverts back to YahooFinance.
 
         Also known as: OHLCV, price history, open high low close volume.
 
         Args:
-            enforce_source (str, optional): A string containing the historical source you wish to enforce.
-            This can be either FinancialModelingPrep or YahooFinance. Defaults to no enforcement.
-            period (str): The interval at which the historical data should be
-            returned - daily, weekly, monthly, quarterly, or yearly.
-            Defaults to "daily".
+            enforce_source (str, optional): The historical source to enforce. Options are:
+                "FinancialModelingPrep" (Financial Modeling Prep), "YahooFinance" (Yahoo Finance). Defaults to no
+                enforcement.
+            period (str): The interval at which the historical data should be returned. Options are: "daily"
+                (daily data), "weekly" (weekly data), "monthly" (monthly data), "quarterly" (quarterly data),
+                "yearly" (yearly data). Defaults to "daily".
             return_column (str): The column to use for the return calculation. Defaults to "Adj Close".
             include_dividends (bool): Defines whether to include dividends in the return calculation.
             Defaults to True.
@@ -3162,14 +2962,17 @@ class Toolkit:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Returns intraday historical data for the specified tickers. This contains the following columns:
+        Get the intraday prices, volumes and returns of the tickers.
+
+        This contains the following columns:
             - Open: The opening price for the period.
             - High: The highest price for the period.
             - Low: The lowest price for the period.
             - Close: The closing price for the period.
             - Volume: The volume for the period.
             - Return: The return for the period.
-            - Cumulative Return: The cumulative return for the period.
+            - Cumulative Return: The growth of 1 invested at the start, the product of (1 + Return):
+              1.0 on the first date and 1.25 after a 25% gain.
 
         Volatility is not included here. This is available as a dedicated calculation in the
         Risk module instead (e.g. toolkit.risk.get_volatility).
@@ -3178,20 +2981,20 @@ class Toolkit:
         ignored if the difference between the start and end date is bigger than the maximum period.
 
         The data covers the start date to the end date of the Toolkit, both days included. It is retrieved
-        once per period, return_column and fill_nan, so calling again with other values retrieves it again.
+        once per period, return column and NaN filling, so calling again with other values retrieves it again.
 
         If a benchmark ticker is selected, it also calculates the benchmark ticker together with the results.
         By default this is set to "SPY" (S&P 500 Index) but can be any ticker. This is relevant for calculations
         for models such as CAPM, Alpha and Beta.
 
         Please note that this functionality is only available through Financial Modeling Prep. Therefore, an
-        api_key is required to use this functionality.
+        API key is required to use this functionality.
 
         Also known as: tick data, minute data, intraday price history.
 
         Args:
-            period (str, optional): The intraday interval to fetch (e.g. "1min", "5min", "1hour").
-                Defaults to "1hour".
+            period (str, optional): The intraday interval to fetch. Options are: "1min" (1 minute), "5min"
+                (5 minutes), "15min" (15 minutes), "30min" (30 minutes), "1hour" (1 hour). Defaults to "1hour".
             return_column (str, optional): The column to use for the return calculation. Defaults to "Close".
             fill_nan (bool, optional): Defines whether to forward fill NaN values. Defaults to True.
             rounding (int | None, optional): Defines the number of decimal places to round the data to. Defaults to
@@ -3322,7 +3125,9 @@ class Toolkit:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Obtain Dividend Calendars for any range of companies. It includes the following columns:
+        Get the dividends of the tickers with their declaration, record and payment dates.
+
+        It includes the following columns:
             - Date: The date of the dividend.
             - Adj Dividend: The adjusted dividend amount.
             - Dividend: The dividend amount.
@@ -3335,7 +3140,7 @@ class Toolkit:
         If a company does not pay any dividend, the function will mention that it was not able
         to find any dividend data for that company.
 
-        Filtered to this Toolkit instance's start_date and end_date; when the end_date is
+        Filtered to this Toolkit instance's start and end date; when the end date is
         today or later (the default), the dividends scheduled after today are included too.
 
         Also known as: dividend dates, ex-dividend date, dividend history.
@@ -3454,10 +3259,11 @@ class Toolkit:
         show_columns: str | list[str] | None = None,
     ):
         """
-        ESG scores, which stands for Environmental, Social, and Governance scores, are a crucial
-        metric used by investors and organizations to assess a company's sustainability and
-        ethical practices. These scores provide valuable insights into a company's performance
-        in three key areas:
+        Get the Environmental, Social and Governance (ESG) scores of the tickers.
+
+        ESG scores, which stands for Environmental, Social, and Governance scores, are a crucial metric used by
+        investors and organizations to assess a company's sustainability and ethical practices. These scores provide
+        valuable insights into a company's performance in three key areas:
 
         - Environmental (E): The environmental component evaluates a company's
         impact on the planet and its efforts to mitigate environmental risks. It includes
@@ -3577,11 +3383,12 @@ class Toolkit:
         self, overwrite: bool = False, show_columns: str | list[str] | None = None
     ):
         """
-        Obtains the equity risk premium by country -- the equity risk premium of a mature market
-        plus a country risk premium, the country's default spread scaled by the volatility of its
-        equities relative to its bonds, following the approach popularized by Aswath Damodaran --
-        which is widely used to calibrate country-specific costs of equity and discount rates in a
-        multi-country setting.
+        Get the equity risk premium of every country, the extra return investors require there for holding equities.
+
+        Obtains the equity risk premium by country -- the equity risk premium of a mature market plus a country risk
+        premium, the country's default spread scaled by the volatility of its equities relative to its bonds,
+        following the approach popularized by Aswath Damodaran -- which is widely used to calibrate country-specific
+        costs of equity and discount rates in a multi-country setting.
 
         In a cost of equity the premium is applied in one of two common ways: beta times the Total
         Equity Risk Premium, or beta times the mature market premium with the Country Risk Premium
@@ -3761,12 +3568,12 @@ class Toolkit:
         self, overwrite: bool = False, show_columns: str | list[str] | None = None
     ):
         """
-        Obtains the CFTC Commitment of Traders (COT) report for the tickers the Toolkit was
-        initialized with. Published weekly by the U.S. Commodity Futures Trading Commission, it
-        breaks down open interest in futures markets by trader type -- Non-Commercial (large
-        speculators), Commercial (hedgers) and Non-Reportable (small traders) -- and is widely
-        used to gauge positioning and sentiment in commodity, currency, interest rate and stock
-        index futures markets.
+        Obtains the CFTC Commitment of Traders (COT) report for the tickers the Toolkit was initialized with.
+
+        Published weekly by the U.S. Commodity Futures Trading Commission, it breaks down open interest in futures
+        markets by trader type -- Non-Commercial (large speculators), Commercial (hedgers) and Non-Reportable (small
+        traders) -- and is widely used to gauge positioning and sentiment in commodity, currency, interest rate and
+        stock index futures markets.
 
         Note that this data is only available for CFTC-tracked futures markets. Tickers without a
         corresponding futures contract (e.g. most individual equities) return no data.
@@ -3876,10 +3683,11 @@ class Toolkit:
         self, overwrite: bool = False, show_columns: str | list[str] | None = None
     ):
         """
-        Obtain the key executives of each company: their title, pay, gender, year of birth
-        and whether they are still active. This shows who leads the company and how the
-        leadership team is composed, which is useful when assessing management quality or
-        when following a change at the top.
+        Obtain the key executives of each company: their title, pay, gender, year of birth and whether they are still
+        active.
+
+        This shows who leads the company and how the leadership team is composed, which is useful when assessing
+        management quality or when following a change at the top.
 
         Also known as: management team, company officers, leadership.
 
@@ -3954,12 +3762,13 @@ class Toolkit:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Obtain the compensation of each company's executives per year as reported in the
-        proxy statement (DEF 14A): salary, bonus, stock and option awards, incentive plan
-        compensation, other compensation and the total. Comparing pay with the company's
-        performance shows how well management incentives are aligned with shareholders.
+        Obtain the compensation of each company's executives per year as reported in the proxy statement (DEF 14A):
+        salary, bonus, stock and option awards, incentive plan compensation, other compensation and the total.
 
-        Automatically filtered to the years of this Toolkit instance's start_date and end_date.
+        Comparing pay with the company's performance shows how well management incentives are aligned with
+        shareholders.
+
+        Automatically filtered to the years of this Toolkit instance's start and end date.
 
         Also known as: executive pay, management compensation, proxy statement compensation.
 
@@ -4033,12 +3842,11 @@ class Toolkit:
         self, overwrite: bool = False, show_columns: str | list[str] | None = None
     ):
         """
-        Obtain the securities other than common stock that each company has registered
-        for listing, mostly notes with their coupon and maturity in the title (e.g.
-        "1.625% Notes due 2026") and the exchange they are listed on. The list can
-        include notes that have since matured or been redeemed and other securities such
-        as depositary shares of preferred stock, so it shows which debt a company has
-        listed rather than what is outstanding today.
+        Obtain the securities other than common stock that each company has registered for listing, mostly notes with
+        their coupon and maturity in the title (e.g. "1.625% Notes due 2026") and the exchange they are listed on.
+
+        The list can include notes that have since matured or been redeemed and other securities such as depositary
+        shares of preferred stock, so it shows which debt a company has listed rather than what is outstanding today.
 
         Also known as: listed debt, bonds issued, debt securities.
 
@@ -4108,12 +3916,12 @@ class Toolkit:
         self, overwrite: bool = False, show_columns: str | list[str] | None = None
     ):
         """
-        Obtain the number of employees each company reported in its annual filings over
-        time. The most recent row is the current employee count and the rows before it
-        show how the workforce developed, which can be set against revenue or profit to
-        see how productive the workforce is.
+        Obtain the number of employees each company reported in its annual filings over time.
 
-        Automatically filtered to this Toolkit instance's start_date and end_date.
+        The most recent row is the current employee count and the rows before it show how the workforce developed,
+        which can be set against revenue or profit to see how productive the workforce is.
+
+        Automatically filtered to this Toolkit instance's start and end date.
 
         Also known as: headcount, number of employees, workforce size.
 
@@ -4125,7 +3933,14 @@ class Toolkit:
                 exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
-            pd.DataFrame: The employee count per reporting year (rows) and ticker (columns).
+            pd.DataFrame: The employee count per reporting year (rows) and ticker (columns). The
+                year is the calendar year in which the fiscal year ends, the period of the annual
+                filing: Walmart's count at the end of January 2025 is 2025, a year after the label of
+                its financial statements for that fiscal year (2024), which follow the calendar year
+                holding most of it. A 52/53-week year ending in the first week of January
+                (2 January 2021) counts as the year before (2020). The revenue and net income per
+                employee match the counts on the period end dates, so they divide each year by the
+                headcount of that year.
 
         As an example:
 
@@ -4152,9 +3967,23 @@ class Toolkit:
         | 2024     | 2100000 | 1556000 |
         | 2025     | 2100000 | 1576000 |
         """
+        counts = self._collect_employee_count(overwrite=overwrite)
+
+        if counts is None or counts.empty:
+            return counts
+
+        return counts.loc[counts.index >= pd.Period(self._start_date[:4], freq="Y")]
+
+    def _collect_employee_count(self, overwrite: bool = False) -> pd.DataFrame | None:
+        """The employee counts from the start of the year before the start date, see get_employee_count."""
         if not self._api_key:
             self._missing_api_key_message()
             return None
+
+        # A quarter takes the count of the fiscal year before it (align_employee_count), so
+        # the counts are collected from the start of the year before the start date; the
+        # rows shown start at the start date's year.
+        count_start_date = f"{int(self._start_date[:4]) - 1}-01-01"
 
         if self._employee_count.empty or overwrite:
             self._employee_count, self._invalid_tickers = self._collect_per_ticker(
@@ -4162,14 +3991,14 @@ class Toolkit:
                 tickers=self._tickers,
                 ticker_axis=ticker_model.TICKER_ON_COLUMNS,
                 parameters={
-                    "start_date": self._start_date,
+                    "start_date": count_start_date,
                     "end_date": self._end_date,
                     "user_subscription": self._fmp_plan,
                 },
                 collector=lambda tickers: _get_employee_count(
                     tickers=tickers,
                     api_key=self._api_key,
-                    start_date=self._start_date,
+                    start_date=count_start_date,
                     end_date=self._end_date,
                     sleep_timer=self._sleep_timer,
                     user_subscription=self._fmp_plan,
@@ -4184,10 +4013,10 @@ class Toolkit:
         self, overwrite: bool = False, show_columns: str | list[str] | None = None
     ):
         """
-        Obtain the free float of each company: the number of shares available for public
-        trading, the number of shares outstanding and the free float as the share of the
-        outstanding shares that can be traded (as a decimal). A low free float means few
-        shares change hands, which tends to make a stock less liquid and more volatile.
+        Obtain the free float of each company: the number of shares available for public trading, the number of shares
+        outstanding and the free float as the share of the outstanding shares that can be traded (as a decimal).
+
+        A low free float means few shares change hands, which tends to make a stock less liquid and more volatile.
 
         Also known as: free float, float shares, public float, share liquidity.
 
@@ -4246,15 +4075,16 @@ class Toolkit:
         self, overwrite: bool = False, show_columns: str | list[str] | None = None
     ):
         """
-        Obtain the mergers and acquisitions each company took part in, as the acquirer or
-        as the target, based on the merger filings (S-4) with the SEC. Every deal comes
-        with the other party, the filing date and a link to the filing.
+        Obtain the mergers and acquisitions each company took part in, as the acquirer or as the target, based on the
+        merger filings (S-4) with the SEC.
+
+        Every deal comes with the other party, the filing date and a link to the filing.
 
         The search uses the company name from the profile, so the profile is retrieved
         first when it is not available yet. Deals of companies with a similar name are
         left out: only the deals in which the ticker itself is involved are kept.
 
-        Automatically filtered to this Toolkit instance's start_date and end_date.
+        Automatically filtered to this Toolkit instance's start and end date.
 
         Also known as: M&A, acquisitions, mergers, takeovers.
 
@@ -4335,13 +4165,13 @@ class Toolkit:
         self, overwrite: bool = False, show_columns: str | list[str] | None = None
     ):
         """
-        Obtain the stock splits of each company, with the split ratio as a numerator and
-        denominator: a 4-for-1 split has numerator 4 and denominator 1, while a reverse
-        split has a numerator smaller than its denominator. Splits change the number of
-        shares but not the value of the company, which is why historical prices are
+        Obtain the stock splits of each company, with the split ratio as a numerator and denominator: a 4-for-1 split
+        has numerator 4 and denominator 1, while a reverse split has a numerator smaller than its denominator.
+
+        Splits change the number of shares but not the value of the company, which is why historical prices are
         adjusted for them.
 
-        Automatically filtered to this Toolkit instance's start_date and end_date.
+        Automatically filtered to this Toolkit instance's start and end date.
 
         Also known as: share splits, reverse splits, split history.
 
@@ -4419,16 +4249,17 @@ class Toolkit:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Obtain quarterly statistics on the trades of each company's insiders (officers,
-        directors and large shareholders), based on their Form 4 filings: the number of
-        acquisitions and disposals, their ratio, the number of shares acquired and
-        disposed of, and the number of open market purchases and sales.
+        Get quarterly statistics on the trades of each company's insiders.
+
+        Obtain quarterly statistics on the trades of each company's insiders (officers, directors and large
+        shareholders), based on their Form 4 filings: the number of acquisitions and disposals, their ratio, the
+        number of shares acquired and disposed of, and the number of open market purchases and sales.
 
         Insiders know their company best, so heavy buying can signal confidence while
         persistent selling can be worth a closer look. Note that many disposals are
         routine, such as sales to cover taxes on vested stock awards.
 
-        Automatically filtered to this Toolkit instance's start_date and end_date.
+        Automatically filtered to this Toolkit instance's start and end date.
 
         Also known as: insider trading, insider transactions, Form 4 statistics.
 
@@ -4515,12 +4346,13 @@ class Toolkit:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Obtain the institutional ownership of each company per quarter, based on the Form 13F
-        filings of institutional investment managers (those managing over $100 million in US
-        equities): the number of holders and its change, the shares and value they hold, their
-        share of the shares outstanding (Ownership) and its change, the positions opened,
-        increased, reduced and closed, the put/call ratio of the options they report and the
-        share of the shares outstanding held by the ten largest holders (Top 10 Ownership).
+        Get the institutional ownership of each company per quarter.
+
+        Obtain the institutional ownership of each company per quarter, based on the Form 13F filings of institutional
+        investment managers (those managing over $100 million in US equities): the number of holders and its change,
+        the shares and value they hold, their share of the shares outstanding (Ownership) and its change, the
+        positions opened, increased, reduced and closed, the put/call ratio of the options they report and the share
+        of the shares outstanding held by the ten largest holders (Top 10 Ownership).
 
         Institutional ownership shows how widely professional investors hold a company. A
         rising number of holders and ownership points to growing interest, while many closed
@@ -4529,7 +4361,7 @@ class Toolkit:
         increases the risk of forced selling (Sias, Starks and Titman, 2006; Gompers and
         Metrick, 2001, "Institutional Investors and Equity Prices").
 
-        Automatically filtered to this Toolkit instance's start_date and end_date.
+        Automatically filtered to this Toolkit instance's start and end date.
 
         Also known as: 13F holdings, institutional holders, institutional investors, ownership
         concentration.
@@ -4631,12 +4463,13 @@ class Toolkit:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Obtain the daily short sale volume of each company from FINRA's Reg SHO files: the
-        number of shares sold short, of which short exempt, the total number of shares
-        reported to FINRA, the short volume ratio (short volume divided by total volume, as
-        a decimal) and the z-score of that ratio against the `window` trading days before
-        it. A ratio well above its usual level means an unusually large share of the day's
-        selling was short selling.
+        Get the daily short sale volume of each company.
+
+        Obtain the daily short sale volume of each company from FINRA's Reg SHO files: the number of shares sold
+        short, of which short exempt, the total number of shares reported to FINRA, the short volume ratio (short
+        volume divided by total volume, as a decimal) and the z-score of that ratio against the trading days of the
+        window before it. A ratio well above its usual level means an unusually large share of the day's selling was short
+        selling.
 
         This is short sale VOLUME, the shares sold short during a day, not short interest,
         the short positions still open (which FINRA publishes twice a month through
@@ -4651,13 +4484,13 @@ class Toolkit:
         FINRA publishes one file per trading day, from August 2018, covering securities
         listed in the United States only: a ticker with an exchange suffix (such as ASML.AS)
         has no data. Each day is a separate download of about half a megabyte, so only the
-        `history_days` before the Toolkit's end date are retrieved, by default about three months
+        days of history before the Toolkit's end date are retrieved, by default about three months
         (some 65 files, a few seconds). The days are cached per ticker, so a rerun only
         downloads the days that are new.
 
-        The z-score is (ratio − mean) / standard deviation (ddof=1) of the `window` trading
-        days before each day, so a day is not part of its own comparison, and it is empty
-        for the first `window` days. Research finds that heavy short selling predicts lower
+        The z-score is (ratio − mean) / sample standard deviation of the trading
+        days of the window before each day, so a day is not part of its own comparison, and it is empty
+        for the first days of the window. Research finds that heavy short selling predicts lower
         returns in the following weeks, see Boehmer, Jones and Zhang (2008), "Which Shorts
         Are Informed?", Journal of Finance 63(2), and Diether, Lee and Werner (2009),
         "Short-Sale Strategies and Return Predictability", Review of Financial Studies 22(2).
@@ -4772,13 +4605,13 @@ class Toolkit:
         self, overwrite: bool = False, show_columns: str | list[str] | None = None
     ):
         """
-        Obtain the grades analysts gave each company: per date and grading company the
-        previous and the new grade, and whether the grade was upgraded, downgraded or
-        maintained. Following how the grades change over time shows how sentiment among
-        analysts develops, with upgrades and downgrades by well-followed firms often
-        moving the share price.
+        Obtain the grades analysts gave each company: per date and grading company the previous and the new grade, and
+        whether the grade was upgraded, downgraded or maintained.
 
-        Automatically filtered to this Toolkit instance's start_date and end_date.
+        Following how the grades change over time shows how sentiment among analysts develops, with upgrades and
+        downgrades by well-followed firms often moving the share price.
+
+        Automatically filtered to this Toolkit instance's start and end date.
 
         Also known as: analyst ratings, upgrades and downgrades, analyst grades.
 
@@ -4871,11 +4704,11 @@ class Toolkit:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Obtain the analysts' price targets of each company and the measures they are read
-        with. A price target is the share price an analyst expects in about twelve months;
-        the consensus target relative to today's price shows how much upside analysts see,
-        the range of the targets how much they disagree, and the change in the average
-        target whether they have been raising or cutting their targets.
+        Obtain the analysts' price targets of each company and the measures they are read with.
+
+        A price target is the share price an analyst expects in about twelve months; the consensus target relative to
+        today's price shows how much upside analysts see, the range of the targets how much they disagree, and the
+        change in the average target whether they have been raising or cutting their targets.
 
         The rows are:
 
@@ -4895,7 +4728,7 @@ class Toolkit:
           targets published in each window and their average.
 
         The targets are today's: they are not filtered to this Toolkit instance's
-        start_date and end_date. The targets as they were published over time come from
+        start and end date. The targets as they were published over time come from
         get_price_target_history.
 
         Also known as: analyst price target, consensus price target, target upside, stale
@@ -4998,12 +4831,12 @@ class Toolkit:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Obtain every price target analysts published for each company: per date and
-        analyst company the target (adjusted for stock splits), the share price when it
-        was published and the upside it implied at that moment, and the company's
-        previous target with the change. Following the targets over time shows how
-        analysts revise their expectations, and unlike today's consensus each row only
-        uses what was known on its date.
+        Get every price target analysts published for each company.
+
+        Obtain every price target analysts published for each company: per date and analyst company the target
+        (adjusted for stock splits), the share price when it was published and the upside it implied at that moment,
+        and the company's previous target with the change. Following the targets over time shows how analysts revise
+        their expectations, and unlike today's consensus each row only uses what was known on its date.
 
         - Previous Target and Previous Date: the analyst company's target before this one,
           when it published one in the year before (a price target looks about a year
@@ -5015,8 +4848,8 @@ class Toolkit:
         companies' previous targets follows from these columns, e.g. with
         history.loc["2026-11-09":].groupby(level="Analyst Company").last().
 
-        Automatically filtered to this Toolkit instance's start_date and end_date; the
-        previous targets are looked up over the year before the start_date as well.
+        Automatically filtered to this Toolkit instance's start and end date; the
+        previous targets are looked up over the year before the start date as well.
 
         Also known as: price target changes, analyst target revisions, price target news.
 
@@ -5121,15 +4954,14 @@ class Toolkit:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Obtain how many analysts recommend each company as a strong buy, buy, hold, sell
-        or strong sell, per month. Next to the counts come the number of analysts, the
-        share of them recommending a (strong) buy and the mean recommendation on the
-        conventional scale from 1 (strong buy) to 5 (strong sell), as used by I/B/E/S and
-        Zacks. A falling mean recommendation means analysts are turning more positive;
-        changes in consensus recommendations predict returns (Jegadeesh, Kim, Krische and
-        Lee, 2004).
+        Obtain how many analysts recommend each company as a strong buy, buy, hold, sell or strong sell, per month.
 
-        Automatically filtered to this Toolkit instance's start_date and end_date.
+        Next to the counts come the number of analysts, the share of them recommending a (strong) buy and the mean
+        recommendation on the conventional scale from 1 (strong buy) to 5 (strong sell), as used by I/B/E/S and Zacks.
+        A falling mean recommendation means analysts are turning more positive; changes in consensus recommendations
+        predict returns (Jegadeesh, Kim, Krische and Lee, 2004).
+
+        Automatically filtered to this Toolkit instance's start and end date.
 
         Also known as: analyst consensus, buy/hold/sell ratings, recommendation trends.
 
@@ -5280,17 +5112,17 @@ class Toolkit:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Obtain the earnings call transcripts of each company: the full text of the call,
-        with management's prepared remarks followed by the questions of analysts and the
-        answers. Transcripts explain the numbers in the financial statements in
-        management's own words, and with that are a strong input for text analysis and AI
-        models, e.g. to track sentiment, guidance or recurring themes over time.
+        Obtain the earnings call transcripts of each company: the full text of the call, with management's prepared
+        remarks followed by the questions of analysts and the answers.
+
+        Transcripts explain the numbers in the financial statements in management's own words, and with that are a
+        strong input for text analysis and AI models, e.g. to track sentiment, guidance or recurring themes over time.
 
         A transcript is long (often 40,000 to 60,000 characters) and every quarter is a
-        separate request. By default only the most recent transcript is retrieved. With
-        fiscal_period (e.g. "2025Q4") the call of that fiscal quarter is retrieved, and with
-        latest=False every transcript between this Toolkit instance's start_date and
-        end_date. A fiscal period without a transcript is logged together with the most
+        separate request. By default only the most recent transcript is retrieved. With a
+        fiscal period (e.g. 2025Q4) the call of that fiscal quarter is retrieved, and beyond the
+        latest every transcript between this Toolkit instance's start and
+        end date. A fiscal period without a transcript is logged together with the most
         recent periods that do have one. Each transcript is cached on its own, since a
         published transcript does not change, so a quarter is only retrieved once.
 
@@ -5377,9 +5209,10 @@ class Toolkit:
 
     def get_historical_statistics(self, show_columns: str | list[str] | None = None):
         """
-        Retrieve statistics about each ticker's historical data. This is especially useful to understand why certain
-        tickers might fluctuate more than others as it could be due to local regulations or the currency the instrument
-        is denoted in. It returns:
+        Get statistics about each ticker's historical data, such as its currency, exchange and first trading date.
+
+        This is especially useful to understand why certain tickers might fluctuate more than others as it could be
+        due to local regulations or the currency the instrument is denoted in. It returns:
 
             - Currency: The currency the instrument is denoted in.
             - Symbol: The symbol of the instrument.
@@ -5452,9 +5285,10 @@ class Toolkit:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Retrieve daily, weekly, monthly, quarterly or yearly US Treasury yields for four maturities, 13 weeks,
-        5 years, 10 years and 30 years, from FinancialModelingPrep or YahooFinance. With
-        the default divide_ohlc_by of 100 the yields are returned as decimals (0.042 is 4.2%).
+        Retrieve daily, weekly, monthly, quarterly or yearly US Treasury yields for four maturities, 13 weeks, 5
+        years, 10 years and 30 years, from FinancialModelingPrep or YahooFinance.
+
+        With the default division by 100 the yields are returned as decimals (0.042 is 4.2%).
 
         A week, month, quarter or year holds the first (Open), highest, lowest and last (Close) yield of
         the period. The risk free rate the Performance, Risk and Models modules use for such a period is
@@ -5464,13 +5298,15 @@ class Toolkit:
         Also known as: US Treasury yields, yield curve, treasury rates.
 
         Args:
-            period (str): The interval at which the treasury data should be returned - daily, weekly, monthly, quarterly,
-                or yearly. Defaults to "daily".
+            period (str): The interval at which the treasury data should be returned. Options are: "daily"
+                (daily data), "weekly" (weekly data), "monthly" (monthly data), "quarterly" (quarterly data),
+                "yearly" (yearly data). Defaults to "daily".
             fill_nan (bool): Defines whether to forward fill NaN values. This defaults
             to True to prevent holes in the dataset. This is especially relevant for
             technical indicators.
-            risk_free_rate (str | None, optional): One maturity to return ('13w', '5y', '10y' or
-                '30y'). Defaults to None, which returns all four. The Toolkit's own risk free rate
+            risk_free_rate (str | None, optional): One maturity to return. Options are: "13w" (13-week
+                Treasury bill), "5y" (5-year Treasury note), "10y" (10-year Treasury note), "30y" (30-year
+                Treasury bond). Defaults to None, which returns all four. The Toolkit's own risk free rate
                 stays the maturity set on the Toolkit either way.
             divide_ohlc_by (int | float | None, optional): A value to divide the yields by. Treasury
                 yields are published in percent, so this defaults to 100 to return decimals.
@@ -5478,7 +5314,8 @@ class Toolkit:
                 Defaults to None, which uses the rounding set on the Toolkit.
             show_errors (bool, optional): Whether to report retrieval errors. Defaults to False.
             enforce_source (str | None, optional): Forces this specific call to use a given
-                source, either "FinancialModelingPrep" or "YahooFinance". This takes precedence
+                source. Options are: "FinancialModelingPrep" (Financial Modeling Prep),
+                "YahooFinance" (Yahoo Finance). This takes precedence
                 over the source set on the Toolkit itself. Defaults to None, which falls back to
                 the Toolkit's own enforce_source.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -5545,19 +5382,6 @@ class Toolkit:
         risk_free_rate_tickers = list(treasury_names)
         risk_free_rate = risk_free_names[self._risk_free_rate]
 
-        # Kept unrounded, as the risk free rate of every module is taken from it; only the
-        # returned frame is rounded.
-        def select(treasury_data: pd.DataFrame) -> pd.DataFrame:
-            treasury_data = treasury_data.loc[self._start_date : self._end_date, :]
-            if requested_maturity is not None:
-                treasury_data = treasury_data.loc[
-                    :,
-                    treasury_data.columns.get_level_values(1) == requested_maturity,
-                ]
-            return apply_rounding(
-                treasury_data, rounding if rounding is not None else self._rounding
-            )
-
         specific_rates = (
             [
                 treasury_names[ticker]
@@ -5622,8 +5446,8 @@ class Toolkit:
                 return pd.DataFrame()
 
         if period == "daily":
-            return select(self._daily_treasury_data)
-        if period in ("weekly", "monthly", "quarterly", "yearly"):
+            treasury_data = self._daily_treasury_data
+        elif period in ("weekly", "monthly", "quarterly", "yearly"):
             treasury_data = _convert_daily_to_other_period(
                 period=period,
                 daily_historical_data=self._daily_treasury_data,
@@ -5641,11 +5465,20 @@ class Toolkit:
                     risk_free_rate=risk_free_rate,
                 ),
             )
+        else:
+            raise ValueError(
+                "Please choose from daily, weekly, monthly, quarterly or yearly as period."
+            )
 
-            return select(treasury_data)
-
-        raise ValueError(
-            "Please choose from daily, weekly, monthly, quarterly or yearly as period."
+        # Kept unrounded, as the risk free rate of every module is taken from it; only the
+        # returned frame is rounded.
+        treasury_data = treasury_data.loc[self._start_date : self._end_date, :]
+        if requested_maturity is not None:
+            treasury_data = treasury_data.loc[
+                :, treasury_data.columns.get_level_values(1) == requested_maturity
+            ]
+        return apply_rounding(
+            treasury_data, rounding if rounding is not None else self._rounding
         )
 
     def get_exchange_rates(
@@ -5659,10 +5492,12 @@ class Toolkit:
         show_columns: str | list[str] | None = None,
     ):
         """
-        This functionality looks at the exchange rates between the currency of the historical data and the currency
-        of the financial statements. Given that these can deviate from each other, e.g. the historical data is in USD
-        but the financial statements are in EUR, it is important to adjust for this. This is especially relevant for
-        models that use the historical data and the financial statements.
+        Get the exchange rates that convert the currency of the historical data into the currency of the financial
+        statements.
+
+        Given that these can deviate from each other, e.g. the historical data is in USD but the financial statements
+        are in EUR, it is important to adjust for this. This is especially relevant for models that use the historical
+        data and the financial statements.
 
         This function therefore shows the exchange rates that are used to convert the financial statements to the
         currency of the historical data. The historical market data is quote currency and the financial statements
@@ -5671,17 +5506,17 @@ class Toolkit:
         Note that you can get currency data from any currency as well by supplying the currency as a ticker. For example,
         if you want to get the exchange rates between USD and EUR you can use USDEUR=X as a ticker.
 
-        Important to note is that when an api_key is included in the Toolkit initialization that the data
+        Important to note is that when an API key is included in the Toolkit initialization that the data
         collection defaults to FinancialModelingPrep which is a more stable source and utilises your subscription.
-        However, if this is undesired, it can be disabled by setting enforce_source to "YahooFinance". If
+        However, if this is undesired, it can be disabled by enforcing Yahoo Finance as the source. If
         data collection fails from FinancialModelingPrep it automatically reverts back to YahooFinance.
 
         Also known as: currency exchange, FX rates, foreign exchange rates.
 
         Args:
-            period (str): The interval at which the historical data should be
-            returned - daily, weekly, monthly, quarterly, or yearly.
-            Defaults to "daily".
+            period (str): The interval at which the exchange rates should be returned. Options are: "daily"
+                (daily data), "weekly" (weekly data), "monthly" (monthly data), "quarterly" (quarterly data),
+                "yearly" (yearly data). Defaults to "daily".
             return_column (str): The column to use for the return calculation. Defaults to "Adj Close".
             fill_nan (bool): Defines whether to forward fill NaN values. This defaults
             to True to prevent holes in the dataset. This is especially relevant for
@@ -5969,10 +5804,11 @@ class Toolkit:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Retrieves the balance sheet statement data for the specified tickers. The balance sheet statement
-        is a financial statement that provides a snapshot of a company's financial position at a specific
-        point in time. It shows the company's assets, liabilities, and shareholders' equity. The balance sheet
-        statement is divided into three main sections:
+        Get the balance sheet statements of the tickers: their assets, liabilities and equity.
+
+        The balance sheet statement is a financial statement that provides a snapshot of a company's financial
+        position at a specific point in time. It shows the company's assets, liabilities, and shareholders' equity.
+        The balance sheet statement is divided into three main sections:
 
         - Assets: Assets are resources owned by the company that have economic value and can be used to
         generate revenue. Assets are typically divided into current assets and non-current assets.
@@ -5985,14 +5821,15 @@ class Toolkit:
         company's financial position at a specific point in time. Therefore, trailing results are not
         available for this statement.
 
-        With convert_currency, the statement is converted to the currency of the historical data at the
+        With currency conversion, the statement is converted to the currency of the historical data at the
         closing rate, the exchange rate at the end of each period (IAS 21.39).
 
         Also known as: assets, liabilities, shareholders equity, financial position.
 
         Args:
             enforce_source (str | None, optional): Forces this specific call to use a given
-                source, either "FinancialModelingPrep" or "YahooFinance". This takes precedence
+                source. Options are: "FinancialModelingPrep" (Financial Modeling Prep),
+                "YahooFinance" (Yahoo Finance). This takes precedence
                 over the source set on the Toolkit itself, so one instance can pull historical
                 data from Yahoo Finance while still using a FinancialModelingPrep
                 key for the financial statements (or the other way around). Defaults to None,
@@ -6088,8 +5925,6 @@ class Toolkit:
                 quarter=self._quarterly,
                 start_date=self._lookback_start_date,
                 end_date=self._end_date,
-                # Stored unrounded: the ratios and models read these figures, and only what
-                # this method returns is rounded.
                 rounding=None,
                 fmp_statement_format=self._fmp_balance_sheet_statement_generic,
                 fmp_statistics_format=self._fmp_statistics_statement_generic,
@@ -6181,15 +6016,16 @@ class Toolkit:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Retrieves the income statement data for the specified tickers. The income statement is a financial
-        statement that shows a company's revenues and expenses over a specific period. It is used to calculate
-        a company's net income.
+        Get the income statements of the tickers: their revenue, expenses and profit.
+
+        The income statement is a financial statement that shows a company's revenues and expenses over a specific
+        period. It is used to calculate a company's net income.
 
         As the income statement covers a period, trailing results are available for this statement. A
         trailing result sums each item over the window, except the Weighted Average Shares, Weighted Average Shares Diluted and Tax
         Rate for Calcs rows, which keep the value of the latest period.
 
-        With convert_currency, the statement is converted to the currency of the historical data at the
+        With currency conversion, the statement is converted to the currency of the historical data at the
         average exchange rate of each period, as IAS 21.39-40 does for income and expenses. EPS and EPS
         Diluted are converted as well; share counts and ratios are not.
 
@@ -6197,7 +6033,8 @@ class Toolkit:
 
         Args:
             enforce_source (str | None, optional): Forces this specific call to use a given
-                source, either "FinancialModelingPrep" or "YahooFinance". This takes precedence
+                source. Options are: "FinancialModelingPrep" (Financial Modeling Prep),
+                "YahooFinance" (Yahoo Finance). This takes precedence
                 over the source set on the Toolkit itself, so one instance can pull historical
                 data from Yahoo Finance while still using a FinancialModelingPrep
                 key for the financial statements (or the other way around). Defaults to None,
@@ -6221,6 +6058,9 @@ class Toolkit:
         Returns:
             pd.DataFrame: A pandas DataFrame with the retrieved income statement data.
 
+        Raises:
+            InvalidArgumentError: If trailing is not a whole number of at least one period.
+
         As an example:
 
         ```python
@@ -6243,6 +6083,8 @@ class Toolkit:
         | Revenue    | 4.671e+10 | 5.1217e+10 | 5.1362e+10 | 4.6309e+10 | 4.6398e+10 |
         | Net Income | 6.046e+09 | 5.07e+09   | 5.7e+09    | 3.219e+09  | 3.108e+09  |
         """
+        validate_window("trailing", trailing, 1)
+
         convert_currency = bool(
             self._convert_currency
             and (self._income_statement.empty or overwrite)
@@ -6294,8 +6136,6 @@ class Toolkit:
                 quarter=self._quarterly,
                 start_date=self._lookback_start_date,
                 end_date=self._end_date,
-                # Stored unrounded: the ratios and models read these figures, and only what
-                # this method returns is rounded.
                 rounding=None,
                 fmp_statement_format=self._fmp_income_statement_generic,
                 fmp_statistics_format=self._fmp_statistics_statement_generic,
@@ -6316,7 +6156,6 @@ class Toolkit:
                     self._income_statement = currencies_model.convert_currencies(
                         financial_statement_data=self._income_statement,
                         financial_statement_currencies=self._statement_currencies,
-                        # Income and expenses at the average rate of the fiscal period (IAS 21.39-40), EPS included.  # noqa: E501
                         exchange_rate_data=self._get_statement_exchange_rates(
                             self._income_statement, rate="average"
                         ),
@@ -6363,6 +6202,9 @@ class Toolkit:
             income_statement = trailing_sum(self._income_statement, trailing)
 
             income_statement.loc[not_summed.index] = not_summed
+            report_long_trailing(
+                trailing, len(self._income_statement.columns), income_statement
+            )
 
         if growth:
             self._income_statement_growth = calculate_growth(
@@ -6402,16 +6244,18 @@ class Toolkit:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Retrieves the cash flow statement data for the specified tickers. The cash flow statement is a financial
-        statement that shows how changes in balance sheet accounts and income affect cash and cash equivalents.
-        It breaks the analysis down to operating, investing and financing activities.
+        Get the cash flow statements of the tickers: their cash flows from operations, investing and financing.
+
+        The cash flow statement is a financial statement that shows how changes in balance sheet accounts and income
+        affect cash and cash equivalents. It breaks the analysis down to operating, investing and financing
+        activities.
 
         As the cash flow statement covers a period, trailing results are available for this statement. A
         trailing result sums each cash flow over the window, while Cash Beginning of Period is the cash at
         the beginning of the first period of the window and Cash End of Period the cash at the end of the
         last one.
 
-        With convert_currency, the cash flows are converted to the currency of the historical data at the
+        With currency conversion, the cash flows are converted to the currency of the historical data at the
         average exchange rate of each period (IAS 7.25), Cash End of Period at the closing rate of the
         period and Cash Beginning of Period at the closing rate of the period before, so it equals the
         Cash End of Period before it. Net Change in Cash is the change in the converted cash and Forex
@@ -6421,7 +6265,8 @@ class Toolkit:
 
         Args:
             enforce_source (str | None, optional): Forces this specific call to use a given
-                source, either "FinancialModelingPrep" or "YahooFinance". This takes precedence
+                source. Options are: "FinancialModelingPrep" (Financial Modeling Prep),
+                "YahooFinance" (Yahoo Finance). This takes precedence
                 over the source set on the Toolkit itself, so one instance can pull historical
                 data from Yahoo Finance while still using a FinancialModelingPrep
                 key for the financial statements (or the other way around). Defaults to None,
@@ -6444,6 +6289,9 @@ class Toolkit:
 
         Returns:
             pd.DataFrame: A pandas DataFrame with the retrieved cash flow statement data.
+
+        Raises:
+            InvalidArgumentError: If trailing is not a whole number of at least one period.
 
         As an example:
 
@@ -6471,6 +6319,8 @@ class Toolkit:
         | Free Cash Flow      |  2.1087e+10 |  3.7628e+10 |  1.978e+10  |  1.5044e+10 |  1.6592e+10 |
         | Dividends Paid      | -1.0179e+10 | -1.0968e+10 | -1.1336e+10 | -1.18e+10   | -1.2751e+10 |
         """
+        validate_window("trailing", trailing, 1)
+
         convert_currency = bool(
             self._convert_currency
             and (self._cash_flow_statement.empty or overwrite)
@@ -6522,8 +6372,6 @@ class Toolkit:
                 quarter=self._quarterly,
                 start_date=self._lookback_start_date,
                 end_date=self._end_date,
-                # Stored unrounded: the ratios and models read these figures, and only what
-                # this method returns is rounded.
                 rounding=None,
                 fmp_statement_format=self._fmp_cash_flow_statement_generic,
                 fmp_statistics_format=self._fmp_statistics_statement_generic,
@@ -6593,6 +6441,9 @@ class Toolkit:
             cash_flow_statement.loc[cash_beginning] = shift_periods(
                 self._cash_flow_statement.loc[cash_beginning], trailing - 1
             ).where(cash_flow_statement.loc[cash_beginning].notna())
+            report_long_trailing(
+                trailing, len(self._cash_flow_statement.columns), cash_flow_statement
+            )
 
         if growth:
             self._cash_flow_statement_growth = calculate_growth(
@@ -6630,10 +6481,11 @@ class Toolkit:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Retrieves the filing details of each financial statement period: the reported currency, the CIK,
-        the filing and acceptance dates, the fiscal period and the links to the filing. With convert_currency,
-        the Toolkit uses the reported currency to convert the financial statements to the currency of the
-        historical data.
+        Retrieves the filing details of each financial statement period: the reported currency, the CIK, the filing
+        and acceptance dates, the fiscal period and the links to the filing.
+
+        With currency conversion, the Toolkit uses the reported currency to convert the financial statements to the
+        currency of the historical data.
 
         Note that this also obtains the balance sheet statement at the same time given that it's the same
         API call. This is done to reduce the number of API calls to FinancialModelingPrep.
@@ -6642,7 +6494,8 @@ class Toolkit:
 
         Args:
             enforce_source (str | None, optional): Forces this specific call to use a given
-                source, either "FinancialModelingPrep" or "YahooFinance". This takes precedence
+                source. Options are: "FinancialModelingPrep" (Financial Modeling Prep),
+                "YahooFinance" (Yahoo Finance). This takes precedence
                 over the source set on the Toolkit itself, so one instance can pull historical
                 data from Yahoo Finance while still using a FinancialModelingPrep
                 key for the financial statements (or the other way around). Defaults to None,
@@ -6744,8 +6597,9 @@ class Toolkit:
         self, path: str = "", show_columns: str | list[str] | None = None
     ):
         """
-        Copies the normalization files to a folder based on path. By default, this is the path
-        of the 'Downloads' folder.
+        Copy the normalization files, which map the financial statement fields of the data source, to a folder.
+
+        By default, this is the path of the 'Downloads' folder.
 
         This function is relevant if you want to supply your own datasets. See the external
         datasets guide for how: https://www.jeroenbouma.com/projects/financetoolkit/docs/external-datasets
@@ -6823,6 +6677,12 @@ class Toolkit:
                     "reached the API limit or entered an invalid API key."
                 )
 
+        # The Ratios and Models read the diluted share count wherever they need shares, so
+        # a provider that reports only the basic count gets it there; the statement itself
+        # is shown as reported.
+        if statement == "income_statement":
+            return fill_diluted_shares(self._income_statement)
+
         return getattr(self, f"_{statement}")
 
     def _get_statement_tickers(self, module: str) -> list[str]:
@@ -6854,7 +6714,9 @@ class Toolkit:
 
         return statement.index.get_level_values(0).unique().tolist()
 
-    def _get_module_historical_data(self, period: str) -> pd.DataFrame:
+    def _get_module_historical_data(
+        self, period: str, report: bool = True
+    ) -> pd.DataFrame:
         """
         Returns the historical data of a period for the modules, retrieved when a calculation
         first asks for that period. The daily data is downloaded once and the weekly, monthly,
@@ -6865,21 +6727,25 @@ class Toolkit:
 
         Args:
             period (str): "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly".
+            report (bool, optional): Whether to log a period without data or with a day or two
+                of daily prices. A module reports it when it loads the period for a
+                calculation; a lookup of the tickers does not, so a calculation reports it
+                once. Defaults to True.
 
         Returns:
             pd.DataFrame: The historical data of the period, empty for intraday data without an
             intraday_period.
 
         Raises:
-            KeyError: For any other period, as a dictionary of the periods would.
+            InvalidArgumentError: For any other period, naming the periods.
         """
         if period == "intraday":
             if self._intraday_period:
                 self.get_intraday_data(period=self._intraday_period)
             return self._intraday_historical_data
 
-        if period not in ("daily", "weekly", "monthly", "quarterly", "yearly"):
-            raise KeyError(period)
+        # A period outside these is a mistake in the call, not missing data, so it raises.
+        check_period(period, ("daily", "weekly", "monthly", "quarterly", "yearly"))
 
         self.get_historical_data(period=period)
 
@@ -6892,6 +6758,30 @@ class Toolkit:
             within = historical_data.loc[self._start_date : self._end_date]
             if len(within) != len(historical_data):
                 historical_data = within
+
+        # An empty period, or a day or two of daily prices, otherwise surfaces as an empty or all-NaN result of every calculation on it without a reason. It is logged on every calculation that loads the period, never once per Toolkit, as the MCP server keeps a Toolkit for many requests.  # noqa: E501
+        if not report:
+            return historical_data
+
+        observations = len(historical_data.dropna(how="all"))
+        if historical_data.empty:
+            logger.warning(
+                "There is no %s historical data between %s and %s. Please check the start and end "
+                "date of the Toolkit against the dates the tickers have prices for.",
+                period,
+                self._start_date,
+                self._end_date,
+            )
+        elif period == "daily" and observations < MINIMUM_DAILY_OBSERVATIONS:
+            logger.warning(
+                "There are only %s daily observations between %s and %s, fewer than the %s that "
+                "give two returns, so the measures of returns and most technical indicators are "
+                "NaN. Please choose an earlier start date or a later end date.",
+                observations,
+                self._start_date,
+                self._end_date,
+                MINIMUM_DAILY_OBSERVATIONS,
+            )
 
         return historical_data
 
@@ -6916,16 +6806,17 @@ class Toolkit:
             pd.DataFrame: The historical data of the period, from before the start date.
 
         Raises:
-            KeyError: For any other period, as a dictionary of the periods would.
+            InvalidArgumentError: For any other period, naming the periods.
         """
         if period == "intraday" or not self._historical.empty:
             if period == "daily" and not self._historical.empty:
-                self.get_historical_data(period="daily")
+                # Loaded as the other modules load it, which reports a range without prices.
+                self._get_module_historical_data("daily")
                 return self._daily_historical_data.loc[: self._end_date]
             return self._get_module_historical_data(period)
 
-        if period not in ("daily", "weekly", "monthly", "quarterly", "yearly"):
-            raise KeyError(period)
+        # A period outside these is a mistake in the call, not missing data, so it raises.
+        check_period(period, ("daily", "weekly", "monthly", "quarterly", "yearly"))
 
         daily_historical_data = self._get_module_historical_data("daily")
         settings = self._daily_historical_data_params
@@ -7002,10 +6893,10 @@ class Toolkit:
             pd.DataFrame: The risk free rate of the period.
 
         Raises:
-            KeyError: For any other period, as a dictionary of the periods would.
+            InvalidArgumentError: For any other period, naming the periods.
         """
-        if period not in ("daily", "weekly", "monthly", "quarterly", "yearly"):
-            raise KeyError(period)
+        # A period outside these is a mistake in the call, not missing data, so it raises.
+        check_period(period, ("daily", "weekly", "monthly", "quarterly", "yearly"))
 
         self.get_historical_data(period=period)
 
@@ -7014,7 +6905,8 @@ class Toolkit:
     def _get_historical_tickers(self, include_benchmark: bool) -> list[str]:
         """
         Returns the tickers of the daily historical data, retrieving it when needed, followed
-        by the Portfolio when the Toolkit holds one.
+        by the Portfolio when the Toolkit holds one. The Toolkit of a Portfolio has the
+        Portfolio's own return series in its historical data, where it is listed once.
 
         Args:
             include_benchmark (bool): Whether to keep the Benchmark.
@@ -7023,7 +6915,7 @@ class Toolkit:
             list[str]: The tickers of the historical data.
         """
         tickers = (
-            self._get_module_historical_data("daily")
+            self._get_module_historical_data("daily", report=False)
             .columns.get_level_values(1)
             .unique()
             .tolist()
@@ -7032,7 +6924,10 @@ class Toolkit:
         if not include_benchmark and "Benchmark" in tickers:
             tickers.remove("Benchmark")
 
-        return tickers + ["Portfolio"] if "Portfolio" in self._tickers else tickers
+        if "Portfolio" in self._tickers and "Portfolio" not in tickers:
+            tickers.append("Portfolio")
+
+        return tickers
 
     def _get_period_end_dates(
         self, statement: pd.DataFrame | None = None
@@ -7316,8 +7211,8 @@ class Toolkit:
         rather than all of it. This method is the counterpart to clear_cache: it
         shows what is there so that removing something is an informed decision.
 
-        The cache is inspected even when this Toolkit was created with
-        use_cached_data=False, so a cache filled by an earlier session can always
+        The cache is inspected even when this Toolkit was created without
+        cached data, so a cache filled by an earlier session can always
         be reviewed.
 
         Args:

@@ -27,6 +27,7 @@ import threading
 import time
 from collections.abc import Callable, Generator
 from contextlib import contextmanager
+from contextvars import ContextVar
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -72,6 +73,41 @@ _identify_user: Callable[[], str] = str
 # those answered with a timeout whose work is still running in its thread.
 _running_calls: dict[str, int] = {}
 _running_calls_lock = threading.Lock()
+
+# How a call ended, per indicator: "data" (an answer with data), "cut" (one cut to the size
+# limit), "empty" (no data for the request), "invalid" (refused before calculating) and
+# "error" (the tool raised, or an unexpected exception became its answer).
+OUTCOMES = ("data", "cut", "empty", "invalid", "error")
+# The key of a name that is no indicator of the tool: what was typed is never stored.
+UNKNOWN_INDICATOR = "(unknown)"
+# The outcomes the tool reports while it runs, as (tool, indicator, outcome): a list per
+# call, set by counted. The worker thread of run_in_thread runs in a copy of the context,
+# which holds the same list, so its appends are seen.
+_CALL_OUTCOMES: ContextVar[list[tuple[str | None, str | None, str]] | None] = (
+    ContextVar("financetoolkit_call_outcomes", default=None)
+)
+
+
+def record_outcome(
+    outcome: str, tool: str | None = None, indicator: str | None = None
+) -> None:
+    """
+    Report how a call (or one indicator of it) ended, for the usage statistics of a call
+    that counted wraps; outside one it does nothing.
+
+    Args:
+        outcome (str): One of OUTCOMES.
+        tool (str | None): The tool that answered, when another than the one called (an
+            indicator of another tool is answered by that tool). Defaults to None.
+        indicator (str | None): The indicator, only ever a name the tool knows (else
+            UNKNOWN_INDICATOR); None for an outcome of the call as a whole. Defaults to None.
+    """
+    try:
+        outcomes = _CALL_OUTCOMES.get()
+        if outcomes is not None and outcome in OUTCOMES:
+            outcomes.append((tool, indicator, outcome))
+    except Exception as error:  # noqa: BLE001
+        logger.debug("Could not note how the call of %s ended: %s", tool, error)
 
 
 def is_enabled() -> bool:
@@ -133,6 +169,8 @@ class UsageAnalytics:
         self.calls_per_day: dict[str, int] = {}
         self.calls_per_user: dict[str, int] = {}
         self.first_seen: dict[str, str] = {}
+        # "<tool>:<indicator>" (or "<tool>" for a call as a whole) to the count per outcome.
+        self.outcomes_per_indicator: dict[str, dict[str, int]] = {}
 
     # ── Identity ──────────────────────────────────────────────────────────────
     def user_id(self, api_key: str) -> str:
@@ -174,7 +212,13 @@ class UsageAnalytics:
 
     # ── Counting ──────────────────────────────────────────────────────────────
     def record_call(
-        self, tool: str, api_key: str, succeeded: bool = True, seconds: float = 0.0
+        self,
+        tool: str,
+        api_key: str,
+        succeeded: bool = True,
+        seconds: float = 0.0,
+        calls: int = 1,
+        outcomes: list[tuple[str | None, str | None, str]] | None = None,
     ) -> None:
         """
         Count a call of a tool, and save every few calls.
@@ -184,8 +228,18 @@ class UsageAnalytics:
             api_key (str): The key the call was made with, empty without one.
             succeeded (bool): Whether the tool returned rather than raised.
             seconds (float): How long the call took.
+            calls (int): The calls it counts as: one per indicator of a call that asks for
+                several. Defaults to 1.
+            outcomes (list[tuple[str | None, str | None, str]] | None): How the call ended
+                per indicator, as record_outcome reported it. A call without any ended in
+                "data" when it returned and in "error" when it raised; a call that raised
+                after some of its indicators were answered counts an "error" on top.
+                Defaults to None.
         """
         try:
+            ended = list(outcomes or [])
+            if not succeeded or not ended:
+                ended.append((None, None, "data" if succeeded else "error"))
             user = self.user_id(api_key)
             today = _today()
 
@@ -193,20 +247,27 @@ class UsageAnalytics:
                 if api_key:
                     self._adopt_unkeyed_identifier(api_key, user)
 
-                self.total_calls += 1
-                self.calls_per_tool[tool] = self.calls_per_tool.get(tool, 0) + 1
+                self.total_calls += calls
+                self.calls_per_tool[tool] = self.calls_per_tool.get(tool, 0) + calls
                 self.seconds_per_tool[tool] = (
                     self.seconds_per_tool.get(tool, 0.0) + seconds
                 )
-                self.calls_per_day[today] = self.calls_per_day.get(today, 0) + 1
-                self.calls_per_user[user] = self.calls_per_user.get(user, 0) + 1
+                self.calls_per_day[today] = self.calls_per_day.get(today, 0) + calls
+                self.calls_per_user[user] = self.calls_per_user.get(user, 0) + calls
                 self.first_seen.setdefault(user, today)
 
                 if not succeeded:
-                    self.failed_calls += 1
+                    self.failed_calls += calls
                     self.failures_per_tool[tool] = (
-                        self.failures_per_tool.get(tool, 0) + 1
+                        self.failures_per_tool.get(tool, 0) + calls
                     )
+
+                for answering_tool, indicator, outcome in ended:
+                    name = answering_tool or tool
+                    counts = self.outcomes_per_indicator.setdefault(
+                        f"{name}:{indicator}" if indicator else name, {}
+                    )
+                    counts[outcome] = counts.get(outcome, 0) + 1
 
                 self._unsaved_calls += 1
                 due = self._unsaved_calls >= SAVE_EVERY_CALLS
@@ -216,7 +277,12 @@ class UsageAnalytics:
         except Exception as error:  # noqa: BLE001
             logger.debug("Could not count the call of %s: %s", tool, error)
 
-    def counted(self, tool: str, function: Callable) -> Any:
+    def counted(
+        self,
+        tool: str,
+        function: Callable,
+        calls: Callable[[dict[str, Any]], int] = lambda arguments: 1,
+    ) -> Any:
         """
         Wrap a tool so every call is counted, keeping the signature and annotations
         FastMCP builds the tool's input schema from.
@@ -224,10 +290,18 @@ class UsageAnalytics:
         Args:
             tool (str): The tool's name.
             function (Callable): The tool, synchronous or asynchronous.
+            calls (Callable[[dict[str, Any]], int]): The calls a call counts as, from its
+                arguments (one per indicator it asks for). Defaults to one.
 
         Returns:
             Any: The counting tool.
         """
+
+        def count(arguments: dict[str, Any]) -> int:
+            try:
+                return max(1, int(calls(arguments)))
+            except Exception:  # noqa: BLE001
+                return 1
 
         def key() -> str:
             try:
@@ -240,13 +314,23 @@ class UsageAnalytics:
             @functools.wraps(function)
             async def counting_coroutine(*args, **kwargs):
                 started, succeeded = time.perf_counter(), False
+                outcomes: list[tuple[str | None, str | None, str]] = []
+                token = _CALL_OUTCOMES.set(outcomes)
                 try:
                     result = await function(*args, **kwargs)
                     succeeded = True
                     return result
                 finally:
+                    _CALL_OUTCOMES.reset(token)
                     self.record_call(
-                        tool, key(), succeeded, time.perf_counter() - started
+                        tool,
+                        key(),
+                        succeeded,
+                        time.perf_counter() - started,
+                        count(kwargs),
+                        # A copy: the thread of a call answered with a timeout can still
+                        # report outcomes, which then belong to no call.
+                        list(outcomes),
                     )
 
             wrapper: Any = counting_coroutine
@@ -255,13 +339,21 @@ class UsageAnalytics:
             @functools.wraps(function)
             def counting_function(*args, **kwargs):
                 started, succeeded = time.perf_counter(), False
+                outcomes: list[tuple[str | None, str | None, str]] = []
+                token = _CALL_OUTCOMES.set(outcomes)
                 try:
                     result = function(*args, **kwargs)
                     succeeded = True
                     return result
                 finally:
+                    _CALL_OUTCOMES.reset(token)
                     self.record_call(
-                        tool, key(), succeeded, time.perf_counter() - started
+                        tool,
+                        key(),
+                        succeeded,
+                        time.perf_counter() - started,
+                        count(kwargs),
+                        list(outcomes),
                     )
 
             wrapper = counting_function
@@ -286,6 +378,7 @@ class UsageAnalytics:
             "calls_per_day": self.calls_per_day,
             "calls_per_user": self.calls_per_user,
             "first_seen": self.first_seen,
+            "outcomes_per_indicator": self.outcomes_per_indicator,
         }
 
     def load(self) -> None:
@@ -318,6 +411,12 @@ class UsageAnalytics:
                 self.first_seen = dict(
                     first("first_seen", "users_first_seen", default={})
                 )
+                self.outcomes_per_indicator = {
+                    name: {outcome: int(count) for outcome, count in counts.items()}
+                    for name, counts in dict(
+                        first("outcomes_per_indicator", default={})
+                    ).items()
+                }
         except Exception as error:  # noqa: BLE001
             logger.warning(
                 "Could not read the usage statistics at %s: %s", self.location, error
@@ -394,6 +493,14 @@ class UsageAnalytics:
                 else 0
             )
             total_seconds = sum(self.seconds_per_tool.values())
+            # Totals per outcome only: which indicators fail stays in the file.
+            outcome_totals = {
+                outcome: sum(
+                    counts.get(outcome, 0)
+                    for counts in self.outcomes_per_indicator.values()
+                )
+                for outcome in OUTCOMES
+            }
 
             return {
                 "server": self.server_name,
@@ -440,6 +547,7 @@ class UsageAnalytics:
                     else None
                 ),
                 "history": history,
+                "outcomes": outcome_totals,
             }
 
     def register_route(self, mcp: Any, path: str = "/stats") -> None:
@@ -581,6 +689,7 @@ def run_in_thread(function: Callable) -> Any:
         if _calls_per_user:
             with _running_calls_lock:
                 if _running_calls.get(call["user"], 0) >= _calls_per_user:
+                    record_outcome("invalid")
                     return (
                         f"You have {_calls_per_user} calls running on this server, the most "
                         "it runs at a time for one user. Please wait for them to finish "
@@ -596,6 +705,7 @@ def run_in_thread(function: Callable) -> Any:
                     abandon_on_cancel=True,
                 )
         except TimeoutError:
+            record_outcome("error")
             return (
                 f"The call took longer than the {_call_timeout:g} seconds this server allows "
                 "and was stopped. Please narrow it: fewer tickers or countries, a shorter "

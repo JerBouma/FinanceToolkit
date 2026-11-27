@@ -115,3 +115,26 @@ def test_get_student_t_copula_parameters_inverts_kendalls_tau():
 
     assert np.isclose(result["Rho"], np.sin(np.pi * kendall_tau / 2))
     assert abs(result["Rho"] - 0.5) < 0.05
+
+
+def test_get_tail_dependence_coefficient_of_a_constant_series_is_missing():
+    # A money market fund at a constant price has no tail, so no tail dependence; before,
+    # the gaussian method gave 1 (NaN correlation is not below 1) and the empirical method
+    # a lower tail dependence of 1.
+    rng = np.random.default_rng(3)
+    a = pd.Series(rng.standard_normal(250))
+    constant = pd.Series(np.zeros(250))
+
+    for method in ("empirical", "gaussian", "student-t"):
+        for first, second in ((a, constant), (constant, a)):
+            result = copula_model.get_tail_dependence_coefficient(
+                first, second, method=method
+            )
+            assert (
+                result[
+                    ["Lower Tail Dependence", "Upper Tail Dependence", "Correlation"]
+                ]
+                .isna()
+                .all()
+            )
+            assert result["Observations"] == 250

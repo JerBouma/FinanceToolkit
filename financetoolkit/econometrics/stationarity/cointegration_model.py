@@ -6,13 +6,14 @@ import warnings
 
 import numpy as np
 import pandas as pd
-from statsmodels.tsa.stattools import coint
-from statsmodels.tsa.vector_ar.vecm import coint_johansen
 
+from financetoolkit.econometrics.helpers import import_optional
 from financetoolkit.econometrics.stationarity.unitroot_model import (
     MINIMUM_TEST_OBSERVATIONS,
     default_max_lag,
+    get_adf_regression,
 )
+from financetoolkit.utilities.error_model import InvalidArgumentError
 
 JOHANSEN_MINIMUM_NUMBER_OF_SERIES = 2
 # The observations the Johansen test needs beyond the parameters of its VECM.
@@ -21,13 +22,20 @@ MINIMUM_JOHANSEN_FREEDOM = 3
 # The conventional 5% significance level used for the "Cointegrated (5%)" flag.
 SIGNIFICANCE_LEVEL = 0.05
 
+# The R-squared of the cointegrating regression from which statsmodels' coint treats the two
+# series as (almost) perfectly collinear: 1 - 100 x the square root of machine precision.
+COLLINEAR_R_SQUARED = 1 - 100 * np.sqrt(np.finfo(float).eps)
+
 
 def get_engle_granger_cointegration(
     series_a: pd.Series, series_b: pd.Series, max_lag: int | None = None
 ) -> pd.Series:
     """
-    Calculate the Engle-Granger test for cointegration between two series, via
-    `statsmodels.tsa.stattools.coint`.
+    Calculate the Engle-Granger test: whether two series are cointegrated, held together by a
+    long-run equilibrium so that the spread between them reverts.
+
+    The test gives the results of statsmodels' coint, with the lag search of the ADF test on
+    the residuals from one decomposition (see `unitroot_model.get_adf_regression`).
 
     Two individually non-stationary series (e.g. two stock prices, each following a
     random walk) are cointegrated if some linear combination of them is stationary,
@@ -55,6 +63,9 @@ def get_engle_granger_cointegration(
 
     Also known as: EG test, residual-based cointegration test.
 
+    Referenced against:
+    - statsmodels, coint: https://www.statsmodels.org/stable/generated/statsmodels.tsa.stattools.coint.html
+
     Args:
         series_a (pd.Series): The dependent series.
         series_b (pd.Series): The independent series.
@@ -69,18 +80,45 @@ def get_engle_granger_cointegration(
     aligned = pd.concat([series_a, series_b], axis=1, join="inner").dropna()
     dependent = aligned.iloc[:, 0].to_numpy()
     independent = aligned.iloc[:, 1].to_numpy()
+    stattools = import_optional(
+        "statsmodels.tsa.stattools", "The Engle-Granger cointegration test"
+    )
+    adfvalues = import_optional(
+        "statsmodels.tsa.adfvalues", "The Engle-Granger cointegration test"
+    )
 
     try:
         if len(dependent) < MINIMUM_TEST_OBSERVATIONS:
             raise ValueError("Too few observations for the test.")
 
-        eg_statistic, p_value, critical_values = coint(
-            dependent,
-            independent,
-            trend="c",
-            maxlag=max_lag if max_lag is not None else default_max_lag(len(dependent)),
-            autolag="aic",
+        maximum = max_lag if max_lag is not None else default_max_lag(len(dependent))
+
+        # The steps of statsmodels' coint, with the lag search of the ADF test on the
+        # residuals from one decomposition (see get_adf_regression), which gives the same
+        # lag and statistic. Collinear series and the cases get_adf_regression leaves to
+        # statsmodels go through coint itself.
+        design = np.column_stack([independent, np.ones(len(independent))])
+        coefficients = np.linalg.lstsq(design, dependent, rcond=None)[0]
+        residuals = dependent - design @ coefficients
+        deviations = dependent - dependent.mean()
+        r_squared = 1 - (residuals @ residuals) / (deviations @ deviations)
+        fast = (
+            get_adf_regression(residuals, maximum, "n")
+            if r_squared < COLLINEAR_R_SQUARED
+            else None
         )
+
+        if fast is not None:
+            eg_statistic = fast[0]
+            p_value = adfvalues.mackinnonp(eg_statistic, regression="c", N=2)
+            # One observation fewer, as statsmodels (and Stata's egranger) does.
+            critical_values = adfvalues.mackinnoncrit(
+                N=2, regression="c", nobs=len(dependent) - 1
+            )
+        else:
+            eg_statistic, p_value, critical_values = stattools.coint(
+                dependent, independent, trend="c", maxlag=maximum, autolag="aic"
+            )
     except (ValueError, np.linalg.LinAlgError):
         return pd.Series(
             {
@@ -106,17 +144,18 @@ def get_engle_granger_cointegration(
 
 
 def get_johansen_cointegration(
-    data: pd.DataFrame, det_order: int = 0, k_ar_diff: int = 1
+    data: pd.DataFrame, det_order: int = 0, lags: int = 1
 ) -> pd.DataFrame:
     """
-    Calculate the Johansen test for cointegration among two or more series, via
-    `statsmodels.tsa.vector_ar.vecm.coint_johansen`.
+    Calculate the Johansen test: how many long-run equilibrium relationships (cointegrating
+    relations) hold two or more series together.
 
-    The Engle-Granger test (see `cointegration_model.get_engle_granger_cointegration`)
-    only handles two series and imposes an arbitrary normalization (which series is
-    "dependent"). Johansen's test generalizes this to `N >= 2` series at once by
-    testing the rank of the long-run coefficient matrix `Pi` in the Vector Error
-    Correction Model (VECM) representation of a VAR(p):
+    The test runs statsmodels' coint_johansen. The Engle-Granger test (see
+    `cointegration_model.get_engle_granger_cointegration`) only handles two series and
+    imposes an arbitrary normalization (which series is "dependent"). Johansen's test
+    generalizes this to `N >= 2` series at once by testing the rank of the long-run
+    coefficient matrix `Pi` in the Vector Error Correction Model (VECM) representation of a
+    VAR(p):
 
     - Delta_Y_t = Pi * Y_(t-1) + SUM(Gamma_i * Delta_Y_(t-i)) + mu + e_t
 
@@ -157,8 +196,8 @@ def get_johansen_cointegration(
         levels are linearly detrended before the test, evaluated against the case 5
         critical values of an unrestricted trend). The critical values are those of
         MacKinnon, Haug & Michelis (1999) that `statsmodels` returns. Defaults to 0.
-        k_ar_diff (int, optional): The number of lagged first differences to include as
-        short-run dynamics (equivalent to fitting a levels-VAR of order `k_ar_diff + 1`).
+        lags (int, optional): The number of lagged first differences to include as
+        short-run dynamics (equivalent to fitting a levels-VAR of order `lags + 1`).
         Defaults to 1.
 
     Returns:
@@ -168,15 +207,15 @@ def get_johansen_cointegration(
         level.
 
     Raises:
-        ValueError: If `data` has fewer than 2 columns, or if `k_ar_diff` is negative.
+        ValueError: If `data` has fewer than 2 columns, or if `lags` is negative.
     """
     if det_order not in (-1, 0, 1):
-        raise ValueError(
+        raise InvalidArgumentError(
             "det_order must be one of -1 (none), 0 (constant) or 1 (constant and trend)."
         )
 
-    if k_ar_diff < 0:
-        raise ValueError("k_ar_diff must be a non-negative integer.")
+    if lags < 0:
+        raise ValueError("lags must be a non-negative integer.")
 
     aligned = data.dropna()
     number_of_series = aligned.shape[1]
@@ -190,23 +229,26 @@ def get_johansen_cointegration(
     nan_row = {
         "Eigenvalue": np.nan,
         "Trace Statistic": np.nan,
-        "Trace Critical Value 90%": np.nan,
-        "Trace Critical Value 95%": np.nan,
-        "Trace Critical Value 99%": np.nan,
+        "Trace Critical Value 10%": np.nan,
+        "Trace Critical Value 5%": np.nan,
+        "Trace Critical Value 1%": np.nan,
         "Reject (Trace, 5%)": False,
         "Max-Eigenvalue Statistic": np.nan,
-        "Max-Eig Critical Value 90%": np.nan,
-        "Max-Eig Critical Value 95%": np.nan,
-        "Max-Eig Critical Value 99%": np.nan,
-        "Reject (Max-Eig, 5%)": False,
+        "Max-Eigenvalue Critical Value 10%": np.nan,
+        "Max-Eigenvalue Critical Value 5%": np.nan,
+        "Max-Eigenvalue Critical Value 1%": np.nan,
+        "Reject (Max-Eigenvalue, 5%)": False,
     }
     index = [f"r <= {rank}" for rank in range(number_of_series)]
 
-    # The VECM estimates k_ar_diff lagged differences of every series plus the deterministic
+    # The VECM estimates `lags` lagged differences of every series plus the deterministic
     # terms; with too few observations left over the eigenvalues reach 1 and every rank is
     # rejected, so shorter samples return NaN.
     minimum_observations = (
-        number_of_series * (k_ar_diff + 1) + number_of_series + MINIMUM_JOHANSEN_FREEDOM
+        number_of_series * (lags + 1) + number_of_series + MINIMUM_JOHANSEN_FREEDOM
+    )
+    vecm = import_optional(
+        "statsmodels.tsa.vector_ar.vecm", "The Johansen cointegration test"
     )
 
     try:
@@ -215,7 +257,7 @@ def get_johansen_cointegration(
 
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            result = coint_johansen(aligned.to_numpy(), det_order, k_ar_diff)
+            result = vecm.coint_johansen(aligned.to_numpy(), det_order, lags)
     except (ValueError, np.linalg.LinAlgError):
         return pd.DataFrame([nan_row] * number_of_series, index=index)
 
@@ -229,17 +271,17 @@ def get_johansen_cointegration(
             {
                 "Eigenvalue": eigenvalues[rank],
                 "Trace Statistic": trace_statistics[rank],
-                "Trace Critical Value 90%": result.cvt[rank, 0],
-                "Trace Critical Value 95%": result.cvt[rank, 1],
-                "Trace Critical Value 99%": result.cvt[rank, 2],
+                "Trace Critical Value 10%": result.cvt[rank, 0],
+                "Trace Critical Value 5%": result.cvt[rank, 1],
+                "Trace Critical Value 1%": result.cvt[rank, 2],
                 "Reject (Trace, 5%)": bool(
                     trace_statistics[rank] > result.cvt[rank, 1]
                 ),
                 "Max-Eigenvalue Statistic": max_eigenvalue_statistics[rank],
-                "Max-Eig Critical Value 90%": result.cvm[rank, 0],
-                "Max-Eig Critical Value 95%": result.cvm[rank, 1],
-                "Max-Eig Critical Value 99%": result.cvm[rank, 2],
-                "Reject (Max-Eig, 5%)": bool(
+                "Max-Eigenvalue Critical Value 10%": result.cvm[rank, 0],
+                "Max-Eigenvalue Critical Value 5%": result.cvm[rank, 1],
+                "Max-Eigenvalue Critical Value 1%": result.cvm[rank, 2],
+                "Reject (Max-Eigenvalue, 5%)": bool(
                     max_eigenvalue_statistics[rank] > result.cvm[rank, 1]
                 ),
             }

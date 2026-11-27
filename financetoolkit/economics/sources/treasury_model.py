@@ -10,6 +10,7 @@ import pandas as pd
 from financetoolkit import helpers
 from financetoolkit.cache import policy_model
 from financetoolkit.economics.helpers import collect_cached_data, require_columns
+from financetoolkit.utilities import error_model
 from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.requests_model import get_request
 
@@ -39,6 +40,26 @@ MATURITIES = {
 }
 
 COUNTRY = "United States"
+
+
+# The Treasury's names for the maturities of the US par yield curve, in the labels the
+# government bond yield curve uses for every country.
+LABELS = {
+    "1 Mo": "1M",
+    "1.5 Month": "1.5M",
+    "2 Mo": "2M",
+    "3 Mo": "3M",
+    "4 Mo": "4M",
+    "6 Mo": "6M",
+    "1 Yr": "1Y",
+    "2 Yr": "2Y",
+    "3 Yr": "3Y",
+    "5 Yr": "5Y",
+    "7 Yr": "7Y",
+    "10 Yr": "10Y",
+    "20 Yr": "20Y",
+    "30 Yr": "30Y",
+}
 
 
 def _get_year(year: int, curve: str) -> pd.DataFrame:
@@ -88,6 +109,7 @@ def _get_year(year: int, curve: str) -> pd.DataFrame:
         entity=str(year),
         fetch=fetch,
         description=description,
+        quiet=True,
     )
 
 
@@ -95,13 +117,14 @@ def get_yield_curve(
     curve: str = "nominal", start_date: str | None = None, end_date: str | None = None
 ) -> pd.DataFrame:
     """
-    Retrieves the daily nominal or real par yield curve of US Treasuries as published by
-    the U.S. Department of the Treasury. Only the years between the start and end date
-    are requested, one file per year.
+    Retrieves the daily nominal or real par yield curve of US Treasuries as published by the U.S. Department of the
+    Treasury.
+
+    Only the years between the start and end date are requested, one file per year.
 
     Args:
-        curve (str): "nominal" (from 1990) or "real" (TIPS, from 2003). Defaults to
-            "nominal".
+        curve (str): The curve. Options are: "nominal" (nominal par yields, from 1990), "real" (TIPS real yields, from
+            2003). Defaults to "nominal".
         start_date (str | None): The start date (YYYY-MM-DD). Defaults to None, which
             starts at the first year of the curve.
         end_date (str | None): The end date (YYYY-MM-DD). Defaults to None, which ends in
@@ -129,8 +152,34 @@ def get_yield_curve(
         )
         return pd.DataFrame()
 
-    frames = helpers.run_in_parallel(_get_year, [(year, curve) for year in years])
-    frames = [frame for frame in frames if not frame.empty]
+    def get_year(year: int) -> tuple[int, pd.DataFrame, str]:
+        # A year that cannot be read is reported with the others rather than on its own.
+        try:
+            return year, _get_year(year, curve), ""
+        except ValueError as error:
+            if error_model.use_strict_errors():
+                raise
+            return year, pd.DataFrame(), str(error)
+
+    results = helpers.run_in_parallel(get_year, [(year,) for year in years])
+    frames = {year: frame for year, frame, _ in results}
+    reasons = list(dict.fromkeys(reason for _, _, reason in results if reason))
+
+    # Each year is a request of its own, so the years without data are reported together.
+    if missing := [str(year) for year, frame in frames.items() if frame.empty]:
+        logger.error(
+            "The Treasury %s par yield curve could not be retrieved for %s: %s",
+            curve,
+            ", ".join(missing),
+            (
+                reasons[0]
+                if reasons
+                else "the Treasury could not be reached or published nothing for "
+                + ("that year." if len(missing) == 1 else "those years.")
+            ),
+        )
+
+    frames = [frame for frame in frames.values() if not frame.empty]
 
     if not frames:
         return pd.DataFrame()
@@ -165,9 +214,10 @@ def get_long_term_interest_rate(
 
 def get_real_yield_curve(start_date: str, end_date: str) -> pd.DataFrame:
     """
-    Retrieves the daily real par yield curve of Treasury Inflation-Protected Securities
-    (TIPS) for the 5, 7, 10, 20 and 30-Year maturities, the same figures FRED republishes
-    as the DFII series.
+    Retrieve the daily real par yield curve of Treasury Inflation-Protected Securities (TIPS): the yield above
+    inflation of the 5, 7, 10, 20 and 30-year maturities.
+
+    These are the same figures FRED republishes as the DFII series.
 
     Args:
         start_date (str): The start date (YYYY-MM-DD).
@@ -198,10 +248,10 @@ def get_breakeven_inflation_expectations(
     start_date: str, end_date: str
 ) -> pd.DataFrame:
     """
-    Computes the daily breakeven inflation rates, the nominal par yield minus the real
-    par yield, for the 5, 7, 10, 20 and 30-Year maturities, plus the 5-Year, 5-Year
-    Forward Inflation Expectation Rate. These are the formulas FRED uses for its T5YIE,
-    T10YIE and T5YIFR series, applied to the same Treasury curves.
+    Computes the daily breakeven inflation rates, the nominal par yield minus the real par yield, for the 5, 7, 10, 20
+    and 30-Year maturities, plus the 5-Year, 5-Year Forward Inflation Expectation Rate.
+
+    These are the formulas FRED uses for its T5YIE, T10YIE and T5YIFR series, applied to the same Treasury curves.
 
     Args:
         start_date (str): The start date (YYYY-MM-DD).
@@ -238,3 +288,26 @@ def get_breakeven_inflation_expectations(
     breakeven_inflation.index.name = "Date"
 
     return breakeven_inflation.dropna(how="all")
+
+
+def get_labelled_yield_curve(
+    start_date: str | None = None, end_date: str | None = None
+) -> pd.DataFrame:
+    """
+    Retrieves the daily nominal par yield curve of US Treasuries with the maturity labels
+    the government bond yield curve uses for every country, such as "1M" and "10Y".
+
+    Args:
+        start_date (str | None): The start date (YYYY-MM-DD). Defaults to None, which
+            starts at the first year of the curve.
+        end_date (str | None): The end date (YYYY-MM-DD). Defaults to None, which ends in
+            the current year.
+
+    Returns:
+        pd.DataFrame: The yields as decimals, indexed by business day with a column per
+        maturity.
+    """
+    curve = get_yield_curve("nominal", start_date, end_date)
+    return curve.rename(columns=LABELS)[
+        [label for column, label in LABELS.items() if column in curve]
+    ]

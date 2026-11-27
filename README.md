@@ -17,7 +17,7 @@ While browsing a variety of websites, I repeatedly observed significant fluctuat
 
 For example, Microsoft's Price-to-Earnings (PE) ratio on the 6th of May, 2023 is reported to be 28.93 (Stockopedia), 32.05 (Morningstar), 32.66 (Macrotrends), 33.09 (Finance Charts), 33.66 (Y Charts), 33.67 (Wall Street Journal), 33.80 (Yahoo Finance) and 34.4 (Companies Market Cap). All of these calculations are correct, however the method of calculation varies leading to different results. Therefore, collecting data from multiple sources can lead to wrong interpretation of the results given that one source could apply a different definition than another. And that is, if that definition is even available as often the underlying methods are hidden behind a paid subscription.
 
-**This is why I designed the FinanceToolkit**, this is an open-source toolkit in which all relevant financial methods ([500+](https://www.jeroenbouma.com/projects/financetoolkit/docs)) are written down in the most simplistic way allowing for complete transparency of the method of calculation ([proof](https://github.com/JerBouma/FinanceToolkit/blob/main/financetoolkit/ratios/valuation_model.py)). This enables you to avoid dependence on metrics from other providers that do not provide their methods. With a large selection of financial statements in hand, it facilitates streamlined calculations, promoting the adoption of a consistent and universally understood methods and formulas.
+**This is why I designed the FinanceToolkit**, this is an open-source toolkit in which all relevant financial methods ([1100+](https://www.jeroenbouma.com/projects/financetoolkit/docs)) are written down in the most simplistic way allowing for complete transparency of the method of calculation ([proof](https://github.com/JerBouma/FinanceToolkit/blob/main/financetoolkit/ratios/valuation_model.py)). This enables you to avoid dependence on metrics from other providers that do not provide their methods. With a large selection of financial statements in hand, it facilitates streamlined calculations, promoting the adoption of a consistent and universally understood methods and formulas.
 
 Beyond Equities, it supports Options, Currencies, Cryptocurrencies, ETFs, Mutual Funds, Indices, Money Markets, Commodities, Key Economic Indicators and more, allowing you to obtain historical data as well as important performance and risk measurements such as the Sharpe Ratio and Value at Risk.
 
@@ -26,7 +26,7 @@ Complementing this is the [Finance Database 🌎](https://github.com/JerBouma/Fi
 ___
 **🔌 The Finance Toolkit is also available as an [MCP Server](https://www.jeroenbouma.com/projects/financetoolkit/mcp)**
 
-Query 500+ methods from Claude, Copilot, Cursor, Devin Desktop (Windsurf) or any MCP-compatible client without writing code.
+Query 1100+ methods from Claude, Copilot, Cursor, Devin Desktop (Windsurf) or any MCP-compatible client without writing code.
 
 - **Hosted:** connect to `https://financetoolkit.jeroenbouma.com/mcp` — OAuth handles the rest on first use.
 - **Local:** `uvx --from "financetoolkit[mcp]" financetoolkit-mcp-setup` — sets up your client config and API key automatically. See [MCP Server Documentation](https://www.jeroenbouma.com/projects/financetoolkit/mcp#local-clients) for manual setup.
@@ -98,7 +98,7 @@ ___
 <b><div align="center">Find the Documentation, including the Getting Started guides, <a href="https://www.jeroenbouma.com/projects/financetoolkit/docs">here</a>.</div></b>
 ___
 
-The sections below follow one analysis of the semiconductor sector from start to finish, where each step answers the question the previous one raises: which companies make up the sector, how their shares did, what drives their profits, how much risk came with the returns, what the option market expects next, how the economy shaped all of it, whether a fund is the better way in and how the sector fits into a diversified portfolio. Every module of the Finance Toolkit appears once, but each holds far more than shown here: 500+ methods in total, all described with examples in the [documentation](https://www.jeroenbouma.com/projects/financetoolkit/docs).
+The sections below follow one analysis of the semiconductor sector from start to finish, where each step answers the question the previous one raises: which companies make up the sector, how their shares did, what drives their profits, how much risk came with the returns, what the option market expects next, how the economy shaped all of it, whether a fund is the better way in and how the sector fits into a diversified portfolio. Every module of the Finance Toolkit appears once, but each holds far more than shown here: 1100+ methods in total, all described with examples in the [documentation](https://www.jeroenbouma.com/projects/financetoolkit/docs).
 
 ## Discovering the Sector
 
@@ -158,7 +158,7 @@ companies = Toolkit(
 )
 ```
 
-[Historical data](https://www.jeroenbouma.com/projects/financetoolkit/docs#get_historical_data) comes on a daily, weekly, monthly, quarterly or yearly basis, with the return and cumulative return of each period, and so do the [income statement](https://www.jeroenbouma.com/projects/financetoolkit/docs#get_income_statement), [balance sheet](https://www.jeroenbouma.com/projects/financetoolkit/docs#get_balance_sheet_statement) and [cash flow statement](https://www.jeroenbouma.com/projects/financetoolkit/docs#get_cash_flow_statement) on an annual or quarterly basis. How far a share has travelled is one thing; whether the rally was stretched is another. The [technicals](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals) module answers that with 50+ indicators, such as the Relative Strength Index (RSI), which moves between 0 and 100 and is commonly read as overbought above 70:
+[Historical data](https://www.jeroenbouma.com/projects/financetoolkit/docs#get_historical_data) comes on a daily, weekly, monthly, quarterly or yearly basis, with the return and cumulative return of each period, and so do the [income statement](https://www.jeroenbouma.com/projects/financetoolkit/docs#get_income_statement), [balance sheet](https://www.jeroenbouma.com/projects/financetoolkit/docs#get_balance_sheet_statement) and [cash flow statement](https://www.jeroenbouma.com/projects/financetoolkit/docs#get_cash_flow_statement) on an annual or quarterly basis. How far a share has travelled is one thing; whether the rally was stretched is another. The [technicals](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals) module answers that with 150+ indicators and 62 candlestick patterns, among them the Relative Strength Index (RSI), which moves between 0 and 100 and is commonly read as overbought above 70:
 
 ```python
 # Obtain weekly market data for all tickers and the benchmark
@@ -193,7 +193,7 @@ And below the cumulative returns of all three are plotted against the S&P 500, w
 
 ## Zooming in on Competitors
 
-Nvidia's shares outran the other two by far, which raises the question whether its business did as well. From the financial statements the Toolkit calculates 80+ [ratios](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios) in five categories: efficiency, liquidity, profitability, solvency and valuation. Each ratio has its own function, and a `collect_` function returns a whole category at once:
+Nvidia's shares outran the other two by far, which raises the question whether its business did as well. From the financial statements the Toolkit calculates 130+ [ratios](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios) in five categories: efficiency, liquidity, profitability, solvency and valuation. Each ratio has its own function, and a `collect_` function returns a whole category at once:
 
 ```python
 # Collect all Profitability Ratios for all tickers
@@ -220,11 +220,11 @@ And below a few of them are shown with their latest value and their course over 
   <img alt="Profitability Ratios" src="https://raw.githubusercontent.com/JerBouma/FinanceToolkit/main/assets/readme/ratios-light.png">
 </picture>
 
-A high return on equity can come from margins, from turnover or from debt. [Models](https://www.jeroenbouma.com/projects/financetoolkit/docs/models) combine the ratios to tell these apart: the [Extended DuPont Analysis](https://www.jeroenbouma.com/projects/financetoolkit/docs/models#get_extended_dupont_analysis) splits the return on equity into five components that multiply into it: interest burden, tax burden, operating margin, asset turnover and equity multiplier.
+A high return on equity can come from margins, from turnover or from debt. [Models](https://www.jeroenbouma.com/projects/financetoolkit/docs/models) combine the ratios to tell these apart: the [Extended DuPont Analysis](https://www.jeroenbouma.com/projects/financetoolkit/docs/models#get_dupont_analysis) splits the return on equity into five components that multiply into it: interest burden, tax burden, operating margin, asset turnover and equity multiplier.
 
 ```python
 # Get the Extended DuPont Analysis for all tickers
-extended_dupont_analysis = companies.models.get_extended_dupont_analysis()
+extended_dupont_analysis = companies.models.get_dupont_analysis(method="extended")
 
 # Show the results for Nvidia
 extended_dupont_analysis.loc["NVDA"]
@@ -285,7 +285,7 @@ And below both are plotted for each year, the maximum drawdown together with the
   <img alt="Sharpe Ratio and Maximum Drawdown" src="https://raw.githubusercontent.com/JerBouma/FinanceToolkit/main/assets/readme/risk-light.png">
 </picture>
 
-Together the two modules cover 70+ metrics, such as [Value at Risk](https://www.jeroenbouma.com/projects/financetoolkit/docs/risk#get_value_at_risk), [GARCH](https://www.jeroenbouma.com/projects/financetoolkit/docs/risk#get_garch), [Jensen's Alpha](https://www.jeroenbouma.com/projects/financetoolkit/docs/performance#get_jensens_alpha), the [Capital Asset Pricing Model](https://www.jeroenbouma.com/projects/financetoolkit/docs/performance#get_capital_asset_pricing_model) and the [Fama-French factors](https://www.jeroenbouma.com/projects/financetoolkit/docs/performance#get_fama_and_french_model). Most of them also accept `rolling=<n>` for a value that moves through time.
+Together the two modules cover 140+ metrics, such as [Value at Risk](https://www.jeroenbouma.com/projects/financetoolkit/docs/risk#get_value_at_risk), [GARCH](https://www.jeroenbouma.com/projects/financetoolkit/docs/risk#get_garch), [L-moments](https://www.jeroenbouma.com/projects/financetoolkit/docs/risk#get_l_moment), [Jensen's Alpha](https://www.jeroenbouma.com/projects/financetoolkit/docs/performance#get_alpha), the [Capital Asset Pricing Model](https://www.jeroenbouma.com/projects/financetoolkit/docs/performance#get_capital_asset_pricing_model) and the [Fama-French factors](https://www.jeroenbouma.com/projects/financetoolkit/docs/performance#get_fama_and_french_model). Most of them also accept `rolling=<n>` for a value that moves through time.
 
 ## What the Option Market Expects
 
@@ -318,7 +318,7 @@ Options usually price more risk than follows, as their sellers want to be paid f
 
 All three are listed in the United States and valued on earnings that lie years ahead, which makes US inflation and interest rates the backdrop to their share prices. In 2022, the year the maximum drawdown above shows each of them falling by more than half, inflation reached 9% and the Federal Reserve raised its policy rate from 0.12% to 4.38%.
 
-The [economics](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics) module covers 60+ countries with 50+ indicators, from GDP and unemployment to money supply and interest rates, and the [fixed income](https://www.jeroenbouma.com/projects/financetoolkit/docs/fixedincome) module adds bond yields, yield curves, central bank rates and calculations on individual bonds. Both are reached through the same Toolkit instance, or on their own with `from financetoolkit import Economics, FixedIncome`:
+The [economics](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics) module covers 60+ countries with 100+ indicators, from GDP and unemployment to money supply and interest rates, and the [fixed income](https://www.jeroenbouma.com/projects/financetoolkit/docs/fixedincome) module adds bond yields, yield curves (bootstrapped with a choice of interpolation, fitted to Treasury prices and extrapolated with Smith-Wilson), central bank rates, swap, FRA and FX forward rates, inflation swap rates and the forward CPI, calculations on individual bonds and Treasury market analytics (FRN discount margins, TIPS index ratios, forward prices and the futures basis). Both are reached through the same Toolkit instance, or on their own with `from financetoolkit import Economics, FixedIncome`:
 
 ```python
 # Inflation on the same month a year earlier and the Federal Reserve's policy rate
@@ -354,7 +354,7 @@ And below the yield curve at the end of each year is plotted. It went from almos
 
 ## Economic Relations
 
-Rates rose and the shares fell, but a 10-year Treasury yield is made of two parts: the real yield, the return investors demand on top of inflation, and the inflation they expect over those ten years. The [econometrics](https://www.jeroenbouma.com/projects/financetoolkit/docs/econometrics) module tells such drivers apart with regressions, tests and forecasts built on `statsmodels` and `linearmodels` (`pip install financetoolkit[econometrics]`). Through the Toolkit it analyzes the returns of its tickers, and on its own, through `Econometrics(data=...)`, any data at all, here the monthly returns of the three next to the monthly change in the US 10-year real yield and in 10-year inflation expectations:
+Rates rose and the shares fell, but a 10-year Treasury yield is made of two parts: the real yield, the return investors demand on top of inflation, and the inflation they expect over those ten years. The [econometrics](https://www.jeroenbouma.com/projects/financetoolkit/docs/econometrics) module tells such drivers apart with regressions, tests and forecasts; the methods built on `statsmodels` or `linearmodels` need `pip install financetoolkit[econometrics]`. Through the Toolkit it analyzes the returns of its tickers, and on its own, through `Econometrics(data=...)`, any data at all, here the monthly returns of the three next to the monthly change in the US 10-year real yield and in 10-year inflation expectations:
 
 ```python
 import pandas as pd
@@ -404,7 +404,7 @@ And below each coefficient is shown with its 95% confidence interval. A rise of 
   <img alt="Economic Relations" src="https://raw.githubusercontent.com/JerBouma/FinanceToolkit/main/assets/readme/econometrics-light.png">
 </picture>
 
-The module also covers unit root and cointegration tests, Granger causality, panel data, causal inference, ARIMA, VAR and VECM forecasts, regime switching, a time-varying beta and pairs trading.
+The module also covers unit root and cointegration tests, fractional differentiation, bubble tests (SADF, GSADF) with the dates of each bubble, Granger causality, panel data, causal inference, ARIMA, VAR and VECM forecasts, regime switching, a time-varying beta and pairs trading.
 
 ## Comparing the Sector's ETFs
 
@@ -448,7 +448,7 @@ The three US funds and SMH largely hold the same companies, with SOXX and SMH sh
 
 ## Building a Diversified Portfolio
 
-A fund spreads the risk over the sector, but the sector still moves as one. The [portfolio](https://www.jeroenbouma.com/projects/financetoolkit/docs/portfolio-optimization) module builds portfolios from the tickers of any Toolkit: minimum variance, maximum Sharpe ratio, mean-variance, risk parity, Hierarchical Risk Parity, Hierarchical Equal Risk Contribution, Nested Clustered Optimization, minimum CVaR, minimum drawdown, maximum Omega and CVaR ratio, Black-Litterman, maximum diversification, minimum tracking error and growth optimal (Kelly) weights, the efficient frontier, risk contributions, stress tests and attribution. Below the semiconductor fund is combined with health care (XLV), energy (XLE), long-term Treasuries (TLT) and gold (GLD):
+A fund spreads the risk over the sector, but the sector still moves as one. The [portfolio](https://www.jeroenbouma.com/projects/financetoolkit/docs/portfolio-optimization) module builds portfolios from the tickers of any Toolkit: minimum variance, maximum Sharpe ratio, mean-variance, mean-risk (such as mean absolute deviation, semideviation and Gini mean difference), risk parity, inverse volatility, Hierarchical Risk Parity, Hierarchical Equal Risk Contribution and Nested Clustered Optimization (also with CVaR, CDaR and other risk measures, and on the Directed Bubble Hierarchical Tree), Schur Complementary Allocation, stacking, minimum CVaR, minimum drawdown, maximum Omega and CVaR ratio, Black-Litterman, maximum diversification, minimum tracking error, growth optimal (Kelly), resampled (Michaud), worst-case mean-variance and distributionally robust CVaR weights, the efficient frontier and its corner portfolios (critical line algorithm), a walk-forward backtest of the optimizers, whole-share allocations, risk contributions, stress tests and attribution, and shows the estimates behind them: shrunk (Bayes-Stein, James-Stein, Bodnar-Okhrin-Parolya) and compounded expected returns, entropy pooling views, shrunk, Gerber, denoised, robust (minimum covariance determinant), graph-based (j-LoGo) and detoned covariances, distance correlation, mutual information and tail dependence matrices, coskewness and cokurtosis and bootstrapped estimation uncertainty. Below the semiconductor fund is combined with health care (XLV), energy (XLE), long-term Treasuries (TLT) and gold (GLD):
 
 ```python
 # Initialize the Toolkit for funds across sectors and asset classes from 2021 to 2025
@@ -532,7 +532,7 @@ With `portfolio.toolkit` the portfolio, the time-weighted sum of all positions, 
 
 # MCP Server
 
-The Finance Toolkit MCP Server exposes 500+ financial methods directly to any AI assistant that supports the [Model Context Protocol](https://modelcontextprotocol.io) (MCP). Ask questions in plain English — the AI fetches live financial data on your behalf, backed by the transparent, open-source calculation methods of the Finance Toolkit.
+The Finance Toolkit MCP Server exposes 1100+ financial methods directly to any AI assistant that supports the [Model Context Protocol](https://modelcontextprotocol.io) (MCP). Ask questions in plain English — the AI fetches live financial data on your behalf, backed by the transparent, open-source calculation methods of the Finance Toolkit.
 
 See an example of the Finance Toolkit MCP server in action in Claude Desktop below:
 

@@ -1,0 +1,5 @@
+Ticker,Model,Average Loss,MCS P-Value,In Confidence Set,Rank
+AAPL,ewma,1.630047e-06,1.0,True,1
+AAPL,rolling,1.719436e-06,0.167,True,2
+MSFT,ewma,1.733385e-06,1.0,True,1
+MSFT,rolling,1.87651e-06,0.195,True,2

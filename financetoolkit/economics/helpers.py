@@ -2,8 +2,12 @@
 
 __docformat__ = "google"
 
+import io
 import time
-from collections.abc import Callable, Iterable
+import zipfile
+from collections.abc import Callable, Generator, Iterable
+from contextlib import contextmanager
+from contextvars import ContextVar
 
 import pandas as pd
 import requests
@@ -24,6 +28,11 @@ from financetoolkit.cache import frame_model
 from financetoolkit.cache.cache_controller import get_active_cache
 from financetoolkit.cache.request_model import redact_credentials
 from financetoolkit.helpers import split_values
+from financetoolkit.utilities.error_model import (
+    InvalidArgumentError,
+    check_option,
+    join_options,
+)
 from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.sources_model import record_source
 from financetoolkit.utilities.statistics_model import normalize_country_name
@@ -98,14 +107,68 @@ RETRY_DELAY_SECONDS = 2
 # Long enough that an entry is never too old to serve when the source cannot be reached.
 STALE_TTL_SECONDS = 100 * 365 * 86400
 
+# The sources that could not be reached during a call that retrieves many series (see
+# stop_at_unreachable_sources), shared with the worker threads it starts.
+_UNREACHABLE_SOURCES: ContextVar[set[str] | None] = ContextVar(
+    "financetoolkit_unreachable_sources", default=None
+)
 
-def _fetch_with_retry(fetch: Callable[..., pd.DataFrame], *args: str) -> pd.DataFrame:
+
+class SourceUnreachableError(requests.exceptions.ConnectionError):
+    """A request not sent, as its source could not be reached earlier in the same call."""
+
+
+@contextmanager
+def stop_at_unreachable_sources() -> Generator[None]:
+    """
+    Stops requesting a source for the rest of the block once it could not be reached (no
+    connection, a timeout, a server error or a rate limit, after the retries), for a method
+    that retrieves many series of the same sources: each further series would otherwise
+    wait through the same retries before failing alike. The series not requested are served
+    from the cache where it has them and are otherwise empty, logged once with the first.
+    A block inside another shares its record. It can also decorate a method.
+
+    Yields:
+        None: Nothing; the sources are tracked until the block ends.
+    """
+    if _UNREACHABLE_SOURCES.get() is not None:
+        yield
+        return
+
+    token = _UNREACHABLE_SOURCES.set(set())
+    try:
+        yield
+    finally:
+        _UNREACHABLE_SOURCES.reset(token)
+
+
+def is_unreachable(source: str) -> bool:
+    """
+    Whether a source could not be reached earlier in the current stop_at_unreachable_sources
+    block, for a caller that reports the parts it could not retrieve in one line.
+
+    Args:
+        source (str): The source, as the cache names it (see policy_model).
+
+    Returns:
+        bool: True when the source could not be reached in this block, False otherwise and
+        outside such a block.
+    """
+    unreachable = _UNREACHABLE_SOURCES.get()
+    return unreachable is not None and source in unreachable
+
+
+def _fetch_with_retry(
+    fetch: Callable[..., pd.DataFrame], *args: str, source: str = "The source"
+) -> pd.DataFrame:
     """
     Calls a fetch function, retrying when the source is briefly unavailable.
 
     Args:
         fetch (Callable[..., pd.DataFrame]): Retrieves the data from the source.
         *args (str): The arguments to pass to the fetch function.
+        source (str, optional): The source, named when its answer is not JSON. Defaults
+            to "The source".
 
     Returns:
         pd.DataFrame: The data.
@@ -114,10 +177,24 @@ def _fetch_with_retry(fetch: Callable[..., pd.DataFrame], *args: str) -> pd.Data
         requests.exceptions.RequestException: When the last attempt fails as well, or an
             attempt fails for any other reason than a gateway error, timeout or dropped
             connection.
+        ValueError: When the source answers with something other than the JSON asked for.
     """
+    unreachable = _UNREACHABLE_SOURCES.get()
+    if unreachable is not None and source in unreachable:
+        raise SourceUnreachableError(
+            f"{source} could not be reached for an earlier request of this call, so it is "
+            "not asked again"
+        )
+
     for attempt in range(1, RETRY_ATTEMPTS + 1):
         try:
             return fetch(*args)
+        except requests.exceptions.JSONDecodeError as error:
+            # requests counts an unreadable body as a request error, but the source was
+            # reached: it answered in another format (an HTML error page, an empty body).
+            raise ValueError(
+                f"{source} answered with something other than JSON ({error})."
+            ) from error
         except (
             requests.exceptions.HTTPError,
             requests.exceptions.Timeout,
@@ -131,6 +208,13 @@ def _fetch_with_retry(fetch: Callable[..., pd.DataFrame], *args: str) -> pd.Data
             )
 
             if not retryable or attempt == RETRY_ATTEMPTS:
+                # A missing series (404) is that series only; anything else is the source.
+                if unreachable is not None and (
+                    status_code is None
+                    or status_code >= 500  # noqa: PLR2004
+                    or status_code == requests.codes.too_many_requests
+                ):
+                    unreachable.add(source)
                 raise
 
             time.sleep(RETRY_DELAY_SECONDS * attempt)
@@ -147,6 +231,8 @@ def collect_cached_data(
     description: str,
     expect_empty: bool = False,
     fallback: str | None = None,
+    quiet: bool = False,
+    failures: dict[str, str] | None = None,
 ) -> pd.DataFrame:
     """
     Retrieves a dataset through the cache, serving the last stored copy when the source
@@ -172,6 +258,14 @@ def collect_cached_data(
             nothing is cached, for data that only adds to another source's series. The
             failure is then logged as information with this note rather than as an error.
             Defaults to None.
+        quiet (bool): Whether a source that cannot be reached, with nothing cached, is
+            logged at debug level only, for a caller that retrieves many parts (such as one
+            file per year) and reports the missing ones in a single line. Defaults to False.
+        failures (dict[str, str] | None): Where a failed request with nothing cached is
+            recorded instead of logged, as the reason per entity (such as "EEX answered HTTP
+            403"), for a caller that reports the missing parts with their reasons in a single
+            line. A request not sent because the source could not be reached earlier in the
+            call is not recorded: the caller checks is_unreachable. Defaults to None.
 
     Returns:
         pd.DataFrame: The data, or an empty DataFrame when the source cannot be reached
@@ -186,7 +280,7 @@ def collect_cached_data(
             return cached_data
 
     try:
-        data = _fetch_with_retry(fetch)
+        data = _fetch_with_retry(fetch, source=source)
     except requests.exceptions.RequestException as request_error:
         # A request error names its URL, so a key in it is removed before it is logged.
         error = redact_credentials(str(request_error))
@@ -218,7 +312,22 @@ def collect_cached_data(
             )
             return pd.DataFrame()
 
-        logger.error(
+        if failures is not None:
+            if not isinstance(request_error, SourceUnreachableError):
+                response = getattr(request_error, "response", None)
+                # The status says why; the error itself names the URL, which differs per entity.  # noqa: E501
+                failures[entity] = (
+                    f"{source} answered HTTP {response.status_code}"
+                    if response is not None
+                    else f"{source} could not be reached ({error})"
+                )
+            return pd.DataFrame()
+
+        (
+            logger.debug
+            if quiet or isinstance(request_error, SourceUnreachableError)
+            else logger.error
+        )(
             "Could not reach %s for the %s (%s). No data is returned for it.",
             source,
             description,
@@ -300,7 +409,7 @@ def collect_ranged_data(
         fetch_end = fetch_span[1].strftime("%Y-%m-%d")
 
     try:
-        data = _fetch_with_retry(fetch, fetch_start, fetch_end)
+        data = _fetch_with_retry(fetch, fetch_start, fetch_end, source=source)
     except requests.exceptions.RequestException as request_error:
         # A request error names its URL, so a key in it is removed before it is logged.
         error = redact_credentials(str(request_error))
@@ -314,7 +423,11 @@ def collect_ranged_data(
             )
             return cached_data
 
-        logger.error(
+        (
+            logger.debug
+            if isinstance(request_error, SourceUnreachableError)
+            else logger.error
+        )(
             "Could not reach %s for the %s (%s). No data is returned for it.",
             source,
             description,
@@ -403,7 +516,7 @@ def get_exchange_business_days(start_date: str, end_date: str) -> pd.DatetimeInd
         end_date (str): The last day (YYYY-MM-DD).
 
     Returns:
-        pd.DatetimeIndex: The business days from start_date up to and including end_date.
+        pd.DatetimeIndex: The business days from the start date up to and including the end date.
     """
     holidays = USExchangeHolidays().holidays(start=start_date, end=end_date)
 
@@ -416,7 +529,8 @@ def buffered_start_date(start_date: str, period: str) -> str:
 
     Args:
         start_date (str): The start date (YYYY-MM-DD).
-        period (str): "daily", "weekly", "monthly" or "quarterly".
+        period (str): The frequency of the data. Options are: "daily" (daily data), "weekly" (weekly data), "monthly"
+            (monthly data), "quarterly" (quarterly data).
 
     Returns:
         str: The earlier start date (YYYY-MM-DD).
@@ -430,12 +544,12 @@ def normalize_requested_countries(
     countries: list[str] | str | None, known: Iterable[str]
 ) -> list[str] | None:
     """
-    The requested countries as a list of the names the sources use, so a short form or
-    another casing ("USA", "united kingdom", "uk") selects the same sources as the name
-    itself. A string may hold several countries separated by commas; blank entries (a
-    trailing comma in "Germany,") are skipped and a country spelled twice is listed once.
-    A country that matches nothing known is kept as given, so it is reported as
-    unavailable later on.
+    Turn the requested countries into a list of the names the sources use, so a short form or another casing selects
+    the same sources as the name itself.
+
+    A string may hold several countries separated by commas; blank entries (a trailing comma in "Germany,") are
+    skipped and a country spelled twice is listed once. A country that matches nothing known is kept as given, so it
+    is reported as unavailable later on.
 
     Args:
         countries (list[str] | str | None): The countries as passed to a method.
@@ -479,6 +593,30 @@ def require_columns(data: pd.DataFrame, columns: set[str], description: str) -> 
         )
 
 
+def open_zip_archive(response: requests.Response, description: str) -> zipfile.ZipFile:
+    """
+    Opens a downloaded zip archive, such as a workbook or a set of CSV files.
+
+    Args:
+        response (requests.Response): The response holding the archive.
+        description (str): What was retrieved, used in the error message.
+
+    Returns:
+        zipfile.ZipFile: The archive.
+
+    Raises:
+        ValueError: When the answer is not a zip archive, such as an HTML error page.
+    """
+    try:
+        return zipfile.ZipFile(io.BytesIO(response.content))
+    except zipfile.BadZipFile as error:
+        content_type = response.headers.get("Content-Type") or "no content type"
+        raise ValueError(
+            f"The {description} is not a zip archive: the source answered with "
+            f"{content_type} instead."
+        ) from error
+
+
 def warn_about_long_run_prices(
     consumer_price_index: pd.DataFrame,
     countries: list[str] | str | None,
@@ -486,8 +624,11 @@ def warn_about_long_run_prices(
     end_date: str | None,
 ) -> None:
     """
-    Warns about the years of the Global Macro Database's yearly consumer price index, in
-    the date range, that its inflation rate does not describe as it reads:
+    Warn about the years of the Global Macro Database's yearly consumer price index whose inflation rate does not
+    describe the price change as it reads.
+
+    Warns about the years of the Global Macro Database's yearly consumer price index, in the date range, that its
+    inflation rate does not describe as it reads:
 
     - A value repeated in consecutive years, which the source carried forward rather
       than measured, so that the inflation of those years is 0 by construction. Germany's
@@ -581,19 +722,19 @@ def to_us_series(observations: dict, source: str, description: str) -> pd.DataFr
 
 def check_period_type(period: object) -> None:
     """
-    Checks that a period is given as text, so that a wrong type is reported as such
-    rather than as an AttributeError from deep inside the retrieval.
+    Checks that a period is given as text, so that a wrong type (such as a list) is reported
+    as a mistake in the call rather than as an error from deep inside the retrieval.
 
     Args:
         period (object): The period as passed by the caller.
 
     Raises:
-        TypeError: When the period is not None and not a string.
+        InvalidArgumentError: When the period is not None and not a string.
     """
     if period is not None and not isinstance(period, str):
-        raise TypeError(
+        raise InvalidArgumentError(
             f"The period must be text such as 'monthly' or 'daily', not a {type(period).__name__} "
-            f"({period!r})."
+            f"({period!r}). Please pass one period as text."
         )
 
 
@@ -610,7 +751,8 @@ def validate_period(period: str, supported: list[str], indicator: str) -> str:
         str: The period in lower case.
 
     Raises:
-        ValueError: When the indicator is not published at that frequency.
+        InvalidArgumentError: When the indicator is not published at that frequency,
+            naming the periods it is.
     """
     check_period_type(period)
 
@@ -618,9 +760,9 @@ def validate_period(period: str, supported: list[str], indicator: str) -> str:
     period = "yearly" if period.lower() == "annual" else period.lower()
 
     if period not in supported:
-        raise ValueError(
-            f"The {indicator} is not available with period='{period}'. Choose from "
-            f"{', '.join(repr(option) for option in supported)}."
+        raise InvalidArgumentError(
+            f"The {indicator} is not available with period={period!r}: period must be one "
+            f"of {join_options(supported)}. Please pass one of these as period."
         )
 
     return period
@@ -630,10 +772,8 @@ def change_over_periods(
     data: pd.DataFrame | pd.Series, periods: int
 ) -> pd.DataFrame | pd.Series:
     """
-    The relative change over a number of periods (12 months, 4 quarters) on consecutive
-    periods: a period a source skipped becomes empty first, so the change compares the
-    same period a year earlier rather than the row that many places back, and the skipped
-    period and the one a year after it are empty.
+    Calculate the relative change over a number of periods on consecutive periods, so a period a source skipped does
+    not shift the comparison.
 
     Args:
         data (pd.DataFrame | pd.Series): The values, indexed by a monthly, quarterly or
@@ -685,18 +825,15 @@ def validate_consumer_price_measure(
         str: The measure in lower case.
 
     Raises:
-        ValueError: When the measure does not exist, or not at that period or source.
+        InvalidArgumentError: When the measure does not exist, or not at that period or
+            source.
     """
     measure = measure.lower()
 
-    if measure not in CONSUMER_PRICE_MEASURES:
-        raise ValueError(
-            f"The measure '{measure}' does not exist. Choose from "
-            f"{', '.join(repr(option) for option in CONSUMER_PRICE_MEASURES)}."
-        )
+    check_option("measure", measure, CONSUMER_PRICE_MEASURES)
 
     if measure != "all" and (period.lower() != "monthly" or oecd_source):
-        raise ValueError(
+        raise InvalidArgumentError(
             f"The measure '{measure}' is monthly only, without oecd_source. Use "
             "period='monthly'."
         )
@@ -706,13 +843,13 @@ def validate_consumer_price_measure(
 
 def resample_to_period(data: pd.DataFrame, period: str) -> pd.DataFrame:
     """
-    Converts a daily series to a weekly, monthly, quarterly or yearly one by taking the
-    last observation of every period, the end-of-period convention central banks and the
-    BIS use for rates.
+    Converts a daily series to a weekly, monthly, quarterly or yearly one by taking the last observation of every
+    period, the end-of-period convention central banks and the BIS use for rates.
 
     Args:
         data (pd.DataFrame): The daily series, indexed by a daily PeriodIndex.
-        period (str): "daily", "weekly", "monthly", "quarterly" or "yearly".
+        period (str): The frequency to resample to. Options are: "daily" (daily data), "weekly" (weekly data),
+            "monthly" (monthly data), "quarterly" (quarterly data), "yearly" (yearly data).
 
     Returns:
         pd.DataFrame: The series at the requested frequency.
@@ -739,19 +876,20 @@ def aggregate_weekly_series(
     data: pd.DataFrame, period: str, aggregation: str = "mean"
 ) -> pd.DataFrame:
     """
-    Converts a weekly series, indexed by the day each week ends, to a monthly, quarterly or
-    yearly one: the average of the weeks of every period (the default with which FRED
-    converts its weekly series), or the highest, lowest or last week. A week
-    belongs to the period of the day it ends, as FRED aggregates its weekly series. A period
-    is only returned once all of its weeks are published, so a month that is still running
-    is not mistaken for a full one (nor the first period when the data starts within it).
+    Convert a weekly series, indexed by the day each week ends, to a monthly, quarterly or yearly one: the average,
+    highest, lowest or last week of every period.
+
+    A week belongs to the period of the day it ends, as FRED aggregates its weekly series. A period is only returned
+    once all of its weeks are published, so a month that is still running is not mistaken for a full one (nor the
+    first period when the data starts within it).
 
     Args:
         data (pd.DataFrame): The weekly series, indexed by a daily PeriodIndex of the days
             the weeks end (all on the same weekday).
-        period (str): "weekly", which returns the data as it is, "monthly", "quarterly" or
-            "yearly".
-        aggregation (str, optional): "mean", "max", "min" or "last". Defaults to "mean".
+        period (str): The frequency to combine the weeks into. Options are: "weekly" (the data as it is), "monthly"
+            (monthly data), "quarterly" (quarterly data), "yearly" (yearly data).
+        aggregation (str, optional): How the weeks are combined. Options are: "mean" (the average of its weeks), "max"
+            (the highest week), "min" (the lowest week), "last" (the last week). Defaults to "mean".
 
     Returns:
         pd.DataFrame: The series at the requested frequency.
@@ -791,14 +929,16 @@ def aggregate_weekly_series(
 
 def average_monthly_index(data: pd.DataFrame, period: str) -> pd.DataFrame:
     """
-    Converts a monthly index to a quarterly or yearly one by averaging the months of
-    every period, the convention statistical offices use for the quarterly and annual
-    values of a price index. A period is only averaged once all of its months are
-    published, so a partial quarter or year is not mistaken for a full one.
+    Converts a monthly index to a quarterly or yearly one by averaging the months of every period, the convention
+    statistical offices use for the quarterly and annual values of a price index.
+
+    A period is only averaged once all of its months are published, so a partial quarter or year is not mistaken for a
+    full one.
 
     Args:
         data (pd.DataFrame): The monthly index, indexed by a monthly PeriodIndex.
-        period (str): "monthly", "quarterly" or "yearly".
+        period (str): The frequency to average to. Options are: "monthly" (monthly data), "quarterly" (quarterly
+            data), "yearly" (yearly data).
 
     Returns:
         pd.DataFrame: The index at the requested frequency, NaN for incomplete periods.
@@ -821,11 +961,11 @@ MINIMUM_REPEATED_QUARTERS = 2
 
 def keep_quarter_end_of_repeated_quarters(data: pd.DataFrame) -> pd.DataFrame:
     """
-    Keeps only the last month of each quarter in which a monthly series repeats the
-    quarter's value over its months, such as the BIS consumer prices of Australia and New
-    Zealand, which publish their CPI quarterly. Repeated months would otherwise show a
-    monthly rate of change of 0 twice a quarter and count each quarter three times in
-    averages and rolling windows.
+    Keeps only the last month of each quarter in which a monthly series repeats the quarter's value over its months,
+    such as the BIS consumer prices of Australia and New Zealand, which publish their CPI quarterly.
+
+    Repeated months would otherwise show a monthly rate of change of 0 twice a quarter and count each quarter three
+    times in averages and rolling windows.
 
     The decision is made per country and per quarter, so a country that moves from
     quarterly to monthly publication keeps its monthly months while its earlier quarters
@@ -921,9 +1061,8 @@ def choose_sources(sources: list[pd.DataFrame]) -> dict[str, int]:
 
 def combine_sources(sources: list[pd.DataFrame]) -> pd.DataFrame:
     """
-    Combines country columns from several sources, taking each country from the source
-    with the most recent observation and, when sources are equally recent, from the
-    first in the list.
+    Combines country columns from several sources, taking each country from the source with the most recent
+    observation and, when sources are equally recent, from the first in the list.
 
     A source can keep a country it no longer updates, such as the United Kingdom in
     Eurostat data since Brexit, so the most recent observation decides rather than the
@@ -1040,9 +1179,11 @@ def compound_overnight_rate(
     rates: pd.DataFrame, day_counts: dict[str, int]
 ) -> pd.DataFrame:
     """
-    Compounds daily overnight rates into the growth of 1 deposited on the first day, the
-    method of the compounded indices the European Central Bank and the New York Fed
-    publish for €STR and SOFR:
+    Compound daily overnight rates into the growth of 1 deposited on the first day, what a deposit at the overnight
+    rate grows to.
+
+    Compounds daily overnight rates into the growth of 1 deposited on the first day, the method of the compounded
+    indices the European Central Bank and the New York Fed publish for €STR and SOFR:
 
     - Growth (t) = Growth (t-1) × (1 + Rate (t-1) × Days (t-1) / Day Count)
 

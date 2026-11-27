@@ -12,8 +12,10 @@ def get_days_sales_in_receivables_index(
 ) -> pd.Series | pd.DataFrame:
     """
     The Days Sales in Receivables Index (DSRI) measures the change in the proportion of
-    receivables to sales between the current and prior period. A large increase in DSRI
-    can be indicative of revenue inflation through channel stuffing or fictitious sales.
+    receivables to sales between the current and prior period.
+
+    A large increase in DSRI can be indicative of revenue inflation through channel stuffing
+    or fictitious sales.
 
     The formula is as follows:
 
@@ -45,8 +47,10 @@ def get_gross_margin_index(
 ) -> pd.Series | pd.DataFrame:
     """
     The Gross Margin Index (GMI) measures the deterioration of a company's gross margin
-    between the prior and current period. A GMI greater than 1 indicates that gross margin
-    has deteriorated, which creates an incentive for a company to manipulate earnings.
+    between the prior and current period.
+
+    A GMI greater than 1 indicates that gross margin has deteriorated, which creates an
+    incentive for a company to manipulate earnings.
 
     The formula is as follows:
 
@@ -78,9 +82,11 @@ def get_asset_quality_index(
     lag: int = 1,
 ) -> pd.Series | pd.DataFrame:
     """
-    The Asset Quality Index (AQI) measures the change in the proportion of non-current,
-    non-property, plant and equipment assets (soft assets, e.g. capitalized costs and
-    intangibles) relative to total assets. A rising AQI can indicate that a company is
+    The Asset Quality Index (AQI) shows the change in the share of soft assets in the total
+    assets.
+
+    Soft assets are the non-current assets other than property, plant and equipment, such as
+    capitalized costs and intangibles. A rising AQI can indicate that a company is
     capitalizing costs it should be expensing in order to inflate earnings.
 
     The formula is as follows:
@@ -115,10 +121,11 @@ def get_sales_growth_index(
     lag: int = 1,
 ) -> pd.Series | pd.DataFrame:
     """
-    The Sales Growth Index (SGI) measures the year-over-year growth in revenue. While
-    growth is not inherently a sign of manipulation, high-growth companies face greater
-    pressure to meet expectations and are more likely to engage in earnings manipulation
-    to sustain the perception of growth.
+    The Sales Growth Index (SGI) measures the year-over-year growth in revenue.
+
+    While growth is not inherently a sign of manipulation, high-growth companies face
+    greater pressure to meet expectations and are more likely to engage in earnings
+    manipulation to sustain the perception of growth.
 
     The formula is as follows:
 
@@ -146,9 +153,11 @@ def get_depreciation_index(
 ) -> pd.Series | pd.DataFrame:
     """
     The Depreciation Index (DEPI) measures the change in the rate at which a company is
-    depreciating its assets. A DEPI greater than 1 indicates that the depreciation rate has
-    slowed down, which can be a sign that a company is revising the useful lives of its
-    assets upwards to boost earnings.
+    depreciating its assets.
+
+    A DEPI greater than 1 indicates that the depreciation rate has slowed down, which can be
+    a sign that a company is revising the useful lives of its assets upwards to boost
+    earnings.
 
     The formula is as follows:
 
@@ -188,9 +197,11 @@ def get_selling_general_and_administrative_expenses_index(
 ) -> pd.Series | pd.DataFrame:
     """
     The Selling, General and Administrative Expenses Index (SGAI) measures the change in
-    SG&A expenses relative to sales. A disproportionate increase in SG&A relative to sales
-    can be viewed as a negative signal about a company's future prospects and, per the
-    original Beneish research, is associated with a higher likelihood of manipulation.
+    SG&A expenses relative to sales.
+
+    A disproportionate increase in SG&A relative to sales can be viewed as a negative signal
+    about a company's future prospects and, per the original Beneish research, is associated
+    with a higher likelihood of manipulation.
 
     The formula is as follows:
 
@@ -222,9 +233,10 @@ def get_leverage_index(
     lag: int = 1,
 ) -> pd.Series | pd.DataFrame:
     """
-    The Leverage Index (LVGI) measures the change in a company's leverage. An increase in
-    leverage can create an incentive to manipulate earnings in order to remain within debt
-    covenant thresholds.
+    The Leverage Index (LVGI) measures the change in a company's leverage.
+
+    An increase in leverage can create an incentive to manipulate earnings in order to
+    remain within debt covenant thresholds.
 
     The formula is as follows:
 
@@ -257,9 +269,11 @@ def get_total_accruals_to_total_assets(
 ) -> pd.Series | pd.DataFrame:
     """
     The Total Accruals to Total Assets (TATA) ratio measures the extent to which reported
-    net income is backed by cash. A large positive gap between net income and operating
-    cash flow (a high proportion of accruals) is one of the strongest individual predictors
-    of earnings manipulation in the Beneish model.
+    net income is backed by cash.
+
+    A large positive gap between net income and operating cash flow (a high proportion of
+    accruals) is one of the strongest individual predictors of earnings manipulation in the
+    Beneish model.
 
     The formula is as follows:
 
@@ -302,9 +316,11 @@ def get_beneish_m_score(
     total_accruals_to_total_assets: pd.Series | pd.DataFrame,
 ) -> pd.Series | pd.DataFrame:
     """
-    The Beneish M-Score is a probabilistic model, developed by Messod Beneish, that uses eight
-    financial ratios derived from a company's financial statements to identify whether a company
-    has manipulated its earnings.
+    The Beneish M-Score shows how likely it is that a company has manipulated its earnings.
+
+    It is a probabilistic model, developed by Messod Beneish, that uses eight financial
+    ratios derived from a company's financial statements to identify whether a company has
+    manipulated its earnings.
 
     The formula is as follows:
 
@@ -362,4 +378,53 @@ def get_beneish_m_score(
         - 0.172 * selling_general_and_administrative_expenses_index
         + 4.679 * total_accruals_to_total_assets
         - 0.327 * leverage_index
+    )
+
+
+def get_beneish_five_variable_m_score(
+    days_sales_in_receivables_index: pd.Series | pd.DataFrame,
+    gross_margin_index: pd.Series | pd.DataFrame,
+    asset_quality_index: pd.Series | pd.DataFrame,
+    sales_growth_index: pd.Series | pd.DataFrame,
+    depreciation_index: pd.Series | pd.DataFrame,
+) -> pd.Series | pd.DataFrame:
+    """
+    The five-variable Beneish M-Score of Beneish (1997).
+
+    Five of the eight indices of the eight-variable model, without the SG&A expenses index,
+    the leverage index and the total accruals, each with its own coefficient.
+
+    The formula is as follows:
+
+        M-Score = -6.065 + 0.823 * DSRI + 0.906 * GMI + 0.593 * AQI + 0.717 * SGI + 0.107 * DEPI
+
+    Also known as: five-variable M-Score, Beneish 1997 model.
+
+    Args:
+        days_sales_in_receivables_index (pd.Series | pd.DataFrame): The Days Sales in
+        Receivables Index (DSRI).
+        gross_margin_index (pd.Series | pd.DataFrame): The Gross Margin Index (GMI).
+        asset_quality_index (pd.Series | pd.DataFrame): The Asset Quality Index (AQI).
+        sales_growth_index (pd.Series | pd.DataFrame): The Sales Growth Index (SGI).
+        depreciation_index (pd.Series | pd.DataFrame): The Depreciation Index (DEPI).
+
+    Returns:
+        pd.Series | pd.DataFrame: The five-variable Beneish M-Score.
+
+    Notes:
+    - A M-Score greater than -2.22 suggests that the company is likely to be an earnings
+    manipulator; the -1.78 threshold belongs to the eight-variable model.
+
+    References:
+    - Beneish, Messod D. "Detecting GAAP Violation: Implications for Assessing Earnings
+    Management among Firms with Extreme Financial Performance." Journal of Accounting and
+    Public Policy, Vol. 16, No. 3, 1997, pp. 271-309.
+    """
+    return (
+        -6.065
+        + 0.823 * days_sales_in_receivables_index
+        + 0.906 * gross_margin_index
+        + 0.593 * asset_quality_index
+        + 0.717 * sales_growth_index
+        + 0.107 * depreciation_index
     )

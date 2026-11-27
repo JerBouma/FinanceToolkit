@@ -6,7 +6,11 @@ from financetoolkit import helpers
 from financetoolkit.economics.helpers import validate_period
 from financetoolkit.economics.sources import imf_model, oecd_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
-from financetoolkit.utilities.error_model import handle_errors
+from financetoolkit.utilities.error_model import (
+    InvalidArgumentError,
+    check_option,
+    handle_errors,
+)
 from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import finalize_dataset
 
@@ -35,14 +39,11 @@ class GovernmentEconomics:
             str: The variable at that level.
 
         Raises:
-            ValueError: When the level is not one of the three.
+            InvalidArgumentError: When the level is not one of the three.
         """
         prefixes = {"consolidated": "", "general": "gen_", "central": "c"}
 
-        if level not in prefixes:
-            raise ValueError(
-                f"The level must be one of {', '.join(map(repr, prefixes))}, not {level!r}."
-            )
+        check_option("level", level, tuple(prefixes))
 
         return f"{prefixes[level]}{variable}"
 
@@ -61,8 +62,8 @@ class GovernmentEconomics:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Get the Government Debt for a variety of countries over time from the Global Macro Database (GMDB).
-        Government Debt is the total amount of money that a government owes to creditors.
+        Get the government debt of a variety of countries from the Global Macro Database (GMDB): the total amount a
+        government owes to its creditors.
 
         The stock is annual and expressed in millions of national currency, so levels are not
         comparable across countries with different currencies, but growth rates are.
@@ -74,7 +75,10 @@ class GovernmentEconomics:
 
         Args:
             countries (list[str] | str | None, optional): A list of countries or a single country to include in the results. Defaults to None.
-            level (str, optional): The government the figures cover: "consolidated" (the Global Macro Database's combination of general and central government figures, with the longest history), "general" (general government: central, state and local government and social security) or "central" (central government only). Defaults to "consolidated".
+            level (str, optional): The government the figures cover. Options are: "consolidated" (the Global
+                Macro Database's combination of general and central government figures, with the longest
+                history), "general" (general government: central, state and local government and social
+                security), "central" (central government only). Defaults to "consolidated".
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
@@ -159,9 +163,8 @@ class GovernmentEconomics:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Get the Government Debt to GDP Ratio for a variety of countries over time from the Global Macro Database (GMDB).
-        The Government Debt to GDP Ratio is the ratio of the total amount of money that a government owes to creditors
-        to the Gross Domestic Product (GDP).
+        Get the government debt to GDP ratio of a variety of countries from the Global Macro Database (GMDB): what a
+        government owes against the size of its economy.
 
         Debt to GDP is the standard measure of a government's indebtedness, used by rating agencies, the IMF and the
         European Union, whose fiscal rules refer to 60% of GDP. Whether a ratio is sustainable depends less on its level
@@ -179,13 +182,16 @@ class GovernmentEconomics:
         The formula is as follows:
 
         - Government Debt to GDP Ratio = Gross Government Debt / Nominal GDP,
-          using the level of government selected with `level` ("consolidated" by default)
+          using the level of government selected (the consolidated government by default)
 
         Also known as: debt-to-GDP ratio, fiscal sustainability.
 
         Args:
             countries (list[str] | str | None, optional): A list of countries or a single country to include in the results. Defaults to None.
-            level (str, optional): The government the figures cover: "consolidated" (the Global Macro Database's combination of general and central government figures, with the longest history), "general" (general government: central, state and local government and social security) or "central" (central government only). Defaults to "consolidated".
+            level (str, optional): The government the figures cover. Options are: "consolidated" (the Global
+                Macro Database's combination of general and central government figures, with the longest
+                history), "general" (general government: central, state and local government and social
+                security), "central" (central government only). Defaults to "consolidated".
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
@@ -272,8 +278,8 @@ class GovernmentEconomics:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Get the Government Revenue for a variety of countries over time from the Global Macro Database (GMDB).
-        Government Revenue is the total amount of money that a government collects from taxes and other sources.
+        Get the government revenue of a variety of countries from the Global Macro Database (GMDB): what a government
+        collects from taxes and other sources.
 
         The level is annual and expressed in millions of national currency, so levels are not
         comparable across countries with different currencies, but growth rates are.
@@ -285,7 +291,10 @@ class GovernmentEconomics:
 
         Args:
             countries (list[str] | str | None, optional): A list of countries or a single country to include in the results. Defaults to None.
-            level (str, optional): The government the figures cover: "consolidated" (the Global Macro Database's combination of general and central government figures, with the longest history), "general" (general government: central, state and local government and social security) or "central" (central government only). Defaults to "consolidated".
+            level (str, optional): The government the figures cover. Options are: "consolidated" (the Global
+                Macro Database's combination of general and central government figures, with the longest
+                history), "general" (general government: central, state and local government and social
+                security), "central" (central government only). Defaults to "consolidated".
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
@@ -366,9 +375,8 @@ class GovernmentEconomics:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Get the Government Revenue to GDP Ratio for a variety of countries over time from the Global Macro Database (GMDB).
-        The Government Revenue to GDP Ratio is the ratio of the total amount of money that a government collects from taxes
-        and other sources to the Gross Domestic Product (GDP).
+        Get the government revenue to GDP ratio of a variety of countries from the Global Macro Database (GMDB): what
+        a government collects against the size of its economy.
 
         Data comes from the Global Macro Database (GMDB), further information about the
         variable can be found within https://www.globalmacrodata.com/documentation.html
@@ -380,13 +388,16 @@ class GovernmentEconomics:
         The formula is as follows:
 
         - Government Revenue to GDP Ratio = Government Revenue / Nominal GDP,
-          using the level of government selected with `level` ("consolidated" by default)
+          using the level of government selected (the consolidated government by default)
 
         Also known as: revenue to GDP ratio.
 
         Args:
             countries (list[str] | str | None, optional): A list of countries or a single country to include in the results. Defaults to None.
-            level (str, optional): The government the figures cover: "consolidated" (the Global Macro Database's combination of general and central government figures, with the longest history), "general" (general government: central, state and local government and social security) or "central" (central government only). Defaults to "consolidated".
+            level (str, optional): The government the figures cover. Options are: "consolidated" (the Global
+                Macro Database's combination of general and central government figures, with the longest
+                history), "general" (general government: central, state and local government and social
+                security), "central" (central government only). Defaults to "consolidated".
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
@@ -473,8 +484,8 @@ class GovernmentEconomics:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Get the Government Tax Revenue for a variety of countries over time from the Global Macro Database (GMDB).
-        Government Tax Revenue is the total amount of money that a government collects from taxes.
+        Get the government tax revenue of a variety of countries from the Global Macro Database (GMDB): what a
+        government collects from taxes.
 
         The level is annual and expressed in millions of national currency, so levels are not
         comparable across countries with different currencies, but growth rates are.
@@ -486,7 +497,10 @@ class GovernmentEconomics:
 
         Args:
             countries (list[str] | str | None, optional): A list of countries or a single country to include in the results. Defaults to None.
-            level (str, optional): The government the figures cover: "consolidated" (the Global Macro Database's combination of general and central government figures, with the longest history), "general" (general government: central, state and local government and social security) or "central" (central government only). Defaults to "consolidated".
+            level (str, optional): The government the figures cover. Options are: "consolidated" (the Global
+                Macro Database's combination of general and central government figures, with the longest
+                history), "general" (general government: central, state and local government and social
+                security), "central" (central government only). Defaults to "consolidated".
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
@@ -571,9 +585,8 @@ class GovernmentEconomics:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Get the Government Tax Revenue to GDP Ratio for a variety of countries over time from the Global Macro Database (GMDB).
-        The Government Tax Revenue to GDP Ratio is the ratio of the total amount of money that a government collects from taxes
-        to the Gross Domestic Product (GDP).
+        Get the government tax revenue to GDP ratio of a variety of countries from the Global Macro Database (GMDB):
+        the tax burden against the size of the economy.
 
         Data comes from the Global Macro Database (GMDB), further information about the
         variable can be found within https://www.globalmacrodata.com/documentation.html
@@ -585,13 +598,16 @@ class GovernmentEconomics:
         The formula is as follows:
 
         - Government Tax Revenue to GDP Ratio = Government Tax Revenue / Nominal GDP,
-          using the level of government selected with `level` ("consolidated" by default)
+          using the level of government selected (the consolidated government by default)
 
         Also known as: tax burden, tax to GDP ratio.
 
         Args:
             countries (list[str] | str | None, optional): The countries to include in the data. Defaults to None.
-            level (str, optional): The government the figures cover: "consolidated" (the Global Macro Database's combination of general and central government figures, with the longest history), "general" (general government: central, state and local government and social security) or "central" (central government only). Defaults to "consolidated".
+            level (str, optional): The government the figures cover. Options are: "consolidated" (the Global
+                Macro Database's combination of general and central government figures, with the longest
+                history), "general" (general government: central, state and local government and social
+                security), "central" (central government only). Defaults to "consolidated".
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
@@ -679,9 +695,8 @@ class GovernmentEconomics:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Get the Government Expenditure for a variety of countries over time from the Global Macro Database (GMDB).
-        Government Expenditure is the total spending of the government: goods and services and the wages of its
-        employees, but also social benefits and other transfers, subsidies and interest on its debt.
+        Get the government expenditure of a variety of countries from the Global Macro Database (GMDB): what a
+        government spends on goods, services, wages, transfers and interest.
 
         The level is annual and expressed in millions of national currency, so levels are not
         comparable across countries with different currencies, but growth rates are.
@@ -693,7 +708,10 @@ class GovernmentEconomics:
 
         Args:
             countries (list[str] | str | None, optional): A list of countries or a single country to include in the results. Defaults to None.
-            level (str, optional): The government the figures cover: "consolidated" (the Global Macro Database's combination of general and central government figures, with the longest history), "general" (general government: central, state and local government and social security) or "central" (central government only). Defaults to "consolidated".
+            level (str, optional): The government the figures cover. Options are: "consolidated" (the Global
+                Macro Database's combination of general and central government figures, with the longest
+                history), "general" (general government: central, state and local government and social
+                security), "central" (central government only). Defaults to "consolidated".
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
@@ -778,10 +796,8 @@ class GovernmentEconomics:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Get the Government Expenditure to GDP Ratio for a variety of countries over time from the Global Macro Database (GMDB).
-        The Government Expenditure to GDP Ratio is the total spending of the government (goods and services and the wages
-        of its employees, but also social benefits and other transfers, subsidies and interest on its debt) as a share of
-        the Gross Domestic Product (GDP).
+        Get the government expenditure to GDP ratio of a variety of countries from the Global Macro Database (GMDB):
+        how large the government's spending is against the economy.
 
         Data comes from the Global Macro Database (GMDB), further information about the
         variable can be found within https://www.globalmacrodata.com/documentation.html
@@ -793,13 +809,16 @@ class GovernmentEconomics:
         The formula is as follows:
 
         - Government Expenditure to GDP Ratio = Government Expenditure / Nominal GDP,
-          using the level of government selected with `level` ("consolidated" by default)
+          using the level of government selected (the consolidated government by default)
 
         Also known as: government spending to GDP.
 
         Args:
             countries (list[str] | str | None, optional): A list of countries or a single country to include in the results. Defaults to None.
-            level (str, optional): The government the figures cover: "consolidated" (the Global Macro Database's combination of general and central government figures, with the longest history), "general" (general government: central, state and local government and social security) or "central" (central government only). Defaults to "consolidated".
+            level (str, optional): The government the figures cover. Options are: "consolidated" (the Global
+                Macro Database's combination of general and central government figures, with the longest
+                history), "general" (general government: central, state and local government and social
+                security), "central" (central government only). Defaults to "consolidated".
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
@@ -887,9 +906,10 @@ class GovernmentEconomics:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Get the Government Deficit for a variety of countries over time from the Global Macro Database (GMDB).
-        Government Deficit is the total amount of money that a government spends more than it collects from taxes
-        and other sources. A government deficit is usually financed by borrowing money.
+        Get the government deficit of a variety of countries from the Global Macro Database (GMDB): how much more a
+        government spends than it collects from taxes and other sources.
+
+        A government deficit is usually financed by borrowing money.
 
         Data comes from the Global Macro Database (GMDB), further information about the
         variable can be found within https://www.globalmacrodata.com/documentation.html
@@ -902,7 +922,10 @@ class GovernmentEconomics:
 
         Args:
             countries (list[str] | str | None, optional): A list of countries or a single country to include in the results. Defaults to None.
-            level (str, optional): The government the figures cover: "consolidated" (the Global Macro Database's combination of general and central government figures, with the longest history), "general" (general government: central, state and local government and social security) or "central" (central government only). Defaults to "consolidated".
+            level (str, optional): The government the figures cover. Options are: "consolidated" (the Global
+                Macro Database's combination of general and central government figures, with the longest
+                history), "general" (general government: central, state and local government and social
+                security), "central" (central government only). Defaults to "consolidated".
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
@@ -987,10 +1010,10 @@ class GovernmentEconomics:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Get the Government Deficit to GDP Ratio for a variety of countries over time from the Global Macro Database (GMDB).
-        The Government Deficit to GDP Ratio is the ratio of the total amount of money that a government spends more than it
-        collects from taxes and other sources to the Gross Domestic Product (GDP). A government deficit is usually financed
-        by borrowing money.
+        Get the government deficit to GDP ratio of a variety of countries from the Global Macro Database (GMDB): the
+        shortfall of revenue against spending as a share of the economy.
+
+        A government deficit is usually financed by borrowing money.
 
         The budget balance as a share of GDP is the headline fiscal indicator, with the European Union's 3% of GDP as the
         best-known reference for deficits. It includes interest payments and moves with the business cycle, so analysts
@@ -1009,13 +1032,16 @@ class GovernmentEconomics:
         The formula is as follows:
 
         - Government Deficit to GDP Ratio = (Government Revenue - Government Expenditure) / Nominal GDP,
-          using the level of government selected with `level` ("consolidated" by default)
+          using the level of government selected (the consolidated government by default)
 
         Also known as: deficit-to-GDP, fiscal balance.
 
         Args:
             countries (list[str] | str | None, optional): A list of countries or a single country to include in the results. Defaults to None.
-            level (str, optional): The government the figures cover: "consolidated" (the Global Macro Database's combination of general and central government figures, with the longest history), "general" (general government: central, state and local government and social security) or "central" (central government only). Defaults to "consolidated".
+            level (str, optional): The government the figures cover. Options are: "consolidated" (the Global
+                Macro Database's combination of general and central government figures, with the longest
+                history), "general" (general government: central, state and local government and social
+                security), "central" (central government only). Defaults to "consolidated".
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
@@ -1103,11 +1129,11 @@ class GovernmentEconomics:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Get the Government Interest Expenditure for a variety of countries over time from the
-        Government Finance Statistics of the International Monetary Fund (IMF). It is the
-        interest the general government (the central, state and local governments and the
-        social security funds together) owes on its debt: GFS item 24, interest payable, which
-        is D.41 in the national accounts.
+        Get the government interest expenditure of a variety of countries from the IMF's Government Finance
+        Statistics: the interest a government pays on its debt.
+
+        It is the interest the general government (the central, state and local governments and the social security
+        funds together) owes on its debt: GFS item 24, interest payable, which is D.41 in the national accounts.
 
         The interest is recorded when it accrues rather than when it is paid, and before the
         interest the government receives is netted against it. It is therefore higher than
@@ -1116,15 +1142,15 @@ class GovernmentEconomics:
         the Congressional Budget Office reports subtracts the interest the federal government
         receives.
 
-        The figures are quarterly (period="quarterly", the default) or yearly and expressed in
+        The figures are quarterly (the default) or yearly and expressed in
         millions of national currency, so levels are not comparable across countries with
         different currencies, but growth rates are. Quarterly figures are not seasonally
-        adjusted; trailing=4 gives the interest over the last four quarters. The IMF's
+        adjusted; a trailing window of four gives the interest over the last four quarters. The IMF's
         quarterly government finance statistics cover around 40 economies, among which the
         United States, the euro area and its members, the United Kingdom, Canada, Australia,
         Brazil, Turkey and Indonesia; countries outside them are left out with a warning.
         For those, get_government_expenditure_by_function with
-        functions="Public Debt Transactions" has the yearly public debt transactions (COFOG
+        the Public Debt Transactions function has the yearly public debt transactions (COFOG
         01.7, mostly interest) of around 180 countries.
 
         Data comes from the IMF's Quarterly Government Finance Statistics, further information
@@ -1135,8 +1161,9 @@ class GovernmentEconomics:
 
         Args:
             countries (list[str] | str | None, optional): A list of countries or a single country to include in the results. Defaults to None.
-            period (str | None, optional): "quarterly" or "yearly". Defaults to None, which is
-                quarterly, the highest frequency published.
+            period (str | None, optional): The frequency of the data. Options are: "quarterly" (quarterly
+                data), "yearly" (yearly data). Defaults to None, which is quarterly, the highest frequency
+                published.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
@@ -1223,10 +1250,11 @@ class GovernmentEconomics:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Get the Government Interest Expenditure to GDP Ratio for a variety of countries over
-        time from the International Monetary Fund (IMF). It is the interest the general
-        government owes on its debt (GFS item 24, interest payable, D.41 in the national
-        accounts) as a share of the Gross Domestic Product (GDP).
+        Get the government interest expenditure to GDP ratio of a variety of countries from the IMF: the interest a
+        government pays on its debt against the size of its economy.
+
+        It is the interest the general government owes on its debt (GFS item 24, interest payable, D.41 in the
+        national accounts) as a share of the Gross Domestic Product (GDP).
 
         The interest burden as a share of GDP shows how much of the economy's output goes to
         servicing government debt. It rises with the debt ratio and with the interest rate the
@@ -1247,16 +1275,16 @@ class GovernmentEconomics:
         The formula is as follows:
 
         - Government Interest Expenditure to GDP Ratio = Interest Payable / Nominal GDP,
-          both summed over the last four quarters for period="quarterly" (an annual ratio
-          without seasonal swings) or over the year for period="yearly"
+          both summed over the last four quarters for quarterly data (an annual ratio
+          without seasonal swings) or over the year for yearly data
 
         Also known as: interest burden, interest to GDP, debt service to GDP.
 
         Args:
             countries (list[str] | str | None, optional): A list of countries or a single country to include in the results. Defaults to None.
-            period (str | None, optional): "quarterly" (the ratio over the four quarters up to
-                each quarter) or "yearly". Defaults to None, which is quarterly, the highest
-                frequency published.
+            period (str | None, optional): The frequency of the data. Options are: "quarterly" (the ratio over
+                the four quarters up to each quarter), "yearly" (the ratio over the calendar year). Defaults to
+                None, which is quarterly, the highest frequency published.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
@@ -1345,11 +1373,11 @@ class GovernmentEconomics:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Get the Government Interest Expenditure to Revenue Ratio for a variety of countries
-        over time from the Government Finance Statistics of the International Monetary Fund
-        (IMF). It is the interest the general government owes on its debt (GFS item 24,
-        interest payable) as a share of its revenue (GFS item 1: taxes, social contributions,
-        grants and other revenue).
+        Get the government interest expenditure to revenue ratio of a variety of countries from the IMF: the share of
+        its revenue a government spends on interest.
+
+        It is the interest the general government owes on its debt (GFS item 24, interest payable) as a share of its
+        revenue (GFS item 1: taxes, social contributions, grants and other revenue).
 
         The share of revenue that goes to interest is the measure rating agencies use for debt
         affordability: it says how much of what the government collects is committed to its
@@ -1363,17 +1391,17 @@ class GovernmentEconomics:
         The formula is as follows:
 
         - Government Interest Expenditure to Revenue Ratio = Interest Payable / Government
-          Revenue, both summed over the last four quarters for period="quarterly" (an annual
+          Revenue, both summed over the last four quarters for quarterly data (an annual
           ratio without the seasonal swings of tax receipts) or over the year for
-          period="yearly"
+          yearly data
 
         Also known as: interest to revenue, interest burden on revenue, debt affordability.
 
         Args:
             countries (list[str] | str | None, optional): A list of countries or a single country to include in the results. Defaults to None.
-            period (str | None, optional): "quarterly" (the ratio over the four quarters up to
-                each quarter) or "yearly". Defaults to None, which is quarterly, the highest
-                frequency published.
+            period (str | None, optional): The frequency of the data. Options are: "quarterly" (the ratio over
+                the four quarters up to each quarter), "yearly" (the ratio over the calendar year). Defaults to
+                None, which is quarterly, the highest frequency published.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
@@ -1459,13 +1487,13 @@ class GovernmentEconomics:
             list[str]: The functions.
 
         Raises:
-            ValueError: When a function is not known.
+            InvalidArgumentError: When a function is not known.
         """
         names = {name.lower(): name for name in imf_model.EXPENDITURE_FUNCTIONS}
         requested = helpers.split_values(functions) or imf_model.DIVISIONS
 
         if unknown := [name for name in requested if str(name).lower() not in names]:
-            raise ValueError(
+            raise InvalidArgumentError(
                 f"Unknown government function(s) {', '.join(map(repr, unknown))}. Choose from "
                 f"{', '.join(map(repr, imf_model.EXPENDITURE_FUNCTIONS))}."
             )
@@ -1486,12 +1514,12 @@ class GovernmentEconomics:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Get the Government Expenditure by Function for a variety of countries over time from
-        the Government Finance Statistics of the International Monetary Fund (IMF). The
-        spending of the general government (the central, state and local governments and the
-        social security funds together) is split by purpose according to the United Nations'
-        Classification of the Functions of Government (COFOG), the classification Eurostat,
-        the OECD and the IMF all publish.
+        Get the government expenditure by function of a variety of countries from the IMF: what a government spends on
+        health, education, defence, social protection and its other functions.
+
+        The spending of the general government (the central, state and local governments and the social security funds
+        together) is split by purpose according to the United Nations' Classification of the Functions of Government
+        (COFOG), the classification Eurostat, the OECD and the IMF all publish.
 
         The ten COFOG divisions are General Public Services, Defence, Public Order and Safety,
         Economic Affairs, Environmental Protection, Housing and Community Amenities, Health,
@@ -1599,11 +1627,11 @@ class GovernmentEconomics:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Get the Government Expenditure by Function to GDP Ratio for a variety of countries over
-        time from the Government Finance Statistics of the International Monetary Fund (IMF).
-        It is the spending of the general government on each function of the United Nations'
-        Classification of the Functions of Government (COFOG) as a share of the Gross Domestic
-        Product (GDP).
+        Get the government expenditure by function to GDP ratio of a variety of countries from the IMF: the size of
+        each function of government against the economy.
+
+        It is the spending of the general government on each function of the United Nations' Classification of the
+        Functions of Government (COFOG) as a share of the Gross Domestic Product (GDP).
 
         Shares of GDP make the functions comparable across countries and over time, such as
         NATO's 2% of GDP guideline for defence. The ten divisions, the Public Debt Transactions
@@ -1719,10 +1747,12 @@ class GovernmentEconomics:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Trust in government refers to the share of people who report having confidence
-        in the national government. The data shown reflect the share of respondents
-        answering “yes” (the other response categories being “no”, and “don’t know”)
-        to the survey question: “In this country, do you have confidence in… national government?”
+        Get the trust in government of a variety of countries: the share of people who have confidence in their
+        national government.
+
+        Trust in government refers to the share of people who report having confidence in the national government. The
+        data shown reflect the share of respondents answering “yes” (the other response categories being “no”, and
+        “don’t know”) to the survey question: “In this country, do you have confidence in… national government?”
 
         Due to small sample sizes, country averages for horizontal inequalities (by age,
         gender and education) are pooled between 2010-18 to improve the accuracy of the

@@ -430,3 +430,146 @@ def test_yield_to_worst():
 
     # A yield that cannot be solved leaves the worst unknown.
     assert np.isnan(bond_model.get_yield_to_worst(100, 0.05, 10, [(5, 100)], 1000, 2))
+
+
+# QuantLib 1.44 AmortizingFixedRateBond with BondFunctions on a 30/360 schedule (clean price,
+# accrued interest, Macaulay and modified duration, convexity), at the yield compounded at
+# the coupon frequency.
+AMORTIZING_REFERENCES = [
+    (
+        {"coupon_rate": 0.06, "years_to_maturity": 10, "frequency": 2},
+        {"yield_to_maturity": 0.07},
+        (
+            95.52967445926615,
+            0.0,
+            4.682549490563951,
+            4.524202406341982,
+            30.233095235186354,
+        ),
+    ),
+    (
+        {"coupon_rate": 0.05, "years_to_maturity": 10, "frequency": 1},
+        {"yield_to_maturity": 0.045, "sinking_fund": {6: 10, 7: 10, 8: 10, 9: 10}},
+        (103.61957795241, 0.0, 7.467736528762714, 7.14615935766767, 65.07087777027013),
+    ),
+    (
+        {"coupon_rate": 0.05, "years_to_maturity": 4.75, "frequency": 2},
+        {"yield_to_maturity": 0.06},
+        (
+            97.66621485113603,
+            1.25,
+            2.378248899140061,
+            2.3089795137282145,
+            8.387805981879483,
+        ),
+    ),
+]
+
+
+@pytest.mark.parametrize("terms, inputs, reference", AMORTIZING_REFERENCES)
+def test_amortizing_bond_measures_match_quantlib(terms, inputs, reference):
+    """Annuity and sinking fund bonds, on and between coupon dates, against QuantLib."""
+    measures = bond_model.get_amortizing_bond_measures(100, **terms, **inputs)
+
+    price, accrued, macaulay, modified, convexity = reference
+    assert measures["Price"] == pytest.approx(price, abs=1e-10)
+    assert measures["Accrued Interest"] == pytest.approx(accrued, abs=1e-10)
+    assert measures["Macaulay's Duration"] == pytest.approx(macaulay, abs=1e-10)
+    assert measures["Modified Duration"] == pytest.approx(modified, abs=1e-10)
+    assert measures["Convexity"] == pytest.approx(convexity, rel=1e-10)
+    assert measures["DV01"] == pytest.approx(
+        measures["Modified Duration"] * measures["Dirty Price"] * 1e-4, rel=1e-6
+    )
+
+    # The price solves back to the yield.
+    solved = bond_model.get_amortizing_bond_measures(
+        100,
+        **terms,
+        bond_price=measures["Price"],
+        sinking_fund=inputs.get("sinking_fund"),
+    )
+    assert solved["Yield to Maturity"] == pytest.approx(
+        inputs["yield_to_maturity"], abs=1e-10
+    )
+
+
+def test_amortizing_cash_flows():
+    """The schedules repay the par value; the annuity pays equal amounts."""
+    annuity = bond_model.get_amortizing_cash_flows(100, 0.06, 3, 2)
+    assert annuity["Cash Flow"].to_numpy() == pytest.approx(
+        np.full(6, 100 * 0.03 / (1 - 1.03**-6))
+    )
+    assert annuity["Principal"].sum() == pytest.approx(100)
+    assert annuity["Interest"].iloc[1] == pytest.approx(
+        0.03 * (100 - annuity["Principal"].iloc[0])
+    )
+
+    linear = bond_model.get_amortizing_cash_flows(100, 0.06, 2, 2, "linear")
+    assert linear["Principal"].tolist() == pytest.approx([25] * 4)
+    assert linear["Outstanding"].tolist() == pytest.approx([100, 75, 50, 25])
+
+    sinking = bond_model.get_amortizing_cash_flows(
+        100, 0.05, 5, 1, sinking_fund={3.1: 20, 4: 30}
+    )
+    assert sinking["Principal"].tolist() == pytest.approx([0, 0, 20, 30, 50])
+
+    bullet = bond_model.get_amortizing_cash_flows(100, 0.05, 2.5, 2, "bullet")
+    assert bullet["Cash Flow"].tolist() == pytest.approx(
+        bond_model.get_bond_cash_flows(100, 0.05, 2.5, 2).tolist()
+    )
+
+    with pytest.raises(ValueError):
+        bond_model.get_amortizing_cash_flows(100, 0.05, 5, 1, "balloon")
+    with pytest.raises(ValueError):
+        bond_model.get_amortizing_cash_flows(100, 0.05, 5, 1, sinking_fund={2: 120})
+    with pytest.raises(ValueError):
+        bond_model.get_amortizing_cash_flows(100, 0.05, 5, 1, sinking_fund={6: 10})
+
+
+def test_amortizing_bullet_matches_the_bond_measures():
+    """A bullet schedule gives the measures of the bond functions."""
+    measures = bond_model.get_amortizing_bond_measures(
+        100, 0.05, 7.3, 2, 0.06, amortization="bullet"
+    )
+
+    assert measures["Price"] == pytest.approx(
+        bond_model.get_bond_price(100, 0.05, 7.3, 0.06, 2), abs=1e-12
+    )
+    assert measures["Macaulay's Duration"] == pytest.approx(
+        bond_model.get_macaulays_duration(100, 0.05, 7.3, 0.06, 2), abs=1e-12
+    )
+    assert measures["DV01"] == pytest.approx(
+        bond_model.get_dv01(100, 0.05, 7.3, 0.06, 2), abs=1e-12
+    )
+    # The analytic convexity against the 1 basis point difference of get_convexity.
+    assert measures["Convexity"] == pytest.approx(
+        bond_model.get_convexity(100, 0.05, 7.3, 0.06, 2), rel=1e-6
+    )
+    assert measures["Weighted Average Life"] == pytest.approx(7.3)
+
+    with pytest.raises(ValueError):
+        bond_model.get_amortizing_bond_measures(100, 0.05, 7, 2)
+
+
+def test_amortizing_bond_weighted_average_life(recorder):
+    """An annuity returns its principal well before maturity."""
+    measures = bond_model.get_amortizing_bond_measures(100, 0.06, 10, 2, 0.07)
+    principal = bond_model.get_amortizing_cash_flows(100, 0.06, 10, 2)["Principal"]
+
+    assert measures["Weighted Average Life"] == pytest.approx(
+        (principal.index * principal).sum() / 100
+    )
+    assert measures["Weighted Average Life"] < 10
+    recorder.capture(measures.round(8))
+
+
+@pytest.mark.parametrize("frequency", [0, -1])
+def test_bond_functions_refuse_a_frequency_below_one(frequency):
+    for function, arguments in [
+        (bond_model.get_accrued_interest, (100, 0.05, 2.75, frequency)),
+        (bond_model.get_convexity, (100, 0.05, 5, 0.05, frequency)),
+        (bond_model.get_effective_duration, (100, 0.05, 5, 0.05, frequency)),
+        (bond_model.get_yield_to_call, (100, 0.05, 5, 3, 100, 98, frequency)),
+    ]:
+        with pytest.raises(ValueError, match="frequency must be at least 1"):
+            function(*arguments)

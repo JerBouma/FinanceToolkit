@@ -6,6 +6,8 @@ import numpy as np
 import pandas as pd
 from scipy.optimize import brentq
 
+from financetoolkit.utilities.error_model import check_option
+
 # Peak-to-trough dates of the S&P 500 in well-known market stress episodes, used as the
 # default historical scenarios of a stress test.
 HISTORICAL_SCENARIOS: dict[str, tuple[str, str]] = {
@@ -42,9 +44,11 @@ def get_brinson_fachler_attribution(
     benchmark_returns: pd.Series,
 ) -> pd.DataFrame:
     """
-    The Brinson-Fachler attribution of a portfolio's excess return over its benchmark into
-    allocation, selection and interaction effects per segment (Brinson and Fachler, 1985;
-    Brinson, Hood and Beebower, 1986):
+    The Brinson-Fachler attribution of a portfolio's excess return over its benchmark: how
+    much the allocation and the selection per segment added.
+
+    The excess return is split into allocation, selection and interaction effects per
+    segment (Brinson and Fachler, 1985; Brinson, Hood and Beebower, 1986):
 
     - Allocation = (w_p - w_b) x (r_b - R_b): the reward for over- or underweighting
       segments that beat or lag the benchmark as a whole.
@@ -143,11 +147,12 @@ def get_linking_coefficients(
 ) -> pd.Series:
     """
     The coefficient per sub-period that turns the arithmetic attribution effects of that
-    sub-period into its share of the excess return over the whole range. Returns compound
-    over time while excess returns of sub-periods do not add up to the excess return over
-    the whole range, so each sub-period's effects are scaled such that the linked effects
-    sum to R - B, with R and B the portfolio and benchmark returns compounded over all
-    T sub-periods:
+    sub-period into its share of the excess return over the whole range.
+
+    Returns compound over time while excess returns of sub-periods do not add up to the
+    excess return over the whole range, so each sub-period's effects are scaled such that
+    the linked effects sum to R - B, with R and B the portfolio and benchmark returns
+    compounded over all T sub-periods:
 
     - Cariño (1999): coefficient_t = k_t / K, with
       k_t = [ln(1 + R_t) - ln(1 + B_t)] / (R_t - B_t) and
@@ -167,13 +172,13 @@ def get_linking_coefficients(
     Args:
         portfolio_returns (pd.Series): The portfolio return per sub-period (R_t).
         benchmark_returns (pd.Series): The benchmark return per sub-period (B_t).
-        linking (str, optional): "carino" or "menchero". Defaults to "carino".
+        linking (str, optional): The linking. Options are: "carino" (Cariño), "menchero" (Menchero).
+            Defaults to "carino".
 
     Returns:
         pd.Series: The linking coefficient per sub-period.
     """
-    if linking not in LINKING_METHODS:
-        raise ValueError(f"linking must be one of {', '.join(LINKING_METHODS)}.")
+    check_option("linking", linking, LINKING_METHODS)
 
     returns = portfolio_returns.astype(float)
     benchmark = benchmark_returns.reindex(returns.index).astype(float)
@@ -229,7 +234,9 @@ def get_linked_brinson_fachler_attribution(
 ) -> pd.DataFrame:
     """
     The Brinson-Fachler attribution over several sub-periods, linked into effects over the
-    whole range. Every sub-period gets its own attribution with the weights at its start
+    whole range.
+
+    Every sub-period gets its own attribution with the weights at its start
     (get_brinson_fachler_attribution), and its effects are scaled with the linking
     coefficients of get_linking_coefficients and summed:
 
@@ -247,7 +254,8 @@ def get_linked_brinson_fachler_attribution(
         portfolio_returns (pd.DataFrame): The portfolio's return per sub-period and segment.
         benchmark_weights (pd.DataFrame): The benchmark weight per sub-period and segment.
         benchmark_returns (pd.DataFrame): The benchmark's return per sub-period and segment.
-        linking (str, optional): "carino" or "menchero". Defaults to "carino".
+        linking (str, optional): The linking. Options are: "carino" (Cariño), "menchero" (Menchero).
+            Defaults to "carino".
 
     Returns:
         pd.DataFrame: Per segment and in total the weights at the start of the first
@@ -341,8 +349,9 @@ MONEY_WEIGHTED_RETURN_GRID = (
 
 def get_money_weighted_return(cash_flows: pd.Series) -> float:
     """
-    The money-weighted (internal) rate of return of dated cash flows, as an annual rate:
-    the rate r for which the cash flows discounted with (1 + r)^(days / 365) sum to zero.
+    The money-weighted (internal) rate of return of dated cash flows, as an annual rate: the
+    rate r for which the cash flows discounted with (1 + r)^(days / 365) sum to zero.
+
     Unlike the time-weighted return, it rewards investing more before good periods, so it
     measures the investor's own result rather than that of the assets.
 
@@ -457,13 +466,15 @@ def get_scenario_returns(
 
 def get_stress_test(scenario_returns: pd.DataFrame, weights: pd.Series) -> pd.DataFrame:
     """
-    The return of a buy-and-hold portfolio in each scenario. Assets without data for a
-    scenario (not yet listed) are left out and the remaining weights scaled up to a net
-    weight of one; the Coverage column shows the share of the portfolio's gross exposure
-    that had data, Σ |w_i| over the assets with data / Σ |w_i|, between 0 and 1. When the
-    assets with data have a net weight of zero or less (only short positions, or a
-    hedge without the positions it hedges), they cannot be scaled to the portfolio and
-    the Portfolio Return is empty.
+    The return of a buy-and-hold portfolio in each scenario, such as a past crisis: how much
+    the portfolio would have gained or lost had it been held through it.
+
+    Assets without data for a scenario (not yet listed) are left out and the remaining
+    weights scaled up to a net weight of one; the Coverage column shows the share of the
+    portfolio's gross exposure that had data, Σ |w_i| over the assets with data / Σ |w_i|,
+    between 0 and 1. When the assets with data have a net weight of zero or less (only short
+    positions, or a hedge without the positions it hedges), they cannot be scaled to the
+    portfolio and the Portfolio Return is empty.
 
     Args:
         scenario_returns (pd.DataFrame): The return per scenario (rows) and asset (columns).
@@ -487,9 +498,10 @@ def get_look_through_exposure(
     weights: pd.Series, exposures: dict[str, pd.Series]
 ) -> pd.Series:
     """
-    The exposure of a portfolio after looking through its funds: every asset's weight is
-    spread over its own exposures (a fund's sector, country or holding weights, or the
-    single sector or country of a stock) and summed.
+    The exposure of a portfolio after looking through its funds.
+
+    Every asset's weight is spread over its own exposures (a fund's sector, country or
+    holding weights, or the single sector or country of a stock) and summed.
 
     Args:
         weights (pd.Series): The weight per asset.
@@ -520,3 +532,96 @@ def get_look_through_exposure(
         total = total.add(exposure * weight, fill_value=0)
 
     return total.sort_values(ascending=False).rename("Exposure")
+
+
+def get_period_contributions(
+    contributions: pd.DataFrame, frequency: str
+) -> pd.DataFrame:
+    """
+    The contributions of the assets to the portfolio's return over longer periods, from
+    their contributions per (shorter) period, c_i,t = w_i,t-1 r_i,t.
+
+    Within each longer period the contributions are carried by the growth of the portfolio
+    since the period began, C_i = Σ_t c_i,t Π_(s<t) (1 + R_s) with R_t = Σ_i c_i,t, so they
+    are the contributions in money divided by the portfolio's value at the start of the
+    period and add up to its compounded return, Π (1 + R_t) - 1.
+
+    See Bacon, C. R. (2008), "Practical Portfolio Performance Measurement and Attribution",
+    2nd edition, Wiley, chapter 5.
+
+    Shares similar logic:
+    - PerformanceAnalytics (R), to.period.contributions: https://github.com/cran/PerformanceAnalytics/blob/2.1.0/R/to.period.contributions.R#L45
+
+    Args:
+        contributions (pd.DataFrame): The contribution per asset (columns) per period, with
+            a PeriodIndex.
+        frequency (str): The frequency of the longer periods, e.g. "M" or "Q-DEC".
+
+    Returns:
+        pd.DataFrame: The contribution per asset and the Portfolio return per longer period.
+    """
+    portfolio = contributions.sum(axis=1)
+    periods = contributions.index.asfreq(frequency)
+    # The portfolio's growth from the start of its longer period up to each day before.
+    growth = (1 + portfolio).groupby(periods).cumprod()
+    carried = growth.groupby(periods).shift(1).fillna(1)
+    table = contributions.mul(carried, axis=0).groupby(periods).sum()
+    table["Portfolio"] = table.sum(axis=1)
+    return table
+
+
+def get_factor_attribution(
+    returns: pd.DataFrame,
+    weights: pd.DataFrame,
+    loadings: pd.DataFrame,
+    factor_returns: pd.DataFrame,
+) -> pd.DataFrame:
+    """
+    The attribution of a portfolio's return per period to factors.
+
+    How much of it the factor exposures earned and how much the assets earned on their own,
+    the risk model attribution of Grinold and Kahn (2000). The portfolio's exposure to
+    factor f is the weighted sum of the loadings of its assets, x_f,t = Σ_i w_i,t β_i,f, and
+
+    - Contribution_f,t = x_f,t F_f,t, the return earned through factor f
+    - Common Return_t = Σ_f Contribution_f,t
+    - Specific Return_t = R_t - Common Return_t, with R_t = Σ_i w_i,t r_i,t
+    - Tilt Return_t = Σ_f mean(x_f) F_f,t, the return of the average exposure
+    - Timing Return_t = Common Return_t - Tilt Return_t, the return of moving the
+      exposures around their average
+
+    See Grinold, R. C. and Kahn, R. N. (2000), "Active Portfolio Management", 2nd edition,
+    McGraw-Hill, chapter 17.
+
+    Referenced against:
+    - empyrical, perf_attrib: https://github.com/stefan-jansen/empyrical-reloaded/blob/0.7.3/src/empyrical/perf_attrib.py#L5
+
+    Shares similar logic:
+    - empyrical, compute_exposures: https://github.com/stefan-jansen/empyrical-reloaded/blob/0.7.3/src/empyrical/perf_attrib.py#L139
+
+    Args:
+        returns (pd.DataFrame): The returns per period, one column per asset.
+        weights (pd.DataFrame): The weight of every asset at the start of every period.
+        loadings (pd.DataFrame): The loading of every asset (rows) on every factor
+            (columns).
+        factor_returns (pd.DataFrame): The factor returns per period.
+
+    Returns:
+        pd.DataFrame: Per period the contribution of every factor and the Common,
+        Specific, Total, Tilt and Timing Return.
+    """
+    weights = weights.reindex(index=returns.index, columns=returns.columns).fillna(0)
+    factor_returns = factor_returns.reindex(returns.index)
+    exposures = weights @ loadings.reindex(
+        index=returns.columns, columns=factor_returns.columns
+    ).fillna(0)
+    table = exposures * factor_returns
+    total = (weights * returns.fillna(0)).sum(axis=1)
+    common = table.sum(axis=1)
+    tilt = factor_returns @ exposures.mean()
+    table["Common Return"] = common
+    table["Specific Return"] = total - common
+    table["Total Return"] = total
+    table["Tilt Return"] = tilt
+    table["Timing Return"] = common - tilt
+    return table

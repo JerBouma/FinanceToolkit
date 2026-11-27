@@ -91,6 +91,7 @@ def calendars():
     ("module", "method", "kwargs"),
     [
         ("risk", "get_drawdown_table", {}),
+        ("risk", "get_conditional_expected_drawdown", {}),
         ("risk", "get_maximum_drawdown_duration", {}),
         ("risk", "get_ulcer_index", {}),
         ("risk", "get_value_at_risk", {}),
@@ -100,6 +101,9 @@ def calendars():
         ("performance", "get_sharpe_ratio", {}),
         ("performance", "get_sortino_ratio", {}),
         ("performance", "get_sterling_ratio", {}),
+        ("performance", "get_serenity_index", {}),
+        ("performance", "get_risk_measure_ratio", {"risk_measure": "cdar"}),
+        ("performance", "get_trailing_returns", {}),
     ],
 )
 def test_a_tickers_own_measures_do_not_depend_on_the_benchmarks_days(
@@ -126,6 +130,9 @@ def test_a_tickers_own_measures_do_not_depend_on_the_benchmarks_days(
         "get_tracking_error",
         "get_information_ratio",
         "get_upside_capture_ratio",
+        "get_r_squared",
+        "get_beta_fragility",
+        "get_probabilistic_momentum",
     ],
 )
 def test_measures_against_the_benchmark_use_the_days_both_traded(calendars, method):
@@ -133,3 +140,11 @@ def test_measures_against_the_benchmark_use_the_days_both_traded(calendars, meth
     shared = getattr(calendars["shared"].performance, method)()
 
     pd.testing.assert_series_equal(mixed["X"], shared["X"])
+
+
+def test_the_drawdown_statistics_do_not_depend_on_the_benchmarks_days(calendars):
+    # One row per ticker: the coverage and the open drawdown count the ticker's own days.
+    pd.testing.assert_frame_equal(
+        calendars["mixed"].risk.get_drawdown_statistics().loc[["X"]],
+        calendars["own"].risk.get_drawdown_statistics().loc[["X"]],
+    )

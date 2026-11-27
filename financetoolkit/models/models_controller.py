@@ -7,7 +7,7 @@ from functools import cached_property
 
 import pandas as pd
 
-from financetoolkit.helpers import LazyDict, trailing_sum
+from financetoolkit.helpers import LazyDict, check_trailing, trailing_sum
 from financetoolkit.models import helpers
 from financetoolkit.models.constraints.constraints_controller import ConstraintsModels
 from financetoolkit.models.distress.distress_controller import DistressModels
@@ -15,6 +15,7 @@ from financetoolkit.models.profitability.profitability_controller import (
     ProfitabilityModels,
 )
 from financetoolkit.models.quality.quality_controller import QualityModels
+from financetoolkit.models.valuation import eva_model, wacc_model
 from financetoolkit.models.valuation.valuation_controller import ValuationModels
 from financetoolkit.ratios import profitability_model, valuation_model
 from financetoolkit.utilities import factor_model
@@ -27,6 +28,7 @@ from financetoolkit.utilities.statistics_model import apply_rounding, finalize_d
 logger = get_logger()
 
 
+@check_trailing
 @filter_shown_columns
 @track_sources
 class ModelsBase:
@@ -121,7 +123,7 @@ class ModelsBase:
                         end_date="2025-12-31",
         quarterly=True, start_date='2022-12-31')
 
-        dupont_analysis = toolkit.models.get_extended_dupont_analysis()
+        dupont_analysis = toolkit.models.get_dupont_analysis(method="extended")
 
         dupont_analysis.loc['AMZN']
         ```
@@ -254,6 +256,45 @@ class ModelsBase:
         operating_income = self._income_statement.loc[:, "Operating Income", :]
 
         return trailing_sum(operating_income, trailing)
+
+    def _net_operating_profit_after_taxes(
+        self, trailing: int | None = None
+    ) -> pd.DataFrame:
+        """
+        The Net Operating Profit After Taxes (NOPAT) the models use: EBIT (the reported
+        Operating Income) times one minus the effective tax rate, the rate kept within 0 and
+        1 and 0 without a pre-tax profit, as in the Economic Value Added and the WACC.
+
+        Args:
+            trailing (int | None, optional): The number of periods to sum. Defaults to None,
+                which is a single period.
+
+        Returns:
+            pd.DataFrame: The NOPAT per ticker (rows) and period (columns).
+        """
+        effective_tax_rate = wacc_model.get_corporate_tax_rate(
+            income_tax_expense=trailing_sum(
+                self._income_statement.loc[:, "Income Tax Expense", :], trailing
+            ),
+            income_before_tax=trailing_sum(
+                self._income_statement.loc[:, "Income Before Tax", :], trailing
+            ),
+        )
+        return eva_model.get_net_operating_profit_after_taxes(
+            ebit=self._earnings_before_interest_and_taxes(trailing),
+            effective_tax_rate=effective_tax_rate,
+        )
+
+    def _annual_trailing(self, trailing: int | None) -> tuple[int | None, int]:
+        """
+        The trailing window of a measure that is annual by nature and the number of periods
+        in a year: a trailing year (4) on quarterly data unless `trailing` says otherwise, so
+        that comparisons with a year earlier are year over year.
+        """
+        periods_per_year = 4 if self._quarterly else 1
+        if trailing is None and self._quarterly:
+            trailing = 4
+        return trailing, periods_per_year
 
     def _return_on_equity_and_payout(
         self, trailing: int | None
@@ -411,7 +452,9 @@ class ModelsBase:
         """
         Combine score components, drop the periods without a comparison and round. When the
         statements hold no more periods than the comparison needs, the result is empty, and
-        a warning says how many periods `start_date` must cover.
+        a warning says how many periods `start_date` must cover. With a name, a result that
+        is empty because none of its windows is complete (a window longer than the history)
+        is also reported.
         """
         # Ticker and metric (rows) by period (columns), the metrics in the order of `results`.
         order = {metric: position for position, metric in enumerate(results)}
@@ -423,16 +466,27 @@ class ModelsBase:
             )
             .reindex(self._tickers, level=0)
         )
-        if name and len(combined.columns) <= first_columns:
+        unit = "quarters" if self._quarterly else "years"
+        available = len(combined.columns)
+        if name and available <= first_columns:
             logger.warning(
                 "%s needs at least %s %s of statements and %s were available, so it could "
                 "not be calculated. Set an earlier start_date to obtain it.",
                 name,
                 first_columns + 1,
-                "quarters" if self._quarterly else "years",
-                len(combined.columns),
+                unit,
+                available,
             )
         combined = combined[combined.columns[first_columns:]].dropna(axis=1, how="all")
+        if name and available > first_columns and combined.empty:
+            logger.warning(
+                "%s could not be calculated from the %s %s of statements available, as none "
+                "of its windows is complete. Set an earlier start_date (or a smaller window) "
+                "to obtain it.",
+                name,
+                available,
+                unit,
+            )
         combined = apply_rounding(
             combined, rounding if rounding is not None else self._rounding
         )
@@ -458,6 +512,7 @@ FACTOR_COLLECTIONS = {
         "get_fulmer_h_score",
         "get_taffler_z_score",
         "get_campbell_hilscher_szilagyi_score",
+        "get_shumway_score",
         "get_dechow_f_score",
         "get_montier_c_score",
         "get_mohanram_g_score",
@@ -474,6 +529,7 @@ FACTOR_COLLECTIONS["all"] = FACTOR_COLLECTIONS["scores"] + [
 ]
 
 
+@check_trailing
 @filter_shown_columns
 @track_sources
 class Models(
@@ -485,9 +541,10 @@ class Models(
     ModelsBase,
 ):
     """
-    The Models module is meant to execute well-known models such
-    as DUPONT and the Discounted Cash Flow (DCF) model. These models
-    are also directly related to the data retrieved from the Toolkit module.
+    The Models module is meant to execute well-known models such as DUPONT and the
+    Discounted Cash Flow (DCF) model.
+
+    These models are also directly related to the data retrieved from the Toolkit module.
 
     """
 
@@ -501,28 +558,46 @@ class Models(
         periods_apart: int = 1,
         detail: str | None = None,
         column: str | None = None,
+        group: str | dict | None = None,
+        demeaned: bool = False,
+        binning: str = "quantile",
         rounding: int | None = None,
         show_columns: str | list[str] | None = None,
         **kwargs,
     ) -> pd.DataFrame:
         """
-        Factor analysis (predictive power) of the models: whether the tickers that score high
-        on a model, such as the Piotroski F-Score or the Altman Z-Score, go on to return more
-        than those that score low. Per period, the information coefficient (IC) is the
-        Spearman rank correlation between the model score of the tickers at the end of the
-        period and their return over the following horizon: 1 means the score ranks the later
-        returns perfectly, -1 in reverse and 0 that it says nothing about them. The IC measures
-        skill in Grinold and Kahn's fundamental law of active management,
-        IR ≈ IC × √breadth: a small but consistent IC across many tickers and periods gives a
-        high information ratio.
+        Factor analysis (predictive power) of the models.
 
-        The summary has a row per model and horizon with the mean IC, its standard deviation,
-        the IC information ratio (mean divided by standard deviation), the t-statistic of the
-        mean with its p-value, the share of periods with a positive IC, the number of periods,
-        the top minus bottom spread (the mean forward return of the highest quantile minus
-        that of the lowest), the mean turnover of the top and bottom quantiles and the mean
-        rank autocorrelation of the score from one period to the next. With detail, it returns
-        one of those parts per period (or per quantile) for a single model.
+        Whether the tickers that score high on a model, such as the Piotroski F-Score or the
+        Altman Z-Score, go on to return more than those that score low. Per period, the
+        information coefficient (IC) is the Spearman rank correlation between the model score of
+        the tickers at the end of the period and their return over the following horizon: 1
+        means the score ranks the later returns perfectly, -1 in reverse and 0 that it says
+        nothing about them. The IC measures skill in Grinold and Kahn's fundamental law of
+        active management, IR ≈ IC × √breadth: a small but consistent IC across many tickers and
+        periods gives a high information ratio.
+
+        The summary has a row per model and horizon with the mean IC, its standard deviation, the IC
+        information ratio (mean divided by standard deviation), the t-statistic of the mean with its
+        p-value, the skewness and excess kurtosis of the IC, the share of periods with a positive
+        IC, the number of periods, the top minus bottom spread (the mean forward return of the
+        highest quantile minus that of the lowest), the annualized alpha and the beta of the
+        factor-weighted long-short portfolio against the equally weighted tickers, the mean turnover
+        of the top and bottom quantiles and the mean rank autocorrelation of the score from one
+        period to the next. With detail, it returns one part of the analysis per period, quantile or
+        group for a single model.
+
+        The formula is as follows:
+
+        - IC(t) = Spearman rank correlation of f(i, t) and R(i, t, t + h) over the tickers i,
+          with f the factor and R the forward return over the horizon h
+        - Demeaned return: R(i, t) − mean R(j, t) over the tickers j (of the group of i)
+        - Portfolio weight: w(i, t) = (f(i, t) − mean f(t)) / Σ_j |f(j, t) − mean f(t)|
+        - Portfolio return: R_F(t) = Σ_i w(i, t) × R(i, t, t + h)
+        - Alpha and beta: R_F(t) = α + β × R_U(t) + ε(t), with R_U(t) = mean R(i, t, t + h)
+        - Annualized Alpha = (1 + α) ^ (periods per year / h) − 1
+        - Per period: (1 + mean return) ^ (1 / h) − 1 and standard error / √h
+        - Standard error of a quantile = standard deviation over the periods / √periods
 
         The models are calculated per statement period and each period's score applies from
         the end of the fiscal period, or with point_in_time from the day it was filed, never
@@ -531,17 +606,27 @@ class Models(
         Each ticker keeps its own history: a ticker without a score or a return in a period is
         left out of that period only.
 
+        Shares similar logic:
+        - alphalens, factor_information_coefficient: https://github.com/stefan-jansen/alphalens-reloaded/blob/v0.4.4/src/alphalens/performance.py#L28
+        - alphalens, mean_return_by_quantile: https://github.com/stefan-jansen/alphalens-reloaded/blob/v0.4.4/src/alphalens/performance.py#L461
+        - alphalens, factor_weights: https://github.com/stefan-jansen/alphalens-reloaded/blob/v0.4.4/src/alphalens/performance.py#L131
+        - alphalens, factor_returns: https://github.com/stefan-jansen/alphalens-reloaded/blob/v0.4.4/src/alphalens/performance.py#L210
+        - alphalens, quantile_turnover: https://github.com/stefan-jansen/alphalens-reloaded/blob/v0.4.4/src/alphalens/performance.py#L575
+        - alphalens, factor_rank_autocorrelation: https://github.com/stefan-jansen/alphalens-reloaded/blob/v0.4.4/src/alphalens/performance.py#L620
+        - alphalens, average_cumulative_return_by_quantile (event returns): https://github.com/stefan-jansen/alphalens-reloaded/blob/v0.4.4/src/alphalens/performance.py#L758
+
         Args:
             metrics (str | list[str], optional): A model method name with one value per
                 ticker and period, e.g. "get_piotroski_score", a list of them, or a
                 collection: "scores" or "all". Defaults to "scores", the Piotroski, Altman Z,
                 Beneish M, Ohlson O, Zmijewski, Springate, Grover, Fulmer H, Taffler z,
-                Dechow F, Montier C and Mohanram G scores. "all" adds the accruals ratio, Tobin's Q, the
-                sustainable and internal growth rates, the magic formula and the Merton
-                distance to default. The valuation models and the analyses with several
-                components and no score are not in the collections.
-            period (str, optional): The frequency at which the models are evaluated: daily,
-                weekly, monthly, quarterly or yearly. Defaults to "monthly".
+                Campbell-Hilscher-Szilagyi, Shumway, Dechow F, Montier C and Mohanram G
+                scores. "all" adds the accruals ratio, Tobin's Q, the sustainable and internal
+                growth rates, the magic formula and the Merton distance to default. The
+                valuation models and the analyses with several components and no score are not
+                in the collections.
+            period (str, optional): The frequency at which the models are evaluated. Options are: "daily", "weekly",
+                "monthly", "quarterly", "yearly". Defaults to "monthly".
             horizons (list[int] | int | None, optional): The number of periods the forward
                 returns cover. Defaults to None, which uses about a period, a quarter and a
                 year ahead (1, 3 and 12 months for monthly).
@@ -549,14 +634,37 @@ class Models(
                 period. Defaults to 5.
             periods_apart (int, optional): The number of periods between the dates the
                 quantile turnover and the rank autocorrelation compare. Defaults to 1.
-            detail (str | None, optional): Returns one part of the analysis of a single model
-                instead of the summary: "information_coefficient" (per period and horizon),
-                "quantile_returns" (the mean forward return per quantile and horizon),
-                "quantile_turnover" (per period and quantile) or "rank_autocorrelation" (per
-                period). Defaults to None.
+            detail (str | None, optional): Returns one part of the analysis of a single model instead of the
+                summary. Options are: "information_coefficient" (per period and horizon),
+                "information_coefficient_by_month" (the mean IC per calendar month),
+                "information_coefficient_by_year" (the mean IC per calendar year), "group_information_coefficient"
+                (the IC statistics within each group, needs group), "quantile_returns" (the mean forward return per
+                quantile and horizon), "quantile_returns_by_date" (per period), "quantile_return_statistics" (the
+                mean, its standard error and both per single period), "quantile_statistics" (the range, mean and
+                count of the factor values in each quantile), "quantile_turnover" (per period and quantile),
+                "rank_autocorrelation" (per period), "factor_weights" (the weights of the factor-weighted long-short
+                portfolio per period and ticker), "factor_returns" (its return per period and horizon),
+                "cumulative_returns" (the growth of 1 in it and in each quantile), "event_returns" (the mean price
+                path of each quantile from the longest horizon before to the longest horizon after the periods it is
+                formed). Defaults to None.
             column (str | None, optional): The component to use of a model, e.g.
                 "Working Capital to Total Assets" of the Altman Z-Score. Defaults to None,
                 which uses the model's score (its last row).
+            group (str | dict | None, optional): The group of each ticker for the group options:
+                "sector" or "industry" (or another company profile item) from the company profiles
+                of Financial Modeling Prep, or a dictionary of tickers and their groups. Defaults to
+                None.
+            demeaned (bool, optional): Whether to compare the forward returns with the mean of
+                the tickers in each period, or with group with the mean of the ticker's group:
+                a group-neutral analysis, in which the IC is group-adjusted and the
+                factor-weighted portfolio neutral within each group. Without group the IC
+                stays the same, as subtracting one mean from every ticker keeps their ranks.
+                Defaults to False.
+            binning (str, optional): How the tickers are sorted into quantiles per period. Options are: "quantile"
+                (equally sized), "equal_width" (bins of equal width between the lowest and highest value),
+                "zero_aware" (half of the quantiles for the negative and half for the zero and positive values, for
+                a signal centred on zero; needs an even number of quantiles), "group" (equally sized within each
+                group, needs group). Defaults to "quantile".
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
             **kwargs: Parameters passed to the models that take them, e.g. trailing=4 or
@@ -582,8 +690,27 @@ class Models(
             - A horizon longer than one period makes consecutive returns overlap, which
               inflates the t-statistic; judge those horizons by their mean IC and IC
               information ratio.
-            - Based on alphalens (Quantopian) and on Grinold and Kahn (2000), Active Portfolio
-              Management.
+            - The groups from the company profiles are today's sector or industry, applied
+              to every period.
+            - The factor-weighted portfolio is long-short: its weights sum to zero and their
+              absolute values to one. A horizon longer than one period makes its returns
+              overlap too, so its alpha and beta are averages rather than tests.
+            - The cumulative returns split the capital over as many portfolios as the horizon
+              has periods, started on consecutive periods and each rebalanced once per
+              horizon; a value shows when its holding period ends, so the series starts at 1.
+            - The IC is that of Grinold, R.C. and Kahn, R.N. (2000). "Active Portfolio
+              Management." 2nd ed. McGraw-Hill; the factor-weighted portfolio, the demeaned
+              and group-neutral returns that of Qian, E., Hua, R. and Sorensen, E. (2007).
+              "Quantitative Equity Portfolio Management." Chapman & Hall/CRC; the alpha that
+              of Jensen, M.C. (1968). "The Performance of Mutual Funds in the Period
+              1945-1964." Journal of Finance 23(2); the event returns follow MacKinlay, A.C.
+              (1997). "Event Studies in Economics and Finance." Journal of Economic Literature
+              35(1).
+            - Unlike alphalens, whose top minus bottom spread is half of the one here (a gross
+              exposure of one rather than two), each horizon here uses its own returns where
+              alphalens drops a period and ticker without every horizon's return, and the event
+              returns are the price paths rebased to the period itself where alphalens averages
+              the single-period returns at each offset.
 
         Also known as: predictive power, information coefficient, factor testing, alpha signal
 
@@ -606,10 +733,11 @@ class Models(
         ```
 
         Which returns:
-        |                                      |   Mean IC |   IC Standard Deviation |   IC Information Ratio |   t-Statistic |   p-Value |   Positive Share |   Observations |   Top Minus Bottom |   Quantile Turnover |   Rank Autocorrelation |
-        |:-------------------------------------|----------:|------------------------:|-----------------------:|--------------:|----------:|-----------------:|---------------:|-------------------:|--------------------:|-----------------------:|
-        | ('get_piotroski_score', '12 Months') |   -0.1352 |                  0.3684 |                -0.3669 |       -3.6691 |    0.0004 |             0.31 |            100 |            -0.1482 |              0.0787 |                 0.93   |
-        | ('get_altman_z_score', '12 Months')  |    0.118  |                  0.3915 |                 0.3015 |        3.0149 |    0.0033 |             0.66 |            100 |             0.1563 |              0.0258 |                 0.9939 |
+
+        |                                      |   Mean IC |   IC Standard Deviation |   IC Information Ratio |   t-Statistic |   P-Value |   IC Skewness |   IC Kurtosis |   Positive Share |   Observations |   Top Minus Bottom |   Annualized Alpha |    Beta |   Quantile Turnover |   Rank Autocorrelation |
+        |:-------------------------------------|----------:|------------------------:|-----------------------:|--------------:|----------:|--------------:|--------------:|-----------------:|---------------:|-------------------:|-------------------:|--------:|--------------------:|-----------------------:|
+        | ('get_piotroski_score', '12 Months') |   -0.1353 |                  0.3685 |                -0.3672 |       -3.6724 |    0.0004 |        0.3723 |       -0.1763 |             0.31 |            100 |            -0.1482 |             0.0279 | -0.3828 |              0.0787 |                 0.93   |
+        | ('get_altman_z_score', '12 Months')  |    0.1179 |                  0.3915 |                 0.3011 |        3.0112 |    0.0033 |       -0.657  |       -0.2792 |             0.66 |            100 |             0.1564 |            -0.1619 |  1.2913 |              0.0258 |                 0.9939 |
         """
         factors = factor_model.get_daily_factors(
             self,
@@ -631,6 +759,9 @@ class Models(
             self._start_date,
             self._end_date,
             returns=self._historical_data["daily"].get("Return"),
+            binning=binning,
+            demeaned=demeaned,
+            groups=factor_model.get_groups(group, self._profile_source, self._tickers),
         )
 
         return apply_rounding(

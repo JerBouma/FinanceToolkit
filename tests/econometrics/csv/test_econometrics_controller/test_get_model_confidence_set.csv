@@ -1,0 +1,7 @@
+Ticker,Model,Average Loss,MCS P-Value,In Confidence Set,Rank
+AAPL,garch,-6.5697,1.0,True,1
+AAPL,ewma,-6.5643,0.659,True,2
+AAPL,rolling,-6.5075,0.169,True,3
+MSFT,ewma,-6.5723,1.0,True,1
+MSFT,rolling,-6.5703,0.904,True,2
+MSFT,garch,-6.563,0.773,True,3

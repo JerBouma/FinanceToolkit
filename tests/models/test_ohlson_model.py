@@ -23,15 +23,6 @@ def test_get_total_liabilities_to_total_assets_ratio(recorder):
     )
 
 
-def test_get_working_capital_to_total_assets_ratio(recorder):
-    recorder.capture(
-        ohlson_model.get_working_capital_to_total_assets_ratio(
-            working_capital=pd.Series([100, 110, 120, 130, 80]),
-            total_assets=pd.Series([500, 400, 300, 200, 100]),
-        )
-    )
-
-
 def test_get_current_liabilities_to_current_assets_ratio(recorder):
     recorder.capture(
         ohlson_model.get_current_liabilities_to_current_assets_ratio(
@@ -136,3 +127,24 @@ def test_log_of_total_assets_is_deflated_by_the_price_level_index():
     assert ohlson_model.get_log_of_total_assets(1e9, 600.0) == np.log(1e9 / 600)
     # Without an index, the total assets are not deflated.
     assert ohlson_model.get_log_of_total_assets(1e9) == np.log(1e9)
+
+
+def test_get_ohlson_o_score_keeps_a_missing_negative_equity_indicator_missing():
+    ones = pd.Series([1.0, 1.0, 1.0])
+    indicator = pd.Series([0.0, float("nan"), 1.0])
+
+    result = ohlson_model.get_ohlson_o_score(
+        log_of_total_assets=ones,
+        total_liabilities_to_total_assets_ratio=ones,
+        working_capital_to_total_assets_ratio=ones,
+        current_liabilities_to_current_assets_ratio=ones,
+        negative_equity_indicator=indicator,
+        net_income_to_total_assets_ratio=ones,
+        funds_from_operations_to_total_liabilities_ratio=ones,
+        negative_income_indicator=pd.Series([0.0, 0.0, 0.0]),
+        change_in_net_income_ratio=ones,
+    )
+
+    assert result.notna().tolist() == [True, False, True]
+    # The indicator of 1 lowers the score by its coefficient of 1.72.
+    assert round(result[0] - result[2], 2) == 1.72

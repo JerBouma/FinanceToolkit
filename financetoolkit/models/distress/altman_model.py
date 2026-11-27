@@ -4,6 +4,7 @@ __docformat__ = "google"
 
 import pandas as pd
 
+from financetoolkit.utilities.error_model import check_option
 from financetoolkit.utilities.statistics_model import drop_non_finite
 
 
@@ -12,9 +13,12 @@ def get_working_capital_to_total_assets_ratio(
     total_assets: float | pd.Series | pd.DataFrame,
 ) -> float | pd.Series | pd.DataFrame:
     """
-    The Working Capital to Total Assets Ratio is a financial metric used to measure a company's liquidity and
-    ability to meet short-term obligations. It represents the proportion of a company's total assets that are
-    financed by its working capital.
+    The Working Capital to Total Assets Ratio is a financial metric used to measure a
+    company's liquidity and ability to meet short-term obligations.
+
+    It represents the proportion of a company's total assets that are financed by its
+    working capital. It is the liquidity component of the Altman Z-Score, the Ohlson O-Score,
+    the Springate Score and the Grover Score.
 
     The formula is as follows:
 
@@ -40,8 +44,10 @@ def get_retained_earnings_to_total_assets_ratio(
     total_assets: float | pd.Series | pd.DataFrame,
 ) -> float | pd.Series | pd.DataFrame:
     """
-    The Retained Earnings to Total Assets Ratio is a financial metric used to measure a company's profitability
-    and the proportion of its assets that are financed by its retained earnings.
+    The Retained Earnings to Total Assets Ratio shows the proportion of its assets that are
+    financed by its retained earnings.
+
+    It is a component of the Altman Z-Score and the first component (V1) of the Fulmer H-Score.
 
     The formula is as follows:
 
@@ -93,8 +99,10 @@ def get_market_value_of_equity_to_book_value_of_total_liabilities_ratio(
     total_liabilities: float | pd.Series | pd.DataFrame,
 ) -> float | pd.Series | pd.DataFrame:
     """
-    The Market Value of Equity to Book Value of Total Liabilities Ratio is a financial metric used to measure a
-    company's solvency and the proportion of its liabilities that are covered by its equity.
+    The Market Value of Equity to Book Value of Total Liabilities Ratio shows how many times
+    a company's equity covers its liabilities.
+
+    It measures solvency.
 
     The formula is as follows:
 
@@ -122,6 +130,9 @@ def get_sales_to_total_assets_ratio(
     The Sales to Total Assets Ratio is a financial metric used to measure a company's efficiency and the
     proportion of its assets that are used to generate sales.
 
+    It is a component of the Altman Z-Score, the efficiency component of the Springate Score and the
+    second component (V2) of the Fulmer H-Score.
+
     The formula is as follows:
 
         - Sales to Total Assets Ratio = Sales / Total Assets
@@ -145,10 +156,12 @@ def get_book_value_of_equity_to_book_value_of_total_liabilities_ratio(
     total_liabilities: float | pd.Series | pd.DataFrame,
 ) -> float | pd.Series | pd.DataFrame:
     """
-    The Book Value of Equity to Book Value of Total Liabilities Ratio measures how much of a company's
-    liabilities its shareholders' equity on the balance sheet covers. It replaces the market value of equity
-    in the Z'-Score (private firms), the Z''-Score (non-manufacturers) and the Z''-EM score (emerging markets),
-    which do not rely on a share price.
+    The Book Value of Equity to Book Value of Total Liabilities Ratio measures how much of a
+    company's liabilities its shareholders' equity on the balance sheet covers.
+
+    It replaces the market value of equity in the Z'-Score (private firms), the Z''-Score
+    (non-manufacturers) and the Z''-EM score (emerging markets), which do not rely on a
+    share price.
 
     The formula is as follows:
 
@@ -197,11 +210,13 @@ def get_altman_z_score(
     ),
     equity_to_total_liabilities_ratio: float | pd.Series | pd.DataFrame,
     sales_to_total_assets_ratio: float | pd.Series | pd.DataFrame | None = None,
-    model: str = "original",
+    method: str = "original",
 ) -> float | pd.Series | pd.DataFrame:
     """
-    The Altman Z-Score is a financial metric used to measure a company's solvency and the likelihood that it will
-    go bankrupt. It is calculated using a combination of four or five weighted business ratios, with the
+    The Altman Z-Score is a financial metric used to measure a company's solvency and the
+    likelihood that it will go bankrupt.
+
+    It is calculated using a combination of four or five weighted business ratios, with the
     coefficients of one of Altman's four models.
 
     The formulas are as follows:
@@ -231,8 +246,8 @@ def get_altman_z_score(
         the others.
         sales_to_total_assets_ratio (float | pd.Series | pd.DataFrame | None, optional): The Sales to Total Assets
         Ratio, which the "original" and "private" models need. Defaults to None.
-        model (str, optional): The model: "original", "private", "non-manufacturing" or "emerging". Defaults to
-        "original".
+        method (str, optional): The variant of the Altman Z-Score. Options are: "original", "private",
+            "non-manufacturing" or "emerging". Defaults to "original".
 
     Returns:
         float | pd.Series | pd.DataFrame: The Altman Z-Score of the chosen model.
@@ -273,12 +288,9 @@ def get_altman_z_score(
     - Altman, Edward I. "An Emerging Market Credit Scoring System for Corporate Bonds." Emerging Markets
     Review, Vol. 6, No. 4, 2005, pp. 311-323.
     """
-    if model not in ALTMAN_COEFFICIENTS:
-        raise ValueError(
-            f"Invalid model {model!r}. Please choose from: {', '.join(ALTMAN_COEFFICIENTS)}."
-        )
+    check_option("method", method, ALTMAN_COEFFICIENTS)
 
-    x1, x2, x3, x4, x5, constant = ALTMAN_COEFFICIENTS[model]
+    x1, x2, x3, x4, x5, constant = ALTMAN_COEFFICIENTS[method]
 
     score = (
         constant
@@ -291,7 +303,7 @@ def get_altman_z_score(
     if x5:
         if sales_to_total_assets_ratio is None:
             raise ValueError(
-                f"The {model} Altman Z-Score needs the Sales to Total Assets Ratio."
+                f"The {method} Altman Z-Score needs the Sales to Total Assets Ratio."
             )
         score = score + x5 * sales_to_total_assets_ratio
 

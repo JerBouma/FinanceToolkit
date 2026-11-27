@@ -22,26 +22,33 @@ COUNTRY = "United States"
 
 def get_recession_indicator() -> pd.DataFrame:
     """
-    Builds the monthly US recession indicator from the NBER business cycle dates, the
-    way FRED builds USREC: 1 from the month after a peak through the trough month, and 0
-    otherwise. A recession without a trough yet runs through the current month, and the
-    first trough, whose peak predates the chronology, counts from the first month.
+    Builds the monthly US recession indicator from the NBER business cycle dates, the way FRED builds USREC: 1 from
+    the month after a peak through the trough month, and 0 otherwise.
+
+    A recession without a trough yet runs through the current month, and the first trough, whose peak predates the
+    chronology, counts from the first month.
 
     Returns:
         pd.DataFrame: A single "United States" column of 1 and 0, indexed by the first day
         of each month ("Date") as FRED dates it.
 
     Raises:
-        ValueError: When the response is not a list of peaks and troughs.
+        ValueError: When the response is not a non-empty list of peaks and troughs.
     """
     description = "NBER business cycle dates"
 
     def fetch() -> pd.DataFrame:
         cycles = get_request(URL, timeout=60).json()
 
-        if not isinstance(cycles, list) or not all(
-            isinstance(cycle, dict) and {"peak", "trough"}.issubset(cycle)
-            for cycle in cycles
+        # An empty list would read as a country never in recession, so it is refused
+        # (and so never cached) like any other answer without peaks and troughs.
+        if (
+            not isinstance(cycles, list)
+            or not cycles
+            or not all(
+                isinstance(cycle, dict) and {"peak", "trough"}.issubset(cycle)
+                for cycle in cycles
+            )
         ):
             raise ValueError(
                 f"The {description} are not a list of peaks and troughs, which means the NBER "

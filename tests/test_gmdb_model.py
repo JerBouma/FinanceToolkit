@@ -8,6 +8,7 @@ import requests
 
 from financetoolkit.cache.cache_controller import clear_active_cache
 from financetoolkit.economics.sources import gmdb_model
+from financetoolkit.utilities.error_model import InvalidArgumentError
 
 
 @pytest.fixture(autouse=True)
@@ -145,7 +146,8 @@ def test_economics_reads_the_database_lazily_with_the_new_options(monkeypatch):
     assert consolidated["Japan"].dropna().index[-1] == pd.Period("2025", "Y")
     # The database is downloaded once for all four methods.
     assert requested.count(gmdb_model.RELEASE_URL.format(version="2026_09")) == 1
-    assert economics.get_government_debt(level="state").empty
+    with pytest.raises(InvalidArgumentError, match="level must be one of"):
+        economics.get_government_debt(level="state")
 
 
 def test_projected_years_are_a_choice_per_method(monkeypatch):
@@ -213,3 +215,32 @@ def test_countries_carry_the_names_of_the_other_sources(monkeypatch):
         "Russia",
         "Swaziland",
     ]
+
+
+def test_an_unreachable_database_returns_no_data(monkeypatch, caplog):
+    def unreachable(url, **kwargs):
+        raise requests.exceptions.ConnectionError(f"no route to {url}")
+
+    monkeypatch.setattr(gmdb_model, "get_request", unreachable)
+
+    dataset = gmdb_model.collect_global_macro_database_dataset()
+
+    assert dataset.empty
+    assert "Could not reach the Global Macro Database" in caplog.text
+    # The variables built on it are empty as well, rather than a missing variable.
+    assert gmdb_model.get_series(dataset, "nGDP_USD").empty
+
+
+@pytest.mark.parametrize(
+    "content",
+    [b"", b"<!DOCTYPE html><html></html>", None],
+    ids=["empty", "html", "truncated"],
+)
+def test_an_unreadable_database_file_returns_no_data(monkeypatch, caplog, content):
+    # None stands for a download cut off halfway through the Stata file.
+    _serve(monkeypatch, _release()[:200] if content is None else content)
+
+    dataset = gmdb_model.collect_global_macro_database_dataset()
+
+    assert dataset.empty
+    assert "The Global Macro Database file could not be read" in caplog.text

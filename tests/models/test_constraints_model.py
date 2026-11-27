@@ -48,7 +48,7 @@ def test_get_dividend_payer_indicator():
 
 
 def test_get_log_of_total_assets_is_in_millions():
-    log_assets = constraints_model.get_log_of_total_assets(
+    log_assets = constraints_model.get_log_of_total_assets_in_millions(
         pd.Series([1_000_000.0, 100e9, 0.0])
     )
 

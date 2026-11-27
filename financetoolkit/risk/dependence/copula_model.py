@@ -9,6 +9,8 @@ import pandas as pd
 from scipy import optimize, stats
 from scipy.special import gammaln
 
+from financetoolkit.utilities.error_model import check_option
+
 MINIMUM_TAIL_OBSERVATIONS = 2
 MEDIAN_QUANTILE = 0.5
 MINIMUM_OBSERVATIONS_FOR_COPULA_FIT = 10
@@ -25,7 +27,8 @@ def get_tail_dependence_coefficient(
     dof: float = 4.0,
 ) -> pd.Series:
     """
-    Calculate the Upper and Lower Tail Dependence Coefficients between two series.
+    Calculate the Upper and Lower Tail Dependence Coefficients between two series: how likely
+    one series is in extreme distress given that the other one already is.
 
     Correlation (see e.g. `risk_controller.Risk.get_value_at_risk`'s use of the
     gaussian distribution) only captures the *average* co-movement between two
@@ -42,15 +45,15 @@ def get_tail_dependence_coefficient(
     management purposes, since it measures joint crash risk (both assets suffering
     extreme losses together) rather than joint boom risk.
 
-    Three ways of estimating the coefficient are supported via `method`:
+    Three ways of estimating the coefficient are supported:
 
-    - "empirical" (default): a nonparametric plug-in estimate, replacing the limit at
+    - The empirical estimate (the default): a nonparametric plug-in estimate, replacing the limit at
     `u -> 0` / `u -> 1` with a finite threshold quantile `q`:
     `lambda_U(q) = P(B > quantile(B, q) | A > quantile(A, q))`, and symmetrically
     for `lambda_L(1 - q)`. This makes no distributional assumption but is
     sensitive to the choice of `q` and needs enough observations in the tail to be
     reliable.
-    - "gaussian": the tail dependence implied by a bivariate gaussian copula with the
+    - The gaussian copula: the tail dependence implied by a bivariate gaussian copula with the
     same linear (Pearson) correlation as `series_a` and `series_b`. This is
     included mainly as a cautionary baseline: a gaussian copula has *zero*
     asymptotic tail dependence for any correlation below 1 (Embrechts, McNeil &
@@ -58,7 +61,7 @@ def get_tail_dependence_coefficient(
     observed correlation -- demonstrating why gaussian-based dependence models
     (e.g. the gaussian VaR in `var_model.get_var_gaussian`) can understate joint
     crash risk relative to the empirical estimate above.
-    - "student-t": the tail dependence implied by a bivariate Student-T copula with
+    - The Student-T copula: the tail dependence implied by a bivariate Student-T copula with
     `dof` degrees of freedom and the same linear correlation `rho` as `series_a`
     and `series_b`, which (unlike the gaussian copula) has nonzero, symmetric tail
     dependence given by the closed-form expression:
@@ -75,13 +78,17 @@ def get_tail_dependence_coefficient(
 
     Also known as: tail dependence, extremal dependence coefficient.
 
+    Shares similar logic:
+    - skfolio, StudentTCopula (Student-T): https://skfolio.org/generated/skfolio.distribution.StudentTCopula.html
+
     Args:
         series_a (pd.Series): The first series (e.g. returns of one asset).
         series_b (pd.Series): The second series (e.g. returns of another asset).
         q (float, optional): The threshold quantile used for the "empirical" method,
         in (0.5, 1). Defaults to 0.95 (the top/bottom 5% of each series).
-        method (str, optional): The estimation method, one of "empirical", "gaussian"
-        or "student-t". Defaults to "empirical".
+        method (str, optional): The estimation method. Options are: "empirical"
+        (nonparametric plug-in estimate), "gaussian" (gaussian copula), "student-t"
+        (Student-T copula). Defaults to "empirical".
         dof (float, optional): The degrees of freedom of the Student-T copula, only
         used when `method="student-t"`. Lower values imply heavier tails and
         therefore higher tail dependence for the same correlation. Defaults to 4.0.
@@ -89,7 +96,8 @@ def get_tail_dependence_coefficient(
     Returns:
         pd.Series: The Lower and Upper Tail Dependence Coefficients, the linear
         (Pearson) correlation used by the "gaussian" and "student-t" methods, and the
-        number of (paired, non-missing) observations used.
+        number of (paired, non-missing) observations used. The coefficients and the
+        correlation are NaN when either series is constant, as it then has no tail.
 
     Raises:
         TypeError: If `series_a` or `series_b` is not a pd.Series.
@@ -98,15 +106,19 @@ def get_tail_dependence_coefficient(
     """
     if not isinstance(series_a, pd.Series) or not isinstance(series_b, pd.Series):
         raise TypeError("Expects pd.Series, no other value.")
-    if method not in ("empirical", "gaussian", "student-t"):
-        raise ValueError("method must be 'empirical', 'gaussian' or 'student-t'.")
+    check_option("method", method, ("empirical", "gaussian", "student-t"))
     if q <= MEDIAN_QUANTILE or q >= 1:
         raise ValueError("q must be in the range (0.5, 1).")
 
     aligned = pd.concat([series_a, series_b], axis=1, join="inner").dropna()
     n = len(aligned)
 
-    if n <= MINIMUM_TAIL_OBSERVATIONS:
+    a = aligned.iloc[:, 0].to_numpy()
+    b = aligned.iloc[:, 1].to_numpy()
+
+    # A series that does not move (a money market fund at a constant price) has no tail and
+    # no correlation, so neither has a tail dependence.  # noqa: E501
+    if n <= MINIMUM_TAIL_OBSERVATIONS or np.ptp(a) == 0 or np.ptp(b) == 0:
         return pd.Series(
             {
                 "Lower Tail Dependence": np.nan,
@@ -116,8 +128,6 @@ def get_tail_dependence_coefficient(
             }
         )
 
-    a = aligned.iloc[:, 0].to_numpy()
-    b = aligned.iloc[:, 1].to_numpy()
     correlation = np.corrcoef(a, b)[0, 1]
 
     if method == "empirical":
@@ -159,8 +169,8 @@ def get_tail_dependence_coefficient(
 
 def get_pseudo_observations(series: pd.Series) -> pd.Series:
     """
-    Transform a series to pseudo-observations on the unit interval, via its
-    empirical (rank-based) cumulative distribution function.
+    Transform a series to pseudo-observations on the unit interval: where each value ranks
+    within the series, via its empirical (rank-based) cumulative distribution function.
 
     Copulas describe the dependence structure between series independently of
     their marginal distributions (Sklar's theorem). Rather than assuming a
@@ -257,8 +267,8 @@ def get_gaussian_copula_density(
     u: pd.Series | np.ndarray, v: pd.Series | np.ndarray, rho: float
 ) -> np.ndarray:
     """
-    Evaluate the bivariate gaussian copula density at pseudo-observations `u`
-    and `v` (see `get_pseudo_observations`).
+    Evaluate the bivariate gaussian copula density at pseudo-observations `u` and `v`: how
+    likely each pair is under a gaussian dependence structure (see `get_pseudo_observations`).
 
     The formula is as follows:
 
@@ -269,6 +279,9 @@ def get_gaussian_copula_density(
     of the pseudo-observations, and rho is the (linear) correlation parameter.
     Note that a gaussian copula has zero tail dependence for any rho strictly
     below 1 -- see `get_tail_dependence_coefficient`.
+
+    Shares similar logic:
+    - skfolio, GaussianCopula: https://skfolio.org/generated/skfolio.distribution.GaussianCopula.html
 
     Args:
         u (pd.Series | np.ndarray): The first series' pseudo-observations, in
@@ -291,16 +304,21 @@ def get_gaussian_copula_parameters(
     series_a: pd.Series, series_b: pd.Series
 ) -> dict[str, float]:
     """
-    Calibrate a bivariate gaussian copula to two series: both series are
-    transformed to pseudo-observations (see `get_pseudo_observations`), then to
-    standard normal quantiles, whose sample (Pearson) correlation is taken as the
-    copula's rho parameter. This "normal scores" plug-in estimator is the standard
+    Calibrate a bivariate gaussian copula to two series: the correlation of their ranks on a
+    normal scale, which describes how they move together apart from their own distributions.
+
+    Both series are transformed to pseudo-observations (see `get_pseudo_observations`), then
+    to standard normal quantiles, whose sample (Pearson) correlation is taken as the copula's
+    rho parameter. This "normal scores" plug-in estimator is the standard
     calibration for the gaussian copula and is consistent and asymptotically
     equivalent to the canonical maximum likelihood estimate (which has no closed
     form, since the normal scores' variances are fixed at one rather than
     estimated), typically agreeing with it to within a few thousandths.
 
     Also known as: gaussian copula calibration, normal copula fit.
+
+    Shares similar logic:
+    - skfolio, GaussianCopula: https://skfolio.org/generated/skfolio.distribution.GaussianCopula.html
 
     Args:
         series_a (pd.Series): The first series (e.g. returns of one asset).
@@ -335,10 +353,11 @@ def get_gaussian_copula_parameters(
 
 
 def get_gaussian_copula_simulation(
-    rho: float, n_simulations: int = 10_000, random_state: int = 42
+    rho: float, simulations: int = 10_000, seed: int = 0
 ) -> pd.DataFrame:
     """
-    Simulate pseudo-observations from a bivariate gaussian copula.
+    Simulate pseudo-observations from a bivariate gaussian copula: joint draws that share its
+    dependence structure, on the unit interval.
 
     The result is on the pseudo-observation (0, 1) scale -- to obtain simulated
     returns, apply each column's own marginal quantile function (e.g. the
@@ -347,20 +366,18 @@ def get_gaussian_copula_simulation(
     Args:
         rho (float): The correlation parameter, in (-1, 1), see
             `get_gaussian_copula_parameters`.
-        n_simulations (int, optional): The number of joint draws to simulate.
+        simulations (int, optional): The number of joint draws to simulate.
             Defaults to 10,000.
-        random_state (int, optional): The seed for the random number generator.
-            Defaults to 42.
+        seed (int, optional): The seed for the random number generator.
+            Defaults to 0.
 
     Returns:
-        pd.DataFrame: `n_simulations` simulated ("U", "V") pseudo-observation
+        pd.DataFrame: `simulations` simulated ("U", "V") pseudo-observation
         pairs.
     """
-    rng = np.random.default_rng(random_state)
+    rng = np.random.default_rng(seed)
 
-    z = rng.multivariate_normal(
-        mean=[0, 0], cov=[[1, rho], [rho, 1]], size=n_simulations
-    )
+    z = rng.multivariate_normal(mean=[0, 0], cov=[[1, rho], [rho, 1]], size=simulations)
 
     return pd.DataFrame({"U": stats.norm.cdf(z[:, 0]), "V": stats.norm.cdf(z[:, 1])})
 
@@ -369,8 +386,9 @@ def get_student_t_copula_density(
     u: pd.Series | np.ndarray, v: pd.Series | np.ndarray, rho: float, dof: float
 ) -> np.ndarray:
     """
-    Evaluate the bivariate Student-T copula density at pseudo-observations `u`
-    and `v` (see `get_pseudo_observations`).
+    Evaluate the bivariate Student-T copula density at pseudo-observations `u` and `v`: how
+    likely each pair is under a Student-T dependence structure, which lets extremes coincide
+    (see `get_pseudo_observations`).
 
     The formula is as follows:
 
@@ -383,6 +401,9 @@ def get_student_t_copula_density(
     pseudo-observations, rho is the correlation parameter and dof the degrees of
     freedom. Unlike the gaussian copula, the Student-T copula has symmetric,
     nonzero tail dependence -- see `get_tail_dependence_coefficient`.
+
+    Shares similar logic:
+    - skfolio, StudentTCopula: https://skfolio.org/generated/skfolio.distribution.StudentTCopula.html
 
     Args:
         u (pd.Series | np.ndarray): The first series' pseudo-observations, in
@@ -420,8 +441,10 @@ def get_student_t_copula_parameters(
     dof_bounds: tuple[float, float] = STUDENT_T_DOF_BOUNDS,
 ) -> dict[str, float]:
     """
-    Calibrate a bivariate Student-T copula to two series with the two-step method
-    of Demarta & McNeil (2005): the correlation is estimated from Kendall's tau of
+    Calibrate a bivariate Student-T copula to two series: their correlation and how often
+    their extremes coincide, through the degrees of freedom.
+
+    It uses the two-step method of Demarta & McNeil (2005): the correlation is estimated from Kendall's tau of
     the pseudo-observations, and the degrees of freedom by maximum likelihood given
     that correlation.
 
@@ -439,6 +462,9 @@ def get_student_t_copula_parameters(
     International Statistical Review, 73(1), 111-129.
 
     Also known as: Student-T copula calibration, T copula fit.
+
+    Shares similar logic:
+    - skfolio, StudentTCopula: https://skfolio.org/generated/skfolio.distribution.StudentTCopula.html
 
     Args:
         series_a (pd.Series): The first series (e.g. returns of one asset).
@@ -488,11 +514,13 @@ def get_student_t_copula_parameters(
 
 
 def get_student_t_copula_simulation(
-    rho: float, dof: float, n_simulations: int = 10_000, random_state: int = 42
+    rho: float, dof: float, simulations: int = 10_000, seed: int = 0
 ) -> pd.DataFrame:
     """
-    Simulate pseudo-observations from a bivariate Student-T copula, via the
-    standard normal-mixture construction of the multivariate T distribution
+    Simulate pseudo-observations from a bivariate Student-T copula: joint draws that share its
+    dependence structure, on the unit interval.
+
+    The draws use the standard normal-mixture construction of the multivariate T distribution
     (correlated gaussian variates divided by an independent chi-squared shock,
     shared across both series -- the mechanism that produces the T copula's
     tail dependence, unlike the gaussian copula).
@@ -506,21 +534,19 @@ def get_student_t_copula_simulation(
             `get_student_t_copula_parameters`.
         dof (float): The degrees of freedom, see
             `get_student_t_copula_parameters`.
-        n_simulations (int, optional): The number of joint draws to simulate.
+        simulations (int, optional): The number of joint draws to simulate.
             Defaults to 10,000.
-        random_state (int, optional): The seed for the random number generator.
-            Defaults to 42.
+        seed (int, optional): The seed for the random number generator.
+            Defaults to 0.
 
     Returns:
-        pd.DataFrame: `n_simulations` simulated ("U", "V") pseudo-observation
+        pd.DataFrame: `simulations` simulated ("U", "V") pseudo-observation
         pairs.
     """
-    rng = np.random.default_rng(random_state)
+    rng = np.random.default_rng(seed)
 
-    z = rng.multivariate_normal(
-        mean=[0, 0], cov=[[1, rho], [rho, 1]], size=n_simulations
-    )
-    chi_squared_shock = rng.chisquare(dof, size=n_simulations)
+    z = rng.multivariate_normal(mean=[0, 0], cov=[[1, rho], [rho, 1]], size=simulations)
+    chi_squared_shock = rng.chisquare(dof, size=simulations)
     t = z * np.sqrt(dof / chi_squared_shock)[:, None]
 
     return pd.DataFrame(
@@ -530,8 +556,8 @@ def get_student_t_copula_simulation(
 
 def _simulate_archimedean_copula(
     conditional_cdf: Callable[[float, float], float],
-    n_simulations: int,
-    random_state: int,
+    simulations: int,
+    seed: int,
 ) -> pd.DataFrame:
     """
     Simulate pseudo-observations from any Archimedean copula, via the standard
@@ -545,17 +571,17 @@ def _simulate_archimedean_copula(
         conditional_cdf (Callable[[float, float], float]): A function
             `h(u, v)` returning the family's h-function (dC(u, v) / du) at a
             given (u, v) pair.
-        n_simulations (int): The number of joint draws to simulate.
-        random_state (int): The seed for the random number generator.
+        simulations (int): The number of joint draws to simulate.
+        seed (int): The seed for the random number generator.
 
     Returns:
-        pd.DataFrame: `n_simulations` simulated ("U", "V") pseudo-observation
+        pd.DataFrame: `simulations` simulated ("U", "V") pseudo-observation
         pairs.
     """
-    rng = np.random.default_rng(random_state)
+    rng = np.random.default_rng(seed)
 
-    u = rng.uniform(size=n_simulations)
-    t = rng.uniform(size=n_simulations)
+    u = rng.uniform(size=simulations)
+    t = rng.uniform(size=simulations)
 
     v = np.array(
         [
@@ -575,8 +601,9 @@ def get_clayton_copula_density(
     u: pd.Series | np.ndarray, v: pd.Series | np.ndarray, theta: float
 ) -> np.ndarray:
     """
-    Evaluate the bivariate Clayton copula density at pseudo-observations `u`
-    and `v` (see `get_pseudo_observations`).
+    Evaluate the bivariate Clayton copula density at pseudo-observations `u` and `v`: how
+    likely each pair is under a dependence structure in which crashes coincide (see
+    `get_pseudo_observations`).
 
     The formula is as follows:
 
@@ -589,6 +616,10 @@ def get_clayton_copula_density(
     crash risk without assuming symmetric joint boom risk.
 
     Also known as: Clayton dependence, Archimedean copula (Clayton family).
+
+    Shares similar logic:
+    - skfolio, ClaytonCopula: https://skfolio.org/generated/skfolio.distribution.ClaytonCopula.html
+    - statsmodels, ClaytonCopula: https://www.statsmodels.org/stable/generated/statsmodels.distributions.copula.api.ClaytonCopula.html
 
     Args:
         u (pd.Series | np.ndarray): The first series' pseudo-observations, in
@@ -620,12 +651,17 @@ def get_clayton_copula_parameters(
     series_a: pd.Series, series_b: pd.Series
 ) -> dict[str, float]:
     """
-    Calibrate a bivariate Clayton copula to two series, via maximum likelihood:
-    both series are transformed to pseudo-observations (see
+    Calibrate a bivariate Clayton copula to two series: how strongly they crash together,
+    via maximum likelihood.
+
+    Both series are transformed to pseudo-observations (see
     `get_pseudo_observations`), and theta is found by numerically maximizing the
     resulting Clayton copula log-likelihood.
 
     Also known as: Clayton copula calibration, Clayton copula fit.
+
+    Shares similar logic:
+    - skfolio, ClaytonCopula: https://skfolio.org/generated/skfolio.distribution.ClaytonCopula.html
 
     Args:
         series_a (pd.Series): The first series (e.g. returns of one asset).
@@ -665,11 +701,13 @@ def get_clayton_copula_parameters(
 
 
 def get_clayton_copula_simulation(
-    theta: float, n_simulations: int = 10_000, random_state: int = 42
+    theta: float, simulations: int = 10_000, seed: int = 0
 ) -> pd.DataFrame:
     """
-    Simulate pseudo-observations from a bivariate Clayton copula, via
-    conditional inversion (see `_simulate_archimedean_copula`).
+    Simulate pseudo-observations from a bivariate Clayton copula: joint draws that share its
+    dependence structure, on the unit interval.
+
+    The draws use conditional inversion (see `_simulate_archimedean_copula`).
 
     The result is on the pseudo-observation (0, 1) scale -- to obtain simulated
     returns, apply each column's own marginal quantile function (e.g. the
@@ -678,19 +716,19 @@ def get_clayton_copula_simulation(
     Args:
         theta (float): The dependence parameter, > 0, see
             `get_clayton_copula_parameters`.
-        n_simulations (int, optional): The number of joint draws to simulate.
+        simulations (int, optional): The number of joint draws to simulate.
             Defaults to 10,000.
-        random_state (int, optional): The seed for the random number generator.
-            Defaults to 42.
+        seed (int, optional): The seed for the random number generator.
+            Defaults to 0.
 
     Returns:
-        pd.DataFrame: `n_simulations` simulated ("U", "V") pseudo-observation
+        pd.DataFrame: `simulations` simulated ("U", "V") pseudo-observation
         pairs.
     """
     return _simulate_archimedean_copula(
         lambda u, v: _get_clayton_conditional_cdf(u, v, theta),
-        n_simulations,
-        random_state,
+        simulations,
+        seed,
     )
 
 
@@ -698,8 +736,9 @@ def get_gumbel_copula_density(
     u: pd.Series | np.ndarray, v: pd.Series | np.ndarray, theta: float
 ) -> np.ndarray:
     """
-    Evaluate the bivariate Gumbel copula density at pseudo-observations `u` and
-    `v` (see `get_pseudo_observations`).
+    Evaluate the bivariate Gumbel copula density at pseudo-observations `u` and `v`: how
+    likely each pair is under a dependence structure in which rallies coincide (see
+    `get_pseudo_observations`).
 
     The formula is as follows:
 
@@ -715,6 +754,10 @@ def get_gumbel_copula_density(
 
     Also known as: Gumbel dependence, Gumbel-Hougaard copula, Archimedean copula
     (Gumbel family).
+
+    Shares similar logic:
+    - skfolio, GumbelCopula: https://skfolio.org/generated/skfolio.distribution.GumbelCopula.html
+    - statsmodels, GumbelCopula: https://www.statsmodels.org/stable/generated/statsmodels.distributions.copula.api.GumbelCopula.html
 
     Args:
         u (pd.Series | np.ndarray): The first series' pseudo-observations, in
@@ -756,12 +799,17 @@ def get_gumbel_copula_parameters(
     series_a: pd.Series, series_b: pd.Series
 ) -> dict[str, float]:
     """
-    Calibrate a bivariate Gumbel copula to two series, via maximum likelihood:
-    both series are transformed to pseudo-observations (see
+    Calibrate a bivariate Gumbel copula to two series: how strongly they rally together,
+    via maximum likelihood.
+
+    Both series are transformed to pseudo-observations (see
     `get_pseudo_observations`), and theta is found by numerically maximizing the
     resulting Gumbel copula log-likelihood.
 
     Also known as: Gumbel copula calibration, Gumbel-Hougaard copula fit.
+
+    Shares similar logic:
+    - skfolio, GumbelCopula: https://skfolio.org/generated/skfolio.distribution.GumbelCopula.html
 
     Args:
         series_a (pd.Series): The first series (e.g. returns of one asset).
@@ -801,11 +849,13 @@ def get_gumbel_copula_parameters(
 
 
 def get_gumbel_copula_simulation(
-    theta: float, n_simulations: int = 10_000, random_state: int = 42
+    theta: float, simulations: int = 10_000, seed: int = 0
 ) -> pd.DataFrame:
     """
-    Simulate pseudo-observations from a bivariate Gumbel copula, via conditional
-    inversion (see `_simulate_archimedean_copula`).
+    Simulate pseudo-observations from a bivariate Gumbel copula: joint draws that share its
+    dependence structure, on the unit interval.
+
+    The draws use conditional inversion (see `_simulate_archimedean_copula`).
 
     The result is on the pseudo-observation (0, 1) scale -- to obtain simulated
     returns, apply each column's own marginal quantile function (e.g. the
@@ -814,19 +864,19 @@ def get_gumbel_copula_simulation(
     Args:
         theta (float): The dependence parameter, >= 1, see
             `get_gumbel_copula_parameters`.
-        n_simulations (int, optional): The number of joint draws to simulate.
+        simulations (int, optional): The number of joint draws to simulate.
             Defaults to 10,000.
-        random_state (int, optional): The seed for the random number generator.
-            Defaults to 42.
+        seed (int, optional): The seed for the random number generator.
+            Defaults to 0.
 
     Returns:
-        pd.DataFrame: `n_simulations` simulated ("U", "V") pseudo-observation
+        pd.DataFrame: `simulations` simulated ("U", "V") pseudo-observation
         pairs.
     """
     return _simulate_archimedean_copula(
         lambda u, v: _get_gumbel_conditional_cdf(u, v, theta),
-        n_simulations,
-        random_state,
+        simulations,
+        seed,
     )
 
 
@@ -834,8 +884,9 @@ def get_frank_copula_density(
     u: pd.Series | np.ndarray, v: pd.Series | np.ndarray, theta: float
 ) -> np.ndarray:
     """
-    Evaluate the bivariate Frank copula density at pseudo-observations `u` and
-    `v` (see `get_pseudo_observations`).
+    Evaluate the bivariate Frank copula density at pseudo-observations `u` and `v`: how
+    likely each pair is under a dependence structure without tail dependence (see
+    `get_pseudo_observations`).
 
     The formula is as follows:
 
@@ -849,6 +900,9 @@ def get_frank_copula_density(
     concentrated in the middle of the distribution rather than the extremes.
 
     Also known as: Frank dependence, Archimedean copula (Frank family).
+
+    Shares similar logic:
+    - statsmodels, FrankCopula: https://www.statsmodels.org/stable/generated/statsmodels.distributions.copula.api.FrankCopula.html
 
     Args:
         u (pd.Series | np.ndarray): The first series' pseudo-observations, in
@@ -884,8 +938,10 @@ def get_frank_copula_parameters(
     series_a: pd.Series, series_b: pd.Series
 ) -> dict[str, float]:
     """
-    Calibrate a bivariate Frank copula to two series, via maximum likelihood:
-    both series are transformed to pseudo-observations (see
+    Calibrate a bivariate Frank copula to two series: how strongly they move together in the
+    middle of their distributions, via maximum likelihood.
+
+    Both series are transformed to pseudo-observations (see
     `get_pseudo_observations`), and theta is found by numerically maximizing the
     resulting Frank copula log-likelihood.
 
@@ -928,11 +984,13 @@ def get_frank_copula_parameters(
 
 
 def get_frank_copula_simulation(
-    theta: float, n_simulations: int = 10_000, random_state: int = 42
+    theta: float, simulations: int = 10_000, seed: int = 0
 ) -> pd.DataFrame:
     """
-    Simulate pseudo-observations from a bivariate Frank copula, via conditional
-    inversion (see `_simulate_archimedean_copula`).
+    Simulate pseudo-observations from a bivariate Frank copula: joint draws that share its
+    dependence structure, on the unit interval.
+
+    The draws use conditional inversion (see `_simulate_archimedean_copula`).
 
     The result is on the pseudo-observation (0, 1) scale -- to obtain simulated
     returns, apply each column's own marginal quantile function (e.g. the
@@ -941,17 +999,17 @@ def get_frank_copula_simulation(
     Args:
         theta (float): The dependence parameter, nonzero, see
             `get_frank_copula_parameters`.
-        n_simulations (int, optional): The number of joint draws to simulate.
+        simulations (int, optional): The number of joint draws to simulate.
             Defaults to 10,000.
-        random_state (int, optional): The seed for the random number generator.
-            Defaults to 42.
+        seed (int, optional): The seed for the random number generator.
+            Defaults to 0.
 
     Returns:
-        pd.DataFrame: `n_simulations` simulated ("U", "V") pseudo-observation
+        pd.DataFrame: `simulations` simulated ("U", "V") pseudo-observation
         pairs.
     """
     return _simulate_archimedean_copula(
         lambda u, v: _get_frank_conditional_cdf(u, v, theta),
-        n_simulations,
-        random_state,
+        simulations,
+        seed,
     )

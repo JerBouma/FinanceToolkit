@@ -55,11 +55,12 @@ class Holding:
 @dataclass
 class PortfolioDefinition:
     """
-    A portfolio as weights per holding, with what is known about it: a name and
-    description, the source of the allocation, how often it is rebalanced and, for a
-    portfolio whose weights change over time (a target-date glide path), the weights per
-    year from the start. It is plain data, so it can be stored as YAML or JSON and read by
-    other tools.
+    A portfolio as weights per holding, with what is known about it.
+
+    It holds a name and description, the source of the allocation, how often it is
+    rebalanced and, for a portfolio whose weights change over time (a target-date glide
+    path), the weights per year from the start. It is plain data, so it can be stored as
+    YAML or JSON and read by other tools.
 
     Args:
         name (str): A short name, e.g. "60/40 Balanced".
@@ -67,8 +68,9 @@ class PortfolioDefinition:
         description (str, optional): What the portfolio is. Defaults to "".
         source (dict[str, str], optional): Where the allocation comes from, with a "text"
             (including the page or section) and a "link". Defaults to empty.
-        rebalancing (str, optional): "none", "monthly", "quarterly" or "yearly". Defaults to
-            "quarterly".
+        rebalancing (str, optional): How often to rebalance. Options are: "none" (buy and
+            hold), "monthly" (every month), "quarterly" (every quarter), "yearly" (every year).
+            Defaults to "quarterly".
         schedule (list[dict], optional): Weights that change over time, as a list of
             {"year": years from the start, "weights": {ticker: weight}}; the weights are
             interpolated linearly between the years. Defaults to empty, fixed weights.
@@ -226,13 +228,15 @@ class PortfolioDefinition:
         """
         A definition from weights: a dictionary, a Series, the table an optimizer of
         `toolkit.portfolio` returns (its Weight column), or text such as "VTI:0.6, BND:0.4".
+
         Holdings with a weight of zero are left out and the weights are scaled to sum to one.
 
         Args:
             weights (dict[str, float] | pd.Series | pd.DataFrame | str): The weights.
             name (str, optional): The name. Defaults to "Custom Portfolio".
             description (str, optional): The description. Defaults to "".
-            rebalancing (str, optional): How often to rebalance. Defaults to "quarterly".
+            rebalancing (str, optional): How often to rebalance. Options are: "none" (buy and hold), "monthly"
+                (every month), "quarterly" (every quarter), "yearly" (every year). Defaults to "quarterly".
 
         Returns:
             PortfolioDefinition: The definition.
@@ -368,11 +372,12 @@ def build_transactions(
     dividends: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """
-    The transactions that invest a portfolio definition: the purchase of every holding on
-    the first day all of them have a price, and the trades that bring the portfolio back
-    to its target weights on every rebalancing date (the last trading day of each month,
-    quarter or year). A schedule's weights are taken for the years since the first day plus
-    the offset.
+    The transactions that invest a portfolio definition.
+
+    They are the purchase of every holding on the first day all of them have a price, and
+    the trades that bring the portfolio back to its target weights on every rebalancing date
+    (the last trading day of each month, quarter or year). A schedule's weights are taken
+    for the years since the first day plus the offset.
 
     Weights only add up when every price is in the same currency, so the prices are first
     converted to the portfolio's currency (pence to pounds included) with the exchange rate

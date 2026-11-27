@@ -6,8 +6,10 @@ import pandas as pd
 from financetoolkit.portfolio.helpers import (
     divide_by_capital,
     get_trading_day_locations,
+    get_transaction_order,
 )
 from financetoolkit.utilities import logger_model
+from financetoolkit.utilities.error_model import check_option
 from financetoolkit.utilities.statistics_model import drop_non_finite, to_period_index
 
 logger = logger_model.get_logger()
@@ -17,6 +19,9 @@ logger = logger_model.get_logger()
 TRADING_DAYS_PER_YEAR = 252
 # Units left to sell below this are floating point residue of the volumes, not an oversold position.
 OVERSOLD_TOLERANCE = 1e-9
+# Units left in a lot below this times the largest volume are the floating point residue of subtracting volumes
+# (0.1 + 0.2 - 0.3 leaves 5.6e-17), which would otherwise stay open as a lot of next to nothing.
+LOT_RESIDUE_TOLERANCE = 1e-12
 
 
 def _per_transaction(values: pd.Series | None, length: int) -> np.ndarray:
@@ -217,7 +222,13 @@ def _calculate_portfolio_volatility(
         asset_returns (pd.DataFrame | None): Daily returns for each asset, indexed by date/period,
             with one column per ticker. When available, the most recent 252 trading days of returns
             are used to build the covariance matrix, the same window as the individual asset
-            volatilities (see `calculate_trailing_volatility`).
+            volatilities (see `calculate_trailing_volatility`). The covariance matrix is estimated
+            on the dates of that window on which every held asset has a price: from the date the
+            last of them has its first return, with a return of 0 on a date an asset did not trade
+            while another did (its price is carried forward, as in the value of the portfolio).
+            Each pair estimated on the dates it shares and each variance on the asset's own dates
+            would mix windows into a matrix that need not be a covariance matrix of any one set of
+            returns, and can make the volatility of two opposite assets much larger than it was.
 
     Returns:
         float: The annualized portfolio volatility (standard deviation).
@@ -226,7 +237,9 @@ def _calculate_portfolio_volatility(
         Markowitz, H. (1952). Portfolio Selection. The Journal of Finance, 7(1), 77-91.
     """
     if asset_returns is not None and not asset_returns.empty:
-        returns_for_covariance = asset_returns.reindex(columns=weights.index)
+        # Only the held assets count: a sold position has no returns in the window to restrict it by.  # noqa: E501
+        held = weights.index[weights.notna() & (weights != 0)]
+        returns_for_covariance = asset_returns.reindex(columns=held)
 
         # The most recent 252 trading days, matching the individual Volatility column.
         recent_returns = returns_for_covariance.iloc[-TRADING_DAYS_PER_YEAR:]
@@ -234,7 +247,13 @@ def _calculate_portfolio_volatility(
         # Columns that are entirely missing would propagate NaNs across the matrix.
         recent_returns = recent_returns.dropna(axis=1, how="all")
 
-        if not recent_returns.empty:
+        # One set of dates for every pair: from the first date every held asset has a return, with 0 on the dates an asset
+        # did not trade.
+        recent_returns = recent_returns[
+            recent_returns.notna().cummax().all(axis=1)
+        ].fillna(0.0)
+
+        if len(recent_returns) > 1:
             annualized_covariance = recent_returns.cov() * TRADING_DAYS_PER_YEAR
             aligned_weights = weights.reindex(annualized_covariance.index).fillna(0.0)
 
@@ -471,7 +490,6 @@ def create_portfolio_overview(
     portfolio_overview_grouped.insert(
         2,
         "Price",
-        # The volume-weighted price actually paid for the units that were bought.
         divide_by_capital(
             portfolio_overview_grouped["Buy Value"],
             portfolio_overview_grouped["Buy Volume"],
@@ -740,8 +758,8 @@ def create_transactions_performance(
         costs_column (str): The name of the column representing transaction costs in `portfolio_dataset`.
         period_prices (pd.DataFrame): The closing price of every asset at the end of every period, one
             row per period and one column per ticker.
-        period_string (str): The time period for grouping transactions. Supported values are
-            'Y', 'Q', 'M', 'W' or 'D'.
+        period_string (str): The time period for grouping transactions. Options are: "Y" (yearly),
+            "Q" (quarterly), "M" (monthly), "W" (weekly), "D" (daily).
         benchmark_specific_prices (pd.Series): The closing price of the benchmark on the date of every
             transaction, aligned with `portfolio_dataset`.
         benchmark_period_prices (pd.DataFrame | pd.Series): The closing price of the benchmark at the end
@@ -1103,8 +1121,9 @@ def create_portfolio_performance(
             'Realized Proceeds', 'Dividends', 'Current Value', 'Invested Weight', and 'Current Weight'.
         date_column (str): The name of the column representing the dates in `positions_dataset`.
         ticker_column (str): The name of the column representing the tickers in `positions_dataset`.
-        period_string (str): The time period for which portfolio performance metrics should be calculated. This can be
-            'yearly', 'quarterly', 'monthly', 'weekly', or 'daily'.
+        period_string (str): The time period for which portfolio performance metrics should be
+            calculated. Options are: "Y" (yearly), "Q" (quarterly), "M" (monthly), "W" (weekly), "D"
+            (daily).
 
     Returns:
         pd.DataFrame: A DataFrame containing portfolio performance metrics aggregated by date and ticker.
@@ -1185,12 +1204,86 @@ def create_portfolio_performance(
     return positions_dataset_grouped
 
 
+def match_lots(
+    volumes: np.ndarray, method: str = "FIFO", short_selling: bool = False
+) -> tuple[list[tuple[int, int, float]], list[tuple[int, float]], bool]:
+    """
+    Match the transactions of one asset, in the order they are given, against the lots they
+    close.
+
+    Every purchase or sale opens a lot, and a transaction in the other direction closes the
+    oldest open lots first (FIFO) or the newest (LIFO). A transaction larger than the lots
+    it closes opens a lot in its own direction with the units left, so a sale of more than
+    is held opens a short lot (when short selling is on) that later purchases close.
+
+    The matches are the round trips of the asset: each pairs the transaction that opened
+    units with the one that closed them, so the realized profit and loss of a sale and the
+    trade list both follow from them.
+
+    Args:
+        volumes (np.ndarray): The volume of every transaction, positive for a purchase and
+            negative for a sale, in the order they are matched in.
+        method (str, optional): Which lots a sale closes first. Options are: "FIFO" (first in, first
+            out: the oldest lots close first), "LIFO" (last in, first out: the newest lots close
+            first). Defaults to "FIFO".
+        short_selling (bool, optional): Whether a sale of more units than are held opens a
+            short lot. Defaults to False, which leaves the units sold beyond those held out.
+
+    Returns:
+        tuple[list[tuple[int, int, float]], list[tuple[int, float]], bool]: The matches as
+        (opening row, closing row, units), the lots still open as (opening row, units), with
+        negative units for a short lot, and whether units were sold beyond those held while
+        short selling is off.
+
+    Notes:
+        - Units left by floating point residue of the volumes (0.1 + 0.2 - 0.3), on the scale
+          of the largest volume traded, neither stay open as a lot nor count as an excess.
+    """
+    finite = np.abs(volumes[np.isfinite(volumes)])
+    scale = max(1.0, finite.max() if finite.size else 0.0)
+    lots: list[list] = []  # [opening row, units] of the open lots, all in one direction
+    side = 0
+    matches: list[tuple[int, int, float]] = []
+    oversold = False
+
+    for row, volume in enumerate(volumes):
+        if not (volume > 0 or volume < 0):  # no units, or a missing volume
+            continue
+        direction = 1 if volume > 0 else -1
+        remaining = abs(volume)
+
+        if lots and direction != side:
+            while remaining > 0 and lots:
+                position = 0 if method == "FIFO" else -1
+                opening, units = lots[position]
+                closed = min(units, remaining)
+                matches.append((opening, row, closed))
+                remaining -= closed
+                if units - closed > LOT_RESIDUE_TOLERANCE * scale:
+                    lots[position][1] = units - closed
+                else:
+                    lots.pop(position)
+            # Units left beyond the lots on the scale of the oversold tolerance are residue, not a sale.
+            if remaining <= OVERSOLD_TOLERANCE * scale:
+                remaining = 0
+
+        if remaining > 0:
+            if direction > 0 or short_selling:
+                lots.append([row, remaining])
+                side = direction
+            else:
+                oversold = True
+
+    return matches, [(opening, side * units) for opening, units in lots], oversold
+
+
 def create_profit_and_loss_overview(
     transactions_overview: pd.DataFrame,
     ticker_column: str,
     volume_column: str,
     price_column: str,
     method="FIFO",
+    purchases_first: bool = True,
 ):
     """
     Calculate Profit and Loss (PnL) using FIFO, LIFO, or Average Price methods for multiple tickers.
@@ -1206,8 +1299,13 @@ def create_profit_and_loss_overview(
         volume_column (str): The column name representing the transaction volumes
             (positive for buys, negative for sells).
         price_column (str): The column name representing the transaction prices.
-        method (str, optional): Method for inventory valuation.
-            Can be 'FIFO', 'LIFO', or 'AVERAGE'. Default is 'FIFO'.
+        method (str, optional): Method for inventory valuation. Options are: "FIFO" (first in, first
+            out: the oldest lots close first), "LIFO" (last in, first out: the newest lots close
+            first), "AVERAGE" (every sale at the average cost of the units held). Defaults to
+            "FIFO".
+        purchases_first (bool, optional): Whether the purchases of a day come before its sales.
+            False keeps the order of the rows within a day, for transactions that are in the
+            order they were made in (dated with a time of day). Defaults to True.
 
     Returns:
         pd.DataFrame: DataFrame with the columns 'PnL' (realized profit and loss per transaction)
@@ -1218,9 +1316,12 @@ def create_profit_and_loss_overview(
         - FIFO (First-In, First-Out): Sells the earliest purchased assets first.
         - LIFO (Last-In, First-Out): Sells the most recently purchased assets first.
         - AVERAGE: Uses the average cost of all assets in inventory for PnL calculation.
-        - The inventory is built up in date order. Within a day the purchases come before the
-          sales, so a position bought and sold on the same day realizes its PnL whatever the
-          order of the rows; otherwise the rows keep their order.
+        - The inventory is built up in date order. Within a day the purchases come before
+          the sales, so a position bought and sold on the same day realizes its PnL whatever
+          the order of the rows; otherwise the rows keep their order. When the purchases do
+          not come first, as the Portfolio passes for transactions dated with a time of day,
+          the rows keep their order within the day as well, so a sale in the morning is
+          matched against the units held before a purchase in the afternoon.
         - Transaction costs are deliberately excluded from the realized PnL. They are carried by the
           invested amount instead, so that a cost is counted once rather than in both places.
         - Selling more units than the inventory holds realizes the PnL of the units that were held
@@ -1229,91 +1330,46 @@ def create_profit_and_loss_overview(
           portfolio.
     """
 
-    def process_group(ticker: str, group: pd.DataFrame) -> list[float]:
-        inventory: list[tuple[float, float]] = []  # For FIFO or LIFO methods
-        avg_cost = 0.0  # For Average method
-        total_volume = 0.0  # For Average method
-        pnl: list[float] = []  # Store PnL for each row in the group
+    def process_group(group: pd.DataFrame) -> tuple[np.ndarray, bool]:
+        volumes = group[volume_column].to_numpy(dtype=float)
+        prices = group[price_column].to_numpy(dtype=float)
+        pnl = np.zeros(len(volumes))
 
-        largest_volume = group[volume_column].abs().max()
-        for volume, price in zip(
-            group[volume_column], group[price_column], strict=True
-        ):
-            if volume > 0:  # Buy order
-                if method == "AVERAGE":
-                    # Update average cost
-                    total_cost = avg_cost * total_volume
-                    total_cost += volume * price
-                    total_volume += volume
-                    avg_cost = total_cost / total_volume
-                else:
-                    # Add to inventory for FIFO or LIFO
-                    inventory.append((volume, price))
-                pnl.append(0.0)  # No PnL for buy orders
+        if method != "AVERAGE":
+            matches, _, group_oversold = match_lots(volumes, method=method)
+            # Every closed lot realizes its units times the difference between the sale and purchase price.
+            for opening, closing, units in matches:
+                pnl[closing] += units * (prices[closing] - prices[opening])
+            return pnl, group_oversold
 
-            elif volume < 0:  # Sell order
-                sell_volume = -volume
-                realized_pnl = 0.0
+        avg_cost = 0.0
+        total_volume = 0.0
+        group_oversold = False
+        tolerance = OVERSOLD_TOLERANCE * max(1.0, np.nanmax(np.abs(volumes)))
+        for row, (volume, price) in enumerate(zip(volumes, prices, strict=True)):
+            if volume > 0:
+                total_cost = avg_cost * total_volume + volume * price
+                total_volume += volume
+                avg_cost = total_cost / total_volume
+            elif volume < 0:
+                sell_volume = min(-volume, total_volume)
+                pnl[row] = sell_volume * (price - avg_cost)
+                total_volume -= sell_volume
+                # Units sold beyond those held have no purchase to realize a PnL against.
+                if -volume - sell_volume > tolerance:
+                    group_oversold = True
 
-                if method == "FIFO":
-                    # Process FIFO: Sell the earliest assets first
-                    while sell_volume > 0 and inventory:
-                        fifo_volume, fifo_price = inventory[0]
-                        if fifo_volume <= sell_volume:
-                            realized_pnl += fifo_volume * (price - fifo_price)
-                            sell_volume -= fifo_volume
-                            inventory.pop(0)
-                        else:
-                            realized_pnl += sell_volume * (price - fifo_price)
-                            inventory[0] = (fifo_volume - sell_volume, fifo_price)
-                            sell_volume = 0
-
-                elif method == "LIFO":
-                    # Process LIFO: Sell the most recently purchased assets first
-                    while sell_volume > 0 and inventory:
-                        lifo_volume, lifo_price = inventory.pop()
-                        if lifo_volume <= sell_volume:
-                            realized_pnl += lifo_volume * (price - lifo_price)
-                            sell_volume -= lifo_volume
-                        else:
-                            realized_pnl += sell_volume * (price - lifo_price)
-                            inventory.append((lifo_volume - sell_volume, lifo_price))
-                            sell_volume = 0
-
-                elif method == "AVERAGE":
-                    # Calculate PnL based on average cost
-                    if total_volume >= sell_volume:
-                        realized_pnl = sell_volume * (price - avg_cost)
-                        total_volume -= sell_volume
-                        sell_volume = 0
-                    else:
-                        realized_pnl = total_volume * (price - avg_cost)
-                        sell_volume -= total_volume
-                        total_volume = 0
-
-                pnl.append(realized_pnl)
-                # Units sold beyond those held have no purchase to realize a PnL against. A remainder from floating point residue (0.1 + 0.2 - 0.3), which grows with the largest volume traded, is not a sale.  # noqa: E501
-                if sell_volume > OVERSOLD_TOLERANCE * max(1.0, largest_volume):
-                    oversold.add(str(ticker))
-
-            else:
-                pnl.append(0.0)  # No action for zero volume
-
-        return pnl
+        return pnl, group_oversold
 
     # The rows are addressed by position rather than by label, since a groupby-apply returns the groups concatenated in group order whenever the index is not unique, which would attach every PnL figure to the wrong transaction once two trades share a date.  # noqa: E501
     ordered_transactions = transactions_overview.reset_index()
 
-    # Within a day the purchases come first, so a sale is matched against the units bought that day whatever the order of the rows in the file.  # noqa: E501
-    ordered_transactions = ordered_transactions.loc[
-        pd.DataFrame(
-            {
-                "date": transactions_overview.index.get_level_values(0),
-                "sell": (ordered_transactions[volume_column] < 0).to_numpy(),
-            }
+    ordered_transactions = ordered_transactions.iloc[
+        get_transaction_order(
+            transactions_overview.index.get_level_values(0),
+            ordered_transactions[volume_column],
+            purchases_first,
         )
-        .sort_values(["date", "sell"], kind="stable")
-        .index
     ]
 
     profit_and_loss = pd.DataFrame(
@@ -1325,7 +1381,9 @@ def create_profit_and_loss_overview(
     for ticker, group in ordered_transactions.groupby(
         ticker_column, observed=True, sort=False
     ):
-        group_pnl = process_group(str(ticker), group)
+        group_pnl, group_oversold = process_group(group)
+        if group_oversold:
+            oversold.add(str(ticker))
 
         profit_and_loss.loc[group.index, "PnL"] = group_pnl
         # Accumulated within the group so the running total restarts per ticker.
@@ -1342,3 +1400,87 @@ def create_profit_and_loss_overview(
     profit_and_loss.index = transactions_overview.index
 
     return profit_and_loss
+
+
+TURNOVER_DENOMINATORS = ("gross_value", "net_value")
+
+
+def get_turnover(
+    traded_values: pd.Series,
+    position_values: pd.DataFrame,
+    denominator: str = "gross_value",
+) -> pd.DataFrame:
+    """
+    The turnover of a portfolio per day, the value traded as a share of the value held, as
+    defined in pyfolio (Quantopian) by get_turnover:
+
+    - Traded Value_t = Σ |volume × price| of the day's transactions
+    - Gross Value_t = Σ_i |value of position i| (pyfolio's "actual gross book")
+    - Turnover_t = Traded Value_t / ((Gross Value_t + Gross Value_t-1) / 2), the average of
+      the gross value of the day and the day before (half the gross value on the first
+      day), or Traded Value_t / Net Value_t over the net value (pyfolio's
+      "portfolio_value"), Net Value_t = Σ_i value of position i.
+
+    A purchase of a whole portfolio in one day is a turnover of 2 on that day, as the
+    gross value averages to half its size.
+
+    Shares similar logic:
+    - pyfolio, get_turnover: https://github.com/stefan-jansen/pyfolio-reloaded/blob/0.9.9/src/pyfolio/txn.py#L148
+
+    Args:
+        traded_values (pd.Series): The value traded per day, positive.
+        position_values (pd.DataFrame): The value of every position (columns) per day.
+        denominator (str, optional): Options are: "gross_value" (the average gross value of the day
+            and the day before), "net_value" (the net value). Defaults to "gross_value".
+
+    Returns:
+        pd.DataFrame: The Traded Value, the Gross Value (or Net Value) and the Turnover per
+        day, 0 on days without trades.
+    """
+    check_option("denominator", denominator, TURNOVER_DENOMINATORS)
+    traded = traded_values.reindex(position_values.index).fillna(0)
+    if denominator == "gross_value":
+        value = position_values.abs().sum(axis=1)
+        average = value.rolling(2).mean()
+        average.iloc[0] = value.iloc[0] / 2
+        name = "Gross Value"
+    else:
+        value = position_values.sum(axis=1)
+        average = value
+        name = "Net Value"
+    turnover = (traded / average.where(average != 0)).fillna(0)
+    return pd.DataFrame({"Traded Value": traded, name: value, "Turnover": turnover})
+
+
+def get_gross_leverage(position_values: pd.DataFrame) -> pd.DataFrame:
+    """
+    The gross leverage of a portfolio per day: its long and short positions together as a
+    multiple of its net value.
+
+    It is defined in pyfolio (Quantopian) by gross_lev:
+
+    - Gross Leverage_t = Σ_i |value of position i| / Σ_i value of position i
+
+    A portfolio of long positions has a gross leverage of 1; short positions raise it (a
+    130/30 portfolio has 1.6). The positions hold no cash, so the net value is that of the
+    positions, where pyfolio adds the cash.
+
+    Shares similar logic:
+    - pyfolio, gross_lev: https://github.com/stefan-jansen/pyfolio-reloaded/blob/0.9.9/src/pyfolio/timeseries.py#L605
+
+    Args:
+        position_values (pd.DataFrame): The value of every position (columns) per day.
+
+    Returns:
+        pd.DataFrame: The Gross Value, Net Value and Gross Leverage per day, NaN on days
+        without a positive net value.
+    """
+    gross = position_values.abs().sum(axis=1)
+    net = position_values.sum(axis=1)
+    return pd.DataFrame(
+        {
+            "Gross Value": gross,
+            "Net Value": net,
+            "Gross Leverage": gross / net.where(net > 0),
+        }
+    )

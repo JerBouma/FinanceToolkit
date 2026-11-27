@@ -63,9 +63,8 @@ def get_ebitda_margin(
     revenue: pd.Series | pd.DataFrame,
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the EBITDA margin, a profitability ratio that measures the percentage of
-    revenue that remains as earnings before interest, taxes, depreciation and
-    amortization (EBITDA).
+    Calculate the EBITDA margin, a profitability ratio that measures the percentage of revenue that remains as
+    earnings before interest, taxes, depreciation and amortization (EBITDA).
 
     EBITDA margin approximates a company's core operating profitability before the
     effects of financing decisions (interest), tax jurisdictions, and non-cash
@@ -96,8 +95,8 @@ def get_interest_burden_ratio(
     operating_income: pd.Series | pd.DataFrame,
 ) -> pd.Series | pd.DataFrame:
     """
-    Compute the Interest Burden Ratio, the component of the extended (five-step) DuPont
-    decomposition that isolates the drag interest expense places on operating profit.
+    Calculate the interest burden ratio: the share of operating profit that is left after interest, the component of
+    the five-step DuPont decomposition that isolates the drag of interest expense.
 
     It divides earnings before tax (EBT) by earnings before interest and taxes (EBIT,
     proxied by operating income), so it expresses the share of operating profit that
@@ -129,8 +128,7 @@ def get_income_before_tax_profit_margin(
     income_before_tax: pd.Series | pd.DataFrame, revenue: pd.Series | pd.DataFrame
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the Pretax Profit Margin, which is the ratio of a company's pre-tax profit to its revenue,
-    indicating how much profit a company makes before paying taxes on its earnings.
+    Calculate the pretax profit margin: the share of revenue a company keeps as profit before paying taxes.
 
     Args:
         income_before_tax (float or pd.Series): Income before tax of the company.
@@ -291,9 +289,10 @@ def get_net_financial_obligations(
     long_term_investments: pd.Series | pd.DataFrame,
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the net financial obligations (NFO) of Nissim and Penman (2001): the financial
-    obligations minus the financial assets. A negative value means the company holds more
-    financial assets than it owes (net financial assets).
+    Calculate the net financial obligations (NFO) of Nissim and Penman (2001): the financial obligations minus the
+    financial assets.
+
+    A negative value means the company holds more financial assets than it owes (net financial assets).
 
     The financial obligations are the debt, including the lease obligations that the Total
     Debt of the statements holds, and the preferred stock, which Nissim and Penman count as
@@ -410,12 +409,12 @@ def get_net_borrowing_cost(
     average_net_financial_obligations: pd.Series | pd.DataFrame,
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the net borrowing cost (NBC) of Nissim and Penman (2001): the after-tax net
-    interest expense over the average net financial obligations. With net financial assets
-    (negative obligations) and net interest income, both are negative and the ratio is the
-    after-tax return on the net financial assets. With net financial assets and a net interest
-    expense (or net obligations and net interest income) the signs differ and the ratio is
-    negative.
+    Calculate the net borrowing cost (NBC) of Nissim and Penman (2001): the after-tax net interest expense over the
+    average net financial obligations.
+
+    With net financial assets (negative obligations) and net interest income, both are negative and the ratio is the
+    after-tax return on the net financial assets. With net financial assets and a net interest expense (or net
+    obligations and net interest income) the signs differ and the ratio is negative.
 
     The formula is as follows:
 
@@ -439,9 +438,10 @@ def get_financial_leverage(
     average_common_equity: pd.Series | pd.DataFrame,
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the financial leverage (FLEV) of Nissim and Penman (2001): the average net
-    financial obligations over the average common equity. It is negative for a company with
-    net financial assets.
+    Calculate the financial leverage (FLEV) of Nissim and Penman (2001): the average net financial obligations over
+    the average common equity.
+
+    It is negative for a company with net financial assets.
 
     The formula is as follows:
 
@@ -465,8 +465,8 @@ def get_income_quality_ratio(
     net_income: pd.Series | pd.DataFrame,
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculates the income quality ratio, which measures the cash flow from operating
-    activities relative to the net income of the company.
+    Calculate the income quality ratio: the cash flow from operations against the net income, how much of the reported
+    profit comes in as cash.
 
     Args:
         cash_flow_from_operating_activities (float or pd.Series): Cash flow from operating activities
@@ -485,9 +485,8 @@ def get_return_on_tangible_assets(
     average_goodwill_and_intangible_assets: pd.Series | pd.DataFrame,
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the return on tangible assets, which measures the amount of profit
-    generated relative to a company's tangible assets: total assets minus goodwill and
-    other intangible assets.
+    Calculate the return on tangible assets, which measures the amount of profit generated relative to a company's
+    tangible assets: total assets minus goodwill and other intangible assets.
 
     Liabilities are not deducted, so the ratio measures the return on the whole tangible
     asset base, however it is financed, and stays comparable between companies with
@@ -543,31 +542,13 @@ def get_return_on_capital_employed(
     return operating_income / (total_assets - total_current_liabilities)
 
 
-def get_net_income_per_ebt(
-    net_income: pd.Series | pd.DataFrame, income_tax_expense: pd.Series | pd.DataFrame
-) -> pd.Series | pd.DataFrame:
-    """
-    Calculate the net income per earnings before taxes (EBT), a profitability ratio that
-    measures the net income generated for each dollar of EBT.
-
-    Args:
-        net_income (float or pd.Series): Net income of the company.
-        income_tax_expense (float or pd.Series): Income tax expense of the company.
-
-    Returns:
-        float | pd.Series: The net income per EBT value.
-    """
-    return net_income / (net_income + income_tax_expense)
-
-
 def get_free_cash_flow_operating_cash_flow_ratio(
     free_cash_flow: pd.Series | pd.DataFrame,
     operating_cash_flow: pd.Series | pd.DataFrame,
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the free cash flow to operating cash flow ratio, a profitability
-    ratio that measures the amount of free cash flow a company generates
-    for every dollar of operating cash flow.
+    Calculate the free cash flow to operating cash flow ratio, a profitability ratio that measures the amount of free
+    cash flow a company generates for every dollar of operating cash flow.
 
     Args:
         free_cash_flow (float or pd.Series): Free cash flow of the company.
@@ -611,56 +592,17 @@ def get_tax_burden_ratio(
     net_income: pd.Series | pd.DataFrame, income_before_tax: pd.Series | pd.DataFrame
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the tax burden ratio, which is the ratio of a company's
-    net income to its income before tax, indicating how much of a
-    company's income is retained after taxes.
+    Calculate the tax burden ratio, which is the ratio of a company's net income to its income before tax, indicating
+    how much of a company's income is retained after taxes.
 
     Args:
         net_income (float or pd.Series): Net income of the company.
         income_before_tax (float or pd.Series): Income before tax of the company.
 
     Returns:
-        float | pd.Series: The NIperEBT value.
+        float | pd.Series: The tax burden ratio value.
     """
     return net_income / income_before_tax
-
-
-def get_EBT_to_EBIT(
-    earnings_before_tax: pd.Series | pd.DataFrame,
-    earnings_before_interest_and_taxes: pd.Series | pd.DataFrame,
-) -> pd.Series | pd.DataFrame:
-    """
-    Calculate the EBT to EBIT, which is the ratio of a company's earnings before tax to its earnings before
-    interest and taxes, indicating how much of a company's earnings are generated before paying interest on debt.
-
-    Args:
-        earnings_before_tax (float or pd.Series): Earnings before tax of the company.
-        earnings_before_interest_and_taxes (float or pd.Series): Earnings before interest and taxes of the company.
-
-    Returns:
-        float | pd.Series: The EBTperEBIT value.
-    """
-    return earnings_before_tax / earnings_before_interest_and_taxes
-
-
-def get_EBIT_to_revenue(
-    earnings_before_interest_and_taxes: pd.Series | pd.DataFrame,
-    revenue: pd.Series | pd.DataFrame,
-) -> pd.Series | pd.DataFrame:
-    """
-    Calculate the EBITperRevenue, which is the ratio of a company's earnings
-    before interest and taxes to its revenue, indicating how much profit a
-    company generates from its operations before paying interest on debt
-    and taxes on its earnings.
-
-    Args:
-        earnings_before_interest_and_taxes (float or pd.Series): Earnings before interest and taxes of the company.
-        revenue (float or pd.Series): Revenue of the company.
-
-    Returns:
-        float | pd.Series: The EBITperRevenue value.
-    """
-    return earnings_before_interest_and_taxes / revenue
 
 
 def get_cash_tax_rate(
@@ -668,9 +610,8 @@ def get_cash_tax_rate(
     income_before_tax: pd.Series | pd.DataFrame,
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the cash tax rate, which measures the percentage of pretax income that
-    is actually paid out in cash taxes, as opposed to the accrual-based effective tax
-    rate.
+    Calculate the cash tax rate, which measures the percentage of pretax income that is actually paid out in cash
+    taxes, as opposed to the accrual-based effective tax rate.
 
     As for the effective tax rate, the rate is only meaningful for a positive income before
     tax. The Ratios module passes NaN for periods with a pre-tax loss; this function divides
@@ -718,11 +659,11 @@ def get_gross_profitability(
     total_assets: pd.Series | pd.DataFrame,
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the gross profitability of Novy-Marx (2013): the gross profit a company
-    earns on its assets. Gross profit is the cleanest accounting measure of economic
-    profitability, as everything below it (selling, research and administrative
-    expenses, interest, taxes) is partly investment or financing, and it predicts
-    returns as well as book-to-market does.
+    Calculate the gross profitability of Novy-Marx (2013): the gross profit a company earns on its assets.
+
+    Gross profit is the cleanest accounting measure of economic profitability, as everything below it (selling,
+    research and administrative expenses, interest, taxes) is partly investment or financing, and it predicts returns
+    as well as book-to-market does.
 
     The formula is as follows:
 
@@ -755,9 +696,8 @@ def get_operating_profitability(
     preferred_stock: pd.Series | pd.DataFrame,
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the operating profitability of Fama and French (2015), the profitability
-    measure behind the RMW (robust minus weak) factor of the five-factor model: the
-    operating profit after interest that a company earns on its book equity.
+    Calculate the operating profitability of Fama and French (2015): the operating profit after interest a company
+    earns on its book equity, the measure behind their RMW (robust minus weak) factor.
 
     The formula is as follows:
 
@@ -819,11 +759,10 @@ def get_cash_based_operating_profitability(
     beginning_total_assets: pd.Series | pd.DataFrame,
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the cash-based operating profitability of Ball, Gerakos, Linnainmaa and
-    Nikolaev (2016): the operating profitability of Ball et al. (2015) with the
-    working capital accruals taken out, so that it measures the operating profit
-    received in cash. It subsumes accruals in predicting returns and predicts them
-    better than the measures that include accruals.
+    Calculate the cash-based operating profitability of Ball, Gerakos, Linnainmaa and Nikolaev (2016): the operating
+    profit a company receives in cash, with the working capital accruals taken out.
+
+    It subsumes accruals in predicting returns and predicts them better than the measures that include accruals.
 
     The formula is as follows:
 
@@ -968,11 +907,11 @@ def get_percent_accruals(
     operating_cash_flow: pd.Series | pd.DataFrame,
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the percent accruals of Hafzalla, Lundholm and Van Winkle (2011): the
-    accruals (the part of earnings not received in cash) relative to the size of the
-    earnings rather than to total assets. It separates the companies whose earnings
-    are mostly accruals, which go on to underperform, better than accruals scaled by
-    total assets do.
+    Calculate the percent accruals of Hafzalla, Lundholm and Van Winkle (2011): the accruals (the part of earnings not
+    received in cash) relative to the size of the earnings rather than to total assets.
+
+    It separates the companies whose earnings are mostly accruals, which go on to underperform, better than accruals
+    scaled by total assets do.
 
     The formula is as follows:
 
@@ -990,3 +929,48 @@ def get_percent_accruals(
         float | pd.Series: The percent accruals value.
     """
     return (net_income - operating_cash_flow) / net_income.abs().where(net_income != 0)
+
+
+def get_operating_return_on_assets(
+    operating_income: pd.Series | pd.DataFrame,
+    average_total_assets: pd.Series | pd.DataFrame,
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the operating return on assets, the operating income (before interest and
+    taxes) against the average total assets.
+
+    The formula is as follows:
+
+        Operating Return on Assets = Operating Income / Average Total Assets
+
+    Args:
+        operating_income (float or pd.Series): Operating income of the company.
+        average_total_assets (float or pd.Series): Average total assets of the company.
+
+    Returns:
+        float | pd.Series: The operating return on assets.
+    """
+    return operating_income / average_total_assets
+
+
+def get_continuing_operations_profit_margin(
+    net_income_from_continuing_operations: pd.Series | pd.DataFrame,
+    revenue: pd.Series | pd.DataFrame,
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the continuing operations profit margin, the net income from continuing
+    operations (without the result of discontinued operations) as a share of revenue.
+
+    The formula is as follows:
+
+        Continuing Operations Profit Margin = Net Income from Continuing Operations / Revenue
+
+    Args:
+        net_income_from_continuing_operations (float or pd.Series): Net income from
+            continuing operations of the company.
+        revenue (float or pd.Series): Revenue of the company.
+
+    Returns:
+        float | pd.Series: The continuing operations profit margin.
+    """
+    return net_income_from_continuing_operations / revenue

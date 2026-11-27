@@ -32,7 +32,10 @@ def test_each_module_tool_offers_the_factor_analysis_with_metrics_and_detail():
 
     for name in ("valuation", "momentum", "models", "risk", "performance"):
         properties = tools[name].inputSchema["properties"]
-        assert "get_factor_analysis" in str(properties["indicator"]), name
+        assert (
+            "get_factor_analysis"
+            in tools[name].inputSchema["$defs"]["indicator"]["enum"]
+        ), name
         assert {"metrics", "detail", "horizons", "quantiles", "periods_apart"} <= set(
             properties
         ), name
@@ -55,7 +58,7 @@ def test_the_factor_analysis_passes_the_parameters_of_the_metrics_on(captured):
                 "trailing": 4,
             },
         )
-    )[0][0].text
+    )[0].text
 
     assert captured[-1]["method"] == "get_factor_analysis"
     assert captured[-1]["metrics"] == "profitability"
@@ -71,7 +74,7 @@ def test_search_metrics_finds_the_factor_analysis_as_predictive_power():
         mcp_controller.mcp.call_tool(
             "search_metrics", {"query": "predictive power of a ratio"}
         )
-    )[0][0].text
+    )[0].text
 
     assert "get_factor_analysis" in result.split("\n\n")[0] or (
         "get_factor_analysis" in result[:600]

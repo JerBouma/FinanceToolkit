@@ -216,50 +216,194 @@ def _numbers(value: Any) -> list[float]:
     ]
 
 
+def refused_value_problem(
+    method_name: str, arguments: dict[str, Any], limits: dict[str, Any]
+) -> str | None:
+    """
+    Checks the arguments of a call against the values the server refuses for an indicator
+    (config.yaml parameter_limits, refused_values), such as a variant whose fit takes
+    longer than an assistant waits for a tool.
+
+    Args:
+        method_name (str): The indicator called.
+        arguments (dict[str, Any]): The arguments the indicator receives.
+        limits (dict[str, Any]): The parameter limits, of which "refused_values" lists the
+            indicators ("methods"), the "parameter", its refused "values" and the "reason".
+
+    Returns:
+        str | None: Why the value is refused, or None when the call may go ahead.
+    """
+    for refusal in limits.get("refused_values", []):
+        value = arguments.get(refusal["parameter"])
+        # A list (such as the models of a comparison) is refused when one of its values is.
+        values = value if isinstance(value, list | tuple) else [value]
+        # A switch (american_option=true) is refused by its value written in lower case.
+        refused = [
+            item if isinstance(item, str) else str(item).lower()
+            for item in values
+            if isinstance(item, str | bool)
+            and str(item).strip().lower() in refusal["values"]
+        ]
+        if method_name in refusal["methods"] and refused:
+            return (
+                f"`{refusal['parameter']}='{refused[0]}'` is not available on this server: "
+                f"{refusal['reason']}"
+            )
+
+    return None
+
+
+# The arguments the server adds for the size limits only (config.yaml parameter_limits): the
+# number of tickers of a call and the years between its start and end date (range_years, as
+# the short rate simulations take a parameter called years). They are never passed to an
+# indicator. With how a product of the limits names them to the caller.
+PSEUDO_PARAMETERS = {
+    "tickers": "the number of tickers",
+    "range_years": "the years from start_date to end_date",
+}
+
+
+def _product_factor(
+    name: str, arguments: dict[str, Any], defaults: dict[str, Any]
+) -> tuple[float, str] | None:
+    """
+    The value of one factor of a product limit and how the answer names it, from the
+    arguments or else the indicator's defaults. A factor "a|b" takes a, or b when a is left
+    out or None (fixings, or time_steps when there are no fixings); a factor "1/x" divides by
+    the smallest value of x (refits every x returns). A list counts with its largest value.
+
+    Returns:
+        tuple[float, str] | None: The value and its name, or None when no alternative has a
+        number (the indicator does not take the parameter).
+    """
+    divides = name.startswith("1/")
+    for alternative in name.removeprefix("1/").split("|"):
+        value = arguments.get(alternative)
+        numbers = _numbers(value if value is not None else defaults.get(alternative))
+        if not numbers:
+            continue
+        label = PSEUDO_PARAMETERS.get(alternative, f"`{alternative}`")
+        if divides:
+            return (
+                1 / min(numbers) if min(numbers) > 0 else math.inf,
+                f"1 / {label}",
+            )
+        return max(numbers), label
+    return None
+
+
+def _applies(
+    product: dict[str, Any],
+    method_name: str | None,
+    arguments: dict[str, Any],
+    defaults: dict[str, Any],
+) -> bool:
+    """
+    Whether a product limit applies to the call: to the indicators it names ("methods", all
+    when left out) and when every parameter of "when" has one of its values (the argument,
+    or else the indicator's default), compared as lower case text.
+    """
+    if product.get("methods") and method_name not in product["methods"]:
+        return False
+    for parameter, values in product.get("when", {}).items():
+        value = arguments.get(parameter)
+        value = value if value is not None else defaults.get(parameter)
+        if str(value).strip().lower() not in {str(v).lower() for v in values}:
+            return False
+    return True
+
+
 def size_limit_problem(
-    arguments: dict[str, Any], defaults: dict[str, Any], limits: dict[str, Any]
+    arguments: dict[str, Any],
+    defaults: dict[str, Any],
+    limits: dict[str, Any],
+    method_name: str | None = None,
 ) -> str | None:
     """
     Checks the size parameters of a call against the limits of the server (config.yaml
     parameter_limits), so a call cannot simulate or download more than the server can hold.
 
+    A product limit is a list of "parameters" whose values multiply to at most "maximum".
+    A parameter may be written "a|b" (a, or b when a is left out), "1/x" (divided by x) or
+    be one of the PSEUDO_PARAMETERS ("tickers", "range_years"), which the registry adds to the
+    arguments of this check. "methods" restricts a product to those indicators, "when" to
+    calls with those values of other parameters (such as method='monte_carlo'), and "hint"
+    replaces the closing advice of the answer.
+
     Args:
-        arguments (dict[str, Any]): The arguments the indicator receives.
+        arguments (dict[str, Any]): The arguments the indicator receives, with the pseudo
+            parameters.
         defaults (dict[str, Any]): The indicator's own default per parameter, used in a
             product for a parameter the caller left out.
-        limits (dict[str, Any]): The "maximums" (per parameter) and "products" (a list of
-            parameters and the maximum of their product).
+        limits (dict[str, Any]): The "maximums" (per parameter, or per parameter of one
+            indicator as "indicator.parameter"), the "minimums" (per parameter), the
+            "lengths" (the most items of a list, per parameter or "indicator.parameter") and
+            the "products".
+        method_name (str | None, optional): The indicator called, for the limits of one
+            indicator. Defaults to None, which checks only the limits of every indicator.
 
     Returns:
-        str | None: What is over a limit, or None when the call is within them.
+        str | None: What is over a limit and what to change, or None when the call is within
+        them.
     """
     for name, maximum in limits.get("maximums", {}).items():
-        if any(number > maximum for number in _numbers(arguments.get(name))):
+        indicator, _, parameter = name.rpartition(".")
+        if indicator and indicator != method_name:
+            continue
+        if any(number > maximum for number in _numbers(arguments.get(parameter))):
             return (
-                f"`{name}` may be at most {maximum:,} on this server, which keeps every call "
+                f"`{parameter}` may be at most {maximum:,} on this server, which keeps every call "
                 "to a size it can compute next to the others. Please use a smaller value."
             )
 
-    for product in limits.get("products", []):
-        names = product["parameters"]
-        if not all(name in arguments or name in defaults for name in names):
-            continue
-        values = [
-            _numbers(
-                arguments[name]
-                if arguments.get(name) is not None
-                else defaults.get(name)
-            )
-            for name in names
-        ]
-        if (
-            all(values)
-            and math.prod(max(value) for value in values) > product["maximum"]
-        ):
+    for name, minimum in limits.get("minimums", {}).items():
+        if any(number < minimum for number in _numbers(arguments.get(name))):
             return (
-                f"{' times '.join(f'`{name}`' for name in names)} may be at most "
-                f"{product['maximum']:,} on this server, which keeps every call to a size it "
-                "can compute next to the others. Please use smaller values."
+                f"`{name}` must be at least {minimum:,} on this server, which keeps every call "
+                "to a size it can compute next to the others. Please use a larger value."
+            )
+
+    for name, maximum in limits.get("lengths", {}).items():
+        indicator, _, parameter = name.rpartition(".")
+        if indicator and indicator != method_name:
+            continue
+        value = arguments.get(parameter)
+        items = _split_list(value) if isinstance(value, str) else value
+        if isinstance(items, list | tuple) and len(items) > maximum:
+            return (
+                f"`{parameter}` may list at most {maximum:,} values on this server "
+                f"({len(items):,} given), which keeps every call to a size it can compute "
+                "next to the others. Please list fewer, or split them over several calls."
+            )
+
+    for product in limits.get("products", []):
+        if not _applies(product, method_name, arguments, defaults):
+            continue
+        given = [
+            _product_factor(name, arguments, defaults) for name in product["parameters"]
+        ]
+        factors = [factor for factor in given if factor is not None]
+        # A product leaves out an indicator that does not take every parameter of it.
+        if len(factors) < len(given):
+            continue
+        total = math.prod(value for value, _ in factors)
+        if total > product["maximum"]:
+            labels = [label for _, label in factors]
+            # A divisor is lowered by a larger value of its parameter.
+            divisors = [
+                label.removeprefix("1 / ")
+                for label in labels
+                if label.startswith("1 / ")
+            ]
+            advice = product.get("hint") or (
+                "Please use smaller values"
+                + (f", or a larger {' or '.join(divisors)}" if divisors else "")
+                + "."
+            )
+            return (
+                f"{' times '.join(labels)} may be at most {product['maximum']:,} on this "
+                f"server ({total:,.4g} here), which keeps every call to a size it can "
+                f"compute next to the others. {advice}"
             )
 
     return None

@@ -1,5 +1,6 @@
 """Portfolio Module"""
 
+import functools
 import os
 import shutil
 from importlib import resources
@@ -7,6 +8,7 @@ from importlib import resources
 import numpy as np
 import pandas as pd
 
+from financetoolkit import yfinance_model
 from financetoolkit.helpers import get_non_trading_days
 from financetoolkit.historical_model import convert_daily_to_other_period
 from financetoolkit.portfolio import (
@@ -14,11 +16,15 @@ from financetoolkit.portfolio import (
     helpers,
     overview_model,
     portfolio_model,
+    trades_model,
 )
+from financetoolkit.portfolio.construction.attribution import attribution_model
 from financetoolkit.portfolio.definition_model import PortfolioDefinition
+from financetoolkit.portfolio.sources import benchmark_model
 from financetoolkit.toolkit_controller import Toolkit
-from financetoolkit.utilities import logger_model, requests_model, validation_model
+from financetoolkit.utilities import logger_model, validation_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
+from financetoolkit.utilities.error_model import check_option, check_period
 from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import apply_rounding, to_period_index
 
@@ -97,7 +103,12 @@ class Portfolio:
         - transactions: a DataFrame, CSV or Excel file with one row per trade and the columns
           Date, Ticker (or Symbol, Identifier, ISIN), Volume (or Quantity, Shares; negative
           for a sale) and optionally Price, Costs (negative) and Currency. A missing Price is
-          filled with the closing price of the day;
+          filled with the closing price of the day. The historical prices are adjusted for
+          stock splits, so a trade from before a split is valued on today's share basis: one
+          given as the broker confirmed it at the time (1 share at 830.40 before a ten for
+          one split) is restated to that basis (10 shares at 83.04) when its price is closer
+          to the close of its day on the old basis, which needs the stock splits and an API
+          key. A date with a time of day ("%Y-%m-%d %H:%M:%S") orders the trades of a day;
         - a definition (`PortfolioDefinition`), as the classic portfolios of
           `Portfolio.from_preset` are.
 
@@ -378,7 +389,6 @@ class Portfolio:
                 start_date=start_date,
                 use_cached_data=self._use_cached_data,
                 progress_bar=False,
-                # Unrounded: a rate such as JPY to EUR (0.0061) loses digits at four decimals.
                 rounding=None,
             ).get_historical_data(period="daily")
             # A single ticker comes back without the ticker level.
@@ -439,6 +449,40 @@ class Portfolio:
         )
 
         return benchmark_currency, ticker_currencies
+
+    def _clear_collected_data(self, benchmark_only: bool = False) -> None:
+        """
+        Forget the data collected for the transactions and the benchmark, and everything
+        calculated from it, so the next method collects it again: the benchmark and what
+        depends on it when the benchmark changes, and also the prices of the tickers when the
+        transactions are read again (they are converted to the reporting currency in place
+        when the prices are collected). The exchange rates are kept, as they do not change.
+        """
+        if not benchmark_only:
+            self._toolkit = None
+            self._ticker_combinations = {}
+            self._daily_historical_data = pd.DataFrame()
+            self._weekly_historical_data = pd.DataFrame()
+            self._historical_statistics = pd.DataFrame()
+            self._latest_price = pd.Series()
+            self._positions_overview = pd.DataFrame()
+
+        self._benchmark_toolkit = None
+        self._toolkit_instance = None
+        self._benchmark_tickers = {}
+        self._daily_benchmark_data = pd.DataFrame()
+        self._weekly_benchmark_data = pd.DataFrame()
+        self._benchmark_specific_prices = pd.Series()
+        self._benchmark_transaction_dividends = pd.Series()
+        self._benchmark_prices_per_ticker = pd.DataFrame()
+        self._benchmark_dividends_per_ticker = pd.DataFrame()
+        self._latest_benchmark_price = pd.Series()
+        self._portfolio_volatilities = pd.Series()
+        self._portfolio_beta = pd.Series()
+        self._portfolio_overview = pd.DataFrame()
+        self._portfolio_performance = pd.DataFrame()
+        self._transactions_performance = pd.DataFrame()
+        self._transactions_overview = pd.DataFrame()
 
     def _collect_data(self) -> bool:
         """
@@ -739,27 +783,8 @@ class Portfolio:
         closes.index = closes.index.to_timestamp()
         closes = closes.sort_index()
 
-        def first_close(symbol: str, day: pd.Timestamp) -> float:
-            # The first close of the ticker's own trading days on or after the date, as the positions, the benchmark and the dividends use: the previous close would price a weekend purchase on Friday while its position starts on Monday.  # noqa: E501
-            if symbol not in closes.columns or pd.isna(day):
-                return float("nan")
-            available = closes[symbol].dropna()
-            following = available.loc[day.normalize() :]
-            if not following.empty:
-                return float(following.iloc[0])
-            # A trade after the latest close (the weekend after it, or today before the provider has today's bar) takes the latest close, the day its position, benchmark and dividends start on as well.  # noqa: E501
-            if available.empty:
-                return float("nan")
-            logger.warning(
-                "The %s transaction of %s has no close on or after that date and is priced at the last close of %s.",
-                symbol,
-                day.strftime("%Y-%m-%d"),
-                available.index[-1].strftime("%Y-%m-%d"),
-            )
-            return float(available.iloc[-1])
-
         frame["Price"] = [
-            first_close(str(symbol), day)
+            portfolio_model.get_first_close(closes, str(symbol), day)
             for symbol, day in zip(symbols, dates, strict=True)
         ]
 
@@ -774,10 +799,12 @@ class Portfolio:
     def get_presets() -> pd.DataFrame:
         """
         List the classic portfolios that ship with the Finance Toolkit, to use with
-        `Portfolio.from_preset`. Each is defined with real funds and the source of its
-        allocation: the 60/40, Ray Dalio's All Weather, Harry Browne's Permanent Portfolio,
-        the Golden Butterfly, the Bogleheads three-fund portfolio, Warren Buffett's 90/10,
-        Nassim Taleb's barbell, a target-date glide path and more.
+        `Portfolio.from_preset`.
+
+        Each is defined with real funds and the source of its allocation: the 60/40, Ray Dalio's
+        All Weather, Harry Browne's Permanent Portfolio, the Golden Butterfly, the Bogleheads
+        three-fund portfolio, Warren Buffett's 90/10, Nassim Taleb's barbell, a target-date
+        glide path and more.
 
         Returns:
             pd.DataFrame: Per preset (by identifier) its Name, Description, Holdings,
@@ -827,11 +854,12 @@ class Portfolio:
     @classmethod
     def from_preset(cls, name: str, **kwargs) -> "Portfolio":
         """
-        Create a Portfolio from one of the classic portfolios, by its identifier, name or
-        alias (see `Portfolio.get_presets`), e.g. "60/40", "All Weather", "Permanent",
-        "Golden Butterfly" or "Three Fund". It invests `initial_value` on `start_date` and
-        rebalances as the definition says, after which every Portfolio and Toolkit analysis
-        applies.
+        Create a Portfolio from one of the classic portfolios.
+
+        A portfolio is chosen by its identifier, name or alias (see `Portfolio.get_presets`),
+        such as "60/40", "All Weather", "Permanent", "Golden Butterfly" or "Three Fund". It
+        invests `initial_value` on `start_date` and rebalances as the definition says, after
+        which every Portfolio and Toolkit analysis applies.
 
         Args:
             name (str): The identifier, name or alias of the preset.
@@ -860,8 +888,9 @@ class Portfolio:
     @property
     def definition(self) -> PortfolioDefinition:
         """
-        The portfolio as a `PortfolioDefinition`: the definition it was built from (a preset
-        or weights), or, for holdings and transactions, the current weight of every position.
+        The portfolio as a `PortfolioDefinition`: the definition it was built from (a preset or
+        weights), or, for holdings and transactions, the current weight of every position.
+
         It can be stored with `to_yaml` and read by other tools.
 
         Returns:
@@ -891,15 +920,25 @@ class Portfolio:
         Converts the Portfolio to a Finance Toolkit object.
 
         This method converts the Portfolio object to a Finance Toolkit object, enabling the
-        use of the Toolkit's 500+ financial methods for the portfolio's assets. If the
+        use of the Toolkit's 1100+ financial methods for the portfolio's assets. If the
         historical data of the assets or the benchmark cannot be collected, an empty
         DataFrame is returned instead.
 
-        Next to the historical data, the portfolio weights are also
-        loaded in the Toolkit class. This, together with the "Portfolio" ticker, enables
-        the possibility to calculate any Toolkit metric for all assets in the portfolio
-        in combination with the Portfolio itself which is a weighted average of other
-        results based on the portfolio weights over time.
+        The Toolkit holds the historical data of every asset, the benchmark as "Benchmark",
+        and the Portfolio itself as the "Portfolio" ticker: its daily time-weighted total
+        return, every day each position's total return with its weight at the previous
+        close (purchases and sales change the weights and are no return themselves), with
+        Close, Adj Close and Cumulative Return as an index that starts at 1 on the first day
+        something is held. The risk metrics (volatility, Value at Risk, drawdowns and the
+        other measures of the return distribution), the performance metrics (the Sharpe,
+        Sortino and Treynor ratios, Beta, Jensen's Alpha, the Information Ratio, the capture
+        ratios and the others, with the excess returns over the risk free rate and the
+        benchmark of the Portfolio), the statistical tests of the econometrics and the
+        technical indicators of the close are calculated on that series, so they include how
+        the holdings move together: a stock next to its inverse fund has a low volatility and
+        a Sharpe ratio of its own, not the average of two. The ratios of the financial
+        statements are the weighted average of the assets' results with the portfolio weights
+        of each period.
 
         As an example:
 
@@ -970,13 +1009,19 @@ class Portfolio:
                 "Current Weight"
             ].unstack()
 
+        # A copy: the benchmark belongs in the Toolkit's data only, as a ticker of the Portfolio's own data it would duplicate the benchmark of every position.  # noqa: E501
+        historical = self._daily_historical_data.copy()
+        portfolio_series = self._portfolio_return_index()
         for column in historical_columns:
-            self._daily_historical_data[column, "Benchmark"] = benchmark_data[column]
+            historical[column, "Benchmark"] = benchmark_data[column]
+            historical[column, "Portfolio"] = portfolio_series.get(
+                column, pd.Series(np.nan, index=historical.index)
+            )
 
         historical = (
-            self._daily_historical_data.sort_index(axis=1)
+            historical.sort_index(axis=1)
             .reindex(historical_columns, axis=1, level=0)
-            .reindex(list(self._tickers) + ["Benchmark"], axis=1, level=1)
+            .reindex(list(self._tickers) + ["Portfolio", "Benchmark"], axis=1, level=1)
         )
 
         if not self._toolkit_instance:
@@ -994,6 +1039,41 @@ class Portfolio:
             self._toolkit_instance._portfolio_weights = portfolio_weights
 
         return self._toolkit_instance
+
+    def _portfolio_return_index(self) -> pd.DataFrame:
+        """
+        The daily time-weighted total return of the holdings, as a Return and as an index
+        that starts at 1 on the first day something is held (Close, Adj Close and Cumulative
+        Return): every day each position earns its total return with its weight at the
+        previous close, so purchases and sales change the weights and are no return
+        themselves (see `get_return_contributions`). A position that did not trade on a day
+        another did keeps its price, a return of 0.
+        """
+        weights = self._unrounded_positions()["Current Weight"].astype(float)
+        returns = (
+            self._daily_historical_data["Return"]
+            .reindex(index=weights.index, columns=weights.columns)
+            .astype(float)
+        )
+        previous_weights = weights.shift(1)
+        held = previous_weights.fillna(0.0).abs().sum(axis=1) > 0
+        portfolio_return = (
+            (previous_weights * returns.fillna(0.0))
+            .sum(axis=1, min_count=1)
+            .where(held)
+        )
+        # From the first day anything is held, the day before the first return.
+        started = (weights.fillna(0.0).abs().sum(axis=1) > 0).cummax()
+        index = (1 + portfolio_return.fillna(0.0)).cumprod().where(started)
+
+        return pd.DataFrame(
+            {
+                "Close": index,
+                "Adj Close": index,
+                "Return": portfolio_return,
+                "Cumulative Return": index,
+            }
+        )
 
     def read_portfolio_dataset(
         self,
@@ -1052,7 +1132,10 @@ class Portfolio:
                 - For missing cost or income columns, an exception is raised if no valid configuration is found.
 
         Notes:
-            - Duplicates are handled according to configuration settings ('self._cfg["general"]["adjust_duplicates"]').
+            - Reading the transactions again, after data was collected, starts over: the prices, the benchmark
+            and every overview are collected and calculated again for the transactions that are read.
+            - Duplicates are handled according to the adjust duplicates setting of the
+              configuration.
             - If duplicate data is found in the combination of datasets, it will be removed to prevent double-counting.
             - The date columns are converted to datetime objects, and transaction descriptions are treated as
             categorical data.
@@ -1123,6 +1206,11 @@ class Portfolio:
             column_mapping if column_mapping else self._cfg["general"]["column_mapping"]
         )
 
+        # The data collected for the transactions read before belongs to those transactions and is in their reporting
+        # currency.
+        if not self._daily_historical_data.empty or self._toolkit_instance is not None:
+            self._clear_collected_data()
+
         if not self._raw_portfolio_dataset.empty:
             (
                 self._portfolio_dataset,
@@ -1177,6 +1265,11 @@ class Portfolio:
                 column_mapping=column_mapping,
             )
 
+        # Transactions with a time of day are in the order they were made in within each day.
+        self._ordered_by_time = bool(
+            self._portfolio_dataset.attrs.get("ordered_by_time", False)
+        )
+
         # Written the way the Toolkit writes them, so "aapl" and "AAPL" are one holding and
         # each ticker matches its own data. An ISIN is converted once here; when it resolves
         # to a ticker that is also in the dataset, both are the same holding.
@@ -1187,7 +1280,7 @@ class Portfolio:
             .str.upper()
         )
         converted_tickers = {
-            ticker: requests_model.convert_isin_to_ticker(ticker)
+            ticker: yfinance_model.convert_isin_to_ticker(ticker)
             for ticker in tickers.unique()
         }
         tickers = tickers.map(
@@ -1240,7 +1333,8 @@ class Portfolio:
         - Volume: the volume of the benchmark over time.
         - Dividends: the dividends of the benchmark over time.
         - Returns: the returns of the benchmark over time.
-        - Cumulative Return: the cumulative return of the benchmark over time.
+        - Cumulative Return: the growth of 1 invested in the benchmark at the start, the product of
+        (1 + Return): 1.0 on the first date and 1.25 after a 25% gain.
 
         Volatility, Excess Return and Excess Volatility are not included here. These are
         available via the Risk module (e.g. toolkit.risk.get_volatility) and the Performance
@@ -1256,8 +1350,10 @@ class Portfolio:
         on the portfolio tickers. The resulting benchmark data is returned in a structured DataFrame.
 
         Args:
-            benchmark_ticker (str | None): The benchmark ticker symbol. Defaults to None, the benchmark ticker
-                given to the Portfolio, or the one of the configuration file when none was given.
+            benchmark_ticker (str | None): The benchmark ticker symbol. Another ticker than the current
+                benchmark replaces it for every later method of the Portfolio, such as the Benchmark Return,
+                Alpha and Beta of the overviews. Defaults to None, the current benchmark: the one given to
+                the Portfolio, or the one of the configuration file when none was given.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -1323,8 +1419,12 @@ class Portfolio:
             if self._daily_historical_data.empty:
                 return pd.DataFrame()
 
-        # The constructor already fell back to the configuration's benchmark.
-        benchmark_ticker = benchmark_ticker or self._benchmark_ticker
+        # The constructor already fell back to the configuration's benchmark. Another benchmark replaces it, with
+        # everything calculated from the one collected before.
+        if benchmark_ticker and benchmark_ticker != self._benchmark_ticker:
+            self._benchmark_ticker = benchmark_ticker
+            self._clear_collected_data(benchmark_only=True)
+        benchmark_ticker = self._benchmark_ticker
 
         if not self._benchmark_toolkit:
             self._benchmark_tickers = dict.fromkeys(
@@ -1366,25 +1466,14 @@ class Portfolio:
             self._start_date,
         )
 
-        def convert(data: pd.DataFrame, currency: str | None) -> pd.DataFrame:
-            if data.empty or currency not in conversions:
-                return data
-            data = data.copy()
-            data.columns = pd.MultiIndex.from_product([data.columns, [benchmark_name]])
-            data = portfolio_model.convert_historical_data(
-                data,
-                {benchmark_name: (str(benchmark_currency), str(currency))},
-                exchange_rates,
-                self._cfg["adjustments"]["currency_adjustment_columns"],
-            )
-            return data.droplevel(1, axis=1)
-
-        def benchmark_period(period: str) -> pd.DataFrame:
-            data = self._benchmark_toolkit.get_historical_data(period=period)  # type: ignore[union-attr]
-            # A single benchmark can come back with the ticker as a second column level.
-            if data.columns.nlevels > 1:
-                data = data.droplevel(1, axis=1)
-            return data
+        convert = functools.partial(
+            portfolio_model.convert_benchmark_data,
+            conversions=conversions,
+            benchmark_name=benchmark_name,
+            benchmark_currency=benchmark_currency,
+            exchange_rates=exchange_rates,
+            columns=self._cfg["adjustments"]["currency_adjustment_columns"],
+        )
 
         if ticker_currencies and not benchmark_currency:
             logger.warning(
@@ -1399,7 +1488,9 @@ class Portfolio:
             else None
         )
 
-        daily_benchmark_data = benchmark_period("daily")
+        daily_benchmark_data = benchmark_model.get_benchmark_historical_data(
+            self._benchmark_toolkit, "daily"
+        )
 
         if daily_benchmark_data.empty:
             logger.error(
@@ -1410,9 +1501,14 @@ class Portfolio:
             return pd.DataFrame()
 
         # Aligned with carried-forward prices: filling a missing date with the next quote would copy that day's return onto the earlier date as well and price it with information from the future.  # noqa: E501
+        # The prices are carried forward before the conversion, on the dates of the portfolio as well, so a date the
+        # benchmark's exchange is closed is converted at its own exchange rate.
+        benchmark_on_portfolio_dates = daily_benchmark_data.reindex(
+            daily_benchmark_data.index.union(self._daily_historical_data.index)
+        )
         aligned_by_currency = {
             main_currency: portfolio_model.align_benchmark_data(
-                convert(daily_benchmark_data, main_currency),
+                convert(benchmark_on_portfolio_dates, main_currency),
                 self._daily_historical_data.index,
             )
         }
@@ -1429,7 +1525,9 @@ class Portfolio:
                 self._benchmark_toolkit._start_date : self._benchmark_toolkit._end_date
             ]  # type: ignore[union-attr]
             if main_currency in conversions
-            else benchmark_period("weekly")
+            else benchmark_model.get_benchmark_historical_data(
+                self._benchmark_toolkit, "weekly"
+            )
         )
 
         benchmark_closes = {}
@@ -1438,7 +1536,7 @@ class Portfolio:
             currency = ticker_currencies.get(ticker, main_currency)
             if currency not in aligned_by_currency:
                 aligned_by_currency[currency] = portfolio_model.align_benchmark_data(
-                    convert(daily_benchmark_data, currency),
+                    convert(benchmark_on_portfolio_dates, currency),
                     self._daily_historical_data.index,
                 )
             aligned = aligned_by_currency[currency]
@@ -1513,43 +1611,6 @@ class Portfolio:
             self._portfolio_dataset.index.get_level_values(0), freq="D"
         )
 
-        def conversion_factors(reporting_currency: str) -> pd.Series:
-            # The factor that turns a price of each transaction into the reporting currency at the rate of its day.  # noqa: E501
-            _, reporting_units = portfolio_model.get_price_unit(reporting_currency)
-            rate_tickers = {
-                currency: portfolio_model.get_exchange_rate_ticker(
-                    reporting_currency, currency
-                )
-                for currency in set(known)
-            }
-            exchange_rates = self._get_exchange_rates(
-                list(rate_tickers.values()), self._start_date
-            )
-            # A transaction without a known currency is taken to be in the reporting currency (see the warning above).  # noqa: E501
-            factors = pd.Series(1.0, index=self._portfolio_dataset.index)
-            for currency, rate_ticker in rate_tickers.items():
-                rows = (currencies == currency).to_numpy()
-                _, units = portfolio_model.get_price_unit(currency)
-                rate: np.ndarray | float = 1.0
-                if rate_ticker is not None:
-                    # The rate of each transaction's day, or the last one before it.
-                    rate = (
-                        portfolio_model.align_exchange_rate(
-                            exchange_rates[rate_ticker], dates[rows]
-                        ).to_numpy(dtype=float)
-                        if rate_ticker in exchange_rates.columns
-                        else np.full(rows.sum(), np.nan)
-                    )
-                    if np.isnan(rate).any():
-                        missing = dates[rows][np.isnan(rate)].min()
-                        raise ValueError(
-                            f"Transactions in {currency} cannot be converted to the reporting "
-                            f"currency {reporting_currency} without the exchange rate "
-                            f"{rate_ticker} on or before {missing}."
-                        )
-                factors[rows] = reporting_units / units / rate
-            return factors
-
         if self._currency:
             reporting_currency = self._currency
         elif len(majors) == 1:
@@ -1561,7 +1622,18 @@ class Portfolio:
                 * self._portfolio_dataset[self._volume_column]
             ).abs()
             try:
-                invested = invested * conversion_factors("USD")
+                invested = invested * portfolio_model.get_conversion_factors(
+                    currencies,
+                    dates,
+                    "USD",
+                    self._get_exchange_rates(
+                        [
+                            portfolio_model.get_exchange_rate_ticker("USD", currency)
+                            for currency in set(known)
+                        ],
+                        self._start_date,
+                    ),
+                )
             except ValueError:
                 # Without the dollar rates, the amounts are compared in the major units of their own currency.  # noqa: E501
                 invested = invested / [
@@ -1583,7 +1655,20 @@ class Portfolio:
             totals = invested.groupby(major_currencies, sort=False).sum()
             reporting_currency = str(totals.idxmax())
 
-        factors = conversion_factors(reporting_currency)
+        factors = portfolio_model.get_conversion_factors(
+            currencies,
+            dates,
+            reporting_currency,
+            self._get_exchange_rates(
+                [
+                    portfolio_model.get_exchange_rate_ticker(
+                        reporting_currency, currency
+                    )
+                    for currency in set(known)
+                ],
+                self._start_date,
+            ),
+        )
 
         for column in (self._price_column, self._costs_column):
             if column in self._portfolio_dataset.columns:
@@ -1614,7 +1699,8 @@ class Portfolio:
         - Volume: the volume of each asset over time.
         - Dividends: the dividends of each asset over time.
         - Returns: the returns of each asset over time.
-        - Cumulative Return: the cumulative return of each asset over time.
+        - Cumulative Return: the growth of 1 invested in each asset at the start, the product of (1 + Return):
+        1.0 on the first date and 1.25 after a 25% gain.
 
         Volatility, Excess Return and Excess Volatility are not included here. These are
         available via the Risk module (e.g. toolkit.risk.get_volatility) and the Performance
@@ -1630,8 +1716,8 @@ class Portfolio:
         data's currency.
 
         Args:
-            rounding (int | None): An optional integer specifying the number of decimal places to round the
-                historical price data. If None, the default rounding value is used.
+            rounding (int | None, optional): An optional integer specifying the number of decimal places to round the
+                historical price data. If None, the default rounding value is used. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -1664,7 +1750,6 @@ class Portfolio:
         ```
 
         Which returns:
-
 
         |            |   ('Open', 'ASML') |   ('Open', 'SKY') |   ('Open', 'AMZN') |   ('Open', 'FIX') |   ('Open', 'MSFT') |   ('Open', 'AMD') |   ('Open', 'AAPL') |
         |:-----------|-------------------:|------------------:|-------------------:|------------------:|-------------------:|------------------:|-------------------:|
@@ -1786,19 +1871,16 @@ class Portfolio:
             self._start_date,
         )
 
-        def convert(historical_data: pd.DataFrame) -> pd.DataFrame:
-            # Every price, dividend and return of the historical data is expressed in the
-            # currency of the transactions, so the two can be compared and added up.
-            if not currency_conversions or historical_data.empty:
-                return historical_data
-            return portfolio_model.convert_historical_data(
-                historical_data,
+        # Every price, dividend and return of the historical data is expressed in the
+        # currency of the transactions, so the two can be compared and added up.
+        if currency_conversions and not self._daily_historical_data.empty:
+            self._daily_historical_data = portfolio_model.convert_historical_data(
+                self._daily_historical_data,
                 currency_conversions,
                 exchange_rates,
                 self._cfg["adjustments"]["currency_adjustment_columns"],
             )
-
-        self._daily_historical_data = convert(self._daily_historical_data)
+        self._restate_split_transactions()
 
         # The weekly data is aggregated from the converted daily data, so each day's Open, High,
         # Low and Dividends is converted at that day's exchange rate rather than the week's last.
@@ -1844,6 +1926,88 @@ class Portfolio:
             rounding if rounding is not None else self._rounding,
         )
 
+    def _restate_split_transactions(self) -> None:
+        """
+        Restate the transactions from before a stock split that are given on the share basis of
+        their own day, as a broker confirms them, to the split-adjusted basis of the historical
+        data (see `portfolio_model.get_split_factors`): the volume times the split ratio and the
+        price divided by it, so the amount stays the same. Only the tickers with a transaction
+        priced far from the close of its day are checked, which needs their stock splits.
+        """
+        if "Close" not in self._daily_historical_data.columns.get_level_values(0):
+            return
+        prices = self._portfolio_dataset[self._price_column].astype(float)
+        closes = self._values_at_transactions(self._daily_historical_data["Close"])
+        ratios = (prices / closes).abs()
+        suspects = (ratios > portfolio_model.SPLIT_PRICE_FACTOR) | (
+            ratios < 1 / portfolio_model.SPLIT_PRICE_FACTOR
+        )
+        if not suspects.any():
+            return
+
+        tickers = self._portfolio_dataset.index.get_level_values(1)
+        suspect_tickers = list(dict.fromkeys(tickers[suspects.to_numpy()]))
+        data_tickers = [
+            self._data_tickers.get(ticker, ticker) for ticker in suspect_tickers
+        ]
+        stock_splits = (
+            Toolkit(
+                api_key=self._api_key,
+                tickers=data_tickers,
+                benchmark_ticker=None,
+                start_date=self._start_date,
+                use_cached_data=self._use_cached_data,
+                progress_bar=False,
+            ).get_stock_splits()
+            if self._api_key
+            else None
+        )
+
+        splits: dict[str, pd.Series] = {}
+        if isinstance(stock_splits, pd.DataFrame) and not stock_splits.empty:
+            # A single ticker comes back without the ticker level.
+            if stock_splits.index.nlevels == 1:
+                stock_splits = pd.concat({data_tickers[0]: stock_splits})
+            for data_ticker, ticker_splits in stock_splits.groupby(level=0):
+                ratio = ticker_splits["Numerator"].astype(float) / ticker_splits[
+                    "Denominator"
+                ].astype(float)
+                splits[
+                    self._ticker_combinations.get(str(data_ticker), str(data_ticker))
+                ] = ratio.droplevel(0)
+
+        factors = portfolio_model.get_split_factors(
+            prices,
+            closes,
+            self._portfolio_dataset.index.get_level_values(0),
+            tickers,
+            splits,
+        )
+        restated = factors != 1
+        if restated.any():
+            self._portfolio_dataset[self._volume_column] = (
+                self._portfolio_dataset[self._volume_column] * factors
+            )
+            self._portfolio_dataset[self._price_column] = prices / factors
+            logger.info(
+                "Restated %d transactions of %s from before a stock split to the split-adjusted share basis "
+                "of the prices (the volume times the split ratio, the price divided by it).",
+                int(restated.sum()),
+                ", ".join(map(str, dict.fromkeys(tickers[restated.to_numpy()]))),
+            )
+
+        unexplained = suspects & ~restated
+        if unexplained.any():
+            logger.warning(
+                "The price of %d transactions of %s is more than %.0f%% away from the close of its day, and no "
+                "stock split explains it%s. A transaction from before a split is valued on today's share basis: "
+                "give its volume times the split ratio and its price divided by it.",
+                int(unexplained.sum()),
+                ", ".join(map(str, dict.fromkeys(tickers[unexplained.to_numpy()]))),
+                (portfolio_model.SPLIT_PRICE_FACTOR - 1) * 100,
+                "" if self._api_key else " (the stock splits need an API key)",
+            )
+
     def get_positions_overview(
         self, rounding: int | None = None, show_columns: str | list[str] | None = None
     ):
@@ -1861,7 +2025,8 @@ class Portfolio:
         units held at the previous close times the dividend per unit.
         - Current Value: the market value of the position still held, marked at the closing price of that day.
         - Cumulative Return: the total return on the capital deployed, i.e.
-        (Current Value + Realized Proceeds + Dividends - Invested Amount) / Invested Amount. It is NaN
+        (Current Value + Realized Proceeds + Dividends - Invested Amount) / Invested Amount: a return, 0.25
+        after a 25% gain (unlike the Cumulative Return of the historical data, the growth of 1). It is NaN
         before the first purchase, when no capital has been deployed yet.
         - Invested Weight: the weight of the asset in the portfolio based on the invested amount over time.
         - Current Weight: the weight of the asset in the portfolio based on the current value over time.
@@ -1883,8 +2048,8 @@ class Portfolio:
         key metrics. The data is rounded to the specified precision before being returned.
 
         Args:
-            rounding (int | None): An optional integer specifying the number of decimal places to round the data.
-                If None, the default rounding precision is used.
+            rounding (int | None, optional): An optional integer specifying the number of decimal places to round the data.
+                If None, the default rounding precision is used. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -2052,8 +2217,8 @@ class Portfolio:
             exclude_sold_positions (bool): A flag indicating whether to exclude sold positions from the overview,
                 those whose sales add up to their purchases. Open positions stay, long or short, and so does the
                 Portfolio row while any position is open. Defaults to True.
-            rounding (int | None): An optional integer specifying the number of decimal places to round the data.
-                If None, the default rounding precision is used.
+            rounding (int | None, optional): An optional integer specifying the number of decimal places to round the data.
+                If None, the default rounding precision is used. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -2148,7 +2313,6 @@ class Portfolio:
                 betas=self._portfolio_beta,
                 include_portfolio=include_portfolio,
                 asset_returns=self._daily_historical_data["Return"],
-                # The dividends per unit paid after every transaction up to the latest date.
                 dividends=self._dividends_since_transactions(cumulative_dividends),
                 benchmark_dividends=self._dividends_since_transactions(
                     self._benchmark_dividends_per_ticker
@@ -2164,6 +2328,11 @@ class Portfolio:
             if "Portfolio" in open_positions.index:
                 open_positions["Portfolio"] = open_positions.drop("Portfolio").any()
             self._portfolio_overview = self._portfolio_overview[open_positions]
+            if self._portfolio_overview.empty:
+                logger.warning(
+                    "Every position of the portfolio is sold, so the overview without sold "
+                    "positions is empty. Set exclude_sold_positions=False to include them."
+                )
 
         self._portfolio_overview = self._portfolio_overview.pipe(
             apply_rounding, rounding if rounding is not None else self._rounding
@@ -2179,19 +2348,23 @@ class Portfolio:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate portfolio performance metrics for a specified period.
+        Calculate portfolio performance metrics for a specified period: each position and the
+        Portfolio at the end of every period.
+
+        The Return is the total return on the capital deployed since the purchase, as of the end
+        of the period, not the return within the period (`get_return_contributions` gives that
+        per period).
 
         This method calculates key performance metrics, such as returns, for the portfolio
-        over a specified period. The available periods are 'yearly', 'quarterly', 'monthly',
-        'weekly', and 'daily'. It uses the positions overview dataset for these calculations.
+        over a specified period, from daily to yearly. It uses the positions overview dataset
+        for these calculations.
         If the necessary data has not been collected, it triggers the collection of historical
         and benchmark data.
 
         Args:
             period (str | None): The time period for which portfolio performance metrics should be calculated.
-                It can be one of the following: 'yearly', 'quarterly', 'monthly', 'weekly', or 'daily'.
-                If None, the default period is 'quarterly' (if the 'quarterly' attribute is set to True),
-                otherwise, it defaults to 'yearly'.
+                Options are: "daily", "weekly", "monthly", "quarterly", "yearly". Defaults to None, which is
+                "quarterly" when the Portfolio is quarterly and "yearly" otherwise.
             exclude_sold_positions (bool): A flag indicating whether to exclude the periods in which a position was
                 sold, its sales adding up to its purchases. Open positions stay, long or short. Defaults to True.
             rounding (int | None): The number of decimal places to round the output to.
@@ -2205,7 +2378,7 @@ class Portfolio:
             pd.DataFrame: A DataFrame containing the portfolio performance metrics for the specified period.
 
         Raises:
-            ValueError: If an invalid or unsupported period is provided.
+            InvalidArgumentError: If the period is not one of the options.
             ValueError: If there is an issue with collecting historical data or creating the portfolio performance.
 
         Notes:
@@ -2243,6 +2416,8 @@ class Portfolio:
         if not period:
             period = "quarterly" if self._quarterly else "yearly"
 
+        check_period(period.lower(), list(_PERIOD_SYMBOLS))
+
         if not self._collect_data():
             return pd.DataFrame()
 
@@ -2254,11 +2429,7 @@ class Portfolio:
                     f"Failed to get positions overview: {error}"
                 ) from error
 
-        period_symbol = _PERIOD_SYMBOLS.get(period.lower())
-        if period_symbol is None:
-            raise ValueError(
-                "Please provide a valid period. This can be 'yearly', 'quarterly', 'monthly', 'weekly', or 'daily'"
-            )
+        period_symbol = _PERIOD_SYMBOLS[period.lower()]
 
         try:
             self._portfolio_performance = overview_model.create_portfolio_performance(
@@ -2276,6 +2447,12 @@ class Portfolio:
             self._portfolio_performance = self._portfolio_performance[
                 self._open_positions(self._portfolio_performance["Volume"])
             ]
+            if self._portfolio_performance.empty:
+                logger.warning(
+                    "No position of the portfolio is held at the end of any period, so the "
+                    "performance without sold positions is empty. Set "
+                    "exclude_sold_positions=False to include them."
+                )
 
         self._portfolio_performance = self._portfolio_performance.pipe(
             apply_rounding, rounding if rounding is not None else self._rounding
@@ -2307,9 +2484,11 @@ class Portfolio:
                 is realized when shares are sold, so it is booked on the sell transactions: with
                 True, every remaining (buy) transaction shows a PnL of 0 and the realized total is
                 in the Cumulative PnL column. Pass False to see the PnL of each sale. Defaults to True.
-            pnl_method (str): The method for calculating profit & loss. Options are:
-                'FIFO' (First In, First Out), 'LIFO' (Last In, First Out), or 'AVERAGE'.
-                Defaults to 'FIFO'.
+            pnl_method (str): The method for calculating profit & loss. Options are: "FIFO" (first in, first out:
+                the oldest lots close first), "LIFO" (last in, first out: the newest lots close first), "AVERAGE"
+                (every sale at the average cost of the units held). Defaults to "FIFO". The purchases of a day come
+                before its sales, unless the dates of the transactions include a time of day ("%Y-%m-%d %H:%M:%S"),
+                which orders them within the day.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -2370,10 +2549,7 @@ class Portfolio:
         """
         pnl_method = pnl_method.upper()
 
-        if pnl_method not in ["FIFO", "LIFO", "AVERAGE"]:
-            raise ValueError(
-                "Please provide a valid method. This can be 'FIFO', 'LIFO', or 'AVERAGE'"
-            )
+        check_option("pnl_method", pnl_method, ["FIFO", "LIFO", "AVERAGE"])
 
         if not self._collect_data():
             return pd.DataFrame()
@@ -2411,6 +2587,7 @@ class Portfolio:
                 volume_column=self._volume_column,
                 price_column=self._price_column,
                 method=pnl_method,
+                purchases_first=not self._ordered_by_time,
             )
 
             # Ensure the indices are unique before concatenation
@@ -2469,10 +2646,9 @@ class Portfolio:
         earlier ones. Units are valued at the traded closing price and receive their dividends as cash.
 
         Args:
-            period (str | None): The time period for which transaction performance metrics
-                should be calculated. This can be one of the following: 'yearly', 'quarterly',
-                'monthly', 'weekly', or 'daily'. If None, the default is 'quarterly' if
-                the 'quarterly' attribute is set to True, otherwise 'yearly'.
+            period (str | None, optional): The time period for which transaction performance metrics should be
+                calculated. Options are: "daily", "weekly", "monthly", "quarterly", "yearly". Defaults to None,
+                which is "quarterly" when the Portfolio is quarterly and "yearly" otherwise.
             exclude_sold_positions (bool): Whether to leave out the periods without an
                 invested amount, those in which only units bought earlier were sold, and those whose only
                 purchases cost nothing (a price of 0), which have no return to measure. Defaults
@@ -2489,13 +2665,13 @@ class Portfolio:
                 returns, costs, and benchmarks, for the specified period.
 
         Raises:
-            ValueError: If an invalid or unsupported period is provided or if there is an issue
-                        with creating the transaction performance metrics.
+            InvalidArgumentError: If the period is not one of the options.
+            ValueError: If there is an issue with creating the transaction performance metrics.
 
         Notes:
-            - The method supports multiple time periods ('yearly', 'quarterly', 'monthly',
-              'weekly', 'daily') for calculating transaction performance metrics.
-            - If no period is provided, it defaults to 'quarterly' or 'yearly' based on the
+            - The method supports every period from daily to yearly for calculating transaction
+              performance metrics.
+            - If no period is provided, it defaults to quarterly or yearly based on the
               configuration.
             - The end-of-period prices and dividends are taken from the daily data, in the currency of
               each ticker's transactions for the asset and the benchmark alike.
@@ -2532,14 +2708,12 @@ class Portfolio:
         if not period:
             period = "quarterly" if self._quarterly else "yearly"
 
+        check_period(period.lower(), list(_PERIOD_SYMBOLS))
+
         if not self._collect_data():
             return pd.DataFrame()
 
-        period_symbol = _PERIOD_SYMBOLS.get(period.lower())
-        if period_symbol is None:
-            raise ValueError(
-                "Please provide a valid period. This can be 'yearly', 'quarterly', 'monthly', 'weekly', or 'daily'"
-            )
+        period_symbol = _PERIOD_SYMBOLS[period.lower()]
 
         def end_of_period(daily_values: pd.DataFrame) -> pd.DataFrame:
             # The last value of every period, from the daily data so the asset and the benchmark are both in the currency of each ticker's transactions.  # noqa: E501
@@ -2608,14 +2782,14 @@ class Portfolio:
         self, rounding: int | None = None, show_columns: str | list[str] | None = None
     ) -> pd.DataFrame:
         """
-        Calculate the money-weighted return of every position and of the whole portfolio:
-        the annual rate at which the money put in grew into the money taken out plus the
-        value still held (the internal rate of return, or XIRR, of the transactions).
+        Calculate the money-weighted return of every position and of the whole portfolio.
 
-        Unlike the time-weighted return, it depends on when money was added: buying more
-        just before a rally raises it and buying at a peak lowers it. It therefore
-        measures the investor's own result, including the timing of every purchase and
-        sale, rather than the result of the assets alone.
+        It is the annual rate at which the money put in grew into the money taken out plus the
+        value still held (the internal rate of return, or XIRR, of the transactions). Unlike the
+        time-weighted return, it depends on when money was added: buying more just before a
+        rally raises it and buying at a peak lowers it. It therefore measures the investor's own
+        result, including the timing of every purchase and sale, rather than the result of the
+        assets alone.
 
         The cash flows are every purchase (money in, including costs), every sale (money
         out, after costs), every cash dividend received (money out, on its ex-dividend date)
@@ -2721,7 +2895,8 @@ class Portfolio:
         flow_dates = trading_days[self._transaction_locations()]
 
         # The dividends received per day follow from the cumulative dividends of the positions, dated on the ex-dividend date.  # noqa: E501
-        positions_dividends = self.get_positions_overview()["Dividends"]
+        # Unrounded: the dividends of a small position would otherwise take the Portfolio's rounding.
+        positions_dividends = self._unrounded_positions()["Dividends"]
         daily_dividends = positions_dividends.diff().fillna(positions_dividends)
         daily_dividends.index = pd.to_datetime(
             to_period_index(daily_dividends.index).to_timestamp()
@@ -2798,3 +2973,1108 @@ class Portfolio:
         return apply_rounding(
             result, rounding if rounding is not None else self._rounding
         )
+
+    def _unrounded_positions(self) -> pd.DataFrame:
+        """
+        The positions overview as it is calculated: `get_positions_overview` rounds what it
+        returns to the Portfolio's rounding when it is given none, which would round the
+        weights, values and dividends other methods calculate with.
+        """
+        self.get_positions_overview()
+        return self._positions_overview
+
+    def _get_position_values(self) -> pd.DataFrame:
+        """The value of every position per day, in the currency of the portfolio."""
+        positions = self._unrounded_positions()
+        if positions.empty:
+            raise ValueError("The Portfolio has no positions.")
+        return positions["Current Value"].astype(float)
+
+    def get_turnover(
+        self,
+        denominator: str = "gross_value",
+        period: str = "daily",
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the turnover of the portfolio, the value traded as a share of the value held:
+        how much of the portfolio the transactions replace.
+
+        A turnover of 0.1 on a day means that a tenth of the portfolio's value was bought or
+        sold.
+
+        - Traded Value = Σ |volume × price| of the day's transactions
+        - Gross Value = Σ |value of every position|
+        - Turnover = Traded Value / ((Gross Value_t + Gross Value_t-1) / 2)
+
+        The traded value can also be divided by the net value of the positions that day
+        instead. Over weeks, months, quarters or years the traded
+        values and the daily turnovers are added up and the value is that at the end of
+        the period.
+
+        For more information, see the following sources:
+
+        - Bacon, C. R. (2008). "Practical Portfolio Performance Measurement and
+          Attribution." 2nd edition, Wiley.
+
+        Also known as: portfolio turnover, turnover rate, trading activity.
+
+        Shares similar logic:
+        - pyfolio, get_turnover: https://github.com/stefan-jansen/pyfolio-reloaded/blob/0.9.9/src/pyfolio/txn.py#L148
+
+        Args:
+            denominator (str, optional): Options are: "gross_value" (pyfolio's "AGB", the average of the gross value
+                of the day and the day before), "net_value" (pyfolio's "portfolio_value"). Defaults to
+                "gross_value".
+            period (str, optional): The period over which the traded values and turnovers are added up. Options are:
+                "daily", "weekly", "monthly", "quarterly", "yearly". Defaults to "daily".
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the Portfolio's rounding.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: Per period the Traded Value, the Gross Value (or Net Value) and
+            the Turnover.
+
+        Notes:
+        - The positions hold no cash, so the net value is that of the positions, where
+          pyfolio adds the cash.
+        - The first purchase of the portfolio is a turnover of 2: the average gross value
+          of that day and the empty day before is half the value bought.
+        - A transaction on a day without prices counts on the next day that has one.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Portfolio
+
+        portfolio = Portfolio(example=True, api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        portfolio.get_turnover(period="yearly")
+        ```
+
+        Which returns:
+
+        | Date   |   Traded Value |   Gross Value |   Turnover |
+        |:-------|---------------:|--------------:|-----------:|
+        | 2000   |       3657.08  |       2392.28 |     4.1243 |
+        | 2001   |       1569.55  |       4798.28 |     0.4154 |
+        | 2002   |       1693.63  |       5422.3  |     0.3135 |
+        | 2003   |       1456.49  |       8204.56 |     0.2284 |
+        | 2004   |       1518.38  |      10365.3  |     0.1683 |
+        | 2005   |       1918.15  |      13539.3  |     0.1678 |
+        | 2006   |       2377.66  |      16209    |     0.1559 |
+        | 2007   |       3585.34  |      19071.4  |     0.2099 |
+        | 2008   |       1123.91  |      12108.2  |     0.0745 |
+        | 2009   |       3013.99  |      20985.5  |     0.1933 |
+        | 2010   |       2621.67  |      25801.1  |     0.1206 |
+        | 2011   |       3174.61  |      26933.1  |     0.1253 |
+        | 2012   |       5141.61  |      34851.3  |     0.1546 |
+        | 2013   |        522.848 |      49217.5  |     0.0121 |
+        | 2014   |       3364.75  |      54772.7  |     0.0674 |
+        | 2015   |       2003.66  |      61747.1  |     0.0349 |
+        | 2016   |       2364.38  |      78378.2  |     0.0384 |
+        | 2017   |       7271.19  |     117708    |     0.0743 |
+        | 2018   |       6702.23  |     125233    |     0.0507 |
+        | 2019   |       7866.05  |     206431    |     0.0445 |
+        | 2020   |      15353.6   |     328089    |     0.0631 |
+        | 2021   |       5121.04  |     435818    |     0.0137 |
+        | 2022   |      18121.5   |     337393    |     0.0569 |
+        | 2023   |       6215.22  |     547989    |     0.0142 |
+        | 2024   |      35203.6   |     739785    |     0.051  |
+        | 2025   |          0     |     908218    |     0      |
+        | 2026   |          0     |     865290    |     0      |
+        """
+        if not self._collect_data():
+            return pd.DataFrame()
+        values = self._get_position_values()
+        if self._transactions_overview.empty:
+            self.get_transactions_overview()
+        transactions = self._transactions_overview
+        traded = (transactions["Volume"] * transactions["Price"]).abs().to_numpy()
+        dates = to_period_index(transactions.index.get_level_values(0))
+        # A transaction on a day without prices is booked on the next day with one.
+        locations = values.index.get_indexer(dates, method="backfill")
+        traded_values = (
+            pd.Series(traded[locations >= 0])
+            .groupby(values.index[locations[locations >= 0]])
+            .sum()
+        )
+        table = overview_model.get_turnover(traded_values, values, denominator)
+        if period != "daily":
+            grouped = table.groupby(table.index.asfreq(self._period_frequency(period)))
+            table = grouped.sum()
+            table[table.columns[1]] = grouped[table.columns[1]].last()
+        return apply_rounding(
+            table, rounding if rounding is not None else self._rounding
+        )
+
+    def get_gross_leverage(
+        self,
+        period: str = "daily",
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the gross leverage of the portfolio, the value of its long and short
+        positions together as a multiple of its net value:
+
+        - Gross Leverage = Σ |value of every position| / Σ value of every position
+
+        A portfolio of long positions has a gross leverage of 1; short positions raise it,
+        e.g. to 1.6 for a 130/30 portfolio. Over weeks, months, quarters or years the
+        values at the end of the period are shown. The measure is defined in pyfolio
+        (Quantopian).
+
+        Also known as: gross exposure, leverage ratio.
+
+        Shares similar logic:
+        - pyfolio, gross_lev: https://github.com/stefan-jansen/pyfolio-reloaded/blob/0.9.9/src/pyfolio/timeseries.py#L605
+
+        Args:
+            period (str, optional): The period whose last values are shown. Options are: "daily", "weekly",
+                "monthly", "quarterly", "yearly". Defaults to "daily".
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the Portfolio's rounding.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: Per period the Gross Value, Net Value and Gross Leverage, NaN when
+            the net value is not positive.
+
+        Notes:
+        - Unlike pyfolio, the positions hold no cash, so the net value is that of the
+          positions.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Portfolio
+
+        portfolio = Portfolio(example=True, api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        portfolio.get_gross_leverage(period="yearly")
+        ```
+
+        Which returns:
+
+        | Date   |   Gross Value |   Net Value |   Gross Leverage |
+        |:-------|--------------:|------------:|-----------------:|
+        | 2000   |       2392.28 |     2392.28 |                1 |
+        | 2001   |       4798.28 |     4798.28 |                1 |
+        | 2002   |       5422.3  |     5422.3  |                1 |
+        | 2003   |       8204.56 |     8204.56 |                1 |
+        | 2004   |      10365.3  |    10365.3  |                1 |
+        | 2005   |      13539.3  |    13539.3  |                1 |
+        | 2006   |      16209    |    16209    |                1 |
+        | 2007   |      19071.4  |    19071.4  |                1 |
+        | 2008   |      12108.2  |    12108.2  |                1 |
+        | 2009   |      20985.5  |    20985.5  |                1 |
+        | 2010   |      25801.1  |    25801.1  |                1 |
+        | 2011   |      26933.1  |    26933.1  |                1 |
+        | 2012   |      34851.3  |    34851.3  |                1 |
+        | 2013   |      49217.5  |    49217.5  |                1 |
+        | 2014   |      54772.7  |    54772.7  |                1 |
+        | 2015   |      61747.1  |    61747.1  |                1 |
+        | 2016   |      78378.2  |    78378.2  |                1 |
+        | 2017   |     117708    |   117708    |                1 |
+        | 2018   |     125233    |   125233    |                1 |
+        | 2019   |     206431    |   206431    |                1 |
+        | 2020   |     328089    |   328089    |                1 |
+        | 2021   |     435818    |   435818    |                1 |
+        | 2022   |     337393    |   337393    |                1 |
+        | 2023   |     547989    |   547989    |                1 |
+        | 2024   |     739785    |   739785    |                1 |
+        | 2025   |     908218    |   908218    |                1 |
+        | 2026   |     865290    |   865290    |                1 |
+        """
+        if not self._collect_data():
+            return pd.DataFrame()
+        table = overview_model.get_gross_leverage(self._get_position_values())
+        if period != "daily":
+            table = table.groupby(
+                table.index.asfreq(self._period_frequency(period))
+            ).last()
+        return apply_rounding(
+            table, rounding if rounding is not None else self._rounding
+        )
+
+    def _trades(self, method: str) -> pd.DataFrame:
+        """The trade list of the transactions, unrounded."""
+        transactions = self._portfolio_dataset
+        return trades_model.get_trades(
+            pd.DataFrame(
+                {
+                    "Date": transactions.index.get_level_values(0),
+                    "Ticker": transactions.index.get_level_values(1),
+                    "Volume": transactions[self._volume_column].to_numpy(dtype=float),
+                    "Price": transactions[self._price_column].to_numpy(dtype=float),
+                    "Costs": transactions[self._costs_column].to_numpy(dtype=float),
+                }
+            ),
+            last_prices=self._latest_price,
+            trading_dates=self._trading_dates(),
+            method=method,
+            purchases_first=not self._ordered_by_time,
+        )
+
+    def _trading_dates(self) -> pd.PeriodIndex:
+        """The trading dates from the first transaction onward, over which trades are held."""
+        dates = to_period_index(self._daily_historical_data.index)
+        return dates[dates >= self._portfolio_dataset.index.get_level_values(0).min()]
+
+    def get_trades(
+        self,
+        method: str = "FIFO",
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the trade list of the portfolio.
+
+        Its round trips, every lot a transaction opened paired with the transaction that closed
+        it, with its profit and loss, return and duration, and the lots still held marked to the
+        latest closing price. The trades follow from the same lot matching as the realized
+        profit and loss of `get_transactions_overview`: a sale closes the oldest lots first
+        (FIFO) or the newest (LIFO). A sale that closes part of a lot splits it, so a purchase
+        sold in two parts is two trades, and a sale of more units than are held opens a short
+        trade that later purchases close. The costs of a transaction are spread over its units,
+        so a trade carries the share of the costs of its entry and exit that belongs to its
+        units.
+
+        - Gross PnL = Size × (Exit Price − Entry Price) × Direction, with Direction 1 for a
+          long and −1 for a short trade
+        - Costs = |Entry Costs| × Size / |Entry Volume| + |Exit Costs| × Size / |Exit Volume|
+        - PnL = Gross PnL − Costs
+        - Return = PnL / (Size × Entry Price)
+        - Duration (Days) = Exit Date − Entry Date in calendar days, Duration (Periods) the
+          number of trading days from the entry to the exit
+
+        Also known as: round trips, closed trades, trade log, trade blotter.
+
+        Shares similar logic:
+        - vectorbt, Trades: https://vectorbt.dev/api/portfolio/trades/#vectorbt.portfolio.trades.Trades
+        - backtesting.py, Trade: https://kernc.github.io/backtesting.py/doc/backtesting/backtesting.html#backtesting.backtesting.Trade
+        - backtrader, TradeAnalyzer: https://www.backtrader.com/docu/analyzers-reference/#tradeanalyzer
+
+        Args:
+            method (str, optional): Which lots a sale closes first. Options are: "FIFO" (first in, first out: the
+                oldest lots close first), "LIFO" (last in, first out: the newest lots close first). Defaults to
+                "FIFO". The purchases of a day come before its sales, unless the dates of the transactions include a
+                time of day.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the Portfolio's rounding.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: One row per trade, numbered in the order of their entry, with the
+            Ticker, Direction ("Long" or "Short"), Status ("Closed" or "Open"), Entry Date, Entry
+            Price, Exit Date, Exit Price, Size, Costs, Gross PnL, PnL, Return, Duration (Days)
+            and Duration (Periods).
+
+        Notes:
+        - An open trade exits at the latest date and closing price, without exit costs, so its
+          PnL is the unrealized profit and loss of the lot.
+        - The Gross PnL of the closed long trades of a ticker adds up to its realized PnL in
+          `get_transactions_overview` with the same method, which leaves the costs out.
+        - Dividends are not part of a trade's PnL; `get_portfolio_overview` adds them.
+        - The average cost method of `get_transactions_overview` has no trade list, as it does
+          not pair a sale with the purchases it closes.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Portfolio
+
+        portfolio = Portfolio(example=True, api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        portfolio.get_trades(
+            show_columns=["Ticker", "Status", "Entry Date", "Entry Price", "Exit Date", "Size", "PnL", "Return"]
+        )
+        ```
+
+        Which returns:
+
+        |   Trade | Ticker   | Status   | Entry Date   |   Entry Price | Exit Date   |   Size |        PnL |    Return |
+        |--------:|:---------|:---------|:-------------|--------------:|:------------|-------:|-----------:|----------:|
+        |       1 | ASML     | Closed   | 2000-01-07   |       49.3709 | 2010-04-28  |      3 |   -21.4634 |   -0.1449 |
+        |       2 | ASML     | Closed   | 2000-01-07   |       49.3709 | 2014-02-03  |      3 |   103.567  |    0.6992 |
+        |       3 | ASML     | Closed   | 2000-01-07   |       49.3709 | 2017-11-15  |      2 |   256.411  |    2.5968 |
+        |       4 | ASML     | Open     | 2000-01-07   |       49.3709 | 2026-11-20  |      1 |  1216.52   |   24.6403 |
+        |       5 | SKY      | Closed   | 2000-01-10   |       23.4375 | 2000-06-07  |      1 |    -3.1042 |   -0.1324 |
+        |       6 | SKY      | Closed   | 2000-01-10   |       23.4375 | 2001-03-20  |      4 |    -3.0167 |   -0.0322 |
+        |       7 | SKY      | Closed   | 2000-01-10   |       23.4375 | 2002-10-17  |      1 |     3.1958 |    0.1364 |
+        |       8 | SKY      | Closed   | 2000-01-10   |       23.4375 | 2003-02-20  |      1 |     1.5358 |    0.0655 |
+        |       9 | SKY      | Closed   | 2000-01-10   |       23.4375 | 2007-05-01  |      3 |    27.3375 |    0.3888 |
+        |      10 | SKY      | Open     | 2000-01-10   |       23.4375 | 2026-11-20  |      2 |   135.412  |    2.8888 |
+        |      11 | AMZN     | Closed   | 2000-01-28   |        3.0844 | 2001-06-04  |      2 |    -6.2278 |   -1.0096 |
+        |      12 | AMZN     | Closed   | 2000-01-28   |        3.0844 | 2003-10-21  |      5 |    -3.4595 |   -0.2243 |
+        |      13 | AMZN     | Closed   | 2000-01-28   |        3.0844 | 2009-10-06  |      1 |     0.0861 |    0.0279 |
+        |      14 | FIX      | Closed   | 2000-02-23   |        8.75   | 2003-05-20  |      4 |   -28.32   |   -0.8091 |
+        |      15 | FIX      | Closed   | 2000-02-23   |        8.75   | 2003-06-23  |      4 |   -25.6    |   -0.7314 |
+        |      16 | MSFT     | Closed   | 2000-02-28   |       45.7812 | 2006-12-11  |      5 |   -81.206  |   -0.3548 |
+        |      17 | MSFT     | Open     | 2000-02-28   |       45.7812 | 2026-11-20  |      8 |  3509.91   |    9.5834 |
+        |      18 | FIX      | Closed   | 2000-03-31   |        6.375  | 2003-06-23  |      1 |    -4.1361 |   -0.6488 |
+        |      19 | FIX      | Open     | 2000-03-31   |        6.375  | 2026-11-20  |      8 |  8287.87   |  162.507  |
+        |      20 | SKY      | Open     | 2000-04-06   |       20.8125 | 2026-11-20  |     11 |   773.472  |    3.3785 |
+        |      21 | AMD      | Closed   | 2000-04-27   |       42.625  | 2004-08-06  |      4 |  -127.66   |   -0.7487 |
+        |      22 | AMD      | Closed   | 2000-04-27   |       42.625  | 2011-10-14  |      4 |  -154.02   |   -0.9033 |
+        |      23 | AMD      | Closed   | 2000-04-27   |       42.625  | 2013-04-23  |      2 |   -81.29   |   -0.9535 |
+        |      24 | AAPL     | Closed   | 2000-05-08   |        0.9833 | 2007-02-21  |      1 |     0.8024 |    0.816  |
+        |      25 | AAPL     | Closed   | 2000-05-08   |        0.9833 | 2009-06-03  |      4 |    14.6024 |    3.7126 |
+        |      26 | FICO     | Closed   | 2000-06-01   |       12.5556 | 2006-04-06  |      3 |    81.4632 |    2.1627 |
+        |      27 | FICO     | Closed   | 2000-06-01   |       12.5556 | 2009-01-08  |      4 |    11.0976 |    0.221  |
+        |      28 | FICO     | Closed   | 2000-06-01   |       12.5556 | 2011-02-17  |      3 |    45.0932 |    1.1972 |
+        |      29 | FICO     | Closed   | 2000-06-01   |       12.5556 | 2012-03-20  |      1 |    30.0544 |    2.3937 |
+        |      30 | FICO     | Closed   | 2000-06-01   |       12.5556 | 2014-03-11  |      4 |   163.698  |    3.2595 |
+        |      31 | MSFT     | Open     | 2000-07-07   |       41      | 2026-11-20  |     15 |  6650.8    |   10.8143 |
+        |      32 | FIX      | Open     | 2000-08-29   |        5.375  | 2026-11-20  |      7 |  7257.66   |  192.895  |
+        |      33 | SKY      | Open     | 2000-11-13   |       20.5    | 2026-11-20  |     10 |   707.1    |    3.4493 |
+        |      34 | AMD      | Closed   | 2000-11-15   |       21.9375 | 2013-04-23  |      2 |   -39.715  |   -0.9052 |
+        |      35 | AMD      | Closed   | 2000-11-15   |       21.9375 | 2014-05-05  |      2 |   -39.095  |   -0.8911 |
+        |      36 | AMD      | Closed   | 2000-11-15   |       21.9375 | 2020-07-22  |      1 |    38.9858 |    1.7771 |
+        |      37 | BAC      | Closed   | 2000-11-16   |       20.9375 | 2003-09-03  |      2 |    31.925  |    0.7624 |
+        |      38 | BAC      | Closed   | 2000-11-29   |       20.3438 | 2003-09-03  |      3 |    54.1686 |    0.8876 |
+        |      39 | BAC      | Closed   | 2000-11-29   |       20.3438 | 2012-05-03  |      4 |   -50.3752 |   -0.619  |
+        |      40 | BAC      | Closed   | 2000-11-29   |       20.3438 | 2015-08-28  |      5 |   -20.919  |   -0.2057 |
+        |      41 | BAC      | Open     | 2000-11-29   |       20.3438 | 2026-11-20  |      3 |    80.0886 |    1.3123 |
+        |      42 | FIX      | Open     | 2001-01-22   |        2.1875 | 2026-11-20  |      8 |  8320.26   |  475.443  |
+        |      43 | AMD      | Closed   | 2001-02-13   |       24.01   | 2020-07-22  |      2 |    74.0933 |    1.543  |
+        |      44 | AMD      | Closed   | 2001-02-13   |       24.01   | 2021-02-10  |      2 |   136.547  |    2.8435 |
+        |      45 | AMD      | Closed   | 2001-02-13   |       24.01   | 2022-07-22  |      3 |   190.07   |    2.6388 |
+        |      46 | AMD      | Closed   | 2001-02-13   |       24.01   | 2024-08-29  |      5 |   605.067  |    5.0401 |
+        |      47 | AMD      | Open     | 2001-02-13   |       24.01   | 2026-11-20  |      3 |  1200.94   |   16.6728 |
+        |      48 | FICO     | Closed   | 2001-03-28   |       17.7926 | 2014-03-11  |      1 |    35.8874 |    2.017  |
+        |      49 | FICO     | Open     | 2001-03-28   |       17.7926 | 2026-11-20  |      3 |  2029.55   |   38.0224 |
+        |      50 | AAPL     | Closed   | 2001-04-20   |        0.4471 | 2009-07-02  |      3 |    13.6608 |   10.1847 |
+        |      51 | AAPL     | Closed   | 2001-04-20   |        0.4471 | 2020-11-09  |      2 |   228.746  |  255.811  |
+        |      52 | AAPL     | Open     | 2001-04-20   |        0.4471 | 2026-11-20  |      7 |  2394.79   |  765.182  |
+        |      53 | AAPL     | Open     | 2001-05-03   |        0.4457 | 2026-11-20  |     12 |  4105.37   |  767.589  |
+        |      54 | AAPL     | Open     | 2001-05-23   |        0.4148 | 2026-11-20  |     15 |  5132.18   |  824.844  |
+        |      55 | SKY      | Open     | 2001-05-29   |       24.3    | 2026-11-20  |      8 |   536.08   |    2.7576 |
+        |      56 | ASML     | Open     | 2001-08-13   |       29.2062 | 2026-11-20  |     10 | 12370.1    |   42.3545 |
+        |      57 | ALGN     | Closed   | 2001-09-18   |        5.05   | 2001-09-26  |      1 |    -4.1    |   -0.8119 |
+        |      58 | ALGN     | Closed   | 2001-09-18   |        5.05   | 2002-08-22  |      2 |    -7.7    |   -0.7624 |
+        |      59 | ALGN     | Closed   | 2001-09-18   |        5.05   | 2002-09-25  |      1 |    -4.4    |   -0.8713 |
+        |      60 | CWST     | Closed   | 2001-10-15   |       11.5    | 2002-06-06  |      1 |    -0.05   |   -0.0043 |
+        |      61 | CWST     | Closed   | 2001-10-15   |       11.5    | 2022-09-01  |      1 |    69      |    6      |
+        |      62 | CWST     | Open     | 2001-10-15   |       11.5    | 2026-11-20  |      2 |   175.58   |    7.6339 |
+        |      63 | OXY      | Closed   | 2001-11-16   |       11.4967 | 2003-04-08  |      1 |     2.0898 |    0.1818 |
+        |      64 | OXY      | Closed   | 2001-11-16   |       11.4967 | 2009-07-24  |      1 |    54.8957 |    4.7749 |
+        |      65 | OXY      | Closed   | 2001-11-16   |       11.4967 | 2011-04-07  |      1 |    83.392  |    7.2536 |
+        |      66 | SKY      | Open     | 2001-12-12   |       29.25   | 2026-11-20  |      9 |   558.54   |    2.1217 |
+        |      67 | WMT      | Closed   | 2001-12-28   |       19.45   | 2003-04-15  |      4 |    -7.58   |   -0.0974 |
+        |      68 | WMT      | Closed   | 2001-12-28   |       19.45   | 2010-12-16  |      2 |    -5.23   |   -0.1344 |
+        |      69 | WMT      | Closed   | 2001-12-28   |       19.45   | 2011-11-28  |      2 |    -1.4834 |   -0.0381 |
+        |      70 | MSFT     | Open     | 2002-04-01   |       30.19   | 2026-11-20  |     15 |  6814.95   |   15.049  |
+        |      71 | FICO     | Open     | 2002-04-02   |       27.7822 | 2026-11-20  |     14 |  9331.39   |   23.9912 |
+        |      72 | FIX      | Open     | 2002-04-03   |        4.72   | 2026-11-20  |      7 |  7264.25   |  219.862  |
+        |      73 | ALGN     | Closed   | 2002-04-08   |        4.5    | 2002-09-25  |      1 |    -3.1    |   -0.6889 |
+        |      74 | ALGN     | Closed   | 2002-04-08   |        4.5    | 2002-11-06  |      1 |    -2.78   |   -0.6178 |
+        |      75 | ALGN     | Closed   | 2002-04-08   |        4.5    | 2003-09-05  |      4 |    32.96   |    1.8311 |
+        |      76 | ALGN     | Closed   | 2002-04-08   |        4.5    | 2007-02-20  |      5 |    66.9    |    2.9733 |
+        |      77 | ALGN     | Closed   | 2002-04-08   |        4.5    | 2011-02-25  |      1 |    14.79   |    3.2867 |
+        |      78 | ALGN     | Closed   | 2002-04-08   |        4.5    | 2012-05-30  |      2 |    53      |    5.8889 |
+        |      79 | BAC      | Open     | 2002-04-12   |       35.025  | 2026-11-20  |      4 |    47.06   |    0.3359 |
+        |      80 | SKY      | Open     | 2002-05-03   |       37      | 2026-11-20  |      6 |   323.86   |    1.4588 |
+        |      81 | FICO     | Open     | 2002-07-05   |       22.2067 | 2026-11-20  |      1 |   672.103  |   30.2658 |
+        |      82 | SKY      | Open     | 2002-07-25   |       28.81   | 2026-11-20  |      3 |   184.5    |    2.1347 |
+        |      83 | CAMT     | Closed   | 2002-08-07   |        0.9    | 2003-11-25  |      2 |     1.4533 |    0.8074 |
+        |      84 | FICO     | Open     | 2002-08-16   |       25.3333 | 2026-11-20  |      4 |  2675.91   |   26.407  |
+        |      85 | NVDA     | Closed   | 2002-09-20   |        0.0768 | 2004-03-15  |      5 |    -3.6728 |   -9.5647 |
+        |      86 | NVDA     | Closed   | 2002-09-20   |        0.0768 | 2011-11-04  |      2 |    -0.8741 |   -5.691  |
+        |      87 | NVDA     | Closed   | 2002-09-20   |        0.0768 | 2018-10-18  |      5 |    28.4032 |   73.9665 |
+        |      88 | NVDA     | Open     | 2002-09-20   |        0.0768 | 2026-11-20  |      1 |   125.222  | 1630.5    |
+        |      89 | MSFT     | Open     | 2002-11-15   |       28.345  | 2026-11-20  |      1 |   455.175  |   16.0584 |
+        |      90 | NFLX     | Closed   | 2002-11-18   |        0.0779 | 2011-11-21  |      1 |     0.7638 |    9.8046 |
+        |      91 | NFLX     | Closed   | 2002-11-18   |        0.0779 | 2011-12-23  |      1 |    -1.2627 |  -16.2095 |
+        |      92 | NFLX     | Closed   | 2002-11-18   |        0.0779 | 2013-11-15  |      5 |    23.4824 |   60.2885 |
+        |      93 | NFLX     | Closed   | 2002-11-18   |        0.0779 | 2021-04-27  |      2 |    99.1764 |  636.562  |
+        |      94 | CWST     | Open     | 2002-12-20   |        9.2    | 2026-11-20  |     11 |   988.99   |    9.7726 |
+        |      95 | AMD      | Open     | 2003-01-09   |        6.91   | 2026-11-20  |     14 |  5842.72   |   60.3961 |
+        |      96 | MSFT     | Open     | 2003-01-27   |       24.585  | 2026-11-20  |      7 |  3219.54   |   18.708  |
+        |      97 | CAMT     | Closed   | 2003-01-29   |        0.4    | 2003-11-25  |      1 |     2.441  |    6.1024 |
+        |      98 | CAMT     | Closed   | 2003-01-29   |        0.4    | 2009-11-04  |      1 |     0.7043 |    1.7607 |
+        |      99 | CAMT     | Closed   | 2003-01-29   |        0.4    | 2010-06-11  |      2 |     1.2886 |    1.6107 |
+        |     100 | CAMT     | Closed   | 2003-01-29   |        0.4    | 2017-01-23  |      3 |     7.9929 |    6.6607 |
+        |     101 | SKY      | Open     | 2003-02-07   |       25.4    | 2026-11-20  |     11 |   725.01   |    2.5949 |
+        |     102 | FIX      | Open     | 2003-02-11   |        2.85   | 2026-11-20  |      4 |  4156.48   |  364.603  |
+        |     103 | AAPL     | Open     | 2003-02-13   |        0.2596 | 2026-11-20  |      1 |   339.3    | 1307.01   |
+        |     104 | ASML     | Open     | 2003-03-06   |        9.6721 | 2026-11-20  |     11 | 13820      |  129.896  |
+        |     105 | CAMT     | Closed   | 2003-04-03   |        0.47   | 2017-01-23  |      1 |     2.7262 |    5.8003 |
+        |     106 | CAMT     | Closed   | 2003-04-03   |        0.47   | 2019-05-07  |      3 |    25.7985 |   18.2968 |
+        |     107 | CAMT     | Closed   | 2003-04-03   |        0.47   | 2020-05-29  |      4 |    47.0646 |   25.0344 |
+        |     108 | CAMT     | Open     | 2003-04-03   |        0.47   | 2026-11-20  |      5 |   442.881  |  188.46   |
+        |     109 | AAPL     | Open     | 2003-07-14   |        0.3554 | 2026-11-20  |     12 |  4105.46   |  962.637  |
+        |     110 | ASML     | Open     | 2003-07-15   |       18.1607 | 2026-11-20  |     10 | 12477.6    |   68.7066 |
+        |     111 | NVDA     | Open     | 2003-07-31   |        0.1591 | 2026-11-20  |      1 |   122.371  |  769.145  |
+        |     112 | SKY      | Open     | 2003-08-05   |       27.8    | 2026-11-20  |      1 |    61.51   |    2.2126 |
+        |     113 | NVDA     | Open     | 2003-08-13   |        0.1398 | 2026-11-20  |      1 |   125.39   |  896.926  |
+        |     114 | NFLX     | Closed   | 2003-10-07   |        0.3146 | 2021-04-27  |      1 |    49.4199 |  157.088  |
+        |     115 | NFLX     | Closed   | 2003-10-07   |        0.3146 | 2023-03-27  |      1 |    31.2976 |   99.4836 |
+        |     116 | NFLX     | Open     | 2003-10-07   |        0.3146 | 2026-11-20  |     11 |   618.877  |  178.835  |
+        |     117 | ALGN     | Closed   | 2003-11-04   |       17.02   | 2012-05-30  |      3 |    41.2733 |    0.8083 |
+        |     118 | ALGN     | Open     | 2003-11-04   |       17.02   | 2026-11-20  |      6 |   827.567  |    8.1039 |
+        |     119 | NFLX     | Open     | 2004-01-29   |        0.5054 | 2026-11-20  |     10 |   559.246  |  110.654  |
+        |     120 | ALGN     | Open     | 2004-03-08   |       19.11   | 2026-11-20  |      3 |   406.18   |    7.0849 |
+        |     121 | AMD      | Open     | 2004-03-10   |       14.43   | 2026-11-20  |      2 |   819.92   |   28.4103 |
+        |     122 | ASML     | Open     | 2004-03-25   |       26.3718 | 2026-11-20  |     15 | 18597.7    |   47.0142 |
+        |     123 | FICO     | Open     | 2004-05-03   |       34.07   | 2026-11-20  |     13 |  8582.12   |   19.3767 |
+        |     124 | SKY      | Open     | 2004-05-07   |       40.06   | 2026-11-20  |      3 |   153.75   |    1.2793 |
+        |     125 | FICO     | Open     | 2004-07-12   |       31.36   | 2026-11-20  |      2 |  1322.9    |   21.0922 |
+        |     126 | BAC      | Open     | 2004-08-11   |       42.765  | 2026-11-20  |      2 |     5.55   |    0.0649 |
+        |     127 | GOOGL    | Closed   | 2004-08-24   |        2.6244 | 2024-06-21  |      2 |   353.611  |   67.3699 |
+        |     128 | GOOGL    | Open     | 2004-08-24   |        2.6244 | 2026-11-20  |      8 |  2099.72   |  100.01   |
+        |     129 | NFLX     | Open     | 2004-10-12   |        0.2469 | 2026-11-20  |     11 |   620.314  |  228.401  |
+        |     130 | AMZN     | Closed   | 2004-10-19   |        1.9165 | 2009-10-06  |      1 |     1.379  |    0.7195 |
+        |     131 | AMZN     | Closed   | 2004-10-19   |        1.9165 | 2010-01-21  |      3 |    12.4935 |    2.173  |
+        |     132 | AMZN     | Closed   | 2004-10-19   |        1.9165 | 2014-02-11  |      4 |    63.692  |    8.3084 |
+        |     133 | AMZN     | Closed   | 2004-10-19   |        1.9165 | 2015-10-02  |      3 |    73.3815 |   12.7631 |
+        |     134 | AMZN     | Open     | 2004-10-19   |        1.9165 | 2026-11-20  |      1 |   244.654  |  127.656  |
+        |     135 | ASML     | Open     | 2004-11-11   |       22.4562 | 2026-11-20  |      8 |  9948.11   |   55.3751 |
+        |     136 | GOOGL    | Open     | 2004-12-01   |        4.5035 | 2026-11-20  |      6 |  1561.72   |   57.7965 |
+        |     137 | AMZN     | Open     | 2004-12-29   |        2.241  | 2026-11-20  |      7 |  1712.05   |  109.138  |
+        |     138 | ASML     | Open     | 2005-01-06   |       21.5503 | 2026-11-20  |     11 | 13689.4    |   57.7481 |
+        |     139 | GOOGL    | Open     | 2005-02-17   |        4.9525 | 2026-11-20  |     12 |  3123.05   |   52.5501 |
+        |     140 | NVDA     | Open     | 2005-03-04   |        0.2298 | 2026-11-20  |      7 |   875.101  |  544.014  |
+        |     141 | FIX      | Open     | 2005-03-09   |        7.87   | 2026-11-20  |     10 | 10344      |  131.436  |
+        |     142 | GOOGL    | Open     | 2005-05-18   |        5.985  | 2026-11-20  |      8 |  2074.44   |   43.3258 |
+        |     143 | SKY      | Open     | 2005-08-03   |       41.85   | 2026-11-20  |     11 |   541.06   |    1.1753 |
+        |     144 | SKY      | Open     | 2005-08-22   |       38.44   | 2026-11-20  |      1 |    52.87   |    1.3754 |
+        |     145 | AMD      | Open     | 2005-08-30   |       20.37   | 2026-11-20  |      7 |  2827.14   |   19.8271 |
+        |     146 | MPWR     | Closed   | 2005-09-16   |        8.32   | 2010-03-22  |      2 |    28      |    1.6827 |
+        |     147 | MPWR     | Closed   | 2005-09-16   |        8.32   | 2017-04-05  |      2 |   164.92   |    9.9111 |
+        |     148 | MPWR     | Closed   | 2005-09-16   |        8.32   | 2017-12-04  |      2 |   202.36   |   12.1611 |
+        |     149 | MPWR     | Open     | 2005-09-16   |        8.32   | 2026-11-20  |      9 | 10201.8    |  136.242  |
+        |     150 | MSFT     | Open     | 2005-09-19   |       26      | 2026-11-20  |     13 |  5958.76   |   17.6295 |
+        |     151 | MSFT     | Open     | 2005-09-22   |       25.34   | 2026-11-20  |     12 |  5507.16   |   18.1109 |
+        |     152 | NFLX     | Open     | 2005-10-04   |        0.3856 | 2026-11-20  |     10 |   563.444  |  146.121  |
+        |     153 | GOOGL    | Open     | 2005-11-14   |        9.9342 | 2026-11-20  |      5 |  1276.78   |   25.7047 |
+        |     154 | AAPL     | Open     | 2005-12-07   |        2.6411 | 2026-11-20  |     12 |  4077.03   |  128.64   |
+        |     155 | FICO     | Open     | 2006-01-09   |       46.9    | 2026-11-20  |     12 |  7765.92   |   13.7987 |
+        |     156 | AMD      | Open     | 2006-02-01   |       42.1    | 2026-11-20  |      4 |  1526.16   |    9.0627 |
+        |     157 | AMZN     | Open     | 2006-03-16   |        1.8385 | 2026-11-20  |      7 |  1713.87   |  133.173  |
+        |     158 | MSFT     | Open     | 2006-03-17   |       27.5    | 2026-11-20  |      1 |   454.02   |   16.5098 |
+        |     159 | ASML     | Open     | 2006-04-05   |       30.1997 | 2026-11-20  |     13 | 16067.3    |   40.9257 |
+        |     160 | AMZN     | Open     | 2006-08-11   |        1.3035 | 2026-11-20  |      4 |   982.066  |  188.352  |
+        |     161 | NVDA     | Open     | 2006-08-14   |        0.388  | 2026-11-20  |      6 |   747.852  |  321.242  |
+        |     162 | NFLX     | Open     | 2006-08-23   |        0.2669 | 2026-11-20  |      5 |   281.315  |  210.802  |
+        |     163 | NVDA     | Open     | 2006-09-08   |        0.4617 | 2026-11-20  |      9 |  1125.61   |  270.887  |
+        |     164 | FICO     | Open     | 2006-11-01   |       36.46   | 2026-11-20  |     15 |  9867.75   |   18.0431 |
+        |     165 | NVDA     | Open     | 2006-11-08   |        0.5767 | 2026-11-20  |      2 |   246.907  |  214.069  |
+        |     166 | ASML     | Open     | 2006-11-09   |       33.9545 | 2026-11-20  |      5 |  6158.33   |   36.274  |
+        |     167 | FIX      | Open     | 2006-12-07   |       13.24   | 2026-11-20  |     15 | 15435.4    |   77.7213 |
+        |     168 | NFLX     | Open     | 2006-12-21   |        0.3827 | 2026-11-20  |      6 |   336.084  |  146.365  |
+        |     169 | BLDR     | Closed   | 2006-12-22   |       14.3061 | 2008-05-02  |      1 |   -11.4524 |   -0.8005 |
+        |     170 | AMZN     | Open     | 2007-01-23   |        1.8215 | 2026-11-20  |     15 |  3671.98   |  134.394  |
+        |     171 | FIX      | Open     | 2007-02-28   |       13.61   | 2026-11-20  |     15 | 15432.9    |   75.5959 |
+        |     172 | SKY      | Open     | 2007-03-06   |       31.12   | 2026-11-20  |     13 |   782.47   |    1.9341 |
+        |     173 | WMT      | Closed   | 2007-04-16   |       16.0233 | 2011-11-28  |      1 |     2.9933 |    0.1868 |
+        |     174 | WMT      | Open     | 2007-04-16   |       16.0233 | 2026-11-20  |     14 |  1566.04   |    6.9811 |
+        |     175 | SKY      | Open     | 2007-04-18   |       33.39   | 2026-11-20  |      5 |   289.6    |    1.7347 |
+        |     176 | OXY      | Closed   | 2007-05-21   |       52.4922 | 2017-02-27  |      1 |     9.9064 |    0.1887 |
+        |     177 | OXY      | Closed   | 2007-05-21   |       52.4922 | 2020-12-18  |      5 |  -172.218  |   -0.6562 |
+        |     178 | OXY      | Closed   | 2007-05-21   |       52.4922 | 2024-12-05  |      2 |    -8.1673 |   -0.0778 |
+        |     179 | OXY      | Open     | 2007-05-21   |       52.4922 | 2026-11-20  |      6 |     8.0182 |    0.0255 |
+        |     180 | OXY      | Open     | 2007-05-29   |       51.8024 | 2026-11-20  |     10 |    19.976  |    0.0386 |
+        |     181 | FIX      | Open     | 2007-07-12   |       14.51   | 2026-11-20  |     12 | 12335.5    |   70.8449 |
+        |     182 | FICO     | Open     | 2007-09-04   |       37.75   | 2026-11-20  |     15 |  9847.4    |   17.3906 |
+        |     183 | FICO     | Open     | 2007-10-22   |       34.21   | 2026-11-20  |      2 |  1319.2    |   19.2809 |
+        |     184 | AMD      | Open     | 2007-11-21   |       10.83   | 2026-11-20  |      3 |  1240.68   |   38.1865 |
+        |     185 | MPWR     | Open     | 2007-12-10   |       21.34   | 2026-11-20  |     12 | 13448.5    |   52.5169 |
+        |     186 | BAC      | Open     | 2008-01-04   |       39.85   | 2026-11-20  |      3 |    19.57   |    0.1637 |
+        |     187 | MPWR     | Open     | 2008-01-17   |       16.04   | 2026-11-20  |      2 |  2251.02   |   70.169  |
+        |     188 | GOOGL    | Open     | 2008-02-25   |       12.1732 | 2026-11-20  |     15 |  3794.75   |   20.782  |
+        |     189 | BAC      | Open     | 2008-03-25   |       40.97   | 2026-11-20  |      8 |    48.56   |    0.1482 |
+        |     190 | WMT      | Open     | 2008-07-08   |       19.7033 | 2026-11-20  |      9 |   974.22   |    5.4938 |
+        |     191 | AAPL     | Open     | 2008-07-11   |        6.1636 | 2026-11-20  |     11 |  3699.36   |   54.5632 |
+        |     192 | NVDA     | Open     | 2008-07-16   |        0.283  | 2026-11-20  |      8 |   999.976  |  441.685  |
+        |     193 | NVDA     | Open     | 2008-08-05   |        0.2797 | 2026-11-20  |      3 |   374.751  |  446.611  |
+        |     194 | GOOGL    | Open     | 2008-12-01   |        6.6564 | 2026-11-20  |     14 |  3619.87   |   38.8441 |
+        |     195 | ALGN     | Open     | 2008-12-02   |        6.83   | 2026-11-20  |      6 |   887.04   |   21.6457 |
+        |     196 | WMT      | Open     | 2008-12-10   |       18.4167 | 2026-11-20  |      4 |   437.133  |    5.9339 |
+        |     197 | FIX      | Open     | 2009-02-17   |       10.34   | 2026-11-20  |      9 |  9287.17   |   99.7977 |
+        |     198 | VSS      | Closed   | 2009-06-05   |       66.66   | 2012-08-21  |      4 |    72.2286 |    0.2709 |
+        |     199 | VSS      | Closed   | 2009-06-05   |       66.66   | 2018-12-24  |      4 |    96.2686 |    0.361  |
+        |     200 | VSS      | Closed   | 2009-06-05   |       66.66   | 2020-06-22  |      3 |    92.3314 |    0.4617 |
+        |     201 | VSS      | Open     | 2009-06-05   |       66.66   | 2026-11-20  |      3 |   205.011  |    1.0252 |
+        |     202 | SKY      | Open     | 2009-06-12   |       19.69   | 2026-11-20  |      9 |   644.58   |    3.6374 |
+        |     203 | ASML     | Open     | 2009-06-18   |       26.4026 | 2026-11-20  |     13 | 16116.6    |   46.9552 |
+        |     204 | WMT      | Open     | 2009-06-29   |       16.2533 | 2026-11-20  |      6 |   667.18   |    6.8415 |
+        |     205 | MPWR     | Open     | 2009-07-15   |       23.73   | 2026-11-20  |      6 |  6706.92   |   47.1058 |
+        |     206 | AAPL     | Open     | 2009-08-03   |        5.9439 | 2026-11-20  |      9 |  3026.54   |   56.5761 |
+        |     207 | BLDR     | Closed   | 2009-08-06   |        5.635  | 2010-09-13  |      2 |    -6.69   |   -0.5936 |
+        |     208 | VSS      | Open     | 2009-08-11   |       72.15   | 2026-11-20  |      2 |   123.98   |    0.8592 |
+        |     209 | NFLX     | Open     | 2009-08-28   |        0.6317 | 2026-11-20  |      5 |   278.491  |   88.1721 |
+        |     210 | FICO     | Open     | 2009-10-22   |       22.62   | 2026-11-20  |     13 |  8728.97   |   29.6843 |
+        |     211 | AVGO     | Closed   | 2009-11-02   |        1.49   | 2014-01-30  |      4 |    12.5086 |    2.0988 |
+        |     212 | AVGO     | Closed   | 2009-11-02   |        1.49   | 2016-08-09  |      1 |    12.4871 |    8.3806 |
+        |     213 | AVGO     | Closed   | 2009-11-02   |        1.49   | 2018-06-20  |      2 |    47.4743 |   15.931  |
+        |     214 | FIX      | Open     | 2009-11-17   |       11.48   | 2026-11-20  |     13 | 13401.9    |   89.8008 |
+        |     215 | ALGN     | Open     | 2009-11-20   |       15.54   | 2026-11-20  |     11 |  1534.93   |    8.9793 |
+        |     216 | BAC      | Open     | 2009-12-23   |       15.19   | 2026-11-20  |     12 |   381.2    |    2.0913 |
+        |     217 | AMD      | Open     | 2009-12-31   |        9.68   | 2026-11-20  |      3 |  1244.13   |   42.8419 |
+        |     218 | WMT      | Open     | 2010-01-05   |       17.8967 | 2026-11-20  |     14 |  1537.75   |    6.1374 |
+        |     219 | CWST     | Open     | 2010-01-28   |        4.51   | 2026-11-20  |      6 |   567.68   |   20.9786 |
+        |     220 | OXY      | Open     | 2010-01-29   |       75.0545 | 2026-11-20  |      2 |   -42.309  |   -0.2819 |
+        |     221 | VSS      | Open     | 2010-03-17   |       85.58   | 2026-11-20  |      8 |   394.48   |    0.5762 |
+        |     222 | BLDR     | Closed   | 2010-04-08   |        3.5    | 2010-09-13  |      1 |    -1.3211 |   -0.3775 |
+        |     223 | BLDR     | Closed   | 2010-04-08   |        3.5    | 2011-04-12  |      2 |    -2.8222 |   -0.4032 |
+        |     224 | BLDR     | Closed   | 2010-04-08   |        3.5    | 2015-12-08  |      2 |    18.6578 |    2.6654 |
+        |     225 | BLDR     | Closed   | 2010-04-08   |        3.5    | 2016-07-29  |      3 |    26.8367 |    2.5559 |
+        |     226 | BLDR     | Closed   | 2010-04-08   |        3.5    | 2017-12-27  |      1 |    18.1789 |    5.194  |
+        |     227 | FICO     | Open     | 2010-06-08   |       21.15   | 2026-11-20  |      8 |  5383.28   |   31.8161 |
+        |     228 | AAPL     | Open     | 2010-07-08   |        9.2175 | 2026-11-20  |     11 |  3665.77   |   36.1542 |
+        |     229 | WMT      | Open     | 2010-07-15   |       16.8033 | 2026-11-20  |     15 |  1667.2    |    6.6146 |
+        |     230 | AAPL     | Open     | 2010-07-20   |        8.9961 | 2026-11-20  |     13 |  4333.33   |   37.0531 |
+        |     231 | WMT      | Open     | 2010-09-15   |       17.62   | 2026-11-20  |      2 |   219.66   |    6.2333 |
+        |     232 | GOOGL    | Open     | 2010-09-24   |       13.1954 | 2026-11-20  |     10 |  2517.95   |   19.082  |
+        |     233 | ALGN     | Open     | 2010-09-28   |       19.73   | 2026-11-20  |      5 |   675.2    |    6.8444 |
+        |     234 | ASML     | Open     | 2010-10-21   |       41.4675 | 2026-11-20  |      8 |  9798.02   |   29.5352 |
+        |     235 | BAC      | Open     | 2011-02-02   |       14.24   | 2026-11-20  |      3 |    96.4    |    2.2566 |
+        |     236 | MPWR     | Open     | 2011-02-03   |       14.81   | 2026-11-20  |     11 | 12396.6    |   76.095  |
+        |     237 | BLDR     | Closed   | 2011-03-16   |        2.44   | 2017-12-27  |      1 |    19.2071 |    7.8718 |
+        |     238 | BLDR     | Open     | 2011-03-16   |        2.44   | 2026-11-20  |      6 |   314.683  |   21.4947 |
+        |     239 | MCHI     | Closed   | 2011-04-26   |       53.74   | 2014-10-27  |      3 |   -21.76   |   -0.135  |
+        |     240 | MCHI     | Open     | 2011-04-26   |       53.74   | 2026-11-20  |      3 |   -23.66   |   -0.1468 |
+        |     241 | AVGO     | Closed   | 2011-06-30   |        3.8    | 2018-06-20  |      2 |    42.7114 |    5.6199 |
+        |     242 | AVGO     | Open     | 2011-06-30   |        3.8    | 2026-11-20  |     12 |  3604.75   |   79.0515 |
+        |     243 | CWST     | Open     | 2011-08-17   |        5.3    | 2026-11-20  |     13 |  1218.87   |   17.6904 |
+        |     244 | NVDA     | Open     | 2011-09-02   |        0.323  | 2026-11-20  |      3 |   373.621  |  385.574  |
+        |     245 | SKY      | Open     | 2011-09-12   |        9.07   | 2026-11-20  |      1 |    81.24   |    8.957  |
+        |     246 | NFLX     | Open     | 2011-09-19   |        2.0536 | 2026-11-20  |      6 |   326.058  |   26.4623 |
+        |     247 | MSFT     | Open     | 2011-10-25   |       26.81   | 2026-11-20  |     10 |  4577.1    |   17.0724 |
+        |     248 | ASML     | Open     | 2011-11-18   |       49.4416 | 2026-11-20  |     13 | 15815.1    |   24.6057 |
+        |     249 | AVGO     | Open     | 2011-11-30   |        2.99   | 2026-11-20  |     11 |  3312.62   |  100.718  |
+        |     250 | VOO      | Closed   | 2011-12-20   |      113.96   | 2014-11-04  |      2 |   140.84   |    0.6179 |
+        |     251 | VOO      | Open     | 2011-12-20   |      113.96   | 2026-11-20  |      9 |  4694.22   |    4.5769 |
+        |     252 | MPWR     | Open     | 2012-01-04   |       14.86   | 2026-11-20  |      2 |  2254.38   |   75.854  |
+        |     253 | AMD      | Open     | 2012-02-09   |        7.24   | 2026-11-20  |      5 |  2085.75   |   57.6174 |
+        |     254 | GOOGL    | Open     | 2012-03-09   |       15.0213 | 2026-11-20  |     10 |  2499.69   |   16.641  |
+        |     255 | NVDA     | Open     | 2012-03-29   |        0.3808 | 2026-11-20  |      4 |   499.597  |  327.992  |
+        |     256 | VOO      | Open     | 2012-04-26   |      128.22   | 2026-11-20  |     14 |  7099.48   |    3.955  |
+        |     257 | VSS      | Open     | 2012-06-18   |       79.46   | 2026-11-20  |     15 |   835.2    |    0.7007 |
+        |     258 | META     | Open     | 2012-06-20   |       31.6    | 2026-11-20  |      2 |  1058.48   |   16.7481 |
+        |     259 | ALGN     | Open     | 2012-06-28   |       31.9    | 2026-11-20  |      1 |   122.27   |    3.8329 |
+        |     260 | ALGN     | Open     | 2012-06-29   |       33.46   | 2026-11-20  |     10 |  1216.1    |    3.6345 |
+        |     261 | VSS      | Open     | 2012-07-09   |       81.09   | 2026-11-20  |      7 |   375.35   |    0.6613 |
+        |     262 | VSS      | Open     | 2012-10-17   |       89.47   | 2026-11-20  |      1 |    44.67   |    0.4993 |
+        |     263 | SKY      | Open     | 2012-10-25   |        4.42   | 2026-11-20  |      9 |   781.01   |   19.6332 |
+        |     264 | AMD      | Open     | 2012-11-13   |        2.09   | 2026-11-20  |     12 |  5065.6    |  201.978  |
+        |     265 | GOOGL    | Open     | 2012-12-24   |       17.7553 | 2026-11-20  |     12 |  2967.42   |   13.9274 |
+        |     266 | BLDR     | Open     | 2013-03-01   |        6.04   | 2026-11-20  |     12 |   585.88   |    8.0833 |
+        |     267 | BLDR     | Open     | 2013-05-21   |        6.92   | 2026-11-20  |      3 |   144.33   |    6.9523 |
+        |     268 | MPWR     | Open     | 2013-05-24   |       24.11   | 2026-11-20  |      4 |  4469.76   |   46.3476 |
+        |     269 | AMZN     | Open     | 2013-06-06   |       13.3915 | 2026-11-20  |      2 |   464.857  |   17.3564 |
+        |     270 | BLDR     | Open     | 2013-06-21   |        6.28   | 2026-11-20  |      1 |    46.75   |    7.4443 |
+        |     271 | AMD      | Open     | 2013-07-01   |        4.1    | 2026-11-20  |      7 |  2939.03   |  102.405  |
+        |     272 | NVDA     | Open     | 2013-09-09   |        0.3783 | 2026-11-20  |      8 |   999.214  |  330.166  |
+        |     273 | AAPL     | Open     | 2013-10-17   |       18.0179 | 2026-11-20  |      2 |   646.084  |   17.929  |
+        |     274 | SKY      | Open     | 2013-10-29   |        4.4    | 2026-11-20  |     10 |   867.1    |   19.7068 |
+        |     275 | MSFT     | Open     | 2013-12-03   |       38.31   | 2026-11-20  |      4 |  1784.84   |   11.6474 |
+        |     276 | AMZN     | Open     | 2014-02-24   |       17.589  | 2026-11-20  |      8 |  1831.85   |   13.0184 |
+        |     277 | BAC      | Open     | 2014-03-26   |       17.18   | 2026-11-20  |      9 |   265.74   |    1.7187 |
+        |     278 | WMT      | Open     | 2014-07-16   |       25.62   | 2026-11-20  |     15 |  1533.95   |    3.9915 |
+        |     279 | FICO     | Open     | 2014-08-19   |       56.06   | 2026-11-20  |      8 |  5106      |   11.3851 |
+        |     280 | FIX      | Open     | 2014-09-22   |       14.38   | 2026-11-20  |      6 |  6167.54   |   71.4828 |
+        |     281 | AMZN     | Open     | 2014-10-23   |       15.659  | 2026-11-20  |     14 |  3234.25   |   14.7531 |
+        |     282 | GOOGL    | Open     | 2014-11-25   |       27.4615 | 2026-11-20  |      2 |   474.657  |    8.6422 |
+        |     283 | ASML     | Open     | 2014-12-17   |      105.69   | 2026-11-20  |      7 |  8123.71   |   10.9805 |
+        |     284 | MPWR     | Open     | 2015-01-13   |       46.94   | 2026-11-20  |      2 |  2187.22   |   23.298  |
+        |     285 | MCHI     | Open     | 2015-01-29   |       51.51   | 2026-11-20  |      1 |    -5.49   |   -0.1066 |
+        |     286 | MPWR     | Open     | 2015-02-05   |       47.53   | 2026-11-20  |     11 | 12039.7    |   23.028  |
+        |     287 | ALGN     | Open     | 2015-02-20   |       56.81   | 2026-11-20  |     12 |  1178.32   |    1.7285 |
+        |     288 | NVDA     | Open     | 2015-03-02   |        0.565  | 2026-11-20  |      4 |   499.86   |  221.177  |
+        |     289 | CWST     | Open     | 2015-04-06   |        6.17   | 2026-11-20  |      4 |   372.48   |   15.0924 |
+        |     290 | AVGO     | Open     | 2015-05-19   |       12.95   | 2026-11-20  |     10 |  2914.6    |   22.5066 |
+        |     291 | AMZN     | Open     | 2015-10-12   |       27.5095 | 2026-11-20  |      4 |   875.242  |    7.954  |
+        |     292 | AMZN     | Open     | 2015-11-12   |       33.28   | 2026-11-20  |      6 |  1279.24   |    6.4065 |
+        |     293 | VOO      | Open     | 2016-01-19   |      172.34   | 2026-11-20  |      8 |  3703.6    |    2.6863 |
+        |     294 | GOOGL    | Open     | 2016-03-22   |       38.0025 | 2026-11-20  |      3 |   681.862  |    5.9809 |
+        |     295 | CAMT     | Open     | 2016-04-13   |        2.09   | 2026-11-20  |      7 |   608.77   |   41.6111 |
+        |     296 | MSFT     | Open     | 2016-05-03   |       49.78   | 2026-11-20  |      7 |  3043.18   |    8.7332 |
+        |     297 | BAC      | Open     | 2016-05-10   |       14.3    | 2026-11-20  |      7 |   227.18   |    2.2695 |
+        |     298 | CAMT     | Open     | 2016-05-13   |        1.88   | 2026-11-20  |     12 |  1045.84   |   46.3582 |
+        |     299 | NFLX     | Open     | 2016-07-18   |        9.881  | 2026-11-20  |     15 |   700.735  |    4.7278 |
+        |     300 | AVGO     | Open     | 2016-12-23   |       18.19   | 2026-11-20  |     10 |  2859.2    |   15.7185 |
+        |     301 | NFLX     | Open     | 2017-01-18   |       13.326  | 2026-11-20  |      2 |    85.808  |    3.2196 |
+        |     302 | KHC      | Closed   | 2017-03-07   |       90.8    | 2020-08-10  |      3 |  -170.03   |   -0.6242 |
+        |     303 | AMZN     | Open     | 2017-03-23   |       42.369  | 2026-11-20  |     11 |  2246.96   |    4.8212 |
+        |     304 | VSS      | Open     | 2017-04-12   |      102.99   | 2026-11-20  |      7 |   222.05   |    0.308  |
+        |     305 | MCHI     | Open     | 2017-06-21   |       54.65   | 2026-11-20  |      5 |   -43.15   |   -0.1579 |
+        |     306 | VOO      | Open     | 2017-06-29   |      221.69   | 2026-11-20  |     11 |  4551.35   |    1.8664 |
+        |     307 | MCHI     | Open     | 2017-07-06   |       54.24   | 2026-11-20  |      4 |   -32.88   |   -0.1515 |
+        |     308 | ALGN     | Open     | 2017-10-02   |      187.22   | 2026-11-20  |      5 |  -162.25   |   -0.1733 |
+        |     309 | CAMT     | Open     | 2017-11-24   |        6.44   | 2026-11-20  |     12 |   993.12   |   12.8509 |
+        |     310 | GOOGL    | Open     | 2017-11-30   |       51.8085 | 2026-11-20  |      6 |  1277.89   |    4.1109 |
+        |     311 | MCHI     | Open     | 2017-12-05   |       64.75   | 2026-11-20  |      1 |   -19.73   |   -0.3047 |
+        |     312 | AMZN     | Open     | 2017-12-29   |       58.4735 | 2026-11-20  |     10 |  1883.47   |    3.2211 |
+        |     313 | FICO     | Open     | 2018-01-18   |      161.2    | 2026-11-20  |      6 |  3198.66   |    3.3071 |
+        |     314 | VOO      | Open     | 2018-01-22   |      259.75   | 2026-11-20  |      8 |  3003.32   |    1.4453 |
+        |     315 | CWST     | Open     | 2018-03-20   |       23.91   | 2026-11-20  |     14 |  1055.32   |    3.1527 |
+        |     316 | MPWR     | Open     | 2018-04-05   |      114.11   | 2026-11-20  |     11 | 11304.3    |    9.0059 |
+        |     317 | BAC      | Open     | 2018-04-27   |       30.15   | 2026-11-20  |     11 |   182.79   |    0.5512 |
+        |     318 | MCHI     | Open     | 2018-10-26   |       52.51   | 2026-11-20  |      6 |   -40.94   |   -0.1299 |
+        |     319 | SKY      | Open     | 2018-11-05   |       24.61   | 2026-11-20  |      2 |   133.4    |    2.7103 |
+        |     320 | SKY      | Open     | 2018-11-28   |       22      | 2026-11-20  |      1 |    69.31   |    3.1505 |
+        |     321 | META     | Open     | 2018-12-04   |      137.93   | 2026-11-20  |      5 |  2113.55   |    3.0647 |
+        |     322 | NFLX     | Open     | 2018-12-31   |       26.766  | 2026-11-20  |      6 |   178.784  |    1.1133 |
+        |     323 | VSS      | Open     | 2019-02-21   |      103.29   | 2026-11-20  |      5 |   157.25   |    0.3045 |
+        |     324 | GOOGL    | Open     | 2019-03-21   |       61.8065 | 2026-11-20  |      2 |   403.967  |    3.268  |
+        |     325 | CAMT     | Open     | 2019-04-12   |       10.63   | 2026-11-20  |      1 |    76.57   |    7.2032 |
+        |     326 | EMXC     | Closed   | 2019-05-03   |       50      | 2021-05-24  |      3 |    27.48   |    0.1832 |
+        |     327 | EMXC     | Closed   | 2019-05-03   |       50      | 2024-11-05  |      2 |    18.02   |    0.1802 |
+        |     328 | AMD      | Open     | 2019-07-03   |       31.19   | 2026-11-20  |     15 |  5897      |   12.6045 |
+        |     329 | GOOGL    | Open     | 2019-07-24   |       56.9865 | 2026-11-20  |     15 |  3121.55   |    3.6518 |
+        |     330 | AVGO     | Open     | 2019-07-29   |       30.17   | 2026-11-20  |      1 |   274.24   |    9.0898 |
+        |     331 | AMZN     | Open     | 2019-08-26   |       88.4435 | 2026-11-20  |     12 |  1900.52   |    1.7907 |
+        |     332 | NFLX     | Open     | 2019-08-28   |       29.177  | 2026-11-20  |      3 |    81.659  |    0.9329 |
+        |     333 | BAC      | Open     | 2019-09-24   |       28.94   | 2026-11-20  |     12 |   216.2    |    0.6226 |
+        |     334 | AMZN     | Open     | 2019-11-01   |       89.572  | 2026-11-20  |      5 |   786.24   |    1.7555 |
+        |     335 | ALGN     | Open     | 2019-11-08   |      259.92   | 2026-11-20  |     14 | -1468.5    |   -0.4036 |
+        |     336 | VSS      | Open     | 2020-02-24   |      104.43   | 2026-11-20  |     10 |   307.1    |    0.2941 |
+        |     337 | VOO      | Open     | 2020-03-09   |      252.11   | 2026-11-20  |      5 |  1914.15   |    1.5185 |
+        |     338 | GOOGL    | Open     | 2020-04-02   |       55.8515 | 2026-11-20  |      4 |   836.754  |    3.7454 |
+        |     339 | MSFT     | Open     | 2020-05-08   |      184.68   | 2026-11-20  |     12 |  3598.08   |    1.6236 |
+        |     340 | KHC      | Closed   | 2020-06-05   |       32.62   | 2020-08-10  |      2 |     3.94   |    0.0604 |
+        |     341 | KHC      | Closed   | 2020-06-05   |       32.62   | 2024-03-05  |      2 |     2.62   |    0.0402 |
+        |     342 | KHC      | Open     | 2020-06-05   |       32.62   | 2026-11-20  |      6 |   -44.58   |   -0.2278 |
+        |     343 | NFLX     | Open     | 2020-07-31   |       48.888  | 2026-11-20  |     10 |    76.42   |    0.1563 |
+        |     344 | AMZN     | Open     | 2020-08-24   |      165.373  | 2026-11-20  |     10 |   812.47   |    0.4913 |
+        |     345 | AAPL     | Open     | 2020-09-16   |      112.13   | 2026-11-20  |      5 |  1150.15   |    2.0515 |
+        |     346 | NVDA     | Open     | 2020-09-25   |       12.8737 | 2026-11-20  |     12 |  1350.88   |    8.7444 |
+        |     347 | NFLX     | Open     | 2020-10-01   |       52.751  | 2026-11-20  |     11 |    41.769  |    0.072  |
+        |     348 | ALGN     | Open     | 2020-11-02   |      458.44   | 2026-11-20  |      8 | -2428.16   |   -0.6621 |
+        |     349 | BLDR     | Open     | 2020-11-03   |       32.68   | 2026-11-20  |      8 |   177.8    |    0.6801 |
+        |     350 | CWST     | Open     | 2020-11-10   |       59.7    | 2026-11-20  |      4 |   157.36   |    0.659  |
+        |     351 | VSS      | Open     | 2020-11-24   |      116.41   | 2026-11-20  |     12 |   223.76   |    0.1602 |
+        |     352 | BLDR     | Open     | 2020-12-29   |       41.91   | 2026-11-20  |      6 |    75.72   |    0.3011 |
+        |     353 | CWST     | Open     | 2021-02-04   |       58.39   | 2026-11-20  |      9 |   368.1    |    0.7005 |
+        |     354 | EMXC     | Closed   | 2021-03-15   |       59.81   | 2024-11-05  |      3 |    -0.975  |   -0.0054 |
+        |     355 | EMXC     | Open     | 2021-03-15   |       59.81   | 2026-11-20  |      5 |    89.175  |    0.2982 |
+        |     356 | WMT      | Open     | 2021-03-23   |       44.6467 | 2026-11-20  |     13 |  1081.94   |    1.8641 |
+        |     357 | MCHI     | Open     | 2021-03-29   |       80.77   | 2026-11-20  |      6 |  -210.5    |   -0.4344 |
+        |     358 | EMXC     | Open     | 2021-05-21   |       60.24   | 2026-11-20  |      4 |    68.12   |    0.2827 |
+        |     359 | AVGO     | Open     | 2021-08-04   |       48.78   | 2026-11-20  |      7 |  1786.41   |    5.2317 |
+        |     360 | EMXC     | Open     | 2021-10-13   |       60.98   | 2026-11-20  |      7 |   116.53   |    0.273  |
+        |     361 | AVGO     | Open     | 2021-10-19   |       51.04   | 2026-11-20  |     13 |  3291.81   |    4.9611 |
+        |     362 | AVGO     | Open     | 2021-11-30   |       55.37   | 2026-11-20  |      2 |   498.08   |    4.4977 |
+        |     363 | FIX      | Open     | 2021-12-01   |       93.73   | 2026-11-20  |      8 |  7589.92   |   10.1221 |
+        |     364 | VSS      | Open     | 2022-05-24   |      112.32   | 2026-11-20  |     10 |   227.2    |    0.2023 |
+        |     365 | MPWR     | Open     | 2022-06-15   |      416.19   | 2026-11-20  |      7 |  5078.02   |    1.743  |
+        |     366 | AAPL     | Open     | 2022-08-23   |      167.23   | 2026-11-20  |     14 |  2452.62   |    1.0476 |
+        |     367 | ASML     | Open     | 2022-09-02   |      467.19   | 2026-11-20  |      4 |  3193.12   |    1.7087 |
+        |     368 | OXY      | Open     | 2022-09-30   |       61.45   | 2026-11-20  |      9 |   -69.95   |   -0.1265 |
+        |     369 | BAC      | Open     | 2022-10-12   |       29.86   | 2026-11-20  |      1 |    16.18   |    0.5419 |
+        |     370 | MPWR     | Open     | 2022-11-07   |      352.96   | 2026-11-20  |     14 | 11045.3    |    2.2352 |
+        |     371 | CAMT     | Open     | 2022-11-09   |       22.48   | 2026-11-20  |      1 |    66.72   |    2.968  |
+        |     372 | VOO      | Open     | 2022-12-06   |      362.03   | 2026-11-20  |     11 |  3008.61   |    0.7555 |
+        |     373 | NFLX     | Open     | 2023-01-23   |       35.742  | 2026-11-20  |      3 |    59.964  |    0.5592 |
+        |     374 | VSS      | Open     | 2023-02-14   |      111.02   | 2026-11-20  |      6 |   143.72   |    0.2158 |
+        |     375 | BLDR     | Open     | 2023-03-20   |       82.02   | 2026-11-20  |     12 |  -325.88   |   -0.3311 |
+        |     376 | KHC      | Open     | 2023-04-28   |       39.27   | 2026-11-20  |      3 |   -43.64   |   -0.3704 |
+        |     377 | AAPL     | Open     | 2023-06-14   |      183.95   | 2026-11-20  |     13 |  2060.93   |    0.8618 |
+        |     378 | VSS      | Open     | 2023-09-26   |      105.53   | 2026-11-20  |     12 |   354.32   |    0.2798 |
+        |     379 | MCHI     | Open     | 2023-10-16   |       43.29   | 2026-11-20  |     15 |    37.95   |    0.0584 |
+        |     380 | GOOGL    | Open     | 2024-02-01   |      141.16   | 2026-11-20  |     14 |  1737.82   |    0.8794 |
+        |     381 | BAC      | Open     | 2024-02-12   |       33.62   | 2026-11-20  |      5 |    64.1    |    0.3813 |
+        |     382 | MCHI     | Open     | 2024-02-22   |       39.77   | 2026-11-20  |      7 |    42.75   |    0.1536 |
+        |     383 | MPWR     | Open     | 2024-03-12   |      736.55   | 2026-11-20  |     11 |  4460.5    |    0.5505 |
+        |     384 | CAMT     | Open     | 2024-05-14   |       94.11   | 2026-11-20  |      4 |   -19.64   |   -0.0522 |
+        |     385 | META     | Open     | 2024-06-11   |      507.47   | 2026-11-20  |      8 |   426.96   |    0.1052 |
+        |     386 | MPWR     | Open     | 2024-06-18   |      852.56   | 2026-11-20  |     14 |  4051.86   |    0.3395 |
+        |     387 | AMD      | Open     | 2024-07-30   |      138.44   | 2026-11-20  |      3 |   857.85   |    2.0655 |
+        |     388 | MCHI     | Open     | 2024-10-25   |       49.85   | 2026-11-20  |      6 |   -22.98   |   -0.0768 |
+        |     389 | VOO      | Open     | 2024-11-13   |      549.03   | 2026-11-20  |     11 |   951.61   |    0.1576 |
+        """
+        method = method.upper()
+        check_option("method", method, ("FIFO", "LIFO"))
+        if not self._collect_data():
+            return pd.DataFrame()
+        return apply_rounding(
+            self._trades(method), rounding if rounding is not None else self._rounding
+        )
+
+    def get_trade_statistics(
+        self,
+        method: str = "FIFO",
+        by: str | None = None,
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the statistics of the trades of the portfolio (`get_trades`).
+
+        How many trades there were, how many made money, how much they made and lost, the profit
+        factor, expectancy, System Quality Number and Kelly fraction, how long they lasted, the
+        longest winning and losing streaks and how much of the time a trade was held. Every
+        statistic but the counts, the Open PnL and the coverage is calculated on the closed
+        trades, in the order they closed.
+
+        - Win Rate = W = number of trades with PnL > 0 / number of closed trades
+        - Payoff Ratio = R = mean(PnL⁺) / |mean(PnL⁻)|
+        - Profit Factor = Σ PnL⁺ / |Σ PnL⁻|
+        - Expectancy = W × mean(PnL⁺) − L × |mean(PnL⁻)|, with L the share of losing trades,
+          the mean PnL per trade
+        - Expectancy Ratio = Expectancy / |mean(PnL⁻)|, the expectancy in multiples of the
+          average loss
+        - SQN = √n × mean(PnL) / std(PnL), with n closed trades and ddof=1
+        - Kelly Criterion = W − (1 − W) / R
+        - Coverage = share of trading days since the first transaction with at least one
+          trade held, Overlap Coverage = share of those days with more than one
+
+        Tharp defines the expectancy and the System Quality Number on R-multiples, the PnL of
+        every trade divided by the risk taken on it. A trade list has no stops, so the PnL in
+        currency takes its place: the SQN is the same for any constant risk per trade, and with
+        the average loss as the risk the Expectancy Ratio is the expectancy in R. Tharp's later
+        scoring caps n at 100 (√min(n, 100)); here n is the number of trades, as in vectorbt
+        and backtesting.py, while backtrader divides the standard deviation by n rather than
+        n − 1. The Expectancy is vectorbt's, in currency; backtesting.py's "Expectancy [%]" is
+        the mean trade return, the Average Trade here, and its profit factor uses the trade
+        returns rather than the PnL.
+
+        For more information, see the following sources:
+
+        - Tharp, V.K. (2008). "Van Tharp's Definitive Guide to Position Sizing." International
+          Institute of Trading Mastery.
+        - Tharp, V.K. (2006). "Trade Your Way to Financial Freedom." 2nd edition, McGraw-Hill.
+        - Kelly, J.L. (1956). "A New Interpretation of Information Rate." Bell System Technical
+          Journal, 35(4), 917-926.
+
+        Also known as: trade analysis, trade statistics, win rate, hit ratio, profit factor,
+        System Quality Number.
+
+        Shares similar logic:
+        - vectorbt, Trades.stats: https://vectorbt.dev/api/portfolio/trades/#vectorbt.portfolio.trades.Trades
+        - vectorbt, Ranges.coverage (coverage): https://vectorbt.dev/api/generic/ranges/#vectorbt.generic.ranges.Ranges.coverage
+        - backtesting.py, Backtest.run (statistics): https://kernc.github.io/backtesting.py/doc/backtesting/backtesting.html#backtesting.backtesting.Backtest.run
+        - backtrader, TradeAnalyzer: https://www.backtrader.com/docu/analyzers-reference/#tradeanalyzer
+        - backtrader, SQN: https://www.backtrader.com/docu/analyzers-reference/#sqn
+
+        Args:
+            method (str, optional): Which lots a sale closes first (see get_trades). Options are: "FIFO" (first in,
+                first out: the oldest lots close first), "LIFO" (last in, first out: the newest lots close first).
+                Defaults to "FIFO".
+            by (str | None, optional): How the trades are split. Options are: "direction" (the long and short trades
+                next to all of them), "ticker" (every ticker next to all of them). Defaults to None, all trades
+                together.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the Portfolio's rounding.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: The statistics as rows, with a column "All" and one per direction or
+            ticker: the number of Trades, Closed, Open, Long, Short, Winning and Losing Trades,
+            the Win Rate, Gross PnL, Costs, Net PnL and Open PnL, the Best, Worst, Average,
+            Average Winning and Average Losing Trade (returns), the Average, Average Winning and
+            Average Losing PnL, the Payoff Ratio, Profit Factor, Expectancy, Expectancy Ratio,
+            SQN and Kelly Criterion, the Average, Average Winning, Average Losing, Maximum and
+            Minimum Duration in calendar days, the Longest Winning and Losing Streak, the
+            Current Streak (positive for wins, negative for losses) and the Coverage and
+            Overlap Coverage.
+
+        Notes:
+        - A trade without a profit or loss counts as neither a win nor a loss and ends a streak.
+        - A ratio without losing (or winning) trades to divide by is NaN.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Portfolio
+
+        portfolio = Portfolio(example=True, api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        portfolio.get_trade_statistics(by="direction")
+        ```
+
+        Which returns:
+
+        |                          |         All |        Long |   Short |
+        |:-------------------------|------------:|------------:|--------:|
+        | Trades                   |    389      |    389      |       0 |
+        | Closed Trades            |    109      |    109      |       0 |
+        | Open Trades              |    280      |    280      |       0 |
+        | Long Trades              |    389      |    389      |       0 |
+        | Short Trades             |      0      |      0      |       0 |
+        | Winning Trades           |     72      |     72      |       0 |
+        | Losing Trades            |     37      |     37      |       0 |
+        | Win Rate                 |      0.6606 |      0.6606 |     nan |
+        | Gross PnL                |   3490.68   |   3490.68   |       0 |
+        | Costs                    |    165.025  |    165.025  |       0 |
+        | Net PnL                  |   3325.66   |   3325.66   |       0 |
+        | Open PnL                 | 735822      | 735822      |       0 |
+        | Best Trade               |    636.562  |    636.562  |     nan |
+        | Worst Trade              |    -16.2095 |    -16.2095 |     nan |
+        | Average Trade            |     14.2837 |     14.2837 |     nan |
+        | Average Winning Trade    |     22.2973 |     22.2973 |     nan |
+        | Average Losing Trade     |     -1.3103 |     -1.3103 |     nan |
+        | Average PnL              |     30.5106 |     30.5106 |     nan |
+        | Average Winning PnL      |     61.8463 |     61.8463 |     nan |
+        | Average Losing PnL       |    -30.4669 |    -30.4669 |     nan |
+        | Payoff Ratio             |      2.0299 |      2.0299 |     nan |
+        | Profit Factor            |      3.9502 |      3.9502 |     nan |
+        | Expectancy               |     30.5106 |     30.5106 |     nan |
+        | Expectancy Ratio         |      1.0014 |      1.0014 |     nan |
+        | SQN                      |      3.4601 |      3.4601 |     nan |
+        | Kelly Criterion          |      0.4933 |      0.4933 |     nan |
+        | Average Duration         |   3021.09   |   3021.09   |     nan |
+        | Average Winning Duration |   3541.26   |   3541.26   |     nan |
+        | Average Losing Duration  |   2008.86   |   2008.86   |     nan |
+        | Maximum Duration         |   8598      |   8598      |     nan |
+        | Minimum Duration         |      8      |      8      |     nan |
+        | Longest Winning Streak   |     21      |     21      |       0 |
+        | Longest Losing Streak    |      8      |      8      |       0 |
+        | Current Streak           |     -2      |     -2      |       0 |
+        | Coverage                 |      1      |      1      |       0 |
+        | Overlap Coverage         |      1      |      1      |     nan |
+        """
+        method = method.upper()
+        check_option("method", method, ("FIFO", "LIFO"))
+        if not self._collect_data():
+            return pd.DataFrame()
+        statistics = trades_model.get_trade_statistics(
+            self._trades(method), self._trading_dates(), by=by
+        )
+        return apply_rounding(
+            statistics, rounding if rounding is not None else self._rounding
+        )
+
+    def get_position_timing(
+        self, rounding: int | None = None, show_columns: str | list[str] | None = None
+    ) -> pd.DataFrame:
+        """
+        Calculate the timing of the positions of the portfolio as López de Prado describes it.
+
+        How often each position was flattened (sold to zero) or flipped (from long to short or
+        back), the number of bets these end, and the average holding period of its units. A bet
+        is a position held from the moment it opens until it is flattened or flipped, so the
+        number of bets counts the independent positions taken in a ticker; a position still held
+        ends a bet on the latest date. The average holding period weighs the time every unit was
+        held by the units: each purchase moves the average entry time of the position towards
+        its date, and each sale closes units held since that average entry time.
+
+        - Average Entry Time_t = (Average Entry Time_t-1 × |p_t-1| + t × |Δp_t|) / |p_t| when
+          the position grows
+        - Average Holding Period = Σ (t − Average Entry Time) × |units closed at t| /
+          Σ |units closed|
+
+        For more information, see the following source:
+
+        - López de Prado, M. (2018). "Advances in Financial Machine Learning." Wiley, section
+          14.3 (Snippets 14.1 and 14.2).
+
+        Also known as: bet frequency, holding period, flattening and flips.
+
+        Args:
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the Portfolio's rounding.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: Per ticker the number of Flattenings, Flips and Bets and the Average
+            Holding Period in calendar days.
+
+        Notes:
+        - The positions are the daily volumes of `get_positions_overview`. Units still held
+          have no holding period yet, so a ticker that was never sold has none (NaN).
+        - Over a position that ends flat, the average holding period equals the average
+          duration of its FIFO trades (`get_trades`) weighted by their size.
+        - There is no total for the portfolio, as units of different tickers do not add up.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Portfolio
+
+        portfolio = Portfolio(example=True, api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        portfolio.get_position_timing()
+        ```
+
+        Which returns:
+
+        |       |   Flattenings |   Flips |   Bets |   Average Holding Period |
+        |:------|--------------:|--------:|-------:|-------------------------:|
+        | ASML  |             0 |       0 |      1 |                 2982.51  |
+        | SKY   |             0 |       0 |      1 |                  714.509 |
+        | AMZN  |             0 |       0 |      1 |                 1791.41  |
+        | FIX   |             0 |       0 |      1 |                  874.215 |
+        | MSFT  |             0 |       0 |      1 |                 1506.19  |
+        | AMD   |             0 |       0 |      1 |                 3744.21  |
+        | AAPL  |             0 |       0 |      1 |                 2799.96  |
+        | FICO  |             0 |       0 |      1 |                 2173.02  |
+        | BAC   |             0 |       0 |      1 |                 2017.6   |
+        | ALGN  |             0 |       0 |      1 |                 1021.06  |
+        | CWST  |             0 |       0 |      1 |                 1862.59  |
+        | OXY   |             0 |       0 |      1 |                 3740.11  |
+        | WMT   |             0 |       0 |      1 |                  766.283 |
+        | CAMT  |             0 |       0 |      1 |                 2197.39  |
+        | NVDA  |             0 |       0 |      1 |                 2138.97  |
+        | NFLX  |             0 |       0 |      1 |                 3214.34  |
+        | GOOGL |             0 |       0 |      1 |                 4550.35  |
+        | MPWR  |             0 |       0 |      1 |                 2187.85  |
+        | BLDR  |             1 |       0 |      2 |                 1051.15  |
+        | VSS   |             0 |       0 |      1 |                 1805.36  |
+        | AVGO  |             0 |       0 |      1 |                 1460.42  |
+        | MCHI  |             0 |       0 |      1 |                 1280     |
+        | VOO   |             0 |       0 |      1 |                  978.32  |
+        | META  |             0 |       0 |      1 |                  nan     |
+        | KHC   |             0 |       0 |      1 |                  608.288 |
+        | EMXC  |             0 |       0 |      1 |                  960.277 |
+        """
+        if not self._collect_data():
+            return pd.DataFrame()
+        volumes = self._unrounded_positions()["Volume"].astype(float)
+        # Units left by floating point residue of a position sold in fractions are no position.
+        held = self._open_positions(volumes.stack()).unstack().reindex_like(volumes)
+        positions = volumes.where(held.fillna(False).astype(bool), 0.0)
+        timing = {}
+        for ticker in positions.columns:
+            events = trades_model.get_flattening_and_flips(positions[ticker])
+            timing[ticker] = {
+                "Flattenings": (events == "Flattening").sum(),
+                "Flips": (events == "Flip").sum(),
+                "Bets": len(events),
+                "Average Holding Period": trades_model.get_average_holding_period(
+                    positions[ticker]
+                ),
+            }
+        return apply_rounding(
+            pd.DataFrame(timing).T.astype(float),
+            rounding if rounding is not None else self._rounding,
+        )
+
+    def get_return_contributions(
+        self,
+        period: str = "monthly",
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate how much each position added to the portfolio's return in every period.
+
+        The periods are weeks, months, quarters or years, and the contributions add up to the
+        portfolio's return of that period. Every day a position contributes its weight in the
+        portfolio at the previous close times its return, c_i,t = w_i,t-1 r_i,t, and over a
+        longer period the daily contributions are carried by the growth of the portfolio since
+        the period began, C_i = Σ_t c_i,t Π_(s<t) (1 + R_s), so they add up to the compounded
+        return of the portfolio (Bacon, 2008). It is
+        `toolkit.portfolio.get_return_contributions` with the weights of the positions as they
+        moved from day to day.
+
+        The returns are the total returns of the assets (dividends reinvested) and the
+        weights the Current Weight of the positions overview, so a purchase or a sale
+        changes the weights from the next day on and is no return itself.
+
+        For more information, see the following sources:
+
+        - Bacon, C. R. (2008). "Practical Portfolio Performance Measurement and
+          Attribution." 2nd edition, Wiley, chapter 5.
+
+        Also known as: contribution to return, return attribution by position.
+
+        Shares similar logic:
+        - PerformanceAnalytics (R), to.period.contributions: https://github.com/cran/PerformanceAnalytics/blob/2.1.0/R/to.period.contributions.R#L45
+
+        Args:
+            period (str, optional): The period to add the contributions up over. Options are: "daily", "weekly",
+                "monthly", "quarterly", "yearly". Defaults to "monthly".
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the Portfolio's rounding.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: Per period the contribution of every position and the Portfolio
+            return.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Portfolio
+
+        portfolio = Portfolio(example=True, api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        portfolio.get_return_contributions(period="yearly")[
+            ["ASML", "MSFT", "NVDA", "AMZN", "Portfolio"]
+        ]
+        ```
+
+        Which returns:
+
+        | Date   |    ASML |    MSFT |    NVDA |    AMZN |   Portfolio |
+        |:-------|--------:|--------:|--------:|--------:|------------:|
+        | 2000   |  0.0919 | -0.2261 |  0      | -0.0067 |     -0.3338 |
+        | 2001   | -0.0367 |  0.1306 |  0      | -0.0005 |      0.4238 |
+        | 2002   | -0.0307 | -0.0517 |  0      |  0.0004 |     -0.1471 |
+        | 2003   |  0.1081 |  0.0148 |  0.0002 |  0.002  |      0.3673 |
+        | 2004   | -0.0334 |  0.0131 |  0      |  0.0003 |      0.1162 |
+        | 2005   |  0.0401 |  0      |  0.0001 |  0.0002 |      0.1153 |
+        | 2006   |  0.0407 |  0.0222 |  0.0006 | -0.0003 |      0.0813 |
+        | 2007   |  0.042  |  0.0235 |  0.0004 |  0.007  |      0.0047 |
+        | 2008   | -0.0793 | -0.0579 | -0.0012 | -0.0049 |     -0.4002 |
+        | 2009   |  0.1632 |  0.0634 |  0.0009 |  0.0144 |      0.488  |
+        | 2010   |  0.028  | -0.0073 | -0.0002 |  0.004  |      0.1289 |
+        | 2011   |  0.0237 | -0.0038 | -0.0001 | -0.0004 |     -0.0446 |
+        | 2012   |  0.097  |  0.0059 | -0.0001 |  0.0056 |      0.2123 |
+        | 2013   |  0.1062 |  0.0274 |  0.0002 |  0.0091 |      0.416  |
+        | 2014   |  0.0363 |  0.018  |  0.0001 | -0.004  |      0.1043 |
+        | 2015   | -0.0417 |  0.0158 |  0.0004 |  0.0202 |      0.1086 |
+        | 2016   |  0.0488 |  0.0123 |  0.0018 |  0.0038 |      0.238  |
+        | 2017   |  0.0992 |  0.0287 |  0.0017 |  0.02   |      0.4316 |
+        | 2018   | -0.0159 |  0.0138 | -0.0006 |  0.0124 |      0.0287 |
+        | 2019   |  0.1419 |  0.0426 |  0.0011 |  0.0127 |      0.592  |
+        | 2020   |  0.1134 |  0.0316 |  0.002  |  0.0353 |      0.5131 |
+        | 2021   |  0.1187 |  0.037  |  0.0034 |  0.0014 |      0.3203 |
+        | 2022   | -0.0695 | -0.0226 | -0.0023 | -0.0218 |     -0.2619 |
+        | 2023   |  0.0827 |  0.0431 |  0.0071 |  0.0233 |      0.6117 |
+        | 2024   | -0.0108 |  0.0094 |  0.0106 |  0.014  |      0.295  |
+        | 2025   |  0.0672 |  0.0093 |  0.0049 |  0.0018 |      0.234  |
+        | 2026   |  0.029  |  0.0006 | -0.0046 |  0.002  |     -0.0437 |
+        """
+        if not self._collect_data():
+            return pd.DataFrame()
+        frequency = None if period == "daily" else self._period_frequency(period)
+        positions = self._unrounded_positions()
+        weights = positions["Current Weight"].astype(float)
+        returns = (
+            self._daily_historical_data["Return"]
+            .reindex(index=weights.index, columns=weights.columns)
+            .fillna(0)
+        )
+        # Every day a position earns its weight at the previous close; the first day has
+        # no close before it.
+        contributions = (weights.shift(1) * returns).iloc[1:]
+        if frequency is None:
+            table = contributions.assign(Portfolio=contributions.sum(axis=1))
+        else:
+            table = attribution_model.get_period_contributions(contributions, frequency)
+        table.index.name = "Date"
+        return apply_rounding(
+            table, rounding if rounding is not None else self._rounding
+        )
+
+    @staticmethod
+    def _period_frequency(period: str) -> str:
+        """The pandas frequency of a period longer than a day."""
+        frequencies = {"weekly": "W", "monthly": "M", "quarterly": "Q", "yearly": "Y"}
+        check_period(period, frequencies)
+        return frequencies[period]

@@ -1,7 +1,10 @@
 """Models Controller Tests""" ""
+
 import numpy as np
 import pandas as pd
 import pytest
+
+from financetoolkit.utilities.error_model import InvalidArgumentError
 
 # The GNP implicit price deflator of the U.S. Bureau of Economic Analysis (NIPA table 1.7.9,
 # 2017 = 100) for the years the offline datasets cover, which the Ohlson O-Score deflates the
@@ -43,14 +46,13 @@ def test_get_dupont_analysis(recorder, models_module):
     recorder.capture(models_module.get_dupont_analysis())
     recorder.capture(models_module.get_dupont_analysis(growth=True))
     recorder.capture(models_module.get_dupont_analysis(growth=True, lag=[1, 2, 3]))
-
-
-def test_get_extended_dupont_analysis(recorder, models_module):
-    recorder.capture(models_module.get_extended_dupont_analysis())
-    recorder.capture(models_module.get_extended_dupont_analysis(growth=True))
+    recorder.capture(models_module.get_dupont_analysis(method="extended"))
+    recorder.capture(models_module.get_dupont_analysis(method="extended", growth=True))
     recorder.capture(
-        models_module.get_extended_dupont_analysis(growth=True, lag=[1, 2, 3])
+        models_module.get_dupont_analysis(method="extended", growth=True, lag=[1, 2, 3])
     )
+    with pytest.raises(InvalidArgumentError, match="method must be one of"):
+        models_module.get_dupont_analysis(method="nissim_penman")
 
 
 def test_get_enterprise_value_breakdown(recorder, models_module):
@@ -206,14 +208,14 @@ def test_get_fulmer_h_score(recorder, models_module):
 
 def test_get_altman_z_score_models(recorder, models_module):
     for model in ("private", "non-manufacturing", "emerging"):
-        recorder.capture(models_module.get_altman_z_score(model=model))
+        recorder.capture(models_module.get_altman_z_score(method=model))
 
     # The four-variable models leave out sales, and the emerging market score is the
     # non-manufacturing score plus 3.25.
     non_manufacturing = models_module.get_altman_z_score(
-        model="non-manufacturing", rounding=10
+        method="non-manufacturing", rounding=10
     )
-    emerging = models_module.get_altman_z_score(model="emerging", rounding=10)
+    emerging = models_module.get_altman_z_score(method="emerging", rounding=10)
     assert "Sales to Total Assets" not in non_manufacturing.index.get_level_values(1)
     difference = (
         emerging.xs("Altman Z-Score", level=1)
@@ -221,7 +223,8 @@ def test_get_altman_z_score_models(recorder, models_module):
     ).stack()
     assert ((difference - 3.25).abs() < 1e-8).all()
 
-    assert models_module.get_altman_z_score(model="zeta").empty
+    with pytest.raises(InvalidArgumentError, match="method must be one of"):
+        models_module.get_altman_z_score(method="zeta")
 
 
 def test_get_taffler_z_score(recorder, models_module):
@@ -357,9 +360,10 @@ def test_intrinsic_valuation_discounts_the_free_cash_flow_to_firm(models_module)
         pd.testing.assert_frame_equal(valuation.loc[ticker], expected)
 
     # The capital expenditure and working capital are not cash flows to value a company on.
-    assert models_module.get_intrinsic_valuation(
-        0.05, 0.02, 0.10, cash_flow_type="Capital Expenditure"
-    ).empty
+    with pytest.raises(InvalidArgumentError, match="cash_flow_type must be one of"):
+        models_module.get_intrinsic_valuation(
+            0.05, 0.02, 0.10, cash_flow_type="Capital Expenditure"
+        )
     # Without a discount rate above the perpetual growth rate there is no valuation.
     assert models_module.get_intrinsic_valuation(0.05, 0.10, 0.10).empty
 
@@ -900,7 +904,8 @@ def test_get_synthetic_credit_rating(recorder, models_module, monkeypatch):
 
     recorder.capture(models_module.get_synthetic_credit_rating())
     recorder.capture(models_module.get_synthetic_credit_rating(firm_type="small"))
-    assert models_module.get_synthetic_credit_rating(firm_type="tiny").empty
+    with pytest.raises(InvalidArgumentError, match="firm_type must be one of"):
+        models_module.get_synthetic_credit_rating(firm_type="tiny")
 
 
 def test_get_peer_comparison_without_peer_data(models_module):
@@ -1231,33 +1236,32 @@ def test_synthetic_credit_rating_without_interest_expense(models_module, monkeyp
 
     models = copy.copy(models_module)
     income = models_module._income_statement.copy()
-    balance = models_module._balance_sheet_statement.copy()
     period = income.columns[-1]
-    # A reported zero without debt means nothing to cover, a missing interest expense is unknown.
+    # No interest expense with a positive EBIT is an infinite coverage (Damodaran): the
+    # highest rating, whether the interest expense is zero or not reported, and also next to
+    # debt whose interest the statements do not report separately.
     income.loc[("AAPL", "Interest Expense"), period] = 0.0
-    balance.loc[("AAPL", "Total Debt"), period] = 0.0
     income.loc[("MSFT", "Interest Expense"), period] = np.nan
+    assert (
+        models_module._balance_sheet_statement.loc[("AAPL", "Total Debt"), period] > 0
+    )
     models._income_statement = income
-    models._balance_sheet_statement = balance
 
     rating = models.get_synthetic_credit_rating(firm_type="large")
     assert rating.loc[("AAPL", "Rating"), period] == "AAA"
-    assert pd.isna(rating.loc[("MSFT", "Rating"), period])
-
-    # A zero interest expense next to debt is unreported interest: no rating, not the best.
-    models._balance_sheet_statement = models_module._balance_sheet_statement
-    rating = models.get_synthetic_credit_rating(firm_type="large")
-    assert period not in rating.columns or pd.isna(
-        rating.loc[("AAPL", "Rating"), period]
-    )
-    models._balance_sheet_statement = balance
+    assert rating.loc[("MSFT", "Rating"), period] == "AAA"
+    assert rating.loc[("AAPL", "Default Spread"), period] == pytest.approx(0.004)
+    # The infinite ratio itself shows as NaN.
+    assert pd.isna(rating.loc[("AAPL", "Interest Coverage Ratio"), period])
 
     # Without interest but with an operating loss there is nothing the coverage says about a
-    # rating: no rating rather than the best one.
+    # rating, and without an EBIT there is no ratio: no rating rather than the best one.
     income.loc[("AAPL", "Operating Income"), period] = -1e9
+    income.loc[("MSFT", "Operating Income"), period] = np.nan
     rating = models.get_synthetic_credit_rating(firm_type="large")
-    assert period not in rating.columns or pd.isna(
-        rating.loc[("AAPL", "Rating"), period]
+    assert period not in rating.columns or (
+        pd.isna(rating.loc[("AAPL", "Rating"), period])
+        and pd.isna(rating.loc[("MSFT", "Rating"), period])
     )
 
 
@@ -1368,6 +1372,8 @@ def test_quarterly_valuations_skip_trailing_sums_with_a_missing_quarter():
     )
     assert reverse.loc["A", "Cash Flow"] == pytest.approx(20 * g[-4:].sum())
     assert reverse.loc["A", "Historical Growth Rate"] == pytest.approx(GROWTH**4 - 1)
+    # The period names the first and latest trailing sum the growth is measured over.
+    assert reverse.loc["A", "Historical Growth Period"] == "2019Q4-2023Q4"
 
     # The margins a year apart are taken at calendar positions counted back from the
     # latest quarter; the year that includes the missing revenue is left out instead of
@@ -1866,9 +1872,13 @@ def test_merton_measures_volatility_and_rates_at_the_fiscal_period_end(
         assert merton.loc[(ticker, "Equity Volatility"), period] == pytest.approx(
             volatility[ticker].loc[:date].dropna().iloc[-1]
         )
-    # The model is solved with the rate of the fiscal period end: the same inputs give the
-    # same distance to default.
+    # The model is solved with the rate of the fiscal period end, converted from its
+    # semi-annual quote to continuous compounding: the same inputs give the same distance to
+    # default.
     from financetoolkit.models.distress import credit_model  # noqa: PLC0415
+    from financetoolkit.options.options_model import (  # noqa: PLC0415
+        get_continuously_compounded_rate,
+    )
 
     date = dates.loc["AAPL", period]
     balance = models_module._balance_sheet_statement
@@ -1879,7 +1889,9 @@ def test_merton_measures_volatility_and_rates_at_the_fiscal_period_end(
             balance.loc[("AAPL", "Short Term Debt"), period]
             + 0.5 * balance.loc[("AAPL", "Long Term Debt"), period]
         ),
-        risk_free_rate=float(risk_free.loc[:date].dropna().iloc[-1]),
+        risk_free_rate=get_continuously_compounded_rate(
+            float(risk_free.loc[:date].dropna().iloc[-1])
+        ),
     )
     assert merton.loc[("AAPL", "Distance to Default"), period] == pytest.approx(
         expected["Distance to Default"]
@@ -1966,7 +1978,7 @@ def test_return_on_equity_excludes_minority_interests(models_module, monkeypatch
     average_assets = (assets[period] + assets[period - 1]) / 2
 
     dupont = models.get_dupont_analysis(rounding=10)
-    extended = models.get_extended_dupont_analysis(rounding=10)
+    extended = models.get_dupont_analysis(method="extended", rounding=10)
     for ticker in ["AAPL", "MSFT"]:
         for analysis in (dupont, extended):
             assert analysis.loc[(ticker, "Equity Multiplier"), period] == (
@@ -2502,7 +2514,7 @@ def test_dupont_analyses_multiply_to_the_reported_return_on_equity(quarterly, tr
     asset_turnover = ratios.get_asset_turnover_ratio(trailing=trailing)
     return_on_assets = ratios.get_return_on_assets(trailing=trailing)
     dupont = models.get_dupont_analysis(trailing=trailing)
-    extended = models.get_extended_dupont_analysis(trailing=trailing)
+    extended = models.get_dupont_analysis(method="extended", trailing=trailing)
 
     for ticker in tickers:
         reported = return_on_equity.loc[ticker]
@@ -2647,7 +2659,8 @@ def test_discretionary_accruals_estimate_on_the_same_quarter_of_earlier_years():
 
     cross_section = models.get_discretionary_accruals(method="cross_section")
     assert cross_section.loc["A"].loc["Discretionary Accruals"].isna().all()
-    assert models.get_discretionary_accruals(method="panel").empty
+    with pytest.raises(InvalidArgumentError, match="method must be one of"):
+        models.get_discretionary_accruals(method="panel")
 
 
 def test_quarterly_intrinsic_valuation_sums_the_quarters_of_a_year():
@@ -2697,3 +2710,328 @@ def test_quarterly_intrinsic_valuation_sums_the_quarters_of_a_year():
     assert (
         models.get_intrinsic_valuation(historical=True, **settings).isna().all().all()
     )
+
+
+def test_get_fundamental_growth_rate(recorder, models_module):
+    recorder.capture(models_module.get_fundamental_growth_rate())
+    recorder.capture(models_module.get_fundamental_growth_rate(growth=True))
+
+
+def test_get_rule_of_40(recorder, models_module):
+    recorder.capture(models_module.get_rule_of_40())
+    recorder.capture(models_module.get_rule_of_40(margin="ebitda"))
+    with pytest.raises(InvalidArgumentError, match="margin must be one of"):
+        models_module.get_rule_of_40(margin="operating")
+
+
+def test_get_owner_earnings(recorder, models_module):
+    recorder.capture(models_module.get_owner_earnings())
+    recorder.capture(models_module.get_owner_earnings(method="greenwald"))
+
+
+def test_get_return_on_incremental_invested_capital(recorder, models_module):
+    recorder.capture(models_module.get_return_on_incremental_invested_capital())
+    recorder.capture(models_module.get_return_on_incremental_invested_capital(years=2))
+
+
+def test_get_unlevered_beta(recorder, models_module):
+    recorder.capture(models_module.get_unlevered_beta())
+    recorder.capture(models_module.get_unlevered_beta(rounding=2))
+
+
+def test_get_capitalized_research_and_development(recorder, models_module):
+    recorder.capture(
+        models_module.get_capitalized_research_and_development(amortization_years=2)
+    )
+    recorder.capture(
+        models_module.get_capitalized_research_and_development(amortization_years=1)
+    )
+    # The four years of the offline statements are too few for the default five-year life.
+    default = models_module.get_capitalized_research_and_development()
+    assert default.xs("Research Asset", level=1).isna().all().all()
+
+
+def test_get_cash_flow_return_on_investment(recorder, models_module):
+    recorder.capture(models_module.get_cash_flow_return_on_investment())
+    recorder.capture(models_module.get_cash_flow_return_on_investment(rounding=2))
+
+
+def test_get_beneish_five_variable_m_score(recorder, models_module):
+    five = models_module.get_beneish_m_score(method="five", rounding=10)
+    recorder.capture(five)
+    eight = models_module.get_beneish_m_score(rounding=10)[five.columns]
+    indices = eight.xs("Days Sales in Receivables Index", level=1)
+    pd.testing.assert_frame_equal(
+        five.xs("Days Sales in Receivables Index", level=1), indices
+    )
+    expected = (
+        -6.065
+        + 0.823 * indices
+        + 0.906 * eight.xs("Gross Margin Index", level=1)
+        + 0.593 * eight.xs("Asset Quality Index", level=1)
+        + 0.717 * eight.xs("Sales Growth Index", level=1)
+        + 0.107 * eight.xs("Depreciation Index", level=1)
+    )
+    pd.testing.assert_frame_equal(
+        five.xs("Beneish M-Score", level=1), expected, atol=1e-8
+    )
+    with pytest.raises(InvalidArgumentError, match="method must be one of"):
+        models_module.get_beneish_m_score(method="six")
+
+
+def test_get_shumway_score(recorder, models_module, monkeypatch):
+    # The S&P 500 offline, as in the Campbell-Hilscher-Szilagyi test.
+    benchmark = models_module._historical_data["daily"]["Adj Close"]["Benchmark"]
+    benchmark.index = benchmark.index.to_timestamp()
+
+    def sp500(start: str, end: str) -> tuple[pd.DataFrame, pd.Series]:  # noqa: ARG001
+        index_data = pd.DataFrame(
+            {"Price Index": benchmark, "Total Return Index": benchmark}
+        )
+        return index_data, pd.Series({benchmark.index[-1]: 3e13})
+
+    monkeypatch.setattr(models_module, "_sp500_function", sp500)
+    recorder.capture(models_module.get_shumway_score())
+    recorder.capture(models_module.get_shumway_score(method="market"))
+
+    # Without the S&P 500, the relative size and the probability are NaN.
+    monkeypatch.setattr(models_module, "_sp500_function", None)
+    result = models_module.get_shumway_score()
+    assert result.xs("Bankruptcy Probability", level=1).isna().all().all()
+
+
+def test_get_graham_criteria(recorder, models_module):
+    recorder.capture(models_module.get_graham_criteria())
+    recorder.capture(models_module.get_graham_criteria(minimum_revenue=3e11))
+
+
+def long_history_models():
+    """A company with 25 years of statements, for the measures that need long histories."""
+    rng = np.random.default_rng(7)
+    years = 25
+    trend = 1.05 ** np.arange(years)
+    net_income = 60 * trend + 10 * rng.standard_normal(years)
+    items = {
+        "Total Assets": 1000 * trend * (1 + 0.05 * rng.standard_normal(years)),
+        "Operating Cash Flow": 80 * trend + 15 * rng.standard_normal(years),
+        "Change in Working Capital": 10 * rng.standard_normal(years),
+        "Net Income": net_income,
+        "Net Income from Continuing Operations": net_income,
+        "Weighted Average Shares": np.full(years, 10.0),
+        "Revenue": 900 * 1.06 ** np.arange(years) + 30 * rng.standard_normal(years),
+        "Property, Plant and Equipment": 300 * 1.04 ** np.arange(years),
+    }
+    return synthetic_models(
+        {row: {"A": list(values)} for row, values in items.items()}, quarterly=False
+    )
+
+
+def test_get_accrual_quality(recorder, models_module):
+    # The offline statements are too short for a regression of eight years.
+    short = models_module.get_accrual_quality()
+    assert short.xs("Accrual Quality", level=1).isna().all().all()
+    models = long_history_models()
+    recorder.capture(models.get_accrual_quality())
+    recorder.capture(models.get_accrual_quality(method="mcnichols", window=10))
+
+
+def test_get_earnings_attributes(recorder):
+    models = long_history_models()
+    recorder.capture(models.get_earnings_attributes())
+    recorder.capture(models.get_earnings_attributes(window=5))
+
+
+def _offline_toolkit(income=None, cash=None):
+    """The offline Toolkit of the fixtures, with statements changed by the test."""
+    from financetoolkit import Toolkit  # noqa: PLC0415
+
+    def read(name):
+        return pd.read_pickle(f"tests/datasets/{name}_dataset.pickle")
+
+    toolkit = Toolkit(
+        tickers=["AAPL", "MSFT"],
+        historical=read("historical"),
+        balance=read("balance"),
+        income=read("income") if income is None else income,
+        cash=read("cash") if cash is None else cash,
+        convert_currency=False,
+        start_date="2019-12-31",
+        end_date="2023-01-01",
+        sleep_timer=False,
+        use_cached_data=False,
+    )
+    toolkit._daily_risk_free_rate = pd.read_pickle(
+        "tests/datasets/risk_free_rate.pickle"
+    )
+    toolkit._daily_treasury_data = pd.read_pickle("tests/datasets/treasury_data.pickle")
+    return toolkit
+
+
+def test_zero_shares_leave_the_value_per_share_out_for_that_ticker_only():
+    income = pd.read_pickle("tests/datasets/income_dataset.pickle")
+    for row in ("Weighted Average Shares", "Weighted Average Shares Diluted"):
+        income.loc[("MSFT", row)] = 0.0
+    models = _offline_toolkit(income=income).models
+
+    earnings_power_value = models.get_earnings_power_value()
+    assert earnings_power_value.loc["AAPL"].notna().all()
+    assert np.isnan(earnings_power_value.loc["MSFT", "Earnings Power Value per Share"])
+
+    intrinsic_value = models.get_intrinsic_valuation().xs("Intrinsic Value", level=1)
+    assert np.isfinite(intrinsic_value.loc["AAPL"]).all()
+    assert intrinsic_value.loc["MSFT"].isna().all()
+
+    growth_opportunities = models.get_present_value_of_growth_opportunities()
+    assert not np.isinf(growth_opportunities.to_numpy(dtype=float)).any()
+    assert growth_opportunities["AAPL"].notna().any()
+
+    simulated = models.get_monte_carlo_intrinsic_valuation(simulations=100)
+    assert not np.isinf(simulated.to_numpy(dtype=float)).any()
+    assert simulated.loc["AAPL"].notna().all()
+
+
+def test_a_period_without_revenue_has_no_margin():
+    income = pd.read_pickle("tests/datasets/income_dataset.pickle")
+    income.loc[("MSFT", "Revenue"), pd.Period("2023", "Y")] = 0.0
+    models = _offline_toolkit(income=income).models
+
+    dupont = models.get_dupont_analysis()
+    assert not np.isinf(dupont.to_numpy(dtype=float)).any()
+    assert np.isnan(dupont.loc[("MSFT", "Net Profit Margin"), "2023"])
+
+    margin = models.get_earnings_power_value()["Average Operating Margin"]
+    assert np.isfinite(margin).all()
+
+
+def test_get_intrinsic_valuation_names_the_missing_free_cash_flow_to_firm(caplog):
+    cash = pd.read_pickle("tests/datasets/cash_dataset.pickle")
+    models = _offline_toolkit(
+        cash=cash.drop(index="Capital Expenditure", level=1)
+    ).models
+
+    assert models.get_intrinsic_valuation().empty
+    assert "free cash flow to firm is not available" in caplog.text
+
+
+@pytest.mark.parametrize(
+    ("method", "arguments"),
+    [
+        ("get_intrinsic_valuation", {"periods": 0}),
+        ("get_monte_carlo_intrinsic_valuation", {"periods": -1}),
+        ("get_monte_carlo_intrinsic_valuation", {"growth_rate_volatility": -0.5}),
+        (
+            "get_monte_carlo_intrinsic_valuation",
+            {"weighted_average_cost_of_capital_volatility": -0.01},
+        ),
+        ("get_reverse_discounted_cash_flow", {"periods": 0}),
+        ("get_earnings_power_value", {"periods": 0}),
+        ("get_accrual_quality", {"window": 4}),
+        ("get_accrual_quality", {"method": "mcnichols", "window": 6}),
+        ("get_earnings_attributes", {"window": 2}),
+        ("get_discretionary_accruals", {"min_observations": 2}),
+        ("get_discretionary_accruals", {"min_observations": 3, "intercept": True}),
+        ("get_mohanram_g_score", {"variance_periods": 1}),
+        ("get_capitalized_research_and_development", {"amortization_years": 0}),
+        ("get_return_on_incremental_invested_capital", {"years": 0}),
+        ("get_factor_analysis", {"metrics": "bogus"}),
+    ],
+)
+def test_arguments_outside_their_range_are_refused(models_module, method, arguments):
+    with pytest.raises(InvalidArgumentError):
+        getattr(models_module, method)(**arguments)
+
+
+def test_measures_without_enough_years_say_so(models_module, caplog):
+    assert models_module.get_earnings_attributes().empty
+    assert "The Earnings Attributes could not be calculated" in caplog.text
+
+    models_module.get_accrual_quality()
+    assert "The Accrual Quality needs 10 years of statements" in caplog.text
+
+
+def test_get_capitalized_research_and_development_without_research_says_so(caplog):
+    income = pd.read_pickle("tests/datasets/income_dataset.pickle")
+    models = _offline_toolkit(
+        income=income.drop(index="Research and Development Expenses", level=1)
+    ).models
+
+    models.get_capitalized_research_and_development()
+    assert "No Research and Development Expenses are reported for AAPL, MSFT" in (
+        caplog.text
+    )
+
+
+def test_a_trailing_window_below_one_is_refused(models_module, caplog):
+    for trailing in (0, -1, 2.5):
+        with pytest.raises(InvalidArgumentError, match="trailing"):
+            models_module.get_kaplan_zingales_index(trailing=trailing)
+
+    with caplog.at_level("WARNING", logger="financetoolkit"):
+        models_module.get_kaplan_zingales_index(trailing=100)
+    assert caplog.text.count("The trailing window of 100 periods is longer") == 1
+
+
+def test_a_reverse_discounted_cash_flow_after_the_prices_says_why(caplog):
+    from financetoolkit import Toolkit
+
+    toolkit = Toolkit(
+        tickers=["AAPL", "MSFT"],
+        historical=pd.read_pickle("tests/datasets/historical_dataset.pickle"),
+        balance=pd.read_pickle("tests/datasets/balance_dataset.pickle"),
+        income=pd.read_pickle("tests/datasets/income_dataset.pickle"),
+        cash=pd.read_pickle("tests/datasets/cash_dataset.pickle"),
+        convert_currency=False,
+        start_date="2023-06-01",
+        end_date="2023-12-31",
+        sleep_timer=False,
+    )
+    toolkit._daily_risk_free_rate = pd.read_pickle(
+        "tests/datasets/risk_free_rate.pickle"
+    )
+    toolkit._daily_treasury_data = pd.read_pickle("tests/datasets/treasury_data.pickle")
+
+    with caplog.at_level("WARNING", logger="financetoolkit"):
+        result = toolkit.models.get_reverse_discounted_cash_flow()
+
+    assert result["Implied Growth Rate"].isna().all()
+    assert caplog.text.count("AAPL, MSFT has no share price between") == 1
+
+
+def test_reverse_discounted_cash_flow_names_the_years_of_the_historical_growth():
+    items = growing_company()
+    items["Free Cash Flow"]["B"] = list(items["Free Cash Flow"]["A"])
+    # B's first cash flow is negative, so it has no historical growth and no period.
+    items["Free Cash Flow"]["B"][0] = -1.0
+    for values in items.values():
+        values.setdefault("B", list(values["A"]))
+    reverse = synthetic_models(items, quarterly=False).get_reverse_discounted_cash_flow(
+        weighted_average_cost_of_capital=0.09, cash_flow_type="Free Cash Flow"
+    )
+    assert reverse.loc["A", "Historical Growth Period"] == "2010-2029"
+    assert np.isnan(reverse.loc["B", "Historical Growth Rate"])
+    assert pd.isna(reverse.loc["B", "Historical Growth Period"])
+    # The numbers keep their float dtype next to the period labels.
+    assert reverse["Historical Growth Rate"].dtype == float
+    assert reverse["Share Price"].dtype == float
+
+
+def test_intrinsic_valuation_present_values_add_up_to_the_enterprise_value():
+    valuation = synthetic_models(growing_company()).get_intrinsic_valuation(
+        growth_rate=0.08,
+        perpetual_growth_rate=0.025,
+        weighted_average_cost_of_capital=0.1,
+        cash_flow_type="Free Cash Flow",
+        rounding=None,
+    )
+    a = valuation.loc["A"].iloc[:, -1]
+    assert a["Present Value of Cash Flows"] + a[
+        "Present Value of Terminal Value"
+    ] == pytest.approx(a["Enterprise Value"], rel=1e-12)
+    assert a["Present Value of Terminal Value"] == pytest.approx(
+        a["Terminal Value"] / 1.1**5, rel=1e-12
+    )
+    assert list(valuation.loc["A"].index[2:5]) == [
+        "Present Value of Cash Flows",
+        "Present Value of Terminal Value",
+        "Enterprise Value",
+    ]

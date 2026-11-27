@@ -25,6 +25,7 @@ from financetoolkit.economics.sources import (
     sbj_model,
     treasury_model,
 )
+from financetoolkit.utilities.error_model import InvalidArgumentError
 
 
 @pytest.fixture(autouse=True)
@@ -1320,7 +1321,8 @@ def test_claims_are_combined_before_growth_and_cut_to_complete_months(monkeypatc
     # The growth compares a month with the same month a year earlier, from the history
     # before the start date.
     assert growth["United States"].eq(0).all()
-    assert economics.get_initial_jobless_claims(period="daily").empty
+    with pytest.raises(InvalidArgumentError, match="period must be one of"):
+        economics.get_initial_jobless_claims(period="daily")
 
 
 def test_census_retail_sales_leave_out_the_seasonal_factors(monkeypatch):
@@ -1812,7 +1814,8 @@ def test_purchasing_power_of_cash_pairs_each_month_with_its_own_prices(
 def test_purchasing_power_of_cash_is_monthly_only(monkeypatch):
     economics, _ = _purchasing_power_economics(monkeypatch)
 
-    assert economics.get_purchasing_power(overnight_rate=True, period="yearly").empty
+    with pytest.raises(InvalidArgumentError, match="monthly"):
+        economics.get_purchasing_power(overnight_rate=True, period="yearly")
 
 
 def test_world_bank_commodity_prices_are_read_from_the_linked_workbook(
@@ -2382,8 +2385,9 @@ def test_chokepoint_transits_select_measure_and_complete_periods(monkeypatch):
     # A name that matches several chokepoints, or none, is left out.
     assert economics.get_chokepoint_transits(chokepoints="Canal,Atlantis").empty
 
-    # An unknown measure is reported and gives an empty result.
-    assert economics.get_chokepoint_transits(measure="volume").empty
+    # An unknown measure is refused, naming the measures.
+    with pytest.raises(InvalidArgumentError, match="measure must be one of"):
+        economics.get_chokepoint_transits(measure="volume")
 
 
 def _bis_policy_rates(monkeypatch, frame):
@@ -3045,6 +3049,21 @@ def test_outstanding_mortgage_rates_select_and_add_up_the_buckets(monkeypatch):
         "get_request",
         lambda url, timeout: type("Response", (), {"content": content})(),
     )
+    # The weekly 30-year rate on a new mortgage: only the surveys dated in 2026 Q2 make its
+    # quarterly average, 6.5%.
+    from financetoolkit.economics.sources import freddie_mac_model
+
+    monkeypatch.delenv("FRED_API_KEY", raising=False)
+    surveys = pd.PeriodIndex(
+        ["2026-03-26", "2026-04-02", "2026-05-14", "2026-06-25", "2026-07-02"], freq="D"
+    )
+    monkeypatch.setattr(
+        freddie_mac_model,
+        "get_mortgage_rate_30_year",
+        lambda: pd.DataFrame(
+            {"United States": [0.07, 0.064, 0.065, 0.066, 0.06]}, index=surveys
+        ),
+    )
     economics = Economics(
         start_date="2026-04-01",
         end_date="2026-06-30",
@@ -3058,7 +3077,6 @@ def test_outstanding_mortgage_rates_select_and_add_up_the_buckets(monkeypatch):
     by_balance = economics.get_outstanding_mortgage_rates(
         market="Enterprise", weighting="balance"
     )
-    unknown = economics.get_outstanding_mortgage_rates(region="Atlantis")
 
     # The start date leaves out 2026 Q1.
     assert buckets.index.tolist() == [pd.Period("2026Q2", "Q")]
@@ -3069,8 +3087,12 @@ def test_outstanding_mortgage_rates_select_and_add_up_the_buckets(monkeypatch):
         "5% to 6%",
         "6% and Above",
         "Average Rate",
+        "Market Rate",
+        "Market Rate Gap",
     ]
-    assert buckets.iloc[0].tolist() == [0.192, 0.299, 0.165, 0.12, 0.225, 0.044]
+    assert buckets.iloc[0].tolist() == pytest.approx(
+        [0.192, 0.299, 0.165, 0.12, 0.225, 0.044, 0.065, 0.021]
+    )
     # The shares below 4% and 6% the lock-in is reported with: 49.1% and 77.6%.
     assert lock_in.iloc[0].to_dict() == {
         "Below 3%": 0.192,
@@ -3078,9 +3100,14 @@ def test_outstanding_mortgage_rates_select_and_add_up_the_buckets(monkeypatch):
         "Below 5%": 0.656,
         "Below 6%": 0.776,
         "Average Rate": 0.044,
+        "Market Rate": 0.065,
+        "Market Rate Gap": 0.021,
     }
     assert by_balance.iloc[0]["Below 3%"] == pytest.approx(0.202)
-    assert unknown.empty
+    with pytest.raises(
+        InvalidArgumentError, match="no outstanding mortgage statistics"
+    ):
+        economics.get_outstanding_mortgage_rates(region="Atlantis")
 
 
 def test_eurostat_job_vacancies_and_capacity_utilization_pin_their_series(
@@ -3238,7 +3265,8 @@ def test_vacancies_and_utilization_are_monthly_for_the_us_alone(
     ).index.freqstr.startswith("Q")
 
     # Yearly data is not published.
-    assert getattr(economics, method)(period="yearly").empty
+    with pytest.raises(InvalidArgumentError, match="period must be one of"):
+        getattr(economics, method)(period="yearly")
 
 
 def test_a_fred_key_gives_the_full_history_of_the_job_openings_rate(monkeypatch):
@@ -3452,3 +3480,370 @@ def test_foreign_exchange_reserves_are_in_millions_and_import_cover_in_months(
     assert reserves.loc["2025", "China"] == pytest.approx(3748744.9528)
     assert cover.loc["2025", "China"] == pytest.approx(11.943)
     assert "Atlantis" not in cover.columns
+
+
+def test_an_empty_policy_rate_answer_is_empty_rather_than_a_defect(monkeypatch):
+    from financetoolkit import Economics
+
+    _bis_policy_rates(monkeypatch, pd.DataFrame())
+
+    economics = Economics(start_date="2026-10-01", end_date="2026-11-17")
+
+    assert economics.get_central_bank_policy_rate().empty
+
+
+@pytest.mark.parametrize("status", [500, 503, 403])
+def test_an_oecd_server_error_is_reported_as_no_data(monkeypatch, caplog, status):
+    def failing(url, timeout=300):  # noqa: ARG001
+        response = requests.Response()
+        response.status_code = status
+        raise requests.exceptions.HTTPError(response=response)
+
+    monkeypatch.setattr(oecd_model, "get_request", failing)
+
+    with caplog.at_level("ERROR"):
+        data = oecd_model.collect_oecd_data(
+            "SOME/QUERY", "Y", "2020-01-01", "2020-12-31"
+        )
+
+    assert data.empty
+    assert f"OECD API returned HTTP {status} for 'SOME/QUERY'" in caplog.text
+
+
+def test_an_empty_oecd_body_is_an_empty_response(monkeypatch, caplog):
+    monkeypatch.setattr(
+        oecd_model, "get_request", lambda *args, **kwargs: FakeResponse(text="")
+    )
+
+    with caplog.at_level("WARNING"):
+        data = oecd_model.collect_oecd_data(
+            "SOME/QUERY", "Y", "2020-01-01", "2020-12-31"
+        )
+
+    assert data.empty
+    assert "returned an empty response" in caplog.text
+
+
+def test_an_unreachable_dnb_listing_is_reported_as_no_data(monkeypatch, caplog):
+    from financetoolkit.economics.sources import dnb_model
+
+    def unreachable(*args, **kwargs):
+        raise requests.exceptions.ConnectionError("offline")
+
+    monkeypatch.setattr(dnb_model, "get_request", unreachable)
+
+    with caplog.at_level("ERROR"):
+        assert dnb_model.get_scenario_set("real_world").empty
+
+    assert "Could not reach DNB" in caplog.text
+
+
+def test_an_answer_that_is_not_a_zip_archive_is_named(monkeypatch):
+    from financetoolkit.economics.sources import fhfa_model
+
+    page = FakeResponse(
+        text="<html>Service Unavailable</html>", content_type="text/html"
+    )
+
+    with pytest.raises(ValueError, match="is not a zip archive.*text/html"):
+        helpers.open_zip_archive(page, "Bank of England nominal yield curve archive")
+
+    monkeypatch.setattr(fhfa_model, "get_request", lambda *args, **kwargs: page)
+
+    with pytest.raises(ValueError, match="FHFA archive .* is not a zip archive"):
+        fhfa_model.get_outstanding_mortgage_interest_rates()
+
+
+@pytest.mark.parametrize(
+    ("module", "call"),
+    [
+        ("bls_model", lambda model: model.get_unemployment_rate()),
+        ("portwatch_model", lambda model: model.get_chokepoint_names()),
+        (
+            "boj_model",
+            lambda model: model.request_boj_series(
+                "FM01", "STRDCLUCON", "202601", "202609", "overnight rate"
+            ),
+        ),
+    ],
+)
+def test_a_json_array_instead_of_an_object_is_an_unexpected_format(
+    monkeypatch, module, call
+):
+    model = importlib.import_module(f"financetoolkit.economics.sources.{module}")
+    monkeypatch.setattr(
+        model, "get_request", lambda *args, **kwargs: FakeResponse(payload=[])
+    )
+
+    with pytest.raises(ValueError, match="unexpected format"):
+        call(model)
+
+
+def test_an_empty_business_cycle_chronology_is_refused_and_not_cached(
+    cache, monkeypatch
+):
+    from financetoolkit.economics.sources import nber_model
+
+    monkeypatch.setattr(
+        nber_model, "get_request", lambda *args, **kwargs: FakeResponse(payload=[])
+    )
+
+    with pytest.raises(ValueError, match="not a non-empty list|not a list"):
+        nber_model.get_recession_indicator()
+
+    assert (
+        cache.get(
+            source="NationalBureauOfEconomicResearch",
+            dataset="business_cycle_dates",
+            entity="usrec",
+        )
+        is None
+    )
+
+
+def test_an_answer_that_is_not_json_is_named(monkeypatch):
+    def html_page():
+        raise requests.exceptions.JSONDecodeError("Expecting value", "<html>", 0)
+
+    with pytest.raises(ValueError, match="BLS answered with something other than JSON"):
+        helpers.collect_cached_data("BLS", "series", "json", html_page, "test")
+
+
+def test_a_page_instead_of_a_workbook_is_named():
+    from financetoolkit.utilities.excel_model import excel_file, read_excel
+
+    page = b"<!DOCTYPE html><html><body>Service Unavailable</body></html>"
+
+    with pytest.raises(
+        ValueError, match="Shiller stock market data file is not an Excel"
+    ):
+        read_excel(page, "Shiller stock market data", sheet_name="Data")
+    with pytest.raises(ValueError, match="downloaded file is not an Excel workbook"):
+        excel_file(page)
+
+
+def test_unreachable_outstanding_mortgages_are_empty(monkeypatch, caplog):
+    from financetoolkit import Economics
+    from financetoolkit.economics.sources import fhfa_model
+
+    monkeypatch.setattr(
+        fhfa_model, "get_outstanding_mortgage_interest_rates", pd.DataFrame
+    )
+
+    economics = Economics(start_date="2026-01-01", end_date="2026-06-30")
+
+    assert economics.get_outstanding_mortgage_rates().empty
+    # Without a misleading follow-up error about a missing region.
+    assert "could not be calculated" not in caplog.text
+
+
+def test_the_treasury_years_without_data_are_reported_in_one_line(monkeypatch, caplog):
+    def unreachable(*args, **kwargs):
+        raise requests.exceptions.ConnectionError("offline")
+
+    monkeypatch.setattr(helpers, "RETRY_DELAY_SECONDS", 0)
+    monkeypatch.setattr(treasury_model, "get_request", unreachable)
+
+    with caplog.at_level("DEBUG"):
+        curve = treasury_model.get_yield_curve("nominal", "2021-01-01", "2023-12-31")
+
+    errors = [record for record in caplog.records if record.levelname == "ERROR"]
+    assert curve.empty
+    assert len(errors) == 1
+    assert "2021, 2022, 2023" in errors[0].getMessage()
+
+
+def test_an_unreachable_yahoo_finance_stops_the_futures_scan(monkeypatch, caplog):
+    from financetoolkit import yfinance_model
+
+    attempts = []
+
+    class Ticker:
+        def __init__(self, ticker):
+            attempts.append(ticker)
+
+        def history(self, **kwargs):
+            raise OSError("Could not resolve host")
+
+    monkeypatch.setattr(yfinance_model.yf, "Ticker", Ticker)
+
+    with caplog.at_level("ERROR"):
+        curve = yfinance_model.get_commodity_forward_curve(
+            "Crude Oil", "2026-01-01", "2026-06-30"
+        )
+
+    assert curve.empty
+    assert len(attempts) == 1
+    assert "Could not reach Yahoo Finance for the Crude Oil futures" in caplog.text
+
+
+def test_commodity_curves_without_any_prices_are_empty(monkeypatch, caplog):
+    from financetoolkit import Economics, yfinance_model
+
+    monkeypatch.setattr(
+        yfinance_model, "get_commodity_forward_curve", lambda *args: pd.DataFrame()
+    )
+    economics = Economics(start_date="2026-01-01", end_date="2026-06-30")
+
+    assert economics.get_commodity_forward_curve().empty
+    assert economics.get_commodity_term_structure().empty
+    assert "could not be calculated" not in caplog.text
+
+
+def test_a_failing_first_calendar_window_stops_the_others(monkeypatch):
+    from financetoolkit.economics.sources import fmp_model as economics_fmp_model
+
+    requested = []
+
+    def unreachable(url, user_subscription="Free"):  # noqa: ARG001
+        requested.append(url)
+        economics_fmp_model.error_model.report_request_failure()
+        return pd.DataFrame()
+
+    monkeypatch.setattr(economics_fmp_model, "get_cached_financial_data", unreachable)
+
+    calendar = economics_fmp_model.get_economic_calendar(
+        api_key="KEY", start_date="2020-01-01", end_date="2025-12-31"
+    )
+
+    assert calendar.empty
+    assert len(requested) == 1
+
+
+@pytest.mark.parametrize(
+    ("method", "arguments"),
+    [
+        ("get_unemployment_rate", {"period": "weekly"}),
+        ("get_exchange_rates", {"period": "hourly"}),
+        ("get_short_term_interest_rate", {"period": "daily"}),
+        ("get_long_term_interest_rate", {"period": "biweekly"}),
+        ("get_yield_curve_slope", {"period": "weekly"}),
+        ("get_inflation_rate", {"period": "hourly"}),
+        ("get_real_interest_rate", {"rate_type": "medium_term"}),
+        ("get_government_debt", {"level": "local"}),
+        ("get_life_table", {"measure": "nonsense"}),
+        ("get_life_table", {"sex": "other"}),
+        ("get_debt_service_ratio", {"borrowers": "banks"}),
+        ("get_stress_test_scenario", {"scenario": "severe"}),
+        ("get_stress_test_scenario", {"authority": "ecb"}),
+        ("get_climate_scenario", {"variable": "nonsense"}),
+        ("get_climate_scenario", {"model": "nonsense"}),
+        ("get_long_run_asset_returns", {}),
+        ("get_long_run_asset_returns", {"asset_class": "gold", "accept_licence": True}),
+        ("get_scenario_set", {"authority": "ecb"}),
+        ("get_scenario_set", {"measure": "nonsense"}),
+        ("get_chokepoint_transits", {"measure": "volume"}),
+        ("get_outstanding_mortgage_rates", {"market": "nonsense"}),
+        ("get_total_consumption", {"component": "nonsense"}),
+        ("get_total_consumption", {"inflation_adjusted": True, "usd": True}),
+        ("get_purchasing_power", {"overnight_rate": True, "period": "yearly"}),
+        ("get_asset_class_proxies", {"asset_classes": "Gold Bars"}),
+    ],
+)
+def test_an_invalid_economics_argument_names_the_valid_values(
+    monkeypatch, method, arguments
+):
+    from financetoolkit import Economics
+    from financetoolkit.economics.sources import gmdb_model as gmdb
+    from financetoolkit.utilities.error_model import InvalidArgumentError
+
+    # Nothing is retrieved: the call is refused before any source is chosen.
+    def no_data(*args, **kwargs):
+        raise AssertionError("A source was asked for data.")
+
+    monkeypatch.setattr(gmdb, "get_shared_dataset", no_data)
+
+    economics = Economics(start_date="2026-01-01", end_date="2026-06-30")
+
+    with pytest.raises(InvalidArgumentError):
+        getattr(economics, method)(**arguments)
+
+
+def test_an_invalid_economics_date_is_an_invalid_argument():
+    from financetoolkit import Economics
+    from financetoolkit.utilities.error_model import InvalidArgumentError
+
+    with pytest.raises(InvalidArgumentError, match="valid start date"):
+        Economics(start_date="2026-13-01")
+
+
+def test_a_failing_yield_decomposition_part_gives_an_empty_result(monkeypatch):
+    from financetoolkit import Economics
+
+    economics = Economics(start_date="2026-01-01", end_date="2026-06-30")
+    # handle_errors answers a failed part with an empty Series.
+    monkeypatch.setattr(
+        economics, "get_real_yield_curve", lambda **kwargs: pd.Series(dtype=object)
+    )
+    monkeypatch.setattr(
+        economics,
+        "get_breakeven_inflation_expectations",
+        lambda **kwargs: pd.Series(dtype=object),
+    )
+
+    assert economics.get_yield_decomposition().empty
+
+
+def test_proxies_without_prices_are_reported_in_one_line(monkeypatch, caplog):
+    import logging
+
+    from financetoolkit import Economics
+    from financetoolkit.economics.history import history_controller
+
+    def no_prices(tickers, **kwargs):
+        for ticker in tickers:
+            logging.getLogger("yfinance").error("$%s: possibly delisted", ticker)
+        return pd.DataFrame(), None
+
+    monkeypatch.setattr(
+        history_controller.historical_model, "get_historical_data", no_prices
+    )
+    economics = Economics(start_date="2026-01-01", end_date="2026-06-30")
+
+    with caplog.at_level("ERROR"):
+        assert economics.get_asset_class_proxies().empty
+
+    assert "possibly delisted" not in caplog.text
+    assert caplog.text.count("No prices could be retrieved for the proxies of") == 1
+
+
+def test_an_unreachable_source_is_asked_once_within_a_call(monkeypatch, caplog):
+    from financetoolkit import Economics
+    from financetoolkit.economics.sources import cboe_model
+
+    requested = []
+
+    def unreachable(url, **kwargs):  # noqa: ARG001
+        requested.append(url)
+        raise requests.exceptions.ConnectionError(f"cannot reach {url}")
+
+    monkeypatch.setattr(cboe_model, "get_request", unreachable)
+    monkeypatch.setattr(helpers.time, "sleep", lambda seconds: None)
+    economics = Economics(start_date="2026-01-01", end_date="2026-06-30")
+
+    assert economics.get_implied_volatility(markets="US Equity").empty
+    # The first index is tried with its retries; the other four are not requested.
+    assert len(requested) == helpers.RETRY_ATTEMPTS
+    assert caplog.text.count("Could not reach Cboe") == 1
+
+    # The next call asks again.
+    economics.get_implied_volatility(markets="US Equity")
+    assert len(requested) == 2 * helpers.RETRY_ATTEMPTS
+
+
+def test_a_missing_series_does_not_stop_the_source(monkeypatch):
+    def missing(*args):  # noqa: ARG001
+        response = requests.Response()
+        response.status_code = 404
+        raise requests.exceptions.HTTPError("404 Not Found", response=response)
+
+    with helpers.stop_at_unreachable_sources():
+        for entity in ("first", "second"):
+            assert helpers.collect_cached_data(
+                source="Cboe",
+                dataset="index",
+                entity=entity,
+                fetch=missing,
+                description=f"Cboe {entity} index",
+            ).empty
+        assert "Cboe" not in helpers._UNREACHABLE_SOURCES.get()

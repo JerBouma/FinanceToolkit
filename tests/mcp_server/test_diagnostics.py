@@ -8,6 +8,7 @@ from financetoolkit import helpers
 from financetoolkit.mcp_server.registry import diagnostics_model
 from financetoolkit.mcp_server.registry.formatting_model import format_result
 from financetoolkit.utilities.logger_model import get_logger
+from tests.mcp_server.answers import read_answer
 
 
 def test_a_missing_key_is_answered_with_how_to_pass_one():
@@ -67,11 +68,11 @@ def test_messages_are_captured_per_call_including_worker_threads():
 
 
 def test_a_response_without_data_carries_the_reason():
-    assert json.loads(format_result(pd.DataFrame(), reason="A key is required.")) == {
+    assert read_answer(format_result(pd.DataFrame(), reason="A key is required.")) == {
         "error": "No data available.",
         "reason": "A key is required.",
     }
-    assert json.loads(format_result(None)) == {"error": "No data available."}
+    assert read_answer(format_result(None)) == {"error": "No data available."}
 
 
 def test_an_empty_result_is_not_cached(tmp_path, monkeypatch):
@@ -132,8 +133,76 @@ def test_the_key_hints_survive_redaction_and_logs_are_redacted():
 
 
 def test_a_long_list_is_cut_to_the_response_size():
-    answer = json.loads(format_result(list(range(200_000)), max_characters=1_000))
+    answer = read_answer(format_result(list(range(200_000)), max_characters=1_000))
 
     assert len(json.dumps(answer["data"])) <= 1_000
     assert answer["data"][:3] == [0, 1, 2]
     assert "of 200000 values" in answer["_notes"][-1]
+
+
+def test_a_ticker_without_the_expiry_is_noted_with_its_dates_not_as_unknown(
+    monkeypatch, options_module
+):
+    import asyncio
+
+    from financetoolkit.mcp_server import mcp_controller
+    from financetoolkit.mcp_server.registry.provider_model import ToolkitProvider
+    from financetoolkit.options import options_model
+
+    expiry_dates = {"AAPL": ["2026-12-04", "2026-12-18"], "MSFT": ["2026-12-18"]}
+
+    def fake_option_chains(tickers, expiration_date, put_option=False):  # noqa: ARG001
+        chain = pd.DataFrame(
+            {
+                "Bid": [1.0],
+                "Ask": [1.1],
+                "Change": [0.1],
+                "Percent Change": [0.01],
+                "Implied Volatility": [0.3],
+            },
+            index=pd.MultiIndex.from_tuples(
+                [(tickers[0], 100.0)], names=["Ticker", "Strike Price"]
+            ),
+        )
+        return chain if expiration_date in expiry_dates[tickers[0]] else pd.DataFrame()
+
+    def fake_call_method(
+        self, module_name, method_name, category, **kwargs
+    ):  # noqa: ARG001
+        return options_module.get_option_chains(
+            expiration_date=kwargs.get("expiration_date")
+        )
+
+    monkeypatch.setattr(
+        options_model, "get_option_expiry_dates", lambda ticker: expiry_dates[ticker]
+    )
+    monkeypatch.setattr(options_model, "get_option_chains", fake_option_chains)
+    monkeypatch.setattr(ToolkitProvider, "call_method", fake_call_method)
+
+    answer = read_answer(
+        asyncio.run(
+            mcp_controller.mcp.call_tool(
+                "options",
+                {
+                    "indicator": "get_option_chains",
+                    "tickers": "AAPL,MSFT",
+                    "expiration_date": "2026-12-04",
+                },
+            )
+        )[0].text
+    )
+
+    assert {row["Ticker"] for row in answer["data"]} == {"AAPL"}
+    assert answer["_notes"] == [
+        "No options data is available for MSFT expiring on 2026-12-04, so it is left "
+        "out. Its expiration dates are 2026-12-18."
+    ]
+
+
+def test_an_implied_move_from_stale_quotes_is_a_note():
+    message = (
+        "EZU 2026-12-18: the 65 call has no two-sided quote and is priced at its last trade of "
+        "2026-11-09 (open interest 1), so the implied move may not reflect the live market."
+    )
+
+    assert diagnostics_model.missing_data_notes([message]) == [message]

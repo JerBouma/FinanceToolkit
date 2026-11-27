@@ -12,6 +12,11 @@ import numpy as np
 import pandas as pd
 
 from financetoolkit.utilities import logger_model
+from financetoolkit.utilities.error_model import (
+    InvalidArgumentError,
+    check_period,
+    validate_window,
+)
 
 logger = logger_model.get_logger()
 
@@ -129,13 +134,9 @@ def validate_period(period: str) -> None:
         period (str): The period, weekly, monthly, quarterly or yearly.
 
     Raises:
-        ValueError: If the period is not weekly, monthly, quarterly or yearly.
+        InvalidArgumentError: If the period is not weekly, monthly, quarterly or yearly.
     """
-    if period not in PERIOD_TRANSLATION:
-        raise ValueError(
-            f"Period {period} is not valid. It should be either "
-            "weekly, monthly, quarterly or yearly."
-        )
+    check_period(period, list(PERIOD_TRANSLATION))
 
 
 def newey_west_long_run_variance(residuals: np.ndarray, lags: int) -> float:
@@ -239,17 +240,13 @@ def convert_annualized_rate_to_period(
             monthly, quarterly or yearly.
 
     Raises:
-        ValueError: If the period is not one of the supported frequencies.
+        InvalidArgumentError: If the period is not one of the supported frequencies.
 
     Returns:
         pd.Series | pd.DataFrame | float: the rate expressed per single period. A yearly
         period returns the rate unchanged.
     """
-    if period not in PERIODS_PER_YEAR:
-        raise ValueError(
-            f"Period {period} is not valid. It should be one of "
-            f"{', '.join(PERIODS_PER_YEAR)}."
-        )
+    check_period(period, list(PERIODS_PER_YEAR))
 
     return (1 + annualized_rate) ** (1 / PERIODS_PER_YEAR[period]) - 1
 
@@ -396,10 +393,16 @@ def finalize_dataset(
             the missing-country warning message. Defaults to "".
 
     Returns:
-        pd.Series | pd.DataFrame: The processed metric values.
+        pd.Series | pd.DataFrame: The processed metric values; an empty Series (a metric
+        that could not be calculated) is returned as it is.
     """
     # Explicitly compare to None so that rounding=0 is honoured rather than treated as "not supplied", and so that rounding=None disables rounding altogether.  # noqa: E501
     rounding = rounding if rounding is not None else default_rounding
+
+    # A metric without data (an empty Series from a calculation that could not be done) has
+    # no periods to slice and is returned as it is, already reported where it failed.
+    if isinstance(dataset, pd.Series) and dataset.empty:
+        return dataset
 
     # A zero denominator (no equity, no drawdown, no losses, a beta of 0) leaves the
     # metric undefined: NaN like any other missing value, also so that one such period
@@ -429,6 +432,22 @@ def finalize_dataset(
             )
         )
 
+    validate_window("rolling", rolling, 1)
+    validate_window("trailing", trailing, 1)
+    # A window longer than the data leaves every period without a complete window, which is
+    # easily mistaken for missing data, so it is said once.
+    for name, window in (("rolling", rolling), ("trailing", trailing)):
+        if window and len(dataset.index) and window > len(dataset.index):
+            logger.warning(
+                "The %s window of %s periods is longer than the %s periods of data, so no "
+                "period has a complete window and the result is empty. Pass a smaller %s "
+                "window or an earlier start_date.",
+                name,
+                window,
+                len(dataset.index),
+                name,
+            )
+
     if rolling:
         dataset = dataset.rolling(window=rolling).mean()
 
@@ -446,7 +465,14 @@ def finalize_dataset(
 
     if apply_slice:
         had_data = not dataset.empty
-        periods = dataset.index if row_slice else dataset.columns
+        # Where the data runs is where it has values: periods of only NaN would point to a
+        # window that holds nothing either.
+        has_value = dataset.notna()
+        if isinstance(has_value, pd.DataFrame):
+            has_value = has_value.any(axis="columns" if row_slice else "index")
+        periods = (dataset.index if row_slice else dataset.columns)[
+            has_value.to_numpy()
+        ]
         available = (
             f" The data runs from {periods.min()} to {periods.max()}."
             if had_data and len(periods)
@@ -678,7 +704,10 @@ def to_datetime_index(index: pd.Index) -> pd.DatetimeIndex:
 
 
 def by_own_trading_days(
-    function: Callable | None = None, *, compound: bool = False
+    function: Callable | None = None,
+    *,
+    compound: bool = False,
+    rolling_only: bool = False,
 ) -> Callable:
     """
     Calculate a measure on the trading days of each column.
@@ -701,23 +730,37 @@ def by_own_trading_days(
     Pairing each one's own daily return instead would compare, after a holiday on one
     exchange, a two-day move with a one-day move.
 
+    With rolling_only=True, for a measure that is either one value over the whole sample or a
+    rolling series, only a call with a window (a `window` argument other than None) is
+    calculated per column: a whole-sample measure skips the missing values itself.
+
     Args:
         function (Callable | None): A function taking the returns (or prices), a Series or
             DataFrame with one column per asset, as its first argument.
         compound (bool, optional): Whether to compound the returns of the left out dates
             into the next date kept, for returns measured against each other. Defaults to False.
+        rolling_only (bool, optional): Whether to calculate per column only when the function
+            is called with a window. Defaults to False.
 
     Returns:
         Callable: The function, calculated per column when the columns trade on different dates.
     """
     if function is None:
-        return functools.partial(by_own_trading_days, compound=compound)
+        return functools.partial(
+            by_own_trading_days, compound=compound, rolling_only=rolling_only
+        )
 
     # The returns are the first parameter, passed by position or by name.
-    returns_name = next(iter(inspect.signature(function).parameters))
+    signature = inspect.signature(function)
+    returns_name = next(iter(signature.parameters))
 
     @functools.wraps(function)
     def wrapper(*args, **kwargs):
+        if (
+            rolling_only
+            and signature.bind(*args, **kwargs).arguments.get("window") is None
+        ):
+            return function(*args, **kwargs)
         if args:
             returns, args = args[0], args[1:]
         else:
@@ -978,17 +1021,39 @@ def calculate_growth(
         pd.Series | pd.DataFrame: the period over period growth of the dataset.
 
     Raises:
-        ValueError: When a lag is not a positive whole number: a lag of 0 compares a period
-            with itself and a negative lag with a later period. Also when compound=True and the
-            periods are not yearly, quarterly, monthly or weekly.
+        InvalidArgumentError: When a lag is not a positive whole number (a ValueError): a lag
+            of 0 compares a period with itself and a negative lag with a later period.
+        ValueError: When compound=True and the periods are not yearly, quarterly, monthly or
+            weekly.
     """
     lags = lag if isinstance(lag, list) else [lag]
-    if not lags or any(
-        isinstance(value, bool) or not isinstance(value, int | np.integer) or value < 1
-        for value in lags
-    ):
-        raise ValueError(
-            f"The lag must be a positive whole number or a list of them, not {lag}."
+    if not lags or any(value is None for value in lags):
+        raise InvalidArgumentError(
+            f"The lag is a whole number of at least 1 or a list of them, not {lag!r}."
+        )
+    for value in lags:
+        validate_window("lag", value, 1)
+
+    # No data (a source that could not be reached, which is logged there) has no growth.
+    if dataset.empty:
+        return dataset
+
+    # A lag reaching back as far as the data leaves no period with an earlier one to
+    # compare with, so the growth is empty rather than wrong; said once, as it is easily
+    # mistaken for missing data. Only the periods with a value count, as a rolling window
+    # leaves its first periods NaN.
+    periods = (
+        dataset.dropna(axis=1, how="all").shape[1]
+        if axis == "columns" and isinstance(dataset, pd.DataFrame)
+        else len(dataset.dropna(how="all"))
+    )
+    if periods and min(lags) >= periods:
+        logger.warning(
+            "The lag of %s periods is at least as long as the %s periods of data, so there "
+            "is no earlier period to compare with and the growth is empty. Pass a smaller "
+            "lag or an earlier start_date.",
+            min(lags),
+            periods,
         )
 
     years_per_period = 1 / periods_per_year(dataset, axis) if compound else 1.0

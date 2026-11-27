@@ -220,6 +220,7 @@ def _adjustment_changed(cached_data: pd.DataFrame, new_data: pd.DataFrame) -> bo
     return False
 
 
+@fmp_model.log_server_errors_once()
 def get_historical_data(
     tickers: list[str] | str,
     api_key: str | None = None,
@@ -654,7 +655,10 @@ def get_historical_data(
     elif isinstance(tickers, list):
         ticker_list = tickers
     else:
-        raise ValueError(f"Type for the tickers ({type(tickers)}) variable is invalid.")
+        raise error_model.InvalidArgumentError(
+            "tickers must be a str or a list of str, such as 'AAPL' or ['AAPL', 'MSFT'], "
+            f"not {type(tickers).__name__}. Please pass the tickers in one of these forms."
+        )
 
     logger.info("%s for %d ticker(s)", log_message, len(ticker_list))
     historical_data_dict: dict[str, pd.DataFrame] = {}
@@ -686,7 +690,9 @@ def get_historical_data(
     ):
         logger.info("%s from the cache for %d ticker(s)", log_message, len(ticker_list))
 
-    results = helpers.run_in_parallel(worker, [(ticker,) for ticker in ticker_list])
+    # A fault every ticker meets, such as a broken yfinance cache database, is reported once for the call rather than per ticker.  # noqa: E501
+    with logger_model.log_each_message_once():
+        results = helpers.run_in_parallel(worker, [(ticker,) for ticker in ticker_list])
 
     for ticker, historical_data, provider, served_from_cache in results:
         if served_from_cache:
@@ -869,7 +875,8 @@ def convert_daily_to_other_period(
     stock's week is the same with or without a cryptocurrency in the data. It also
     calculates the following:
         - Return: The return for the given period.
-        - Cumulative Return: The cumulative return for the given period.
+        - Cumulative Return: The growth of 1 invested at the start, the product of (1 + Return):
+          1.0 on the first date and 1.25 after a 25% gain.
 
     Args:
         period (str): The period to convert to (weekly, monthly, quarterly or yearly).
@@ -1051,6 +1058,7 @@ def calculate_period_average(
     return period_average if rounding is None else period_average.round(rounding)
 
 
+@fmp_model.log_server_errors_once()
 def get_historical_statistics(
     tickers: list[str] | str,
     api_key: str | None = None,
@@ -1092,12 +1100,12 @@ def get_historical_statistics(
     """
 
     def worker(ticker):
-        historical_statistics = pd.DataFrame()
+        # The "Portfolio" a Portfolio's Toolkit includes is no listed instrument: asking Yahoo Finance for it
+        # costs yfinance about six requests (it tries several endpoints for the time zone) and FMP one, all failing.
+        if ticker == "Portfolio":
+            return ticker, pd.Series()
 
-        if historical_statistics.empty:
-            historical_statistics = yfinance_model.get_historical_statistics(
-                ticker=ticker
-            )
+        historical_statistics = yfinance_model.get_historical_statistics(ticker=ticker)
 
         if api_key and historical_statistics.empty:
             historical_statistics = fmp_model.get_historical_statistics(
@@ -1112,7 +1120,10 @@ def get_historical_statistics(
     elif isinstance(tickers, list):
         ticker_list = tickers
     else:
-        raise ValueError(f"Type for the tickers ({type(tickers)}) variable is invalid.")
+        raise error_model.InvalidArgumentError(
+            "tickers must be a str or a list of str, such as 'AAPL' or ['AAPL', 'MSFT'], "
+            f"not {type(tickers).__name__}. Please pass the tickers in one of these forms."
+        )
 
     logger.info("%s for %d ticker(s)", log_message, len(ticker_list))
     results = helpers.run_in_parallel(worker, [(ticker,) for ticker in ticker_list])

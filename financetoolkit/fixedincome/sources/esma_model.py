@@ -126,7 +126,6 @@ def _query(
         ),
         fetch=fetch,
         description=description,
-        # The periods before an agency reported to CEREP have no statistics.
         expect_empty=True,
     )
 
@@ -168,7 +167,8 @@ def get_transition_matrix(
 
     Args:
         agency (str): The CEREP code of the rating agency, e.g. "STPGB".
-        rating_type (str): A key of RATING_TYPES, e.g. "corporate".
+        rating_type (str): The rated debt. Options are: "corporate", "sovereign",
+            "structured_finance", "covered_bonds".
         period_start (pd.Timestamp): The start of the period (1 January or 1 July).
         period_end (pd.Timestamp): The end of the period (30 June or 31 December).
         region (str | None): The geographical area, e.g. "Europe". Defaults to None, which
@@ -207,7 +207,8 @@ def get_default_rates(
 
     Args:
         agency (str): The CEREP code of the rating agency, e.g. "STPGB".
-        rating_type (str): A key of RATING_TYPES, e.g. "corporate".
+        rating_type (str): The rated debt. Options are: "corporate", "sovereign",
+            "structured_finance", "covered_bonds".
         period_start (pd.Timestamp): The start of the period (1 January or 1 July).
         period_end (pd.Timestamp): The end of the period (30 June or 31 December).
         region (str | None): The geographical area, e.g. "Europe". Defaults to None, which

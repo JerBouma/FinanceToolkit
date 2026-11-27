@@ -2,18 +2,21 @@
 
 __docformat__ = "google"
 
+from typing import Literal
+
 import numpy as np
 import pandas as pd
 
 from financetoolkit import helpers
 from financetoolkit.fixedincome import helpers as fixedincome_helpers
-from financetoolkit.fixedincome.bonds import bond_model
+from financetoolkit.fixedincome.bonds import bond_model, curve_risk_model
+from financetoolkit.fixedincome.curves.curves_controller import BILL_CONVENTIONS
 from financetoolkit.fixedincome.helpers import parse_maturities
 from financetoolkit.fixedincome.markets import bond_data_model
 from financetoolkit.fixedincome.markets.markets_controller import MarketsFixedIncome
 from financetoolkit.utilities import logger_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
-from financetoolkit.utilities.error_model import handle_errors
+from financetoolkit.utilities.error_model import check_option, handle_errors
 from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import apply_rounding
 
@@ -176,7 +179,7 @@ DURATION_TYPES = {
 @track_sources
 class BondsFixedIncome(MarketsFixedIncome):
     """
-    Bond analytics: present value, duration, yield to maturity, Z-spread, key rate durations, the Taylor price change, the bond equivalent yield and bond statistics.
+    Bond analytics: present value, duration, yield to maturity, Z-spread, key rate durations, bucketed deltas, the parallel shift ladder, the Taylor price change, the bond equivalent yield and bond statistics.
     """
 
     def _select_bonds(
@@ -244,20 +247,25 @@ class BondsFixedIncome(MarketsFixedIncome):
             selections.append(universe.assign(**{"Security Type": "Corporate"}))
 
         if treasury_ids or not use_universe:
+            # Floating rate notes reset their coupon every week and are left out, so their
+            # terms and index rates are not retrieved.
             treasuries = self.get_treasury_securities(
-                date=date, bonds=treasury_ids or None, rounding=10
+                date=date,
+                security_type=["Bill", "Note", "Bond", "TIPS"],
+                bonds=treasury_ids or None,
+                rounding=10,
             )
             if not isinstance(treasuries, pd.DataFrame) or treasuries.empty:
                 raise ValueError(
                     "No Treasury prices are available for the bonds and date given."
                 )
-            floating = treasuries.index[treasuries["Security Type"] == "FRN"]
-            if treasury_ids and not floating.empty:
+            missing = [cusip for cusip in treasury_ids if cusip not in treasuries.index]
+            if missing:
                 logger.info(
-                    "Left out %s: floating rate notes reset their coupon every week.",
-                    ", ".join(floating),
+                    "Left out %s: no fixed-rate Treasury is priced under that CUSIP "
+                    "(floating rate notes reset their coupon every week).",
+                    ", ".join(missing),
                 )
-            treasuries = treasuries.drop(floating)
             maturities = pd.to_datetime(treasuries["Maturity"])
             if maturity_start is not None:
                 treasuries = treasuries[maturities >= pd.Timestamp(maturity_start)]
@@ -284,11 +292,17 @@ class BondsFixedIncome(MarketsFixedIncome):
                 # Treasury's bond-equivalent yield does.
                 (pd.Timestamp(maturity) - pd.Timestamp(price_date)).days / 365
                 if security_type == "Bill"
-                else bond_data_model.get_years_to_maturity(
-                    pd.Timestamp(price_date).date(),
-                    pd.Timestamp(maturity).date(),
-                    # Treasuries count actual days, US corporate bonds 30/360.
-                    day_count="30/360" if security_type == "Corporate" else "act/act",
+                # A bond that matured by its price date has no years left.
+                else (
+                    np.nan
+                    if pd.Timestamp(maturity) <= pd.Timestamp(price_date)
+                    else bond_data_model.get_years_to_maturity(
+                        pd.Timestamp(price_date).date(),
+                        pd.Timestamp(maturity).date(),
+                        day_count=(
+                            "30/360" if security_type == "Corporate" else "act/act"
+                        ),
+                    )
                 )
             )
             for security_type, maturity, price_date in zip(
@@ -437,6 +451,13 @@ class BondsFixedIncome(MarketsFixedIncome):
 
         Also known as: bond data, fixed income statistics, bond analytics.
 
+        Referenced against:
+        - QuantLib, BondFunctions.duration: https://www.quantlib.org/reference/struct_quant_lib_1_1_bond_functions.html
+        - QuantLib, BondFunctions.convexity: https://www.quantlib.org/reference/struct_quant_lib_1_1_bond_functions.html
+
+        Shares similar logic:
+        - QuantLib, BondFunctions.zSpread: https://www.quantlib.org/reference/struct_quant_lib_1_1_bond_functions.html
+
         Args:
             bonds (list[str] | str | None, optional): CUSIPs or ISINs, a list or a
                 comma-separated string. Treasuries (CUSIPs starting with 912) come from
@@ -537,12 +558,14 @@ class BondsFixedIncome(MarketsFixedIncome):
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculates the present value of individual bonds: their coupons and principal
-        discounted with the Treasury zero-coupon curve of the price date, next to the price
-        they trade at. For a Treasury the two differ by how far the issue trades off the
-        curve; for a corporate bond the present value is the price it would have without
-        any credit or liquidity risk, and the gap with its price is what the Z-spread
-        (`get_z_spread`) measures.
+        Calculates the present value of individual bonds: what their coupons and principal
+        are worth when discounted with the Treasury zero-coupon curve of the price date,
+        next to the price they trade at.
+
+        For a Treasury the two differ by how far the issue trades off the curve; for a
+        corporate bond the present value is the price it would have without any credit or
+        liquidity risk, and the gap with its price is what the Z-spread (`get_z_spread`)
+        measures.
 
         The formula is as follows:
 
@@ -637,7 +660,7 @@ class BondsFixedIncome(MarketsFixedIncome):
     @handle_errors
     def get_duration(
         self,
-        duration_type: str = "modified",
+        method: str = "modified",
         bonds: list[str] | str | None = None,
         issuer: list[str] | str | None = None,
         etfs: list[str] | str | None = None,
@@ -648,8 +671,10 @@ class BondsFixedIncome(MarketsFixedIncome):
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculates the duration of individual bonds at their yield to maturity. It has the
-        option to calculate the following type of bond durations:
+        Calculates the duration of individual bonds at their yield to maturity: how sensitive the price of each bond
+        is to a change in its yield, or how long on average its cash flows take to arrive.
+
+        It has the option to calculate the following type of bond durations:
 
         - Macaulay's Duration: The weighted average time to receive the bond's cash flows.
         - Modified Duration: The Macaulay's duration divided by 1 plus the per-period yield (YTM / 2).
@@ -683,9 +708,13 @@ class BondsFixedIncome(MarketsFixedIncome):
 
         Also known as: Macaulay duration, modified duration, bond price sensitivity.
 
+        Referenced against:
+        - QuantLib, BondFunctions.duration (modified, macaulay): https://www.quantlib.org/reference/struct_quant_lib_1_1_bond_functions.html
+
         Args:
-            duration_type (str, optional): The duration: "modified", "macaulay", "effective" or
-                "dollar". Defaults to "modified".
+            method (str, optional): The duration measure. Options are: "modified" (Modified Duration),
+                "macaulay" (Macaulay's Duration), "effective" (Effective Duration), "dollar" (Dollar
+                Duration). Defaults to "modified".
             bonds (list[str] | str | None, optional): CUSIPs or ISINs, see
                 `collect_bond_statistics`. Defaults to None.
             issuer (list[str] | str | None, optional): Part of an issuer's name, such as
@@ -734,11 +763,9 @@ class BondsFixedIncome(MarketsFixedIncome):
         | 912810RU4 | Bond            |   0.0288 | 2046-11-15 |  70.0312 |             13.6289 |
         | 912810UW6 | Bond            |   0.0512 | 2056-08-15 |  98.125  |             14.8801 |
         """
-        name = DURATION_TYPES.get(duration_type.lower())
-        if name is None:
-            raise ValueError(
-                "Please input a valid duration type ('macaulay', 'modified', 'effective' or 'dollar')"
-            )
+        method = method.lower()
+        check_option("method", method, DURATION_TYPES)
+        name = DURATION_TYPES[method]
         selection = self._select_bonds(
             bonds, issuer, etfs, maturity_start, maturity_end, date
         )
@@ -766,9 +793,8 @@ class BondsFixedIncome(MarketsFixedIncome):
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculates the yield to maturity of individual bonds from their market price. The yield to maturity is the
-        internal rate of return of the bond, the discount rate that equates the present value of the bond's cash flows
-        to its price.
+        Calculates the yield to maturity of individual bonds from their market price: the internal rate of return of
+        the bond, the discount rate that equates the present value of the bond's cash flows to its price.
 
         The formula is as follows, solved for YTM:
 
@@ -868,8 +894,8 @@ class BondsFixedIncome(MarketsFixedIncome):
     ):
         """
         Calculates the zero-volatility spread (Z-spread) of individual bonds over the Treasury
-        zero-coupon curve. The Z-spread is the constant spread that, when added uniformly to every
-        point of the curve, makes the present value of the bond's cash flows equal to its price.
+        zero-coupon curve: the constant spread that, when added uniformly to every point of the
+        curve, makes the present value of the bond's cash flows equal to its price.
 
         Unlike a simple yield spread (the bond's yield to maturity minus a Treasury yield of the
         same maturity, the G-spread of `get_bond_universe`), the Z-spread is measured against the
@@ -895,6 +921,9 @@ class BondsFixedIncome(MarketsFixedIncome):
         `bond_model.get_z_spread`.
 
         Also known as: zero-volatility spread, static spread, credit spread.
+
+        Shares similar logic:
+        - QuantLib, BondFunctions.zSpread: https://www.quantlib.org/reference/struct_quant_lib_1_1_bond_functions.html
 
         Args:
             bonds (list[str] | str | None, optional): CUSIPs or ISINs, see
@@ -938,18 +967,18 @@ class BondsFixedIncome(MarketsFixedIncome):
 
         |              | Issuer    |   Coupon | Maturity   |   Price | Price Date   |   Z-Spread |
         |:-------------|:----------|---------:|:-----------|--------:|:-------------|-----------:|
-        | US037833EU05 | APPLE INC |   0.0415 | 2030-05-10 |   96.93 | 2026-11-13   |     0.0019 |
-        | US037833DU14 | APPLE INC |   0.0165 | 2030-05-11 |   88.78 | 2026-11-13   |     0.0026 |
-        | US037833EZ91 | APPLE INC |   0.042  | 2030-05-12 |   97.22 | 2026-11-13   |     0.0014 |
-        | US037833DY36 | APPLE INC |   0.0125 | 2030-08-20 |   86.64 | 2026-11-13   |     0.0025 |
-        | US037833ED89 | APPLE INC |   0.0165 | 2031-02-08 |   86.66 | 2026-11-13   |     0.0024 |
-        | US037833EJ59 | APPLE INC |   0.017  | 2031-08-05 |   85.5  | 2026-11-13   |     0.0022 |
-        | US037833FG02 | APPLE INC |   0.049  | 2031-11-09 |   98.53 | 2026-11-13   |     0.0026 |
-        | US037833FA32 | APPLE INC |   0.045  | 2032-05-12 |   96.52 | 2026-11-13   |     0.0024 |
-        | US037833EP10 | APPLE INC |   0.0335 | 2032-08-08 |   90.86 | 2026-11-13   |     0.002  |
-        | US037833EV87 | APPLE INC |   0.043  | 2033-05-10 |   94.57 | 2026-11-13   |     0.0027 |
-        | US037833FH84 | APPLE INC |   0.051  | 2033-11-09 |   98.13 | 2026-11-13   |     0.0038 |
-        | US037833FB15 | APPLE INC |   0.0475 | 2035-05-12 |   95.86 | 2026-11-13   |     0.0026 |
+        | US037833EU05 | APPLE INC |   0.0415 | 2030-05-10 |  97.47  | 2026-11-20   |     0.0029 |
+        | US037833DU14 | APPLE INC |   0.0165 | 2030-05-11 |  89.625 | 2026-11-20   |     0.0027 |
+        | US037833EZ91 | APPLE INC |   0.042  | 2030-05-12 |  97.865 | 2026-11-20   |     0.0021 |
+        | US037833DY36 | APPLE INC |   0.0125 | 2030-08-20 |  87.44  | 2026-11-20   |     0.0029 |
+        | US037833ED89 | APPLE INC |   0.0165 | 2031-02-08 |  87.36  | 2026-11-20   |     0.0032 |
+        | US037833EJ59 | APPLE INC |   0.017  | 2031-08-05 |  86.265 | 2026-11-20   |     0.0031 |
+        | US037833FG02 | APPLE INC |   0.049  | 2031-11-09 |  99.495 | 2026-11-20   |     0.0031 |
+        | US037833FA32 | APPLE INC |   0.045  | 2032-05-12 |  97.5   | 2026-11-20   |     0.003  |
+        | US037833EP10 | APPLE INC |   0.0335 | 2032-08-08 |  91.8   | 2026-11-20   |     0.0027 |
+        | US037833EV87 | APPLE INC |   0.043  | 2033-05-10 |  95.59  | 2026-11-20   |     0.0033 |
+        | US037833FH84 | APPLE INC |   0.051  | 2033-11-09 |  98.93  | 2026-11-20   |     0.0049 |
+        | US037833FB15 | APPLE INC |   0.0475 | 2035-05-12 |  96.88  | 2026-11-20   |     0.0035 |
         """
         selection = self._select_bonds(
             bonds, issuer, etfs, maturity_start, maturity_end, date
@@ -985,7 +1014,7 @@ class BondsFixedIncome(MarketsFixedIncome):
         """
         Calculates the key rate durations of individual bonds on the Treasury zero-coupon curve:
         the price sensitivity to a shock at a single maturity ("key rate") of the curve while every
-        other point is held fixed. Whereas `get_duration` with `duration_type='effective'` assumes the
+        other point is held fixed. Whereas the effective duration of `get_duration` assumes the
         entire curve shifts in parallel, key rate durations show which segment of the curve a bond's
         price is exposed to. Because cash flows are discounted using linear interpolation between the
         curve's maturities, a shock at an inner maturity tapers off towards its neighbours and has no
@@ -1109,6 +1138,302 @@ class BondsFixedIncome(MarketsFixedIncome):
         )
 
     @handle_errors
+    def get_bucketed_delta(
+        self,
+        method: Literal["par", "forward"] = "par",
+        bump: float = 0.0001,
+        bonds: list[str] | str | None = None,
+        issuer: list[str] | str | None = None,
+        etfs: list[str] | str | None = None,
+        maturity_start: str | None = None,
+        maturity_end: str | None = None,
+        date: str | None = None,
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ):
+        """
+        Calculates the bucketed delta of individual bonds on the Treasury curve: the change in
+        each bond's present value, per 100 of par, when one maturity of the curve rises by a
+        basis point, for every maturity the Treasury quotes.
+
+        Where `get_key_rate_duration` shocks a zero-coupon rate with a tent around it, these
+        deltas move the rates traders hedge with.
+
+        For the par-rate delta one par yield of the Treasury par curve rises by a
+        basis point and the zero-coupon curve is bootstrapped again, so the deltas are the
+        sensitivities to the notes and bonds of each maturity: a par bond maturing at a quoted
+        maturity has a delta to that maturity only. They follow from the chain rule through the
+        par-to-zero Jacobian of the bootstrap (see `curve_risk_model.get_par_rate_delta`):
+
+        - PV = SUM(CF(t) * (1 + Zero Rate(t))^(-t))
+        - Par Rate Delta(i) = SUM_j(dPV / dZero Rate(j) * dZero Rate(j) / dPar Yield(i)) * 0.0001
+
+        For the forward-rate delta the continuously compounded instantaneous
+        forward rate between two neighbouring quoted maturities rises by a basis point, which moves
+        every discount factor beyond it as well (see `curve_risk_model.get_forward_rate_delta`):
+
+        - Forward Rate Delta(i) = SUM(CF(t) * (1 + Zero Rate(t))^(-t) * -Overlap(t, i)) * 0.0001
+
+        Where CF(t) are the bond's coupons (100 * Coupon / 2) and principal on its actual coupon
+        dates, Zero Rate(t) is the Treasury zero-coupon curve of the price date (annually
+        compounded, bootstrapped from the par yields with the zero rate of every coupon date, see
+        `get_zero_coupon_curve`, and interpolated linearly), and Overlap(t, i) is the part of the
+        bucket of maturity i (from the previous quoted maturity to i, the first from today and the
+        last without an end) before t. The par yields are bond-equivalent yields, compounded twice a
+        year beyond a year. The bump of the differences is 1 basis point by default; the deltas are
+        always per +1 basis point, in dollars per 100 of par, negative for a long position. Summed
+        over the maturities they give the change for a parallel shift of the par curve (par) or of
+        the continuously compounded zero rates (forward). The bonds are discounted on the Treasury
+        curve without a spread and selected as in `collect_bond_statistics`; TIPS have no delta on
+        the nominal curve. For cash flows or a curve of your own, use `curve_risk_model`.
+
+        Also known as: bucketed PV01, par-rate risk, forward-rate risk, DV01 ladder, partial DV01.
+
+        Shares similar logic:
+        - rateslib, Solver.delta (par): https://rateslib.com/py/en/3.0.x/api/rateslib.solver.Solver.html#rateslib.solver.Solver.delta
+        - FinancePy, par_rate_risk_report (par): https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/market/curves/ibor_curve_risk_engine.py#L25
+        - FinancePy, forward_rate_risk_report (forward): https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/market/curves/ibor_curve_risk_engine.py#L84
+
+        Args:
+            method (Literal["par", "forward"], optional): The delta. Options are: "par" (the par-rate
+                delta), "forward" (the forward-rate delta). Defaults to "par".
+            bump (float, optional): The move of a rate up and down in the differences (decimal).
+                Defaults to 0.0001.
+            bonds (list[str] | str | None, optional): CUSIPs or ISINs, see
+                `collect_bond_statistics`. Defaults to None.
+            issuer (list[str] | str | None, optional): Part of an issuer's name, such as
+                "Apple". Defaults to None.
+            etfs (list[str] | str | None, optional): The bond ETFs to select bonds from,
+                see `get_bond_universe`. Defaults to None.
+            maturity_start (str | None, optional): The earliest maturity (YYYY-MM-DD).
+                Defaults to None.
+            maturity_end (str | None, optional): The latest maturity (YYYY-MM-DD). Defaults
+                to None.
+            date (str | None, optional): The day of the Treasury prices (YYYY-MM-DD).
+                Defaults to None, the latest day with prices.
+            rounding (int | None, optional): The number of decimals to round the results
+                to. Defaults to None, which uses the rounding of the class.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: One row per bond with the Issuer, Security Type, Coupon, Maturity,
+            Price, Price Date and a delta per maturity of the Treasury curve.
+
+        As an example:
+
+        ```python
+        from financetoolkit import FixedIncome
+
+        fixedincome = FixedIncome()
+
+        deltas = fixedincome.get_bucketed_delta(date="2026-11-05")
+
+        deltas[["Maturity", "2Y", "3Y", "5Y", "7Y", "10Y", "20Y", "30Y"]]
+        ```
+
+        Which returns:
+
+        |           | Maturity   |      2Y |      3Y |      5Y |      7Y |     10Y |     20Y |     30Y |
+        |:----------|:-----------|--------:|--------:|--------:|--------:|--------:|--------:|--------:|
+        | 91282CRU7 | 2028-10-31 | -0.0186 |  0      |  0      |  0      |  0      |  0      |  0      |
+        | 91282CLR0 | 2029-10-31 | -0.0003 | -0.0272 |  0      |  0      |  0      |  0      |  0      |
+        | 91282CRT0 | 2031-10-31 |  0      | -0.0004 | -0.044  |  0      |  0      |  0      |  0      |
+        | 91282CRV5 | 2033-10-31 |  0      | -0.0001 | -0.0005 | -0.0589 |  0      |  0      |  0      |
+        | 91282CRF0 | 2036-08-15 |  0      |  0.0001 |  0.0001 | -0.0054 | -0.0718 |  0      |  0      |
+        | 912810RU4 | 2046-11-15 |  0.0002 |  0.0005 |  0.001  |  0.0019 |  0.0097 | -0.1131 | -0.0003 |
+        | 912810UW6 | 2056-08-15 |  0      |  0      |  0      |  0.0001 |  0.0003 | -0.0024 | -0.1471 |
+        """
+        check_option("method", method, ("par", "forward"))
+
+        selection = self._select_bonds(
+            bonds, issuer, etfs, maturity_start, maturity_end, date
+        )
+
+        deltas: dict[str, pd.Series] = {}
+        for price_date in selection["Price Date"].unique():
+            par_curve = self._latest_yield_curve("United States", str(price_date))
+            labels = list(par_curve.index)
+            par_curve = pd.Series(
+                par_curve.to_numpy(dtype=float),
+                index=[
+                    fixedincome_helpers.maturity_in_years(label) for label in labels
+                ],
+            )
+            zero_curve = self._latest_zero_curve("United States", str(price_date))
+            for bond, row in selection[
+                selection["Price Date"] == price_date
+            ].iterrows():
+                if row["Security Type"] == "TIPS":
+                    deltas[bond] = pd.Series(np.nan, index=labels)
+                    continue
+                cash_flows = bond_model.get_bond_cash_flows(**_bond_terms(row))
+                delta = (
+                    curve_risk_model.get_par_rate_delta(
+                        cash_flows,
+                        par_curve,
+                        FREQUENCY,
+                        BILL_CONVENTIONS["United States"],
+                        bump,
+                    )
+                    if method == "par"
+                    else curve_risk_model.get_forward_rate_delta(
+                        cash_flows, zero_curve, par_curve.index, bump
+                    )
+                )
+                deltas[bond] = pd.Series(delta.to_numpy(), index=labels)
+
+        return self._bond_table(
+            selection,
+            pd.DataFrame(deltas).T,
+            rounding if rounding is not None else self._rounding,
+        )
+
+    @handle_errors
+    def get_rate_shift_ladder(
+        self,
+        shifts: list[float] | str | None = None,
+        bonds: list[str] | str | None = None,
+        issuer: list[str] | str | None = None,
+        etfs: list[str] | str | None = None,
+        maturity_start: str | None = None,
+        maturity_end: str | None = None,
+        date: str | None = None,
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ):
+        """
+        Calculates the parallel shift ladder of individual bonds on the Treasury zero-coupon curve:
+        the profit or loss, per 100 of par, when the whole curve shifts up or down by each of a range
+        of amounts, with the bond's delta and gamma to the shift. Where duration and convexity
+        extrapolate from today's curve, the ladder reprices the bond at every shift, so it shows the
+        full, asymmetric response to large moves.
+
+        The formula is as follows:
+
+        - PV(Δ) = SUM(CF(t) * (1 + Zero Rate(t) + Δ)^(-t))
+        - P&L(Δ) = PV(Δ) - PV(0)
+        - Delta = (PV(+h) - PV(-h)) / (2h)
+        - Gamma = (PV(+h) - 2 * PV(0) + PV(-h)) / h^2
+
+        Where CF(t) are the bond's coupons (100 * Coupon / 2) and principal on its actual coupon
+        dates, Zero Rate(t) is the Treasury zero-coupon curve of the price date (annually compounded,
+        see `get_zero_coupon_curve`, interpolated linearly), so Δ shifts annually compounded zero
+        rates, and h is 1 basis point. Delta and Gamma are per unit of rate, so P&L(Δ) ≈ Delta * Δ +
+        0.5 * Gamma * Δ^2 with Δ as a decimal: a Delta of -700 loses 0.07 for a 1 basis point rise.
+        The bonds are discounted on the Treasury curve without a spread and selected as in
+        `collect_bond_statistics`; TIPS have no ladder on the nominal curve. For cash flows or a curve
+        of your own, and the delta and gamma at every shift, use
+        `curve_risk_model.get_parallel_shift_ladder`.
+
+        Also known as: parallel shift report, scenario ladder, PV ladder, dollar gamma.
+
+        Shares similar logic:
+        - FinancePy, parallel_shift_ladder_report: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/market/curves/ibor_curve_risk_engine.py#L291
+
+        Args:
+            shifts (list[float] | str | None, optional): The parallel shifts (decimals), e.g.
+                [-0.01, 0.01]; a shift of 0 (today's curve, the P&L of which is 0) and repeated
+                shifts are left out. Defaults to None, -200, -100, -50, -25, 25, 50, 100 and 200
+                basis points.
+            bonds (list[str] | str | None, optional): CUSIPs or ISINs, see
+                `collect_bond_statistics`. Defaults to None.
+            issuer (list[str] | str | None, optional): Part of an issuer's name, such as
+                "Apple". Defaults to None.
+            etfs (list[str] | str | None, optional): The bond ETFs to select bonds from,
+                see `get_bond_universe`. Defaults to None.
+            maturity_start (str | None, optional): The earliest maturity (YYYY-MM-DD).
+                Defaults to None.
+            maturity_end (str | None, optional): The latest maturity (YYYY-MM-DD). Defaults
+                to None.
+            date (str | None, optional): The day of the Treasury prices (YYYY-MM-DD).
+                Defaults to None, the latest day with prices.
+            rounding (int | None, optional): The number of decimals to round the results
+                to. Defaults to None, which uses the rounding of the class.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: One row per bond with the Issuer, Security Type, Coupon, Maturity,
+            Price, Price Date, the P&L of every shift (labelled in basis points, such as '-100bp')
+            and the Delta and Gamma.
+
+        As an example:
+
+        ```python
+        from financetoolkit import FixedIncome
+
+        fixedincome = FixedIncome()
+
+        ladder = fixedincome.get_rate_shift_ladder(date="2026-11-05")
+
+        ladder[["Maturity", "-200bp", "-50bp", "+50bp", "+200bp", "Delta", "Gamma"]]
+        ```
+
+        Which returns:
+
+        |           | Maturity   |   -200bp |   -50bp |   +50bp |   +200bp |     Delta |     Gamma |
+        |:----------|:-----------|---------:|--------:|--------:|---------:|----------:|----------:|
+        | 91282CRU7 | 2028-10-31 |   3.7943 |  0.9284 | -0.9153 |  -3.5854 |  -184.36  |   521.782 |
+        | 91282CLR0 | 2029-10-31 |   5.5767 |  1.3548 | -1.3296 |  -5.1732 |  -268.428 |  1007.8   |
+        | 91282CRT0 | 2031-10-31 |   9.1613 |  2.1953 | -2.1354 |  -8.2008 |  -433.002 |  2397.28  |
+        | 91282CRV5 | 2033-10-31 |  12.4756 |  2.9498 | -2.8448 | -10.791  |  -579.318 |  4200.65  |
+        | 91282CRF0 | 2036-08-15 |  16.4436 |  3.8178 | -3.6394 | -13.579  |  -745.4   |  7130.76  |
+        | 912810RU4 | 2046-11-15 |  22.4745 |  4.8882 | -4.4764 | -15.7994 |  -935.114 | 16459.8   |
+        | 912810UW6 | 2056-08-15 |  35.7437 |  7.4714 | -6.6913 | -22.9696 | -1412.9   | 31157.5   |
+        """
+        # The ladder is keyed by shift and always holds 0 (the delta and gamma of today's curve),
+        # so a 0 or a repeated shift given here would otherwise collide with it.
+        shift_values = list(
+            dict.fromkeys(
+                shift
+                for shift in (
+                    curve_risk_model.DEFAULT_SHIFTS
+                    if shifts is None
+                    else [float(value) for value in helpers.split_values(shifts)]
+                )
+                if shift != 0
+            )
+        )
+        selection = self._select_bonds(
+            bonds, issuer, etfs, maturity_start, maturity_end, date
+        )
+        zero_curves = {
+            price_date: self._latest_zero_curve("United States", str(price_date))
+            for price_date in selection["Price Date"].unique()
+        }
+        labels = [f"{shift * 10_000:+g}bp" for shift in shift_values]
+
+        ladders = {}
+        for bond, row in selection.iterrows():
+            if row["Security Type"] == "TIPS":
+                ladders[bond] = pd.Series(np.nan, index=[*labels, "Delta", "Gamma"])
+                continue
+            ladder = curve_risk_model.get_parallel_shift_ladder(
+                bond_model.get_bond_cash_flows(**_bond_terms(row)),
+                zero_curves[row["Price Date"]],
+                [0.0, *shift_values],
+            )
+            ladders[bond] = pd.Series(
+                [
+                    *ladder["P&L"].iloc[1:],
+                    ladder["Delta"].iloc[0],
+                    ladder["Gamma"].iloc[0],
+                ],
+                index=[*labels, "Delta", "Gamma"],
+            )
+
+        return self._bond_table(
+            selection,
+            pd.DataFrame(ladders).T,
+            rounding if rounding is not None else self._rounding,
+        )
+
+    @handle_errors
     def get_taylor_price_change(
         self,
         yield_change: float | None = None,
@@ -1162,6 +1487,10 @@ class BondsFixedIncome(MarketsFixedIncome):
 
         Also known as: duration-convexity approximation, second-order price approximation, realised
         bond price change.
+
+        Referenced against:
+        - QuantLib, BondFunctions.duration: https://www.quantlib.org/reference/struct_quant_lib_1_1_bond_functions.html
+        - QuantLib, BondFunctions.convexity: https://www.quantlib.org/reference/struct_quant_lib_1_1_bond_functions.html
 
         Args:
             yield_change (float | None, optional): The change in the yield to maturity (decimal),
@@ -1332,11 +1661,13 @@ class BondsFixedIncome(MarketsFixedIncome):
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculates the bond-equivalent yield (BEY) of every Treasury bill from its price.
+        Calculates the bond-equivalent yield (BEY) of every Treasury bill from its price:
+        the return of the bill on a basis comparable to coupon-bearing notes and bonds.
+
         Bills are quoted on a discount-yield basis, which understates the return an investor
         earns because it is computed on face value rather than the (lower) purchase price,
-        and uses a 360-day rather than a 365-day year. The bond-equivalent yield restates the
-        discount yield on a basis that is comparable to coupon-bearing notes and bonds.
+        and uses a 360-day rather than a 365-day year. The bond-equivalent yield restates
+        the discount yield on a basis that is comparable to coupon-bearing notes and bonds.
 
         The formula is as follows:
 

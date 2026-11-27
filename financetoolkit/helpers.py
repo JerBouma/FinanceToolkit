@@ -4,8 +4,11 @@ __docformat__ = "google"
 
 import contextlib
 import contextvars
+import importlib
 import inspect
+import numbers
 import os
+import sys
 from collections.abc import Callable, Iterable
 from concurrent.futures import ThreadPoolExecutor
 from decimal import ROUND_HALF_UP, Decimal
@@ -17,6 +20,7 @@ import pandas as pd
 
 from financetoolkit.cache.request_model import redact_credentials
 from financetoolkit.utilities import error_model, logger_model
+from financetoolkit.utilities.dataframe_model import FilteredClass
 from financetoolkit.utilities.statistics_model import (
     apply_rounding,
     bounded_ffill,
@@ -24,6 +28,40 @@ from financetoolkit.utilities.statistics_model import (
 )
 
 logger = logger_model.get_logger()
+
+
+def import_functions_when_used(
+    package: str, modules: dict[str, list[str]]
+) -> tuple[Callable[[str], Any], Callable[[], list[str]]]:
+    """
+    Make the functions of a package's model modules importable from the package itself
+    (`from financetoolkit.models import get_altman_z_score`), importing each module only
+    when one of its functions is first used (PEP 562). The package's `__init__.py` assigns
+    the returned functions to its `__getattr__` and `__dir__`.
+
+    Args:
+        package (str): The name of the package, its `__name__`.
+        modules (dict[str, list[str]]): The full name of each model module with the
+            names of the functions it provides.
+
+    Returns:
+        tuple[Callable[[str], Any], Callable[[], list[str]]]: The package's `__getattr__`,
+        which imports and returns a function by name, and its `__dir__`.
+    """
+    module_of = {name: module for module, names in modules.items() for name in names}
+
+    def __getattr__(name: str) -> Any:  # noqa: N807
+        if name not in module_of:
+            raise AttributeError(f"module {package!r} has no attribute {name!r}")
+        value = getattr(importlib.import_module(module_of[name]), name)
+        # Stored on the package, so later lookups don't come back here.
+        setattr(sys.modules[package], name, value)
+        return value
+
+    def __dir__() -> list[str]:  # noqa: N807
+        return sorted(set(vars(sys.modules[package])) | set(module_of))
+
+    return __getattr__, __dir__
 
 
 # Set FINANCETOOLKIT_MAX_WORKERS to raise or lower the number of API calls made at the same time; the default is a deliberate middle ground between fetching a large universe quickly and not tripping the data providers' rate limits (which the retry logic in fmp_model.get_financial_data absorbs when they are hit anyway).  # noqa: E501
@@ -126,12 +164,13 @@ def run_in_parallel(
 
                 # The first argument names the call (a ticker, a year, a series or a
                 # URL); the others can hold an API key, and so can a URL or a message.
+                # A function (one fetch per source) has no readable name to show.
                 logger.error(
                     "No data could be retrieved for %s: %s: %s",
                     (
                         redact_credentials(str(args[0]))
-                        if args
-                        else getattr(worker, "__name__", "a request")
+                        if args and not callable(args[0])
+                        else "one of the requests"
                     ),
                     type(error).__name__,
                     redact_credentials(str(error)),
@@ -511,7 +550,8 @@ def enrich_historical_data(
     following columns:
 
         - Return: The return for the given period.
-        - Cumulative Return: The cumulative return for the given period.
+        - Cumulative Return: The growth of 1 invested at the start, the product of (1 + Return):
+          1.0 on the first date and 1.25 after a 25% gain.
 
     The return is calculated as the percentage change in the given return column.
 
@@ -752,12 +792,30 @@ def round_half_up(value: float | str | Decimal, decimals: int) -> float:
     return float(number.quantize(Decimal(1).scaleb(-decimals), rounding=ROUND_HALF_UP))
 
 
+def _has_own_portfolio_values(result: pd.DataFrame) -> bool:
+    """
+    Whether a result already holds values for the Portfolio, calculated from its own prices
+    and returns (the Toolkit of a Portfolio has them as the "Portfolio" ticker).
+    """
+    if "Portfolio" in result.columns and not isinstance(result.columns, pd.MultiIndex):
+        return bool(result["Portfolio"].notna().to_numpy().any())
+    if "Portfolio" in result.index and not isinstance(result.index, pd.MultiIndex):
+        return bool(result.loc[["Portfolio"]].notna().to_numpy().any())
+    return False
+
+
 def handle_portfolio(func):
     """
     A decorator that processes the result of a function to handle portfolio data.
     This decorator checks if "Portfolio" is in the `self._tickers` attribute and, if so,
     calculates the weighted average of the result DataFrame using `self._portfolio_weights`
     and appends it as a new row or column named "Portfolio".
+
+    A result that already has values for the Portfolio keeps them: a measure calculated on
+    the Portfolio's own prices and returns (a volatility, a Value at Risk, a drawdown)
+    includes how the holdings move together, which a weighted average of the holdings'
+    measures leaves out. The weighted average is for the measures that have no values
+    for the Portfolio, such as the ratios of the financial statements.
 
     Args:
         func (function): The function to be decorated.
@@ -781,6 +839,7 @@ def handle_portfolio(func):
             isinstance(result, pd.DataFrame)
             and isinstance(self._tickers, list | str)
             and "Portfolio" in self._tickers
+            and not _has_own_portfolio_values(result)
         ):
             sig = inspect.signature(func)
             bound_args = sig.bind(self, *args, **kwargs)
@@ -912,6 +971,25 @@ def require_api_key(api_key: str | None, data: str) -> None:
         )
 
 
+def require_input(data: pd.Series | pd.DataFrame, name: str) -> None:
+    """
+    Raises when a metric another one builds on could not be calculated, so that the
+    composite reports which input is missing instead of failing on the empty result.
+
+    Args:
+        data (pd.Series | pd.DataFrame): The input metric, an empty Series when it failed
+            (the reason is logged where it failed).
+        name (str): The name of the input, completing "... is not available".
+
+    Raises:
+        ValueError: When the input is empty.
+    """
+    if data.empty:
+        raise ValueError(
+            f"The {name} is not available, so this metric cannot be calculated from it."
+        )
+
+
 def require_fred_api_key(fred_api_key: str | None, data: str) -> None:
     """
     Warns and raises when data from FRED (Federal Reserve Economic Data) is requested
@@ -938,6 +1016,65 @@ def require_fred_api_key(fred_api_key: str | None, data: str) -> None:
             "https://fred.stlouisfed.org/docs/api/api_key.html and pass it via the "
             "fred_api_key argument or set the FRED_API_KEY environment variable."
         )
+
+
+def fill_diluted_shares(income_statement: pd.DataFrame) -> pd.DataFrame:
+    """
+    Uses the Weighted Average Shares where an income statement lacks the Weighted Average
+    Shares Diluted, so that the per-share figures, the market cap and everything built on
+    them can still be calculated.
+
+    Some data providers report only the basic share count (or leave the diluted one out in
+    some periods). Without dilution the two are equal, and otherwise the basic count is
+    lower by the options and convertibles not yet exercised, so it is the closest figure
+    reported. The tickers this applies to are logged once.
+
+    Args:
+        income_statement (pd.DataFrame): The income statement, with the tickers and the line
+            items as its index and the periods as its columns.
+
+    Returns:
+        pd.DataFrame: The income statement with the Weighted Average Shares Diluted filled
+        in, or the statement itself when nothing is missing.
+    """
+    basic_name, diluted_name = (
+        "Weighted Average Shares",
+        "Weighted Average Shares Diluted",
+    )
+
+    if income_statement.empty or basic_name not in income_statement.index.unique(
+        level=1
+    ):
+        return income_statement
+
+    basic = income_statement.xs(basic_name, level=1)
+    diluted = (
+        income_statement.xs(diluted_name, level=1)
+        if diluted_name in income_statement.index.unique(level=1)
+        else pd.DataFrame(index=[], columns=income_statement.columns, dtype=float)
+    ).reindex(basic.index)
+
+    missing = diluted.isna() & basic.notna()
+    tickers = list(missing.index[missing.any(axis=1)])
+
+    if not tickers:
+        return income_statement
+
+    logger.warning(
+        "The income statement has no Weighted Average Shares Diluted for %s (in all or "
+        "some periods), so the Weighted Average Shares are used there.",
+        ", ".join(map(str, tickers)),
+    )
+
+    filled = diluted.loc[tickers].fillna(basic.loc[tickers]).astype(float)
+    filled.index = pd.MultiIndex.from_product([tickers, [diluted_name]])
+
+    statement = pd.concat(
+        [income_statement.drop(index=filled.index, errors="ignore"), filled]
+    )
+
+    # The rows of each ticker together again, in the order of the statement.
+    return statement.loc[income_statement.index.unique(level=0)]
 
 
 def get_goodwill_and_intangible_assets(balance_sheet: pd.DataFrame) -> pd.DataFrame:
@@ -1058,6 +1195,94 @@ def trailing_mean(frame: pd.DataFrame, trailing: int | None) -> pd.DataFrame:
         .mean()
         .T.reindex(columns=frame.columns)
     )
+
+
+def check_trailing(cls: FilteredClass) -> FilteredClass:
+    """
+    Class decorator that checks the trailing window of every method of the Ratios and
+    Models classes that has one: a whole number of at least one period, else an
+    InvalidArgumentError. A window longer than the periods of the financial statements
+    leaves the values NaN, which is logged once per call (see `report_long_trailing`),
+    also when a collection calls the methods of its ratios.
+
+    Args:
+        cls (type): The class.
+
+    Returns:
+        type: The same class.
+    """
+    for name, member in list(vars(cls).items()):
+        if name.startswith("_") or not callable(member):
+            continue
+
+        signature = inspect.signature(member)
+        if "trailing" in signature.parameters:
+            setattr(cls, name, _trailing_checked(member, signature))
+
+    return cls
+
+
+def _trailing_checked(function: Callable, signature: inspect.Signature) -> Callable:
+    """Wraps a method with a trailing window for `check_trailing`."""
+
+    @wraps(function)
+    def wrapper(self, *args, **kwargs):
+        trailing = signature.bind_partial(self, *args, **kwargs).arguments.get(
+            "trailing"
+        )
+        error_model.validate_window("trailing", trailing, 1)
+
+        depth = self.__dict__.get("_trailing_depth", 0)
+        self._trailing_depth = depth + 1
+        try:
+            result = function(self, *args, **kwargs)
+        finally:
+            self._trailing_depth = depth
+
+        # The statements are only counted with a window, as reading them raises when they could not be retrieved.  # noqa: E501
+        if trailing and not depth:
+            report_long_trailing(trailing, len(self._income_statement.columns), result)
+
+        return result
+
+    return wrapper
+
+
+def report_long_trailing(
+    trailing: int | None, periods: int, result: pd.Series | pd.DataFrame
+) -> None:
+    """
+    Logs a trailing window that leaves values NaN for want of periods: one longer than the
+    periods of the financial statements, or one as long as them when the result has no
+    values at all, as a ratio of averaged balances also needs the period end that opens
+    its window.
+
+    Args:
+        trailing (int | None): The trailing window, None for none.
+        periods (int): The number of periods of the financial statements.
+        result (pd.Series | pd.DataFrame): The result calculated with the window.
+    """
+    if not trailing or not periods or not isinstance(trailing, numbers.Integral):
+        return
+
+    if isinstance(result, pd.DataFrame):
+        values = result.select_dtypes("number")
+    elif isinstance(result, pd.Series) and pd.api.types.is_numeric_dtype(result):
+        values = result
+    else:
+        values = pd.Series(dtype="float64")
+    without_values = values.size > 0 and not values.notna().to_numpy().any()
+
+    if trailing > periods or (trailing == periods and without_values):
+        logger.warning(
+            "The trailing window of %s periods is %s the %s periods of the financial "
+            "statements, so the values are NaN where no period has a complete window (a ratio "
+            "of averaged balances also needs the period end before the window). Pass a smaller "
+            "trailing window or an earlier start_date.",
+            trailing,
+            "longer than" if trailing > periods else "as long as",
+            periods,
+        )
 
 
 def add_basket_total(
@@ -1276,3 +1501,101 @@ def get_non_trading_days(historical_data: pd.DataFrame, column: str) -> pd.DataF
     up_to_last_return = has_return[::-1].cummax()[::-1]
 
     return ~has_return & after_first_price & up_to_last_return
+
+
+def delay_embedding(values: np.ndarray, dimension: int, delay: int = 1) -> np.ndarray:
+    """
+    The delay embedding of a series (Takens, 1981): every row holds `dimension` values of
+    the series, `delay` observations apart, X_i = [x_i, x_(i + delay), ...,
+    x_(i + (dimension - 1) * delay)], for every i the series is long enough for.
+
+    Args:
+        values (np.ndarray): The series.
+        dimension (int): The number of values per row, the embedding dimension.
+        delay (int, optional): The number of observations between the values of a row.
+            Defaults to 1.
+
+    Returns:
+        np.ndarray: The embedded vectors, a row per vector, empty when the series is too short.
+    """
+    span = (dimension - 1) * delay + 1
+    if dimension < 1 or delay < 1:
+        raise ValueError("The dimension and the delay should be at least 1.")
+    if len(values) < span:
+        return np.empty((0, dimension))
+
+    return np.lib.stride_tricks.sliding_window_view(values, span)[:, ::delay]
+
+
+def calculate_per_window(
+    data: pd.DataFrame,
+    function: Callable[..., Any],
+    window: int | None = None,
+    rolling: Callable[..., Any] | None = None,
+    **kwargs,
+) -> pd.Series | pd.DataFrame:
+    """
+    Applies a measure of a whole series, such as an entropy or a Hurst exponent, to every
+    series of `data` over the dates the series has a value: once over its full history, or
+    over every trailing window of `window` observations.
+
+    Args:
+        data (pd.DataFrame): The series, a column per series.
+        function (Callable[..., Any]): The measure, which takes the values of a series as a
+            numpy array followed by `kwargs` and returns a number or a Series of numbers.
+        window (int | None, optional): The number of observations per window. Defaults to
+            None, which measures the full history of every series once.
+        rolling (Callable[..., Any] | None, optional): The same measure of every trailing
+            window at once, which takes the values of a series, the window and `kwargs` and
+            returns one number per window (such as an entropy whose comparisons the windows
+            share). Defaults to None, which applies `function` to every window.
+        **kwargs: The further keyword arguments of the measure.
+
+    Returns:
+        pd.Series | pd.DataFrame: Without a window, the value per series (a row per series
+        with a column per output when the measure returns a Series). With a window, the value
+        on the last date of every window, a column per series (or (output, series) columns),
+        NaN before the first full window and on the dates a series has no value.
+    """
+    if window is not None and window < 2:  # noqa: PLR2004
+        raise ValueError("The window should hold at least 2 observations.")
+
+    results = {}
+    for series in data.columns:
+        column = data[series].dropna()
+        values = column.to_numpy(dtype=float)
+
+        if window is None:
+            results[series] = function(values, **kwargs)
+            continue
+
+        measures = (
+            list(rolling(values, window, **kwargs))
+            if rolling is not None
+            else [
+                function(values[end - window : end], **kwargs)
+                for end in range(window, len(values) + 1)
+            ]
+        )
+        dates = column.index[window - 1 :]
+        results[series] = (
+            pd.DataFrame(measures, index=dates)
+            if measures and isinstance(measures[0], pd.Series)
+            else pd.Series(measures, index=dates, dtype=float)
+        ).reindex(data.index)
+
+    if window is None:
+        if any(isinstance(result, pd.Series) for result in results.values()):
+            return pd.DataFrame(results).T
+
+        return pd.Series(results, dtype=float)
+
+    if all(isinstance(result, pd.Series) for result in results.values()):
+        return pd.DataFrame(results, index=data.index)
+
+    combined = pd.concat(results, axis=1).swaplevel(1, 0, axis=1)
+    outputs = list(dict.fromkeys(combined.columns.get_level_values(0)))
+
+    return combined.reindex(
+        columns=pd.MultiIndex.from_product([outputs, list(results)])
+    )

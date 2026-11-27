@@ -2,17 +2,20 @@
 
 __docformat__ = "google"
 
-import io
 import re
 import zipfile
 
 import numpy as np
 import pandas as pd
+import requests
 
 from financetoolkit.cache import policy_model
 from financetoolkit.cache.cache_controller import get_active_cache
-from financetoolkit.economics.helpers import collect_cached_data
+from financetoolkit.economics.helpers import collect_cached_data, open_zip_archive
+from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.requests_model import TOOLKIT_HEADERS, get_request
+
+logger = get_logger()
 
 # DNB publishes, every quarter, the scenario sets Dutch pension funds must use for their
 # feasibility test and the transition to the new pension contract: 20,000 scenarios over
@@ -58,7 +61,8 @@ def get_scenario_set_link(measure: str) -> tuple[str, str]:
     Finds the latest scenario set of a measure on DNB's page.
 
     Args:
-        measure (str): "real_world" or "market_consistent".
+        measure (str): The probability measure. Options are: "real_world" (the P-set), "market_consistent" (the
+            Q-set).
 
     Returns:
         tuple[str, str]: The link and the quarter it is for (e.g. "2026Q3").
@@ -181,25 +185,35 @@ def _zero_rates(
 
 def get_scenario_set(measure: str) -> pd.DataFrame:
     """
-    Retrieves the latest scenario set of a measure: for every one of the 20,000 scenarios
-    and every year of the 100-year horizon, the nominal zero rates, the euro area real zero
-    rate, the equity return and the price inflation of the euro area and the Netherlands.
+    Retrieve DNB's latest scenario set of a measure: 20,000 simulated paths over 100 years of the nominal and real
+    zero rates, the equity return and price inflation.
+
+    For every scenario and every year of the horizon it holds the nominal zero rates, the euro area real zero rate,
+    the equity return and the price inflation of the euro area and the Netherlands.
 
     Args:
-        measure (str): "real_world" or "market_consistent".
+        measure (str): The probability measure. Options are: "real_world" (the P-set), "market_consistent" (the
+            Q-set).
 
     Returns:
         pd.DataFrame: The variables as decimals, indexed by the year of the horizon (0 is
         the end of the quarter the set is for) with a (variable, scenario) column.
     """
-    link, quarter = get_scenario_set_link(measure)
+    try:
+        link, quarter = get_scenario_set_link(measure)
+    except requests.exceptions.RequestException as error:
+        logger.error(
+            "Could not reach DNB to find its latest %s scenario set (%s).",
+            measure.replace("_", "-"),
+            error,
+        )
+        return pd.DataFrame()
+
     description = f"DNB {measure.replace('_', '-')} scenario set of {quarter}"
 
     def fetch() -> pd.DataFrame:
-        workbook = zipfile.ZipFile(
-            io.BytesIO(
-                get_request(link, timeout=600, extra_headers=TOOLKIT_HEADERS).content
-            )
+        workbook = open_zip_archive(
+            get_request(link, timeout=600, extra_headers=TOOLKIT_HEADERS), description
         )
         paths = _sheet_paths(workbook)
 

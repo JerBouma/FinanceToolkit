@@ -2,6 +2,8 @@
 
 __docformat__ = "google"
 
+from functools import partial
+
 import numpy as np
 import pandas as pd
 
@@ -9,11 +11,16 @@ from financetoolkit.options import options_model
 from financetoolkit.options.helpers import (
     get_days_to_expiration,
     get_time_to_expiration,
+    validate_positive_inputs,
 )
-from financetoolkit.options.market import market_metrics_model
+from financetoolkit.options.market import hedging_model, market_metrics_model
 from financetoolkit.utilities import logger_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
-from financetoolkit.utilities.error_model import handle_errors
+from financetoolkit.utilities.error_model import (
+    InvalidArgumentError,
+    handle_errors,
+    validate_window,
+)
 from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import (
     apply_rounding,
@@ -30,6 +37,76 @@ _CHAIN_INPUTS_FROM_HISTORY = (
     "the underlying, the stock price come from that date"
 )
 
+# Above this bid-ask spread, as a fraction of the straddle, the middle of the quotes says
+# little about where the straddle trades.
+_WIDE_STRADDLE_SPREAD = 0.5
+
+
+def _implied_move_noting_quotes(
+    unquoted: list[str],
+    ticker: str,
+    expiration_date: str,
+    calls: pd.DataFrame,
+    puts: pd.DataFrame,
+    stock_price: float,
+    *_,
+) -> pd.Series:
+    """
+    The implied move of one expiry, with a warning when its straddle is priced from a last
+    trade or its bid-ask spread is wider than half the straddle. An expiry whose chain has no
+    bid at all (Yahoo Finance outside US market hours) is added to `unquoted` instead, so that
+    the caller warns once for all of them.
+    """
+    move = market_metrics_model.get_implied_move(calls, puts, stock_price)
+    if np.isnan(move["Straddle Strike"]):
+        return move
+    bids = pd.concat(
+        [chain.get("Bid", pd.Series(dtype=float)) for chain in (calls, puts)]
+    )
+    if not (pd.to_numeric(bids, errors="coerce") > 0).any():
+        unquoted.append(f"{ticker} {expiration_date}")
+        return move
+    if (
+        move["Last Trade Legs"] == 0
+        and not move["Bid-Ask Spread"] > _WIDE_STRADDLE_SPREAD
+    ):
+        return move
+
+    strike = f"{move['Straddle Strike']:g}"
+    legs = market_metrics_model.get_straddle_quotes(
+        calls, puts, move["Straddle Strike"]
+    )
+    if move["Last Trade Legs"] == 0:
+        reasons = [
+            f"the bid-ask spread of the {strike} straddle is "
+            f"{move['Bid-Ask Spread']:.0%} of its price"
+        ]
+    else:
+        reasons = []
+        for leg, quote in legs.iterrows():
+            if quote["Last Trade"]:
+                reason = (
+                    f"the {strike} {leg.lower()} has no two-sided quote and is priced at "
+                    "its last trade"
+                )
+                if isinstance(quote["Last Trade Date"], str):
+                    reason += f" of {quote['Last Trade Date']}"
+                if pd.notna(quote["Open Interest"]):
+                    reason += f" (open interest {quote['Open Interest']:g})"
+            else:
+                reason = (
+                    f"the {leg.lower()}'s bid-ask spread is "
+                    f"{quote['Bid-Ask Spread'] / move['Straddle Price']:.0%} of the straddle"
+                )
+            reasons.append(reason)
+    logger.warning(
+        "%s %s: %s, so the implied move may not reflect the live market.",
+        ticker,
+        expiration_date,
+        ", and ".join(reasons),
+    )
+    return move
+
 
 @filter_shown_columns
 @track_sources
@@ -45,6 +122,7 @@ class MarketOptions:
         number_of_expirations: int,
     ) -> list[str]:
         """The expiries of a ticker to use: as given, otherwise the nearest ones."""
+        validate_window("number_of_expirations", number_of_expirations)
         available = options_model.get_option_expiry_dates(ticker)
         if expiration_dates is not None:
             invalid = [date for date in expiration_dates if date not in available]
@@ -100,21 +178,6 @@ class MarketOptions:
         puts = options_model.get_option_chains([ticker], expiration_date, True)
         calls = calls.loc[ticker] if not calls.empty else calls
         puts = puts.loc[ticker] if not puts.empty else puts
-
-        # Outside market hours Yahoo Finance often returns chains without bids, while Cboe's
-        # delayed quotes keep the last ones; the better quoted chain is used.
-        def quoted(chain: pd.DataFrame) -> int:
-            return int((pd.to_numeric(chain.get("Bid"), errors="coerce") > 0).sum())
-
-        if quoted(calls) + quoted(puts) < (len(calls) + len(puts)) / 2:
-            cboe_calls = options_model._get_cboe_option_chain(  # noqa: SLF001
-                ticker, expiration_date, False
-            )
-            cboe_puts = options_model._get_cboe_option_chain(  # noqa: SLF001
-                ticker, expiration_date, True
-            )
-            if quoted(cboe_calls) + quoted(cboe_puts) > quoted(calls) + quoted(puts):
-                calls, puts = cboe_calls, cboe_puts
         stock_price = self._spot_price(ticker, calls, puts)
         # The time left up to the close on the expiration date, so that an expiry this
         # afternoon is not priced as a whole day away.
@@ -150,11 +213,13 @@ class MarketOptions:
         expiration_dates: list[str] | dict[str, list[str]] | None,
         number_of_expirations: int,
         rounding: int | None,
+        with_ticker: bool = False,
     ) -> pd.DataFrame:
         """
         Run a calculation on every expiry of every ticker, rows (ticker, expiration). The
         expiries are the same for every ticker, or given per ticker as a dictionary, which
-        then also selects the tickers.
+        then also selects the tickers. With with_ticker the calculation also receives the
+        ticker and the expiration date, before the chain inputs.
         """
         self._warn_if_history_is_stale(_CHAIN_INPUTS_FROM_HISTORY)
         per_ticker = (
@@ -170,7 +235,11 @@ class MarketOptions:
                 inputs = self._expiry_inputs(ticker, expiration_date)
                 if inputs[0].empty or inputs[1].empty:
                     continue
-                result = calculate(*inputs)
+                result = (
+                    calculate(ticker, expiration_date, *inputs)
+                    if with_ticker
+                    else calculate(*inputs)
+                )
                 rows[(ticker, expiration_date)] = pd.concat(
                     [
                         pd.Series(
@@ -202,11 +271,13 @@ class MarketOptions:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculate the put-call ratio of every expiry, by volume and by open interest. The
-        ratio is the number of puts divided by the number of calls: a ratio above one means
-        more puts are traded or held than calls, which is usually read as hedging demand or
-        bearish sentiment, and an unusually low ratio as complacency. The volume ratio
-        reflects today's trading; the open interest ratio the positions that remain.
+        Calculate the put-call ratio of every expiry, by volume and by open interest:
+        how many puts are traded or held per call, which is usually read as hedging
+        demand or bearish sentiment when above one.
+
+        The ratio is the number of puts divided by the number of calls, and an unusually
+        low ratio is read as complacency. The volume ratio reflects today's trading; the
+        open interest ratio the positions that remain.
 
         Also known as: PCR, put/call ratio, options sentiment.
 
@@ -214,7 +285,7 @@ class MarketOptions:
             expiration_dates (list[str] | None, optional): The expiries to use. Defaults to
                 None, the nearest `number_of_expirations` expiries.
             number_of_expirations (int, optional): The number of nearest expiries to use when
-                no dates are given. Defaults to 6.
+                no dates are given, at least 1. Defaults to 6.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -299,7 +370,7 @@ class MarketOptions:
             expiration_dates (list[str] | None, optional): The expiries to use. Defaults to
                 None, the nearest `number_of_expirations` expiries.
             number_of_expirations (int, optional): The number of nearest expiries to use when
-                no dates are given. Defaults to 6.
+                no dates are given, at least 1. Defaults to 6.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -331,18 +402,13 @@ class MarketOptions:
         | ('AAPL', '2026-11-25') |                    9 |      357.5 |        352.78 |                 0.0134 |
         """
 
-        def calculate(calls, puts, stock_price, *_):
-            max_pain = market_metrics_model.get_max_pain(calls, puts)
-            return pd.Series(
-                {
-                    "Max Pain": max_pain,
-                    "Stock Price": stock_price,
-                    "Distance to Max Pain": max_pain / stock_price - 1,
-                }
-            )
-
         return self._per_expiry(
-            calculate, expiration_dates, number_of_expirations, rounding
+            lambda calls, puts, stock_price, *_: market_metrics_model.get_max_pain_distance(
+                calls, puts, stock_price
+            ),
+            expiration_dates,
+            number_of_expirations,
+            rounding,
         )
 
     @handle_errors
@@ -379,7 +445,7 @@ class MarketOptions:
             expiration_dates (list[str] | None, optional): The expiries to include. Defaults
                 to None, the nearest `number_of_expirations` expiries.
             number_of_expirations (int, optional): The number of nearest expiries to include
-                when no dates are given. Defaults to 6.
+                when no dates are given, at least 1. Defaults to 6.
             by_strike (bool, optional): Whether to return the exposure per strike instead of
                 the totals. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to.
@@ -391,19 +457,19 @@ class MarketOptions:
 
         Returns:
             pd.DataFrame: Per ticker the Stock Price, Call, Put and Net Gamma Exposure (in
-            dollars per 1% move) and the Gamma Flip Point; with by_strike=True the Call, Put
-            and Net Gamma Exposure per ticker and strike.
+            dollars per 1% move) and the Gamma Flip Point; or, when returned per strike, the
+            Call, Put and Net Gamma Exposure per ticker and strike.
 
         Notes:
         - The assumption about who holds which side is the main uncertainty: when
           investors sell calls (covered calls) the sign of that part flips.
         - Gamma uses each option's own implied volatility (Black-Scholes).
         - The stock price is the price of the underlying quoted with the live option chain
-          (Yahoo Finance's regular market price or Cboe's current price), so both come from
-          the same moment; when the chain quotes none, the traded Close of the last
-          historical date is used. The risk free rate and dividend yield come from the
-          historical data as well, so leave end_date at today: a warning is logged when the
-          history ends more than 5 days before today.
+          (Yahoo Finance's regular market price), so both come from the same moment; when
+          the chain quotes none, the traded Close of the last historical date is used. The
+          risk free rate and dividend yield come from the historical data as well, so
+          leave end_date at today: a warning is logged when the history ends more than 5
+          days before today.
 
         As an example:
 
@@ -499,7 +565,7 @@ class MarketOptions:
             expiration_dates (list[str] | None, optional): The expiries to use. Defaults to
                 None, the nearest `number_of_expirations` expiries.
             number_of_expirations (int, optional): The number of nearest expiries to use when
-                no dates are given. Defaults to 10.
+                no dates are given, at least 1. Defaults to 10.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -513,11 +579,11 @@ class MarketOptions:
 
         Notes:
         - The stock price is the price of the underlying quoted with the live option chain
-          (Yahoo Finance's regular market price or Cboe's current price), so both come from
-          the same moment; when the chain quotes none, the traded Close of the last
-          historical date is used. The risk free rate and dividend yield come from the
-          historical data as well, so leave end_date at today: a warning is logged when the
-          history ends more than 5 days before today.
+          (Yahoo Finance's regular market price), so both come from the same moment; when
+          the chain quotes none, the traded Close of the last historical date is used. The
+          risk free rate and dividend yield come from the historical data as well, so
+          leave end_date at today: a warning is logged when the history ends more than 5
+          days before today.
 
         As an example:
 
@@ -566,8 +632,9 @@ class MarketOptions:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculate the volatility skew of every expiry from the 25-delta options, the
-        standard way to compare skew across underlyings and dates:
+        Calculate the volatility skew of every expiry: how much more the market pays for
+        downside than for upside protection, from the 25-delta options, the standard way
+        to compare skew across underlyings and dates:
 
             - 25-Delta Risk Reversal = IV(25-delta call) - IV(25-delta put)
             - 25-Delta Butterfly = (IV(25-delta call) + IV(25-delta put)) / 2 - ATM IV
@@ -588,7 +655,7 @@ class MarketOptions:
             expiration_dates (list[str] | None, optional): The expiries to use. Defaults to
                 None, the nearest `number_of_expirations` expiries.
             number_of_expirations (int, optional): The number of nearest expiries to use when
-                no dates are given. Defaults to 6.
+                no dates are given, at least 1. Defaults to 6.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -603,11 +670,11 @@ class MarketOptions:
 
         Notes:
         - The stock price is the price of the underlying quoted with the live option chain
-          (Yahoo Finance's regular market price or Cboe's current price), so both come from
-          the same moment; when the chain quotes none, the traded Close of the last
-          historical date is used. The risk free rate and dividend yield come from the
-          historical data as well, so leave end_date at today: a warning is logged when the
-          history ends more than 5 days before today.
+          (Yahoo Finance's regular market price), so both come from the same moment; when
+          the chain quotes none, the traded Close of the last historical date is used. The
+          risk free rate and dividend yield come from the historical data as well, so
+          leave end_date at today: a warning is logged when the history ends more than 5
+          days before today.
 
         As an example:
 
@@ -647,16 +714,18 @@ class MarketOptions:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculate the move the options market expects up to every expiry, from the price of
-        the at-the-money straddle (buying the call and the put at the strike closest to the
-        current price):
+        Calculate the move the options market expects up to every expiry: the size of
+        the move, in either direction, that the price of the at-the-money straddle
+        (buying the call and the put at the strike closest to the current price) prices
+        in:
 
             - Implied Move = (Call Price + Put Price) / Stock Price
             - Expected Range = Stock Price ± Straddle Price
+            - Bid-Ask Spread = (Call Ask − Call Bid + Put Ask − Put Bid) / Straddle Price
 
         The straddle pays the absolute move, so its price is the market's expected size of
-        the move, regardless of direction. With around_earnings=True the first expiry after
-        the next earnings date is used, which gives the move the market prices for the
+        the move, regardless of direction. Around earnings the first expiry after the next
+        earnings date is used, which gives the move the market prices for the
         earnings announcement (an expiry on the announcement day itself settles at that
         day's close, before the usual after-the-close announcement).
 
@@ -666,7 +735,7 @@ class MarketOptions:
             expiration_dates (list[str] | None, optional): The expiries to use. Defaults to
                 None, the nearest `number_of_expirations` expiries.
             number_of_expirations (int, optional): The number of nearest expiries to use when
-                no dates are given. Defaults to 4.
+                no dates are given, at least 1. Defaults to 4.
             around_earnings (bool, optional): Whether to use the first expiry after the next
                 earnings date instead. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to.
@@ -678,18 +747,29 @@ class MarketOptions:
 
         Returns:
             pd.DataFrame: Per ticker and expiry the Days to Expiration, Straddle Strike,
-            Straddle Price, Implied Move (as a fraction of the price) and the Lower and Upper
-            Price of the expected range.
+            Straddle Price, Bid-Ask Spread (as a fraction of the straddle price), Last Trade
+            Legs, Implied Move (as a fraction of the price) and the Lower and Upper Price of
+            the expected range.
 
         Notes:
         - The move up to an expiry after earnings also includes the ordinary daily moves
           until then; the closer the expiry is to the announcement, the purer the measure.
+        - The prices are the middle of the bid and ask, or the last traded price of an option
+          without a two-sided quote that is still held or traded. The Bid-Ask Spread shows
+          how firmly the straddle is quoted (NaN when a leg has no two-sided quote) and the
+          Last Trade Legs how many of the two legs (0, 1 or 2) are priced from their last
+          trade, which can be days or weeks old.
+        - A warning names the ticker, expiry and strike when a leg is priced from its last
+          trade (with its last trade date and open interest) or when the bid-ask spread is
+          wider than half the straddle (above 0.5), as the implied move then may not reflect
+          the live market. Outside US market hours Yahoo Finance reports a bid and ask of 0,
+          so every leg is priced from its last trade; one warning then names the expiries.
         - The stock price is the price of the underlying quoted with the live option chain
-          (Yahoo Finance's regular market price or Cboe's current price), so both come from
-          the same moment; when the chain quotes none, the traded Close of the last
-          historical date is used. The risk free rate and dividend yield come from the
-          historical data as well, so leave end_date at today: a warning is logged when the
-          history ends more than 5 days before today.
+          (Yahoo Finance's regular market price), so both come from the same moment; when
+          the chain quotes none, the traded Close of the last historical date is used. The
+          risk free rate and dividend yield come from the historical data as well, so
+          leave end_date at today: a warning is logged when the history ends more than 5
+          days before today.
 
         As an example:
 
@@ -703,15 +783,19 @@ class MarketOptions:
 
         Which returns:
 
-        |                        | Earnings Date   |   Days to Expiration |   Straddle Strike |   Straddle Price |   Implied Move |   Lower Price |   Upper Price |
-        |:-----------------------|:----------------|---------------------:|------------------:|-----------------:|---------------:|--------------:|--------------:|
-        | ('AAPL', '2027-02-19') | 2027-02-04      |                   95 |               350 |            38.2  |         0.1083 |        314.58 |        390.98 |
-        | ('NVDA', '2026-11-18') | 2026-11-17      |                    2 |               155 |            13.05 |         0.0836 |        143.09 |        169.19 |
+        |                        | Earnings Date   |   Days to Expiration |   Straddle Strike |   Straddle Price |   Bid-Ask Spread |   Last Trade Legs |   Implied Move |   Lower Price |   Upper Price |
+        |:-----------------------|:----------------|---------------------:|------------------:|-----------------:|-----------------:|------------------:|---------------:|--------------:|--------------:|
+        | ('AAPL', '2027-02-19') | 2027-02-04      |                   85 |               360 |           36.925 |           0.0447 |                 0 |         0.1038 |       318.655 |       392.505 |
+        | ('NVDA', '2027-03-19') | 2027-02-24      |                  113 |               150 |           38.725 |           0.0374 |                 0 |         0.2594 |       110.575 |       188.025 |
         """
         earnings_dates = None
         if around_earnings:
             if self._earnings_function is None:
-                raise ValueError("Earnings dates are not available for this Toolkit.")
+                raise InvalidArgumentError(
+                    "The earnings dates come from the Toolkit. Please use this method from a "
+                    "Toolkit (toolkit.options), pass earnings_function when creating the Options "
+                    "class, or set around_earnings=False."
+                )
             earnings_dates = self._earnings_function()
             # Each ticker uses the first expiry after its own earnings date.
             expiration_dates = {}
@@ -730,14 +814,21 @@ class MarketOptions:
             if not expiration_dates:
                 raise ValueError("No expiry after an upcoming earnings date was found.")
 
+        unquoted: list[str] = []
         table = self._per_expiry(
-            lambda calls, puts, stock_price, *_: market_metrics_model.get_implied_move(
-                calls, puts, stock_price
-            ),
+            partial(_implied_move_noting_quotes, unquoted),
             expiration_dates,
             number_of_expirations,
             rounding,
+            with_ticker=True,
         )
+        if unquoted:
+            logger.warning(
+                "The option chains of %s have no bid quotes, so their implied moves are priced "
+                "from the last trades, which may not reflect the live market. Outside US market "
+                "hours Yahoo Finance reports a bid and ask of 0; try again during market hours.",
+                ", ".join(unquoted),
+            )
         if earnings_dates is not None:
             table.insert(
                 0,
@@ -788,6 +879,16 @@ class MarketOptions:
             # A ValueError reaches the per-ticker warning, so the other tickers still answer.
             if calls.empty or puts.empty:
                 raise ValueError(f"{ticker} has no option chain for {date}.")
+            # Without bids on both sides of the forward there is no strip (the Cboe methodology selects the strikes on their bids). The last traded prices are no substitute: they are of different moments of the session, so put-call parity and the tails no longer agree.  # noqa: E501
+            strip, _ = market_metrics_model.get_model_free_strip(
+                calls, puts, time, rate
+            )
+            if strip.empty:
+                raise ValueError(
+                    f"{ticker} has no bid quotes for its {date} options to build the strip from. "
+                    "Outside US market hours Yahoo Finance reports a bid and ask of 0; try again "
+                    "during market hours."
+                )
             terms.append((date, calls, puts, time, rate))
         return terms
 
@@ -830,16 +931,19 @@ class MarketOptions:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculate the model-free implied volatility with the Cboe VIX methodology, for any
-        ticker with listed options. Rather than inverting a pricing model, it reads the
-        expected variance directly from the prices of out-of-the-money options across all
-        strikes, weighted by 1/K², for the two expiries around the target maturity, and
-        interpolates their variances to a constant maturity:
+        Calculate the model-free implied volatility with the Cboe VIX methodology, for
+        any ticker with listed options: the volatility the options market expects over
+        the coming days, without a pricing model.
+
+        Rather than inverting a pricing model, it reads the expected variance directly
+        from the prices of out-of-the-money options across all strikes, weighted by
+        1/K², for the two expiries around the target maturity, and interpolates their
+        variances to a constant maturity:
 
             - σ² = (2/T) Σ (ΔK_i / K_i²) e^(RT) Q(K_i) - (1/T) (F/K_0 - 1)²
             - Volatility = sqrt(interpolated variance at `days`)
 
-        Applied to the S&P 500 index options ("^SPX") with days=30 it approximates the VIX,
+        Applied to the S&P 500 index options ("^SPX") over 30 days it approximates the VIX,
         within about a tenth of a volatility point: the Cboe counts the time to expiry in
         minutes, uses Treasury rates for each expiry and the Friday expiries between 23 and
         37 days away. For a single stock it gives the equivalent volatility index.
@@ -853,7 +957,7 @@ class MarketOptions:
         Also known as: VIX methodology, model-free volatility, variance swap volatility.
 
         Args:
-            days (int, optional): The constant maturity in calendar days. Defaults to 30.
+            days (int, optional): The constant maturity in calendar days, at least 1. Defaults to 30.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -868,8 +972,9 @@ class MarketOptions:
 
         Notes:
         - Options without a bid are left out of the strip, as in the Cboe method. Outside
-          market hours, when bids are missing, an expiry has no strip and the result is
-          NaN.
+          market hours Yahoo Finance reports a bid and ask of 0, so a ValueError names the
+          ticker and expiry. Last traded prices are not used instead: they are of different
+          moments of the session, so put-call parity and the tails no longer agree.
         - A target shorter than the nearest usable expiry (at least 7 days away) is
           extrapolated from the two nearest terms, as in the Cboe method. A target beyond
           the longest usable expiry raises a ValueError naming the ticker and that expiry,
@@ -897,6 +1002,7 @@ class MarketOptions:
         | ^SPX | 2026-12-16             | 2026-12-17             |                 0.2274 |                 0.2284 |        7436.64  |                          0.2276 |
         | AAPL | 2026-12-11             | 2026-12-18             |                 0.2655 |                 0.2724 |         353.871 |                          0.2709 |
         """
+        validate_window("days", days)
         self._warn_if_history_is_stale("the risk free rate comes from that date")
         rows, errors = {}, []
         for ticker in self._tickers:
@@ -955,7 +1061,7 @@ class MarketOptions:
         Also known as: VRP, implied minus realized volatility, variance risk premium.
 
         Args:
-            days (int, optional): The horizon in calendar days of both volatilities.
+            days (int, optional): The horizon in calendar days of both volatilities, at least 1.
                 Defaults to 30.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
@@ -995,6 +1101,7 @@ class MarketOptions:
         | AAPL |               0.2709 |                0.2745 |                   -0.0036 |                 -0.002  |                      0.9867 |
         | TSLA |               0.5498 |                0.5943 |                   -0.0445 |                 -0.0509 |                      0.9251 |
         """
+        validate_window("days", days)
         self._warn_if_history_is_stale(
             "the realized volatility covers the days up to that date instead of the days "
             "up to today, and the risk free rate comes from that date"
@@ -1043,8 +1150,10 @@ class MarketOptions:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculate the risk-neutral (option-implied) volatility, skewness and kurtosis of the
-        log return up to every expiry with the method of Bakshi, Kapadia and Madan (2003).
+        Calculate the risk-neutral (option-implied) volatility, skewness and kurtosis of
+        the log return up to every expiry: the shape of the return distribution that the
+        option prices imply, with the method of Bakshi, Kapadia and Madan (2003).
+
         Any payoff can be built from a position in the underlying and a strip of
         out-of-the-money options (Carr and Madan, 2001), so the prices of the quadratic,
         cubic and quartic contracts on the log return follow from the option prices, and
@@ -1090,7 +1199,7 @@ class MarketOptions:
             expiration_dates (list[str] | None, optional): The expiries to use. Defaults to
                 None, the nearest `number_of_expirations` expiries.
             number_of_expirations (int, optional): The number of nearest expiries to use when
-                no dates are given. Defaults to 4.
+                no dates are given, at least 1. Defaults to 4.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -1145,22 +1254,13 @@ class MarketOptions:
         | ('AAPL', '2026-11-25') |       0.2763 |    -1.4946 |     8.8768 |
         """
 
-        def calculate(calls, puts, _, time, rate, *__):
-            strip, forward = market_metrics_model.get_model_free_strip(
-                calls, puts, time, rate
-            )
-            moments = market_metrics_model.get_risk_neutral_moments(
-                strip.index.to_numpy(dtype=float),
-                strip["Call Price"].to_numpy(),
-                strip["Put Price"].to_numpy(),
-                forward,
-                rate,
-                time,
-            )
-            return pd.concat([pd.Series({"Forward Price": forward}), moments])
-
         return self._per_expiry(
-            calculate, expiration_dates, number_of_expirations, rounding
+            lambda calls, puts, _, time, rate, *__: market_metrics_model.get_chain_risk_neutral_moments(
+                calls, puts, time, rate
+            ),
+            expiration_dates,
+            number_of_expirations,
+            rounding,
         )
 
     def _skew_index(self, ticker: str, days: int) -> pd.Series:
@@ -1244,7 +1344,7 @@ class MarketOptions:
         paper prints half of it (see market_metrics_model.get_cboe_skewness); for index
         options the difference is negligible.
         Unlike the variance of the VIX, the skewness is interpolated linearly in time.
-        Applied to the S&P 500 index options ("^SPX") with days=30 it approximates the Cboe
+        Applied to the S&P 500 index options ("^SPX") over 30 days it approximates the Cboe
         SKEW Index, which uses the Cboe's own quotes and Treasury bill rates per expiry.
 
         For more information, see the following papers:
@@ -1257,7 +1357,7 @@ class MarketOptions:
         Also known as: Cboe SKEW, tail risk index, black swan index, implied skewness index.
 
         Args:
-            days (int, optional): The constant maturity in calendar days. Defaults to 30.
+            days (int, optional): The constant maturity in calendar days, at least 1. Defaults to 30.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -1275,8 +1375,14 @@ class MarketOptions:
         - A target shorter than the nearest usable expiry (at least 7 days away) is
           extrapolated from the two nearest terms, as in the Cboe method. A target beyond
           the longest usable expiry raises a ValueError naming the ticker and that expiry.
-        - Outside market hours, when bids are missing, an expiry has no strip and the
-          result is NaN.
+        - Outside market hours (at the weekend) Yahoo Finance reports a bid and ask of 0, so
+          a ValueError names the ticker and expiry instead of a NaN index. Last traded
+          prices are not used: they are of different moments of the session, which gives a
+          forward price and tails that do not agree (for ^SPX a skewness of -12 on a Sunday).
+        - The near and next term are the expiries just before and after `days` (at least 7
+          days away), whichever weekday they expire on. The Cboe VIX only uses the SPX
+          options that expire on a Friday, more than 23 and less than 37 days away, so for
+          ^SPX the terms can be daily expiries with fewer strikes than the Cboe's.
         - The time to each expiry runs from the current time to 16:00 New York time on the
           expiration date, in minutes over the 525,600 minutes of a year. The risk free rate
           comes from the historical data, so leave end_date at today: a warning is logged
@@ -1301,6 +1407,7 @@ class MarketOptions:
         | ^SPX | 2026-12-18             | 2026-12-21             |    -4.2626 |      142.626 |
         | AAPL | 2026-12-18             | 2026-12-24             |    -1.7288 |      117.288 |
         """
+        validate_window("days", days)
         self._warn_if_history_is_stale("the risk free rate comes from that date")
         rows, errors = {}, []
         for ticker in self._tickers:
@@ -1320,3 +1427,621 @@ class MarketOptions:
             rounding if rounding is not None else self._rounding,
         )
         return table
+
+    @handle_errors
+    def get_variance_swap(
+        self,
+        expiration_dates: list[str] | None = None,
+        number_of_expirations: int = 4,
+        strike: float | None = None,
+        trade_date: str | None = None,
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the fair strike of a variance swap up to every expiry from the option
+        chain: the variance at which a swap on the stock's realized variance is worth
+        nothing today, replicated with the discrete strike weights of Demeterfi, Derman,
+        Kamal and Zou (1999), and with a strike the value of a swap, also of one traded
+        in the past.
+
+        A variance swap pays the variance the stock realizes up to maturity minus the
+        strike; the fair strike is the price of a portfolio of out-of-the-money options
+        that replicates the log contract, whose payoff grows with the realized variance
+        whatever the path:
+
+            - f(S) = (2/T) [(S - S*) / S* - ln(S / S*)]
+            - w(K_i) = the change in the slope of f at K_i, with f linear between the strikes
+            - Fair Variance = (2/T) [ln(F / S*) - (F / S* - 1)] + e^(rT) [Σ w(K_p) P(K_p) + Σ w(K_c) C(K_c)]
+            - Fair Volatility = sqrt(Fair Variance)
+            - Realized Variance = (252 / n) Σ ln(S_i / S_(i-1))², over the n returns since trade_date
+            - Value = e^(-r (T - t)) [(t / T) Realized Variance + ((T - t) / T) Fair Variance - Strike²]
+
+        with the forward price F and the boundary strike S* = K_0, the highest strike at or
+        below it, from put-call parity as in the Cboe VIX methodology, puts below S* and calls
+        above it. The Cboe Variance column is the VIX methodology's variance of the same
+        expiry (see get_model_free_implied_volatility): it discretises the same integral with
+        the midpoint rule, so the two agree when the strikes are close together and the Fair
+        Variance replicates the payoff at the quoted strikes exactly when they are not.
+
+        For more information, see the following papers:
+
+        - Demeterfi, K., Derman, E., Kamal, M. and Zou, J. (1999). "More Than You Ever Wanted
+          to Know About Volatility Swaps." Goldman Sachs Quantitative Strategies Research
+          Notes.
+        - Carr, P. and Madan, D. (1998). "Towards a Theory of Volatility Trading." In Volatility:
+          New Estimation Techniques for Pricing Derivatives, Risk Books, 417-427.
+
+        Also known as: variance swap rate, variance strike, fair variance, DDKZ replication.
+
+        Referenced against:
+        - QuantLib, ReplicatingVarianceSwapEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_replicating_variance_swap_engine.html
+        - FinancePy, EquityVarianceSwap.fair_strike: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/products/equity/equity_variance_swap.py#L102
+        - FinancePy, EquityVarianceSwap.value: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/products/equity/equity_variance_swap.py#L61
+
+        Shares similar logic:
+        - QuantLib, VarianceSwap: https://www.quantlib.org/reference/class_quant_lib_1_1_variance_swap.html
+
+        Args:
+            expiration_dates (list[str] | None, optional): The expiries to use, the maturities
+                of the swaps. Defaults to None, the nearest `number_of_expirations` expiries.
+            number_of_expirations (int, optional): The number of nearest expiries to use when
+                no dates are given, at least 1. Defaults to 4.
+            strike (float | None, optional): The volatility strike of the swap as a decimal
+                (0.25 for 25%), whose square is the variance strike. Defaults to None, which
+                gives the fair strike only.
+            trade_date (str | None, optional): The date the swap was traded, whose returns
+                since then count towards the realized variance. Requires a strike. Defaults to
+                None, a swap traded today.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the Toolkit's rounding.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: Per ticker and expiry the Days to Expiration, Forward Price, Boundary
+            Strike, Fair Variance, Fair Volatility and Cboe Variance (annualized, as decimals),
+            and with a strike the Variance Strike, the Realized Variance and its share of the
+            swap (Elapsed Fraction) and the Variance Swap Value per unit of variance notional.
+
+        Notes:
+        - The value is per unit of variance notional, paying σ² - K² on decimal variances. A
+          vega notional N_vega, the profit per volatility point, is N_vega / (2 Strike) units of
+          variance notional, so Value × 100 / (2 Strike) is the value per unit of vega notional
+          in volatility points.
+        - The fair strike uses the strip of the Cboe methodology: options with a bid, walking
+          away from K_0 until two strikes in a row have none. Outside US market hours Yahoo
+          Finance reports a bid of 0, and the fair strike is NaN.
+        - The realized variance counts the daily log returns of the Adjusted Close since
+          trade_date, without subtracting their mean, as variance swaps settle. The share t/T
+          counts those returns against the returns still to come, the weekdays up to the
+          expiry, and the value discounts over the time to expiration with the risk free rate
+          of the historical data (continuously compounded). Leave end_date at today: a warning
+          is logged when the history ends more than 5 days before today.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "^SPX"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.options.get_variance_swap(
+            number_of_expirations=2,
+            strike=0.3,
+            show_columns=["Forward Price", "Fair Variance", "Fair Volatility", "Cboe Variance", "Variance Swap Value"],
+        )
+        ```
+
+        Which returns:
+
+        |                        |   Forward Price |   Fair Variance |   Fair Volatility |   Cboe Variance |   Variance Swap Value |
+        |:-----------------------|----------------:|----------------:|------------------:|----------------:|----------------------:|
+        | ('AAPL', '2026-11-25') |          349.55 |          0.1281 |            0.358  |          0.1281 |                0.0381 |
+        | ('AAPL', '2026-11-27') |          349.65 |          0.0887 |            0.2979 |          0.0887 |               -0.0013 |
+        | ('^SPX', '2026-11-24') |         7253.05 |          0.1076 |            0.328  |          0.1076 |                0.0176 |
+        | ('^SPX', '2026-11-25') |         7255    |          0.1055 |            0.3248 |          0.1055 |                0.0155 |
+        """
+        if trade_date is not None and strike is None:
+            raise InvalidArgumentError(
+                "A swap traded on an earlier date needs its strike: the option chains of that "
+                "date are not available to find its fair strike."
+            )
+        if strike is not None and strike <= 0:
+            raise InvalidArgumentError("The strike must be a positive volatility.")
+
+        prices = self._daily_historical["Adj Close"]
+
+        return self._per_expiry(
+            lambda ticker, expiration_date, calls, puts, _, time, rate, __: (
+                market_metrics_model.get_variance_swap_terms(
+                    calls,
+                    puts,
+                    time,
+                    rate,
+                    prices,
+                    ticker,
+                    expiration_date,
+                    strike,
+                    trade_date,
+                )
+            ),
+            expiration_dates,
+            number_of_expirations,
+            rounding,
+            with_ticker=True,
+        )
+
+    def _hedge_inputs(
+        self, ticker: str, date: pd.Period, volatility: float | None
+    ) -> tuple[float, float, float]:
+        """The volatility, risk free rate and dividend yield of a ticker on a date."""
+        if volatility is None:
+            volatility = float(
+                self._trailing_volatility[ticker].loc[:date].dropna().iloc[-1]
+            )
+        risk_free_rate = float(self._risk_free_rate.loc[:date].dropna().iloc[-1])
+        dividend_yield = self._dividend_yield_on(ticker, date)
+        return (
+            volatility,
+            risk_free_rate,
+            0.0 if np.isnan(dividend_yield) else dividend_yield,
+        )
+
+    @handle_errors
+    def get_delta_hedging_backtest(
+        self,
+        days: int = 63,
+        start_date: str | None = None,
+        moneyness: float = 1.0,
+        volatility: float | None = None,
+        put_option: bool = False,
+        transaction_cost: float = 0.0,
+        rebalancing_days: int = 1,
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the realized profit and loss of selling a European option on each
+        ticker and delta hedging it on the ticker's own prices until it expires `days`
+        trading days later: how much the hedged seller gained or lost when the
+        volatility the stock realized differed from the one the option was sold at
+        (Hull, 2022, chapter 19).
+
+        The option is sold at its Black-Scholes value, the hedge holds its delta in
+        shares, pays a proportional cost on every trade, receives the dividends on the
+        shares held and keeps the rest in cash at the risk free rate:
+
+            - Option Value = Black-Scholes value at the volatility σ on the start date
+            - Cash_(i+1) = Cash_i e^(r Δt) + Δ_i D_(i+1) - (Δ_(i+1) - Δ_i) S_(i+1) - k |Δ_(i+1) - Δ_i| S_(i+1)
+            - Profit and Loss = e^(-rT) [Cash_T + Δ_T S_T - Payoff(S_T)]
+
+        The profit and loss shows what the volatility the option was sold at earned against
+        the volatility the stock then realized: the seller gains about ½ Γ S² (σ² - σ²_realized)
+        per unit of time (Wilmott, 2006), so a positive result means the stock moved less than
+        the option priced, less the costs of hedging (Leland, 1985).
+
+        For more information, see the following sources:
+
+        - Hull, J. C. (2022). "Options, Futures, and Other Derivatives." 11th edition, chapter 19.
+        - Leland, H. E. (1985). "Option Pricing and Replication with Transactions Costs." The
+          Journal of Finance, 40(5), 1283-1301.
+        - Wilmott, P. (2006). "Paul Wilmott on Quantitative Finance." 2nd edition, chapter 12.
+
+        Also known as: delta hedging P&L, hedged option P&L, gamma scalping backtest,
+        realized hedging error.
+
+        Args:
+            days (int, optional): The trading days from the sale to expiration, at least 1. Defaults to 63,
+                about three months.
+            start_date (str | None, optional): The date the option is sold, or the last
+                trading day before it. Defaults to None, `days` trading days before the end
+                of the historical data, so the option expires on its last date.
+            moneyness (float, optional): The strike as a fraction of the stock price on the
+                start date. Defaults to 1.0, at the money.
+            volatility (float | None, optional): The volatility the option is sold and hedged
+                at, such as an implied volatility, for every ticker, 0 or above (at 0 the option
+                is sold at its discounted intrinsic value and the delta is 0 or 1). Defaults to
+                None, the volatility of the year of daily returns up to the start date, which is
+                known on that date.
+            put_option (bool, optional): Whether the option is a put. Defaults to False.
+            transaction_cost (float, optional): The cost of a trade as a fraction of its value
+                (0.001 is 10 basis points), 0 or above. Defaults to 0.0.
+            rebalancing_days (int, optional): The trading days between rebalances. Defaults to
+                1, daily.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the Toolkit's rounding.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: Per ticker the Start Date, Expiration Date, Stock Price, Strike Price,
+            Volatility, Realized Volatility, Option Value, Payoff, Transaction Costs and Profit
+            and Loss. The costs and the profit and loss are discounted to the start date.
+
+        Raises:
+            InvalidArgumentError: When the days or rebalancing days are below 1, the moneyness
+                is not positive, or the volatility or transaction cost is negative.
+
+        Notes:
+        - Time runs on each ticker's own trading days, 252 to a year, the same clock as the
+          volatility, so the option's time value and the variance the stock realizes count
+          the same days.
+        - The stock follows the traded Close and the hedge receives the cash dividends on
+          their ex-dates; the option is valued with the trailing dividend yield and the risk
+          free rate on the start date, both continuously compounded.
+        - At expiration the hedge moves to the position the option settles with (one share
+          for a call in the money, none out of the money), and that trade pays the cost as
+          well, as for physical settlement.
+        - The Realized Volatility is the square root of the mean squared daily log return of
+          the Adjusted Close over the option's life, annualized, as a variance swap settles.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["AAPL", "MSFT"], api_key="FINANCIAL_MODELING_PREP_KEY", start_date="2023-01-01", end_date="2025-12-31"
+        )
+
+        toolkit.options.get_delta_hedging_backtest(
+            start_date="2025-06-02",
+            transaction_cost=0.0005,
+            show_columns=["Volatility", "Realized Volatility", "Option Value", "Payoff", "Transaction Costs", "Profit and Loss"],
+        )
+        ```
+
+        Which returns:
+
+        |      |   Volatility |   Realized Volatility |   Option Value |   Payoff |   Transaction Costs |   Profit and Loss |
+        |:-----|-------------:|----------------------:|---------------:|---------:|--------------------:|------------------:|
+        | AAPL |       0.3304 |                0.2141 |        14.2012 |    28.02 |              0.2146 |            2.9596 |
+        | MSFT |       0.2574 |                0.1516 |        25.7479 |    43.15 |              0.3291 |            5.2927 |
+        """
+        if days < 1 or rebalancing_days < 1:
+            raise InvalidArgumentError(
+                "The days and rebalancing days must be at least 1."
+            )
+        if moneyness <= 0:
+            raise InvalidArgumentError("The moneyness must be positive.")
+        # Checked once for every ticker. A volatility of zero is valid: the option is then worth
+        # its discounted intrinsic value and the delta steps from 0 to 1 at the forward price.
+        try:
+            validate_positive_inputs(
+                allow_zero=True,
+                volatility=volatility,
+                transaction_cost=transaction_cost,
+            )
+        except ValueError as error:
+            raise InvalidArgumentError(str(error)) from None
+
+        dividends = (
+            self._daily_historical["Dividends"]
+            if "Dividends" in self._daily_historical.columns.get_level_values(0)
+            else None
+        )
+        rows = {}
+        for ticker in self._tickers:
+            history = self._prices[ticker].dropna()
+            if start_date is None:
+                start = len(history) - 1 - days
+            else:
+                start = (
+                    history.index.searchsorted(
+                        pd.Period(start_date, freq="D"), side="right"
+                    )
+                    - 1
+                )
+            if start < 0 or start + days >= len(history):
+                logger.warning(
+                    "The historical data of %s does not cover %d trading days after the start "
+                    "date, so it is left out.",
+                    ticker,
+                    days,
+                )
+                continue
+
+            path = history.iloc[start : start + days + 1]
+            date = path.index[0]
+            try:
+                sigma, rate, dividend_yield = self._hedge_inputs(
+                    ticker, date, volatility
+                )
+            except IndexError:
+                # Too few prices before the start date for a volatility leaves this ticker out only.  # noqa: E501
+                logger.warning(
+                    "No delta hedging backtest for %s: it has too few prices for a "
+                    "volatility on the start date.",
+                    ticker,
+                )
+                continue
+            paid = None
+            if dividends is not None:
+                paid = (
+                    dividends[ticker].reindex(path.index).fillna(0).to_numpy(copy=True)
+                )
+                # A dividend going ex on the start date belongs to the seller of the shares.
+                paid[0] = 0.0
+            result = hedging_model.get_delta_hedging_profit_and_loss(
+                stock_prices=path.to_numpy(),
+                strike_price=moneyness * float(path.iloc[0]),
+                time_to_expiration=days / 252,
+                risk_free_rate=rate,
+                volatility=sigma,
+                dividend_yield=dividend_yield,
+                put_option=put_option,
+                transaction_cost=transaction_cost,
+                rebalancing_interval=rebalancing_days,
+                dividends=paid,
+            ).iloc[0]
+            adjusted = self._daily_historical["Adj Close"][ticker].loc[
+                path.index[0] : path.index[-1]
+            ]
+            rows[ticker] = {
+                "Start Date": str(date),
+                "Expiration Date": str(path.index[-1]),
+                "Stock Price": float(path.iloc[0]),
+                "Strike Price": moneyness * float(path.iloc[0]),
+                "Volatility": sigma,
+                "Realized Volatility": float(
+                    np.sqrt(
+                        market_metrics_model.get_realized_variance(adjusted.dropna())
+                    )
+                ),
+                **result.to_dict(),
+            }
+
+        if not rows:
+            raise ValueError(
+                f"No ticker has {days} trading days of prices after the start date."
+            )
+
+        table = pd.DataFrame(rows).T
+        numeric = table.columns.drop(["Start Date", "Expiration Date"])
+        table[numeric] = apply_rounding(
+            table[numeric].astype(float),
+            rounding if rounding is not None else self._rounding,
+        )
+        return table
+
+    @handle_errors
+    def get_delta_hedging_simulation(
+        self,
+        days: int = 63,
+        start_date: str | None = None,
+        moneyness: float = 1.0,
+        volatility: float | None = None,
+        implied_volatility: float | None = None,
+        put_option: bool = False,
+        transaction_cost: float = 0.0,
+        rebalancing_days: int = 1,
+        simulations: int = 10_000,
+        seed: int | None = 0,
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the distribution of the hedging error of selling a European option and
+        delta hedging it: how much the hedged seller can gain or lose across simulated
+        Geometric Brownian Motion paths of the stock from its price on the start date.
+
+        Each path is hedged as in get_delta_hedging_backtest: the option is sold at its
+        Black-Scholes value at the implied volatility, the hedge holds its delta,
+        rebalanced every `rebalancing_days` trading days at a proportional cost, while
+        the stock moves with the volatility:
+
+            - S(t + Δt) = S(t) e^((r - q - σ² / 2) Δt + σ sqrt(Δt) Z), Z ~ N(0, 1), Δt = 1 / 252
+            - Profit and Loss = e^(-rT) [Cash_T + Δ_T S_T - Payoff(S_T)], per path
+            - Approximate Standard Deviation = sqrt(π / 4) × Vega × σ / sqrt(N)
+
+        Hedging at discrete times leaves an error whose mean is near zero and whose standard
+        deviation falls with the square root of the number of rebalances N, as Boyle and
+        Emanuel (1980) and Derman and Kamal (1999) derive for an at-the-money option; the last
+        column gives their approximation. An implied volatility above the volatility gives the
+        seller a profit on average, transaction costs a loss that grows as the hedge is
+        rebalanced more often (Leland, 1985).
+
+        For more information, see the following papers:
+
+        - Boyle, P. P. and Emanuel, D. (1980). "Discretely Adjusted Option Hedges." Journal of
+          Financial Economics, 8(3), 259-282.
+        - Derman, E. and Kamal, M. (1999). "When You Cannot Hedge Continuously: The
+          Corrections of Black-Scholes." Risk, 12(1), 82-85.
+        - Leland, H. E. (1985). "Option Pricing and Replication with Transactions Costs." The
+          Journal of Finance, 40(5), 1283-1301.
+
+        FinancePy's simulate_hedge_paths reports the profit and loss at expiration rather
+        than discounted and closes the hedge in cash at expiration.
+
+        Also known as: hedging error distribution, discrete hedging simulation, delta hedging
+        Monte Carlo.
+
+        Referenced against:
+        - FinancePy, simulate_hedge_paths: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/models/black_scholes_hedging_sim.py#L592
+
+        Args:
+            days (int, optional): The trading days to expiration, at least 1. Defaults to 63, about three
+                months.
+            start_date (str | None, optional): The date of the stock price, volatility, risk
+                free rate and dividend yield, or the last trading day before it. Defaults to
+                None, the last date of the historical data.
+            moneyness (float, optional): The strike as a fraction of the stock price. Defaults
+                to 1.0, at the money.
+            volatility (float | None, optional): The volatility the stock moves with, for every
+                ticker, 0 or above (at 0 every path grows at the risk free rate less the
+                dividend yield). Defaults to None, the volatility of the year of daily returns
+                up to the start date.
+            implied_volatility (float | None, optional): The volatility the option is sold and
+                hedged at, 0 or above (at 0 the option is sold at its discounted intrinsic value
+                and the delta is 0 or 1). Defaults to None, the volatility the stock moves with.
+            put_option (bool, optional): Whether the option is a put. Defaults to False.
+            transaction_cost (float, optional): The cost of a trade as a fraction of its value
+                (0.001 is 10 basis points), 0 or above. Defaults to 0.0.
+            rebalancing_days (int, optional): The trading days between rebalances. Defaults to
+                1, daily.
+            simulations (int, optional): The number of simulated paths, at least 1. Defaults to 10,000.
+            seed (int | None, optional): The seed of the random numbers, None for a different
+                draw on every call. Defaults to 0.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the Toolkit's rounding.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: Per ticker the Stock Price, Strike Price, Volatility, Implied
+            Volatility, Option Value, the Mean, Standard Deviation and 5% and 95% Quantiles of
+            the Profit and Loss, the Mean Transaction Costs (both discounted to the start date)
+            and the Approximate Standard Deviation.
+
+        Raises:
+            InvalidArgumentError: When the days or rebalancing days are below 1, the moneyness
+                is not positive, the simulations are not a whole number of at least 1, or the
+                volatility, implied volatility or transaction cost is negative.
+
+        Notes:
+        - The paths drift at the risk free rate. The real-world drift barely moves the hedging
+          error, since the hedge removes the exposure to the direction of the stock.
+        - The dividend yield is the trailing yield on the start date, continuously
+          compounded, paid on the shares held; the risk free rate is continuously compounded.
+        - The approximate standard deviation holds near the money without costs; the
+          simulated one also covers other strikes and costs.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["AAPL", "MSFT"], api_key="FINANCIAL_MODELING_PREP_KEY", start_date="2024-01-01", end_date="2025-12-31"
+        )
+
+        toolkit.options.get_delta_hedging_simulation(
+            start_date="2025-12-31",
+            rebalancing_days=5,
+            transaction_cost=0.0005,
+            show_columns=["Option Value", "Mean Profit and Loss", "Standard Deviation", "Approximate Standard Deviation"],
+        )
+        ```
+
+        Which returns:
+
+        |      |   Option Value |   Mean Profit and Loss |   Standard Deviation |   Approximate Standard Deviation |
+        |:-----|---------------:|-----------------------:|---------------------:|---------------------------------:|
+        | AAPL |        18.7557 |                -0.2161 |               4.1012 |                           4.2758 |
+        | MSFT |        25.3213 |                -0.3942 |               5.4501 |                           5.6839 |
+        """
+        if days < 1 or rebalancing_days < 1:
+            raise InvalidArgumentError(
+                "The days and rebalancing days must be at least 1."
+            )
+        if moneyness <= 0:
+            raise InvalidArgumentError("The moneyness must be positive.")
+        validate_window("simulations", simulations)
+        # Checked once for every ticker rather than reported per ticker. A volatility of zero
+        # is valid: the stock then grows at the risk free rate less the dividend yield, and an
+        # option sold at zero volatility is worth its discounted intrinsic value.
+        try:
+            validate_positive_inputs(
+                allow_zero=True,
+                volatility=volatility,
+                implied_volatility=implied_volatility,
+                transaction_cost=transaction_cost,
+            )
+        except ValueError as error:
+            raise InvalidArgumentError(str(error)) from None
+
+        rows = {}
+        for ticker in self._tickers:
+            try:
+                history = self._prices[ticker].dropna()
+                if start_date is None:
+                    date = history.index[-1]
+                else:
+                    position = (
+                        history.index.searchsorted(
+                            pd.Period(start_date, freq="D"), side="right"
+                        )
+                        - 1
+                    )
+                    if position < 0:
+                        logger.warning(
+                            "%s has no price on or before %s, so it is left out.",
+                            ticker,
+                            start_date,
+                        )
+                        continue
+                    date = history.index[position]
+                stock_price = float(history.loc[date])
+                sigma, rate, dividend_yield = self._hedge_inputs(
+                    ticker, date, volatility
+                )
+                implied = sigma if implied_volatility is None else implied_volatility
+                strike_price = moneyness * stock_price
+                simulation = hedging_model.get_delta_hedging_simulation(
+                    stock_price=stock_price,
+                    strike_price=strike_price,
+                    time_to_expiration=days / 252,
+                    risk_free_rate=rate,
+                    volatility=sigma,
+                    implied_volatility=implied,
+                    dividend_yield=dividend_yield,
+                    put_option=put_option,
+                    transaction_cost=transaction_cost,
+                    steps=days,
+                    rebalancing_interval=rebalancing_days,
+                    simulations=simulations,
+                    seed=seed,
+                )
+                profit = simulation["Profit and Loss"]
+                rows[ticker] = {
+                    "Stock Price": stock_price,
+                    "Strike Price": strike_price,
+                    "Volatility": sigma,
+                    "Implied Volatility": implied,
+                    "Option Value": float(simulation["Option Value"].iloc[0]),
+                    "Mean Profit and Loss": float(profit.mean()),
+                    "Standard Deviation": float(profit.std()),
+                    "5% Quantile": float(profit.quantile(0.05)),
+                    "95% Quantile": float(profit.quantile(0.95)),
+                    "Mean Transaction Costs": float(
+                        simulation["Transaction Costs"].mean()
+                    ),
+                    "Approximate Standard Deviation": hedging_model.get_hedging_error_approximation(
+                        stock_price=stock_price,
+                        strike_price=strike_price,
+                        time_to_expiration=days / 252,
+                        risk_free_rate=rate,
+                        volatility=sigma,
+                        rebalances=int(np.ceil(days / rebalancing_days)),
+                        dividend_yield=dividend_yield,
+                    ),
+                }
+            except InvalidArgumentError:
+                raise
+            except ValueError as error:
+                # One ticker the formula cannot value (such as a volatility of zero from constant
+                # prices) is left out rather than emptying the result of every ticker.
+                logger.warning("No delta hedging simulation for %s: %s", ticker, error)
+            except (IndexError, KeyError):
+                # Too few prices for a volatility (or none at all) leaves this ticker out only.
+                logger.warning(
+                    "No delta hedging simulation for %s: it has too few prices for a "
+                    "volatility on the start date.",
+                    ticker,
+                )
+
+        if not rows:
+            raise ValueError(
+                "No ticker has a price and volatility to simulate the hedge from."
+            )
+
+        return apply_rounding(
+            pd.DataFrame(rows).T, rounding if rounding is not None else self._rounding
+        )

@@ -14,6 +14,7 @@ from financetoolkit.cache.cache_controller import get_active_cache
 from financetoolkit.economics.helpers import (
     collect_cached_data,
     collect_ranged_data,
+    open_zip_archive,
     require_columns,
 )
 from financetoolkit.utilities.excel_model import excel_file, read_excel
@@ -57,8 +58,9 @@ def collect_boe_series(
     columns: dict[str, str] | None = None,
 ) -> pd.DataFrame:
     """
-    Retrieves the days between two dates of one or more Bank of England database series
-    in a single request. Only the days that are not cached yet are requested.
+    Retrieves the days between two dates of one or more Bank of England database series in a single request.
+
+    Only the days that are not cached yet are requested.
 
     Args:
         series_code (str): The series code, e.g. "IUDMNPY", or several separated by commas.
@@ -148,8 +150,9 @@ def get_yield_curve(start_date: str, end_date: str) -> pd.DataFrame:
 
 def get_long_term_interest_rate(start_date: str, end_date: str) -> pd.DataFrame:
     """
-    Retrieves the daily nominal par yield of a 10-year UK government bond (gilt). It is
-    taken from the yield curve request, so both share one query.
+    Retrieves the daily nominal par yield of a 10-year UK government bond (gilt).
+
+    It is taken from the yield curve request, so both share one query.
 
     Args:
         start_date (str): The start date (YYYY-MM-DD).
@@ -168,7 +171,8 @@ def get_long_term_interest_rate(start_date: str, end_date: str) -> pd.DataFrame:
 
 def get_overnight_rate(start_date: str, end_date: str) -> pd.DataFrame:
     """
-    Retrieves the daily Sterling Overnight Index Average (SONIA).
+    Retrieve the daily Sterling Overnight Index Average (SONIA): the rate at which banks lend sterling to each other
+    overnight.
 
     Args:
         start_date (str): The start date (YYYY-MM-DD).
@@ -238,7 +242,7 @@ def _parse_spot_curve(workbook: bytes, description: str) -> pd.DataFrame:
         ValueError: When the worksheet or its row of maturities is missing.
     """
     # The worksheet is found by its number and name, see SPOT_CURVE_SHEET_PATTERN.
-    excel = excel_file(workbook)
+    excel = excel_file(workbook, description)
     sheet_name = next(
         (name for name in excel.sheet_names if SPOT_CURVE_SHEET_PATTERN.match(name)),
         None,
@@ -314,7 +318,7 @@ def _get_archive_workbooks(
         response = get_request(
             f"{YIELD_CURVE_URL}{archive_name}", timeout=300, extra_headers=HEADERS
         )
-        return zipfile.ZipFile(io.BytesIO(response.content))
+        return open_zip_archive(response, description)
 
     if names is None:
         archive = download()
@@ -374,13 +378,15 @@ def _get_archive_workbooks(
 
 def get_spot_curve(curve: str, start_date: str, end_date: str) -> pd.DataFrame:
     """
-    Retrieves the daily spot curve the Bank of England estimates: the nominal and real
-    curves of UK government bonds (gilts), the implied inflation curve, the difference of
-    the two and so the UK breakeven inflation, and the curve of overnight index swaps (OIS)
-    on SONIA. The curves run from 1985 (OIS from 2009) for maturities of up to 40 years.
+    Retrieve the daily spot curves the Bank of England estimates: the nominal, real and implied inflation curves of UK
+    government bonds (gilts) and the overnight index swap (OIS) curve.
+
+    The difference of the nominal and real curves is the UK breakeven inflation, and the OIS curve is that of
+    overnight index swaps on SONIA. The curves run from 1985 (OIS from 2009) for maturities of up to 40 years.
 
     Args:
-        curve (str): "nominal", "real", "inflation" or "ois".
+        curve (str): The curve. Options are: "nominal" (nominal gilt yields), "real" (real yields of index-linked
+            gilts), "inflation" (implied inflation), "ois" (overnight index swap rates).
         start_date (str): The start date (YYYY-MM-DD).
         end_date (str): The end date (YYYY-MM-DD).
 
@@ -396,7 +402,7 @@ def get_spot_curve(curve: str, start_date: str, end_date: str) -> pd.DataFrame:
             timeout=120,
             extra_headers=HEADERS,
         )
-        archive = zipfile.ZipFile(io.BytesIO(response.content))
+        archive = open_zip_archive(response, f"current month of the {description}")
 
         if current_name not in archive.namelist():
             raise ValueError(
@@ -454,9 +460,11 @@ PERCENT_UNITS = ("%", "growth rate", "pp contribution")
 
 def get_millennium_data() -> pd.DataFrame:
     """
-    Retrieves the headline annual series of the Bank of England's "A millennium of
-    macroeconomic data for the UK": output, prices, wages, interest rates, asset prices,
-    exchange rates, money, credit and public finances, from as early as 1086 to 2016.
+    Retrieve the headline annual series of the Bank of England's "A millennium of macroeconomic data for the UK":
+    British output, prices, rates and asset prices from as early as 1086 to 2016.
+
+    The series cover output, prices, wages, interest rates, asset prices, exchange rates, money, credit and public
+    finances.
 
     Returns:
         pd.DataFrame: The series, rates and shares as decimals and levels and indices as
@@ -470,14 +478,12 @@ def get_millennium_data() -> pd.DataFrame:
     def fetch() -> pd.DataFrame:
         response = get_request(MILLENNIUM_URL, timeout=300, extra_headers=HEADERS)
 
-        try:
-            sheet = read_excel(
-                response.content, sheet_name=MILLENNIUM_SHEET, header=None
-            )
-        except ValueError as error:
+        workbook = excel_file(response.content, description)
+        if MILLENNIUM_SHEET not in workbook.sheet_names:
             raise ValueError(
                 f"The {description} has no worksheet '{MILLENNIUM_SHEET}', which means it changed."
-            ) from error
+            )
+        sheet = read_excel(workbook, sheet_name=MILLENNIUM_SHEET, header=None)
 
         descriptions = sheet.iloc[MILLENNIUM_DESCRIPTION_ROW]
         units = sheet.iloc[MILLENNIUM_UNITS_ROW].astype(str).str.strip()

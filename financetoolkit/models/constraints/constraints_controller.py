@@ -8,7 +8,7 @@ import pandas as pd
 import requests
 
 from financetoolkit.economics.sources import bis_model
-from financetoolkit.helpers import trailing_sum
+from financetoolkit.helpers import check_trailing, trailing_sum
 from financetoolkit.models import helpers
 from financetoolkit.models.constraints import constraints_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
@@ -34,6 +34,7 @@ SIZE_AGE_BASE_YEAR = "2004"
 PRICE_LEVEL_TOLERANCE_DAYS = 400
 
 
+@check_trailing
 @filter_shown_columns
 @track_sources
 class ConstraintsModels:
@@ -141,13 +142,15 @@ class ConstraintsModels:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculates the Kaplan-Zingales (KZ) index of financial constraints, a measure of how hard
-        it is for a firm to fund its investments with external finance, as constructed by Lamont,
-        Polk and Saa-Requejo (2001). Kaplan and Zingales (1997) read the annual reports of the 49
-        low-dividend manufacturing firms of Fazzari, Hubbard and Petersen (1988), classified every
-        firm-year from not to undoubtedly financially constrained and related the classes to
-        accounting ratios with an ordered logit. Lamont, Polk and Saa-Requejo use Steven Kaplan's
-        re-estimation of that logit on the five ratios available in Compustat as an index.
+        Calculates the Kaplan-Zingales (KZ) index of financial constraints: how hard it is for a
+        firm to fund its investments with external finance.
+
+        It is the index as constructed by Lamont, Polk and Saa-Requejo (2001). Kaplan and
+        Zingales (1997) read the annual reports of the 49 low-dividend manufacturing firms of
+        Fazzari, Hubbard and Petersen (1988), classified every firm-year from not to undoubtedly
+        financially constrained and related the classes to accounting ratios with an ordered
+        logit. Lamont, Polk and Saa-Requejo use Steven Kaplan's re-estimation of that logit on
+        the five ratios available in Compustat as an index.
 
         The formula is as follows:
 
@@ -296,7 +299,6 @@ class ConstraintsModels:
                 total_assets=total_assets,
                 market_value_of_equity=market_value_of_equity,
                 common_equity=common_equity,
-                # A company without deferred tax liabilities reports none (or 0).
                 deferred_taxes=self._rows(balance, "Deferred Tax Liabilities").fillna(
                     0
                 ),
@@ -342,13 +344,16 @@ class ConstraintsModels:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculates the Whited-Wu (WW) index of financial constraints, the shadow value of external
-        funds that Whited and Wu (2006) estimate from the Euler equation of a firm's investment on
-        quarterly Compustat data for 1975-2001. Where the Kaplan-Zingales index comes from a
-        classification of a few firms, this index is the cost of external finance implied by how
-        firms invest, and leaves out Tobin's Q, which measures investment opportunities with much
-        error. Sales growth and the industry's sales growth take its place: a constrained firm is
-        one with good investment opportunities (a growing industry) it cannot fund (it grows less).
+        Calculates the Whited-Wu (WW) index of financial constraints: how hard it is for a firm
+        to fund its investments with external finance.
+
+        It is the shadow value of external funds that Whited and Wu (2006) estimate from the
+        Euler equation of a firm's investment on quarterly Compustat data for 1975-2001. Where
+        the Kaplan-Zingales index comes from a classification of a few firms, this index is the
+        cost of external finance implied by how firms invest, and leaves out Tobin's Q, which
+        measures investment opportunities with much error. Sales growth and the industry's sales
+        growth take its place: a constrained firm is one with good investment opportunities (a
+        growing industry) it cannot fund (it grows less).
 
         The formula is as follows:
 
@@ -489,7 +494,7 @@ class ConstraintsModels:
                 long_term_debt=self._rows(balance, "Long Term Debt"),
                 total_assets=total_assets,
             ),
-            "Log of Total Assets": constraints_model.get_log_of_total_assets(
+            "Log of Total Assets": constraints_model.get_log_of_total_assets_in_millions(
                 total_assets=total_assets
             ),
             "Industry Sales Growth": constraints_model.get_industry_sales_growth(
@@ -518,12 +523,14 @@ class ConstraintsModels:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculates the size-age (SA) index of financial constraints of Hadlock and Pierce (2010).
+        Calculates the size-age (SA) index of financial constraints of Hadlock and Pierce
+        (2010).
+
         They coded the financial constraints of a random sample of firms from the text of their
-        10-K filings (1995-2004) and found that, of the usual measures, only size and age predict
-        the constraints well: the Kaplan-Zingales ratios do not, once size and age are known. The
-        index is their ordered logit on size and age alone, so it needs no market data and has
-        few of the accounting choices that move the other indices.
+        10-K filings (1995-2004) and found that, of the usual measures, only size and age
+        predict the constraints well: the Kaplan-Zingales ratios do not, once size and age are
+        known. The index is their ordered logit on size and age alone, so it needs no market
+        data and has few of the accounting choices that move the other indices.
 
         The formula is as follows:
 

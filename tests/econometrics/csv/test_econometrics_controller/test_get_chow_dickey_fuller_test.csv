@@ -1,0 +1,10 @@
+,AAPL,MSFT
+SDFC Statistic,0.1267,-0.0366
+Break Date,2020-06-08/2020-06-14,2020-06-08/2020-06-14
+P-Value,0.53,0.58
+Critical Value 10%,1.4094,1.4094
+Critical Value 5%,1.8378,1.8378
+Critical Value 1%,2.3557,2.3557
+Observations,157,157
+Replications,200,200
+Explosive (5%),False,False

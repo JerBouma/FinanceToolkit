@@ -11,7 +11,11 @@ from financetoolkit.economics.helpers import (
 )
 from financetoolkit.economics.sources import eex_model, ngfs_model, oecd_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
-from financetoolkit.utilities.error_model import handle_errors
+from financetoolkit.utilities.error_model import (
+    InvalidArgumentError,
+    check_option,
+    handle_errors,
+)
 from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import finalize_dataset
@@ -41,9 +45,12 @@ class EnvironmentEconomics:
         show_columns: str | list[str] | None = None,
     ):
         """
+        Get the renewable energy share of a variety of countries: how much of their primary energy supply comes from
+        renewable sources.
+
         Renewable energy is defined as the contribution of renewables to total primary energy supply (TPES).
-        Renewables include the primary energy equivalent of hydro (excluding pumped storage), geothermal,
-        solar, wind, tide and wave sources.
+        Renewables include the primary energy equivalent of hydro (excluding pumped storage), geothermal, solar, wind,
+        tide and wave sources.
 
         Energy derived from solid biofuels, biogasoline, biodiesels, other liquid biofuels, biogases and
         the renewable fraction of municipal waste are also included. Biofuels are defined as fuels derived
@@ -140,9 +147,11 @@ class EnvironmentEconomics:
         show_columns: str | list[str] | None = None,
     ):
         """
-        The carbon footprint is a measure of the total amount of greenhouse gases produced
-        to directly and indirectly support human activities, usually expressed in equivalent
-        tons of carbon dioxide (CO2).
+        Get the carbon footprint of a variety of countries: the greenhouse gases emitted to support human activities,
+        in tonnes of CO2 equivalent per person.
+
+        The carbon footprint is a measure of the total amount of greenhouse gases produced to directly and indirectly
+        support human activities, usually expressed in equivalent tons of carbon dioxide (CO2).
 
         The carbon footprint is a subset of the ecological footprint and of the more comprehensive
         Life Cycle Assessment (LCA). An individual, nation, or organization's carbon footprint can
@@ -238,11 +247,12 @@ class EnvironmentEconomics:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Get the price of emitting one tonne of CO2 under the EU Emissions Trading System
-        (EU ETS): the clearing price of the primary auctions of EU emission allowances
-        (EUAs) the European Energy Exchange holds for the European Union, Germany and Poland
-        almost every trading day, daily from 2020. The carbon price is the main transition
-        risk variable of climate scenarios; see get_climate_scenario for its projected paths.
+        Get the price of emitting one tonne of CO2 under the EU Emissions Trading System (EU ETS): the clearing price
+        of the primary auctions of EU emission allowances (EUAs).
+
+        The European Energy Exchange holds these auctions for the European Union, Germany and Poland almost every
+        trading day; the prices run daily from 2020. The carbon price is the main transition risk variable of climate
+        scenarios; see get_climate_scenario for its projected paths.
 
         The price is the average of the day's auctions of general allowances, in euro per
         tonne of CO2. Weekly and monthly periods take the price of the
@@ -253,8 +263,8 @@ class EnvironmentEconomics:
         Also known as: EU ETS price, EUA price, CO2 price, emission allowance price.
 
         Args:
-            period (str, optional): Whether to return the daily, weekly or monthly data.
-                Defaults to "daily".
+            period (str, optional): The frequency of the data. Options are: "daily" (daily data), "weekly"
+                (weekly data), "monthly" (monthly data). Defaults to "daily".
             rolling (int, optional): The rolling window size to use for smoothing the data (simple
             moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over
@@ -336,19 +346,21 @@ class EnvironmentEconomics:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Get the path of an economic or financial variable in a climate scenario of the
-        Network for Greening the Financial System (NGFS), the scenarios central banks and
-        supervisors use for climate stress tests, yearly from 2022 to 2050 for around fifty
-        countries and regions.
+        Get the path of an economic or financial variable in an NGFS climate scenario: how GDP, inflation, interest
+        rates or the carbon price develop under a climate transition.
+
+        Get the path of an economic or financial variable in a climate scenario of the Network for Greening the
+        Financial System (NGFS), the scenarios central banks and supervisors use for climate stress tests, yearly from
+        2022 to 2050 for around fifty countries and regions.
 
         The NGFS scenarios combine an integrated assessment model, which projects the energy
-        system, emissions and the carbon price (model="REMIND-MAgPIE", "GCAM" or
-        "MESSAGEix-GLOBIOM"), with NiGEM, the macroeconometric model of the National
+        system, emissions and the carbon price (REMIND-MAgPIE, GCAM or
+        MESSAGEix-GLOBIOM), with NiGEM, the macroeconometric model of the National
         Institute of Economic and Social Research, which translates each scenario into GDP,
         inflation, interest rates, equity prices, exchange rates and energy prices. NiGEM
         separates the transition risk (the policies and technologies of the move to a
         low-carbon economy), the physical risk (the damage of climate change) and both
-        together (risk="combined").
+        together (the combined risk).
 
         The variables: "gdp" (2017 PPP US$ billion), "inflation", "long_term_interest_rate",
         "long_term_real_interest_rate", "policy_rate", "unemployment_rate", "equity_prices"
@@ -359,8 +371,8 @@ class EnvironmentEconomics:
         world and the model's regions, every five years to 2100.
 
         By default the level is returned: the NiGEM baseline (a world without further
-        climate change and policy, scenario="Baseline") with the scenario's deviation
-        applied. With deviation=True the deviation from the baseline itself is returned:
+        climate change and policy, the Baseline scenario) with the scenario's deviation
+        applied. As a deviation, the deviation from the baseline itself is returned:
         relative for levels (-0.034 for 3.4% lower GDP) and in decimal points for rates
         (0.0094 for 0.94 percentage points higher). Rates are decimal fractions (0.041 for
         4.1%).
@@ -376,20 +388,28 @@ class EnvironmentEconomics:
         physical risk, carbon price path.
 
         Args:
-            variable (str, optional): The variable: "gdp", "inflation",
-                "long_term_interest_rate", "long_term_real_interest_rate", "policy_rate",
-                "unemployment_rate", "equity_prices", "effective_exchange_rate",
-                "domestic_demand", "exports", "imports", "oil_price", "gas_price",
-                "coal_price" or "carbon_price" (units above). Defaults to
-                "long_term_interest_rate".
-            scenario (str, optional): "Net Zero 2050", "Below 2°C", "Low demand", "Delayed
-                transition", "Nationally Determined Contributions (NDCs)", "Current
-                Policies", "Fragmented World" or "Baseline". Defaults to "Net Zero 2050".
-            model (str, optional): The integrated assessment model behind the scenario:
-                "REMIND-MAgPIE", "GCAM" or "MESSAGEix-GLOBIOM". Defaults to "REMIND-MAgPIE".
+            variable (str, optional): The variable, in the units above. Options are: "gdp" (Gross Domestic
+                Product), "inflation" (inflation rate), "long_term_interest_rate" (long-term interest rate),
+                "long_term_real_interest_rate" (long-term real interest rate), "policy_rate" (central bank
+                policy rate), "unemployment_rate" (unemployment rate), "equity_prices" (equity prices),
+                "effective_exchange_rate" (effective exchange rate), "domestic_demand" (domestic demand),
+                "exports" (exports of goods and services), "imports" (imports of goods and services),
+                "oil_price" (oil price), "gas_price" (gas price), "coal_price" (coal price), "carbon_price"
+                (carbon price of the integrated assessment model). Defaults to "long_term_interest_rate".
+            scenario (str, optional): The NGFS scenario. Options are: "Net Zero 2050" (Net Zero 2050),
+                "Below 2°C" (Below 2°C), "Low demand" (Low Demand), "Delayed transition" (Delayed
+                Transition), "Nationally Determined Contributions (NDCs)" (Nationally Determined
+                Contributions), "Current Policies" (Current Policies), "Fragmented World" (Fragmented World),
+                "Baseline" (the NiGEM baseline without further climate change and policy). Defaults to
+                "Net Zero 2050".
+            model (str, optional): The integrated assessment model behind the scenario. Options are:
+                "REMIND-MAgPIE" (REMIND-MAgPIE), "GCAM" (GCAM), "MESSAGEix-GLOBIOM" (MESSAGEix-GLOBIOM).
+                Defaults to "REMIND-MAgPIE".
             countries (list[str] | str | None, optional): The countries or regions to
                 include. Defaults to None, which includes all of them.
-            risk (str, optional): "combined", "transition" or "physical". Current Policies has
+            risk (str, optional): The climate risk. Options are: "combined" (transition and physical risk),
+                "transition" (the transition to a low-carbon economy), "physical" (the damage of climate
+                change). Current Policies has
                 physical risk only, which is also its combined risk. Defaults to "combined".
             deviation (bool, optional): Whether to return the deviation from the baseline
                 instead of the level. Defaults to False.
@@ -432,23 +452,10 @@ class EnvironmentEconomics:
         | 2050 |          0.0341 |    0.0386 |           0.0412 |  0.0371 |
         """
         variables = [*ngfs_model.NIGEM_VARIABLES, "carbon_price"]
-        if variable not in variables:
-            raise ValueError(
-                f"The variable must be one of {', '.join(map(repr, variables))}, not {variable!r}."
-            )
-        if scenario not in [*ngfs_model.SCENARIOS, "Baseline"]:
-            raise ValueError(
-                f"The scenario must be one of {', '.join(map(repr, ngfs_model.SCENARIOS))} or "
-                f"'Baseline', not {scenario!r}."
-            )
-        if model not in ngfs_model.MODELS:
-            raise ValueError(
-                f"The model must be one of {', '.join(map(repr, ngfs_model.MODELS))}, not {model!r}."
-            )
-        if risk not in ngfs_model.RISKS:
-            raise ValueError(
-                f"The risk must be one of {', '.join(map(repr, ngfs_model.RISKS))}, not {risk!r}."
-            )
+        check_option("variable", variable, variables)
+        check_option("scenario", scenario, [*ngfs_model.SCENARIOS, "Baseline"])
+        check_option("model", model, ngfs_model.MODELS)
+        check_option("risk", risk, ngfs_model.RISKS)
 
         if variable == "carbon_price":
             if deviation:
@@ -463,7 +470,7 @@ class EnvironmentEconomics:
             if scenario == "Current Policies" and risk == "combined":
                 risk = "physical"
             elif scenario == "Current Policies" and risk == "transition":
-                raise ValueError(
+                raise InvalidArgumentError(
                     "Current Policies has no transition risk: it is the scenario without a "
                     "transition. Use risk='physical' or 'combined' for its physical risk."
                 )

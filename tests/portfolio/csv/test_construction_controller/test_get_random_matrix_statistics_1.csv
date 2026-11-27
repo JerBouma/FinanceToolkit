@@ -1,0 +1,4 @@
+,Eigenvalue,Explained Variance,Signal
+Eigenvalue 1,2.6627,0.8876,True
+Eigenvalue 2,0.1956,0.0652,False
+Eigenvalue 3,0.1417,0.0472,False

@@ -10,7 +10,7 @@ from financetoolkit.economics.sources import (
 )
 from financetoolkit.fixedincome.loans import loan_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
-from financetoolkit.utilities.error_model import handle_errors
+from financetoolkit.utilities.error_model import InvalidArgumentError, handle_errors
 from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import apply_rounding
 
@@ -29,7 +29,9 @@ class LoansFixedIncome:
         The weekly 30-year fixed mortgage rate of Freddie Mac's Primary Mortgage Market Survey
         between the start and end date, as a decimal, from FRED when a FRED API key is set and
         from Freddie Mac otherwise (the same figures, see `Economics.get_mortgage_rate_30_year`)
-        -- shared by the loan calculations, which take it as the rate of a new loan.
+        -- shared by the loan calculations, which take it as the rate of a new loan. Empty when
+        the source could not be reached, which the source reports, so the callers return no
+        data without a second message.
         """
         mortgage_rates = (
             economics_fred_model.get_mortgage_rate_30_year(
@@ -38,6 +40,9 @@ class LoansFixedIncome:
             if self._fred_api_key
             else freddie_mac_model.get_mortgage_rate_30_year()
         )
+        if mortgage_rates.empty:
+            return pd.Series(dtype=float, name="Rate")
+
         rates = (
             mortgage_rates["United States"]
             .loc[self._start_date : self._end_date]
@@ -53,6 +58,21 @@ class LoansFixedIncome:
 
         return rates
 
+    @staticmethod
+    def _check_loan_terms(**terms: float | None) -> None:
+        """
+        Refuse a loan term that is not above zero (a principal, term, number of payments or
+        payment of zero or below has no annuity), naming it. A term of None is left out.
+
+        Raises:
+            InvalidArgumentError: If a term is not above zero.
+        """
+        for name, value in terms.items():
+            if value is not None and not value > 0:
+                raise InvalidArgumentError(
+                    f"{name} must be above 0, not {value!r}. Please pass a positive {name}."
+                )
+
     @handle_errors
     def get_loan_payment(
         self,
@@ -65,15 +85,17 @@ class LoansFixedIncome:
         """
         Calculates the monthly payment of a new 30-year fixed-rate mortgage at every weekly US
         mortgage rate: what the same loan costs a buyer at each date, with the total interest
-        over its life and the interest in its first payment. By default the loan is 400,000
-        US dollars, so the payment of the same house at the same price can be followed through
-        the rate cycle (1,611.86 a month at the 2.65% of January 2021, 2,709.74 at 7.18%).
+        over its life, the interest in its first payment and how the payment compares with the
+        one at the start date. By default the loan is 400,000 US dollars, so the payment of the
+        same house at the same price can be followed through the rate cycle (1,611.86 a month
+        at the 2.65% of January 2021, 2,709.74 at 7.18%, 68.1% more).
 
         The loan is an annuity, repaid in equal payments. The formula is as follows:
 
         - Payment = L * r / (1 - (1 + r)^-n), or L / n when r is zero
         - Total Interest = Payment * n - L
         - First Payment Interest = L * r
+        - Change = Payment / Payment(first date) - 1
 
         Where:
 
@@ -92,10 +114,10 @@ class LoansFixedIncome:
         loan calculator, cost of a mortgage.
 
         Args:
-            principal (float, optional): The amount borrowed. Defaults to 400,000.
-            years (float, optional): The term of the loan in years. The rate stays the 30-year
+            principal (float, optional): The amount borrowed, above 0. Defaults to 400,000.
+            years (float, optional): The term of the loan in years, above 0. The rate stays the 30-year
                 fixed mortgage rate for another term. Defaults to 30.
-            payments_per_year (int, optional): The number of payments per year. Defaults to 12.
+            payments_per_year (int, optional): The number of payments per year, at least 1. Defaults to 12.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the rounding of the class.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -106,7 +128,9 @@ class LoansFixedIncome:
         Returns:
             pd.DataFrame: Per survey date the Rate (a decimal), the Payment, the Total Interest
             over the life of the loan and the First Payment Interest, in the currency of the
-            principal.
+            principal, and the Change of the Payment since the first date (a decimal), as the
+            Change of `get_affordable_loan`. The change between two other dates follows from
+            narrowing start_date to the first of them.
 
         As an example:
 
@@ -120,12 +144,17 @@ class LoansFixedIncome:
 
         Which returns:
 
-        | Date       |   Rate |   Payment |   Total Interest |   First Payment Interest |
-        |:-----------|-------:|----------:|-----------------:|-------------------------:|
-        | 2021-01-07 | 0.0265 | 1611.8552 |      180267.8595 |                 883.3333 |
-        | 2026-11-05 | 0.0718 | 2709.7393 |      575506.1579 |                2393.3333 |
+        | Date       |   Rate |   Payment |   Total Interest |   First Payment Interest |   Change |
+        |:-----------|-------:|----------:|-----------------:|-------------------------:|---------:|
+        | 2021-01-07 | 0.0265 |   1611.86 |           180268 |                  883.333 |   0      |
+        | 2026-11-05 | 0.0718 |   2709.74 |           575506 |                 2393.33  |   0.6811 |
         """
+        self._check_loan_terms(
+            principal=principal, years=years, payments_per_year=payments_per_year
+        )
         rates = self._get_mortgage_rates()
+        if rates.empty:
+            return pd.DataFrame()
         payment = loan_model.get_loan_payment(
             principal, rates, years, payments_per_year
         )
@@ -136,6 +165,7 @@ class LoansFixedIncome:
                 "Payment": payment,
                 "Total Interest": payment * years * payments_per_year - principal,
                 "First Payment Interest": principal * rates / payments_per_year,
+                "Change": payment / payment.iloc[0] - 1,
             }
         )
 
@@ -182,13 +212,13 @@ class LoansFixedIncome:
         capacity, loan amount from payment.
 
         Args:
-            payment (float | None, optional): The payment per period. Defaults to None, the
+            payment (float | None, optional): The payment per period, above 0. Defaults to None, the
                 payment of a loan of principal at the first rate between the start and end date.
-            principal (float, optional): The loan whose payment at the first rate is used when
+            principal (float, optional): The loan, above 0, whose payment at the first rate is used when
                 no payment is given. Defaults to 400,000.
-            years (float, optional): The term of the loan in years. The rate stays the 30-year
+            years (float, optional): The term of the loan in years, above 0. The rate stays the 30-year
                 fixed mortgage rate for another term. Defaults to 30.
-            payments_per_year (int, optional): The number of payments per year. Defaults to 12.
+            payments_per_year (int, optional): The number of payments per year, at least 1. Defaults to 12.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the rounding of the class.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -217,7 +247,15 @@ class LoansFixedIncome:
         | 2021-01-07 | 0.0265 | 1611.8552 |       400000.0000 |   0.0000 |
         | 2026-11-05 | 0.0718 | 1611.8552 |       237935.0883 |  -0.4052 |
         """
+        self._check_loan_terms(
+            payment=payment,
+            principal=principal,
+            years=years,
+            payments_per_year=payments_per_year,
+        )
         rates = self._get_mortgage_rates()
+        if rates.empty:
+            return pd.DataFrame()
 
         if payment is None:
             payment = loan_model.get_loan_payment(
@@ -275,10 +313,10 @@ class LoansFixedIncome:
         principal per payment, remaining balance.
 
         Args:
-            principal (float, optional): The amount borrowed. Defaults to 400,000.
-            years (float, optional): The term of the loan in years. The rate stays the 30-year
+            principal (float, optional): The amount borrowed, above 0. Defaults to 400,000.
+            years (float, optional): The term of the loan in years, above 0. The rate stays the 30-year
                 fixed mortgage rate for another term. Defaults to 30.
-            payments_per_year (int, optional): The number of payments per year. Defaults to 12.
+            payments_per_year (int, optional): The number of payments per year, at least 1. Defaults to 12.
             date (str | None, optional): The date of the rate (YYYY-MM-DD). Defaults to None, the
                 latest rate up to the end date.
             rounding (int | None, optional): The number of decimals to round the results to.
@@ -313,7 +351,12 @@ class LoansFixedIncome:
         |              240 | 0.0718 | 2709.7393 |  1393.1739 |   1316.5655 | 231525.8632 |
         |              360 | 0.0718 | 2709.7393 |    16.1168 |   2693.6225 |      0.0000 |
         """
+        self._check_loan_terms(
+            principal=principal, years=years, payments_per_year=payments_per_year
+        )
         rates = self._get_mortgage_rates()
+        if rates.empty:
+            return pd.DataFrame()
         if date is not None:
             rates = rates.loc[:date]
             if rates.empty:

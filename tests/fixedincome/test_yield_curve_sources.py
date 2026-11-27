@@ -18,6 +18,7 @@ from financetoolkit.fixedincome.sources import (
     norgesbank_model,
     riksbank_model,
 )
+from financetoolkit.utilities.error_model import InvalidArgumentError
 
 
 @pytest.fixture(autouse=True)
@@ -299,11 +300,14 @@ def test_credit_methods_need_a_fred_key_and_valid_arguments():
     # The Moody's yields are only on FRED; the HQM curve also comes from the Treasury.
     without_key = FixedIncome(fred_api_key="")
     assert without_key.get_moodys_corporate_bond_yields().empty
-    assert without_key.get_hqm_corporate_bond_yield_curve(rate="forward").empty
+    with pytest.raises(InvalidArgumentError, match="rate must be one of"):
+        without_key.get_hqm_corporate_bond_yield_curve(rate="forward")
 
     with_key = FixedIncome(fred_api_key="key")
-    assert with_key.get_hqm_corporate_bond_yield_curve(rate="forward").empty
-    assert with_key.get_moodys_corporate_bond_yields(period="hourly").empty
+    with pytest.raises(InvalidArgumentError, match="rate must be one of"):
+        with_key.get_hqm_corporate_bond_yield_curve(rate="forward")
+    with pytest.raises(InvalidArgumentError, match="period must be one of"):
+        with_key.get_moodys_corporate_bond_yields(period="hourly")
 
 
 def test_bundesbank_breakeven_inflation_is_interpolated_to_constant_maturities(
@@ -460,7 +464,7 @@ def test_an_unreadable_span_serves_the_cached_history(tmp_path):
         collect_ranged_data(fetch=unreadable, end_date="2026-10-05", **arguments)
 
 
-def test_a_failed_fred_request_does_not_show_the_api_key(monkeypatch):
+def test_a_failed_fred_request_does_not_show_the_api_key(monkeypatch, caplog):
     from financetoolkit.fixedincome.sources import fred_model
 
     def refused(url, **kwargs):  # noqa: ARG001
@@ -471,11 +475,12 @@ def test_a_failed_fred_request_does_not_show_the_api_key(monkeypatch):
 
     monkeypatch.setattr(fred_model, "get_request", refused)
 
-    with pytest.raises(RuntimeError) as error:
-        fred_model._request_series("GS10", "2026-01-01", "2026-02-01", "SECRETKEY123")
-
-    assert "SECRETKEY123" not in str(error.value)
-    assert error.value.__cause__ is None
+    # An unreachable FRED is reported and answered with no data, as the other sources are.
+    assert fred_model._request_series(
+        "GS10", "2026-01-01", "2026-02-01", "SECRETKEY123"
+    ).empty
+    assert "FRED series GS10: FRED could not be reached" in caplog.text
+    assert "SECRETKEY123" not in caplog.text
 
 
 def test_the_term_premium_keeps_the_requested_maturities_at_month_end(monkeypatch):
@@ -540,3 +545,208 @@ def test_treasury_rates_keep_the_maturities_asked_for(monkeypatch):
     assert len(fixedincome.get_treasury_rates().columns) == 5  # noqa: PLR2004
     # A maturity the curve does not have is an error, not every maturity.
     assert fixedincome.get_treasury_rates(maturities="4Y").empty
+
+
+class FredBody:
+    """A FRED answer that is not observations: an HTML page, an empty body or a list."""
+
+    def __init__(self, text):
+        self.text = text
+
+    def json(self):
+        import json
+
+        return json.loads(self.text)
+
+
+@pytest.mark.parametrize("body", ["<!DOCTYPE html><html></html>", "", "[]"])
+def test_a_fred_answer_without_observations_is_reported_as_no_data(
+    monkeypatch, caplog, body
+):
+    from financetoolkit.fixedincome.sources import fred_model
+
+    monkeypatch.setattr(fred_model, "get_request", lambda url, timeout: FredBody(body))
+
+    assert fred_model._request_series(
+        "GS10", "2026-01-01", "2026-02-01", "SECRETKEY123"
+    ).empty
+    assert "No data is returned for the FRED series GS10" in caplog.text
+
+
+def test_an_unreachable_fred_stops_after_the_first_series(monkeypatch, caplog):
+    from financetoolkit.fixedincome.sources import fred_model
+
+    requested = []
+
+    def refused(url, **kwargs):  # noqa: ARG001
+        requested.append(url)
+        raise requests.exceptions.ConnectionError("Connection refused")
+
+    monkeypatch.setattr(fred_model, "get_request", refused)
+
+    spreads = fred_model.get_rating_option_adjusted_spread(
+        "2026-01-01", "2026-02-01", "key"
+    )
+
+    assert spreads.empty
+    assert len(requested) == 1
+    errors = [record for record in caplog.records if record.levelname == "ERROR"]
+    assert len(errors) == 1 and "other 6 series are not requested" in errors[0].message
+
+
+def test_a_missing_ice_bofa_series_keeps_the_others_named(monkeypatch, caplog):
+    from financetoolkit.fixedincome.sources import fred_model
+
+    def partial(url, **kwargs):  # noqa: ARG001
+        if "BAMLC3A0C57YEY" in url:
+            raise requests.exceptions.HTTPError("500 Server Error")
+        return FredBody('{"observations": [{"date": "2026-01-02", "value": "5.0"}]}')
+
+    monkeypatch.setattr(fred_model, "get_request", partial)
+
+    effective_yield = fred_model.get_maturity_effective_yield(
+        "2026-01-01", "2026-02-01", "key"
+    )
+
+    assert list(effective_yield.columns) == [
+        "1-3 Years",
+        "3-5 Years",
+        "7-10 Years",
+        "10-15 Years",
+        "15+ Years",
+    ]
+    assert effective_yield.iloc[0, 0] == pytest.approx(0.05)
+    assert caplog.text.count("BAMLC3A0C57YEY") == 1
+
+
+class FredRejection:
+    """A FRED answer with an error status and FRED's own message in a JSON body."""
+
+    def __init__(self, status_code, message):
+        self.status_code = status_code
+        self.message = message
+
+    def json(self):
+        return {"error_code": self.status_code, "error_message": self.message}
+
+
+def test_a_rejected_fred_series_does_not_stop_the_others(monkeypatch, caplog):
+    from financetoolkit.fixedincome.sources import fred_model
+
+    requested = []
+
+    def first_discontinued(url, **kwargs):  # noqa: ARG001
+        requested.append(url)
+        if "BAMLC1A0C13YEY" in url:
+            raise requests.exceptions.HTTPError(
+                "400 Client Error: Bad Request for url",
+                response=FredRejection(400, "Bad Request.  The series does not exist."),
+            )
+        return FredBody('{"observations": [{"date": "2026-01-02", "value": "5.0"}]}')
+
+    monkeypatch.setattr(fred_model, "get_request", first_discontinued)
+
+    effective_yield = fred_model.get_maturity_effective_yield(
+        "2026-01-01", "2026-02-01", "key"
+    )
+
+    # A series FRED rejects is that series' problem: the other five are still asked for.
+    assert len(requested) == 6  # noqa: PLR2004
+    assert len(effective_yield.columns) == 5  # noqa: PLR2004
+    assert "not requested" not in caplog.text
+    assert "The series does not exist" in caplog.text
+    assert "BAMLC1A0C13YEY" in caplog.text
+
+
+def test_a_fred_server_error_on_the_first_series_stops_the_others(monkeypatch, caplog):
+    from financetoolkit.fixedincome.sources import fred_model
+
+    requested = []
+
+    def down(url, **kwargs):  # noqa: ARG001
+        requested.append(url)
+        raise requests.exceptions.HTTPError(
+            "503 Server Error", response=FredRejection(503, "")
+        )
+
+    monkeypatch.setattr(fred_model, "get_request", down)
+
+    assert fred_model.get_maturity_effective_yield(
+        "2026-01-01", "2026-02-01", "key"
+    ).empty
+    assert len(requested) == 1
+    assert "other 5 series are not requested" in caplog.text
+
+
+def test_an_invalid_fred_key_reports_freds_own_message(monkeypatch, caplog):
+    from financetoolkit.fixedincome.sources import fred_model
+
+    message = (
+        "Bad Request.  The value for variable api_key is not registered.  Read "
+        "https://fred.stlouisfed.org/docs/api/api_key.html for more information."
+    )
+
+    def rejected(url, **kwargs):  # noqa: ARG001
+        raise requests.exceptions.HTTPError(
+            "400 Client Error: Bad Request for url: https://api.stlouisfed.org/fred/"
+            "series/observations?series_id=GS10&api_key=BADKEY123",
+            response=FredRejection(400, message),
+        )
+
+    monkeypatch.setattr(fred_model, "get_request", rejected)
+
+    assert fred_model.get_fred_data(
+        ["GS10", "GS2"], "2026-01-01", "2026-02-01", "BADKEY123"
+    ).empty
+    errors = [record for record in caplog.records if record.levelname == "ERROR"]
+    # One line, naming both series once with FRED's explanation rather than the status line.
+    assert len(errors) == 1
+    assert "GS10, GS2 (FRED answered HTTP 400: Bad Request.  The value" in (
+        errors[0].message
+    )
+    assert "could not be reached" not in caplog.text
+    assert "BADKEY123" not in caplog.text
+
+
+def test_one_rejected_fred_series_is_reported_in_the_singular_without_a_double_period(
+    monkeypatch, caplog
+):
+    from financetoolkit.fixedincome.sources import fred_model
+
+    def second_rejected(url, **kwargs):  # noqa: ARG001
+        if "GS2" in url:
+            raise requests.exceptions.HTTPError(
+                "400 Client Error: Bad Request for url",
+                response=FredRejection(400, "Bad Request.  The series does not exist."),
+            )
+        return FredBody('{"observations": [{"date": "2026-01-02", "value": "5.0"}]}')
+
+    monkeypatch.setattr(fred_model, "get_request", second_rejected)
+
+    with caplog.at_level("ERROR", logger="financetoolkit"):
+        data = fred_model.get_fred_data(
+            ["GS10", "GS2"], "2026-01-01", "2026-02-01", "key"
+        )
+
+    assert list(data.columns) == ["GS10"]
+    assert (
+        "GS2 (FRED answered HTTP 400: Bad Request.  The series does not exist), so it is left out."
+        in caplog.text
+    )  # noqa: E501
+    assert ".." not in caplog.text
+
+    # FRED's own message on the first series, when FRED is down, ends in one full stop too.
+    caplog.clear()
+
+    def down(url, **kwargs):  # noqa: ARG001
+        raise requests.exceptions.HTTPError(
+            "503 Server Error", response=FredRejection(503, "Service unavailable.")
+        )
+
+    monkeypatch.setattr(fred_model, "get_request", down)
+
+    with caplog.at_level("ERROR", logger="financetoolkit"):
+        assert fred_model.get_fred_data("GS10", "2026-01-01", "2026-02-01", "key").empty
+
+    assert "FRED answered HTTP 503: Service unavailable." in caplog.text
+    assert ".." not in caplog.text

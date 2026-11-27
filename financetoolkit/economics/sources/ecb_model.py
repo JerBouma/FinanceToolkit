@@ -50,8 +50,9 @@ def collect_ecb_series(
     columns: dict[str, str] | None = None,
 ) -> pd.DataFrame:
     """
-    Retrieves the days between two dates of one or more ECB Data Portal series. Only the
-    days that are not cached yet are requested.
+    Retrieves the days between two dates of one or more ECB Data Portal series.
+
+    Only the days that are not cached yet are requested.
 
     The portal answers roughly one in five queries it has not seen before with a gateway
     timeout, while a query it has answered recently comes back at once. Every request
@@ -126,9 +127,10 @@ def collect_ecb_series(
 
 def get_long_term_interest_rate(start_date: str, end_date: str) -> pd.DataFrame:
     """
-    Retrieves the daily 10-year spot rate of the euro area government bond yield curve,
-    estimated by the ECB from the bonds of all euro area central governments. It is
-    taken from the yield curve request, so both share one query.
+    Retrieves the daily 10-year spot rate of the euro area government bond yield curve, estimated by the ECB from the
+    bonds of all euro area central governments.
+
+    It is taken from the yield curve request, so both share one query.
 
     The ECB's spot rates are zero-coupon rates from a Svensson model, continuously
     compounded. The 10-year rate is converted to annual compounding, exp(r) - 1, so it is
@@ -158,7 +160,7 @@ def get_long_term_interest_rate(start_date: str, end_date: str) -> pd.DataFrame:
 
 def get_overnight_rate(start_date: str, end_date: str) -> pd.DataFrame:
     """
-    Retrieves the daily euro short-term rate (€STR).
+    Retrieve the daily euro short-term rate (€STR): the rate at which euro area banks borrow euros overnight.
 
     Args:
         start_date (str): The start date (YYYY-MM-DD).
@@ -199,10 +201,10 @@ def get_yield_curve(start_date: str, end_date: str) -> pd.DataFrame:
 
 def get_long_term_convergence_yields(start_date: str, end_date: str) -> pd.DataFrame:
     """
-    Retrieves the monthly long-term interest rates for convergence purposes, the average
-    yield of a 10-year government bond of every European Union member, which the ECB
-    publishes for the Maastricht criteria. Only the months that are not cached yet are
-    requested.
+    Retrieves the monthly long-term interest rates for convergence purposes, the average yield of a 10-year government
+    bond of every European Union member, which the ECB publishes for the Maastricht criteria.
+
+    Only the months that are not cached yet are requested.
 
     Args:
         start_date (str): The start date (YYYY-MM-DD).
@@ -287,8 +289,9 @@ def collect_ecb_series_by_area(
 ) -> pd.DataFrame:
     """
     Retrieves an ECB Data Portal series for every area it covers, with a column per area.
-    Requests start on the first day of a month so that the same query is repeated and
-    served from the portal's cache, see collect_ecb_series.
+
+    Requests start on the first day of a month so that the same query is repeated and served from the portal's cache,
+    see collect_ecb_series.
 
     Args:
         series_key (str): The dataset and series key with the area left open, e.g.
@@ -296,7 +299,7 @@ def collect_ecb_series_by_area(
         description (str): What is retrieved, used in the log and error messages.
         start_date (str): The start date (YYYY-MM-DD).
         end_date (str): The end date (YYYY-MM-DD).
-        frequency (str): The period of the observations, "D" or "M".
+        frequency (str): The period of the observations. Options are: "D" (daily), "M" (monthly).
         in_percent (bool): Whether the values are published in percent and so divided by
             100. Defaults to True.
 
@@ -348,9 +351,8 @@ def collect_ecb_series_by_area(
 
 def get_corporate_borrowing_cost(start_date: str, end_date: str) -> pd.DataFrame:
     """
-    Retrieves the composite cost of borrowing for non-financial corporations, the average
-    interest rate on new bank loans to companies across maturities, for the euro area and
-    every member, monthly from 2003.
+    Retrieves the composite cost of borrowing for non-financial corporations, the average interest rate on new bank
+    loans to companies across maturities, for the euro area and every member, monthly from 2003.
 
     Args:
         start_date (str): The start date (YYYY-MM-DD).
@@ -370,10 +372,11 @@ def get_corporate_borrowing_cost(start_date: str, end_date: str) -> pd.DataFrame
 
 def get_financial_stress_index(start_date: str, end_date: str) -> pd.DataFrame:
     """
-    Retrieves the Composite Indicator of Systemic Stress (CISS) the ECB publishes daily for
-    the euro area, its largest members, the United Kingdom, the United States and China. It
-    combines stress in money, bond, equity and foreign exchange markets and among financial
-    intermediaries into one number between 0 and 1.
+    Retrieves the Composite Indicator of Systemic Stress (CISS) the ECB publishes daily for the euro area, its largest
+    members, the United Kingdom, the United States and China.
+
+    It combines stress in money, bond, equity and foreign exchange markets and among financial intermediaries into one
+    number between 0 and 1.
 
     Args:
         start_date (str): The start date (YYYY-MM-DD).
@@ -399,9 +402,8 @@ SURVEY_INFLATION_EXPECTATIONS_KEY = "SPF/Q.U2.HICP.POINT.LT.Q.AVG"
 
 def get_survey_inflation_expectations(start_date: str, end_date: str) -> pd.DataFrame:
     """
-    Retrieves the longer-term (five years ahead) euro area inflation the professional
-    forecasters of the ECB's Survey of Professional Forecasters expect on average,
-    quarterly from 1999.
+    Retrieves the longer-term (five years ahead) euro area inflation the professional forecasters of the ECB's Survey
+    of Professional Forecasters expect on average, quarterly from 1999.
 
     Args:
         start_date (str): The start date (YYYY-MM-DD).
@@ -418,3 +420,35 @@ def get_survey_inflation_expectations(start_date: str, end_date: str) -> pd.Data
         end_date,
         "Q",
     )
+
+
+def get_period_survey_inflation_expectations(
+    start_date: str, end_date: str, period: str = "quarterly"
+) -> pd.DataFrame:
+    """
+    Retrieves the longer-term euro area inflation the ECB's Survey of Professional
+    Forecasters expects (see get_survey_inflation_expectations) quarterly, or monthly with
+    each survey round holding until the next.
+
+    Args:
+        start_date (str): The start date (YYYY-MM-DD).
+        end_date (str): The end date (YYYY-MM-DD).
+        period (str, optional): Options are: "monthly", "quarterly". Defaults to
+            "quarterly".
+
+    Returns:
+        pd.DataFrame: The expected inflation as a decimal, indexed by month or quarter with
+        a "5Y" column.
+    """
+    survey = get_survey_inflation_expectations(start_date, end_date).rename(
+        columns={"Euro Area": "5Y"}
+    )
+
+    if survey.empty or period == "quarterly":
+        return survey
+
+    # A survey round holds until the next one, a quarter later.
+    survey.index = survey.index.asfreq("M", how="start")
+    months = pd.period_range(survey.index[0], survey.index[-1] + 2, freq="M")
+
+    return survey.reindex(months).ffill(limit=2)

@@ -6,11 +6,11 @@ import math
 
 import numpy as np
 import pandas as pd
-from statsmodels.tsa.arima.model import ARIMA
-from statsmodels.tsa.vector_ar.vecm import VECM
 
+from financetoolkit.econometrics.helpers import import_optional
 from financetoolkit.econometrics.regression import regression_model
 from financetoolkit.econometrics.stationarity import cointegration_model
+from financetoolkit.utilities.error_model import InvalidArgumentError
 
 # A margin beyond the estimated parameters, guarding against a degenerate fit.
 MINIMUM_ARIMA_OBSERVATIONS_BUFFER = 5
@@ -19,16 +19,18 @@ MINIMUM_VAR_SERIES = 2
 
 # The only levels get_johansen_cointegration tabulates, so the only usable ones.
 JOHANSEN_TRACE_CRITICAL_VALUE_COLUMNS: dict[float, str] = {
-    0.10: "Trace Critical Value 90%",
-    0.05: "Trace Critical Value 95%",
-    0.01: "Trace Critical Value 99%",
+    0.10: "Trace Critical Value 10%",
+    0.05: "Trace Critical Value 5%",
+    0.01: "Trace Critical Value 1%",
 }
 
 
 def arima_summary_table(result: dict) -> pd.DataFrame:
     """
-    Builds the coefficient table (Coefficient, Std. Error) of the mean, AR and MA
-    coefficients from a `get_arima_forecast` result dict. The first row is labelled
+    Build the coefficient table of an ARIMA fit: the Coefficient and Standard Error of the
+    mean, AR and MA coefficients.
+
+    The table takes a `get_arima_forecast` result dict. The first row is labelled
     "Mean" for `d = 0` (the mean of the series) and "Drift" for `d >= 1` (the mean of the
     `d`-times differenced series).
 
@@ -55,7 +57,7 @@ def arima_summary_table(result: dict) -> pd.DataFrame:
         *result["ma_std_errors"],
     ]
     return pd.DataFrame(
-        {"Coefficient": coefficients, "Std. Error": standard_errors}, index=names
+        {"Coefficient": coefficients, "Standard Error": standard_errors}, index=names
     )
 
 
@@ -65,12 +67,14 @@ def get_arima_forecast(
     d: int,
     q: int,
     forecast_steps: int = 1,
-    include_constant: bool = True,
+    add_constant: bool = True,
     max_iterations: int = 1000,
 ) -> dict:
     """
-    Fit an ARIMA(p, d, q) model and produce `forecast_steps`-ahead forecasts, via
-    `statsmodels.tsa.arima.model.ARIMA`.
+    Fit an ARIMA(p, d, q) model and forecast it: the future path of a series from its own
+    past values and past forecast errors.
+
+    The model is fitted with statsmodels' ARIMA.
 
     Also known as: Box-Jenkins model, autoregressive integrated moving average.
 
@@ -103,11 +107,11 @@ def get_arima_forecast(
         q (int): The moving-average order.
         forecast_steps (int, optional): The number of periods ahead to forecast.
         Defaults to 1.
-        include_constant (bool, optional): Whether to estimate the mean `mu` of the
+        add_constant (bool, optional): Whether to estimate the mean `mu` of the
         differenced series (the mean of the series for `d = 0`, its drift for
         `d >= 1`). When False, `mu` is fixed at 0 rather than estimated -- appropriate
         when the differenced series is not expected to have a nonzero mean/drift
-        (leaving `include_constant=True` on a truly zero-drift differenced series lets
+        (leaving the constant on a truly zero-drift differenced series lets
         small-sample noise in the estimated drift compound into a spuriously trending
         multi-step forecast, since each step's drift accumulates). Defaults to True.
         max_iterations (int, optional): The maximum number of Maximum Likelihood
@@ -176,7 +180,7 @@ def get_arima_forecast(
             f"{d}, {q}) model -- need more than {minimum_observations}."
         )
 
-    if not include_constant:
+    if not add_constant:
         trend = "n"
     elif d == 0:
         trend = "c"
@@ -184,11 +188,13 @@ def get_arima_forecast(
         # A trend polynomial of order d is statsmodels' drift on the differenced series.
         trend = [0] * d + [1]
 
+    arima = import_optional("statsmodels.tsa.arima.model", "The ARIMA forecast")
+
     try:
         # Passed 2D: statsmodels reshapes a 1D endog in place, deprecated in NumPy 2.5.
-        sm_result = ARIMA(clean_series.to_frame(), order=(p, d, q), trend=trend).fit(
-            method_kwargs={"maxiter": max_iterations}
-        )
+        sm_result = arima.ARIMA(
+            clean_series.to_frame(), order=(p, d, q), trend=trend
+        ).fit(method_kwargs={"maxiter": max_iterations})
     except (ValueError, np.linalg.LinAlgError) as error:
         raise ValueError(
             f"Could not fit an ARIMA({p}, {d}, {q}) model on {len(clean_series)} "
@@ -298,9 +304,12 @@ def _extract_lag_matrices(
 
 def var_summary_table(result: dict) -> pd.DataFrame:
     """
-    Builds a combined coefficient table from a `get_var_forecast` result dict, each
-    equation's coefficient table (see `regression_model.regression_summary_table`)
-    concatenated side by side under a top-level column per variable.
+    Build the coefficient table of a Vector Autoregression: the coefficients of every
+    equation side by side.
+
+    The table takes a `get_var_forecast` result dict, each equation's coefficient table (see
+    `regression_model.regression_summary_table`) concatenated side by side under a top-level
+    column per variable.
 
     Args:
         result (dict): A fitted VAR result dict, as returned by `get_var_forecast`.
@@ -319,8 +328,8 @@ def var_summary_table(result: dict) -> pd.DataFrame:
 
 def get_var_forecast(data: pd.DataFrame, lags: int, forecast_steps: int = 1) -> dict:
     """
-    Fit a Vector Autoregression (VAR) of order `lags` and produce `forecast_steps`-
-    ahead forecasts.
+    Fit a Vector Autoregression (VAR) and forecast it: how several series move together, each
+    driven by the past values of all of them.
 
     Also known as: VAR model, vector autoregressive model.
 
@@ -335,11 +344,8 @@ def get_var_forecast(data: pd.DataFrame, lags: int, forecast_steps: int = 1) -> 
     Where `Y_t` is the `k`-vector of all series at time `t`. Because every equation
     has an identical set of regressors (the same lagged values of all `k` series), the
     Maximum Likelihood estimator of a VAR reduces to `k` separate Ordinary Least
-    Squares regressions, one per equation -- no iterative fitting is needed, and no
-    separate `statsmodels.tsa.vector_ar.var_model.VAR` call is needed either: each
-    equation here is fit via `regression_model.get_ols`, i.e. `statsmodels.api.OLS`
-    directly, which is mathematically identical to (and was cross-checked against)
-    `statsmodels.tsa.vector_ar.var_model.VAR`'s own OLS-based estimation.
+    Squares regressions, one per equation -- no iterative fitting is needed: each
+    equation here is fit with `regression_model.get_ols` directly.
 
     Forecasts are produced by iterating the fitted recursion forward `forecast_steps`
     times, feeding each step's forecast back in as the next step's most recent lag.
@@ -347,6 +353,9 @@ def get_var_forecast(data: pd.DataFrame, lags: int, forecast_steps: int = 1) -> 
     For more information about the method, see the following paper:
 
     - Sims, C.A. (1980). "Macroeconomics and Reality." Econometrica, 48(1), 1-48.
+
+    Referenced against:
+    - statsmodels, VAR: https://www.statsmodels.org/stable/generated/statsmodels.tsa.vector_ar.var_model.VAR.html
 
     Args:
         data (pd.DataFrame): One column per series (e.g. several assets' returns),
@@ -372,11 +381,9 @@ def get_var_forecast(data: pd.DataFrame, lags: int, forecast_steps: int = 1) -> 
 
     Notes:
     - Verified by simulating a synthetic bivariate VAR(1) with a known coefficient
-    matrix and confirming the fitted coefficients recover it closely, and by
-    cross-checking against `statsmodels.tsa.api.VAR` -- coefficients matched
-    statsmodels to several decimal places, as expected since VAR estimation is
-    equation-by-equation OLS in both implementations (no estimation-method
-    ambiguity, unlike ARIMA).
+    matrix and confirming the fitted coefficients recover it closely. VAR estimation is
+    equation-by-equation OLS in both this function and statsmodels' VAR, so there is no
+    estimation-method ambiguity, unlike ARIMA.
 
     As an example:
 
@@ -507,9 +514,11 @@ def _wold_ma_matrices(
 
 def irf_summary_table(result: dict) -> pd.DataFrame:
     """
-    Builds a combined response table from a `get_impulse_response_function` result
-    dict, each shock variable's response table concatenated side by side under a
-    top-level column per shock variable.
+    Build the response table of an Impulse Response Function: the responses to every shock
+    side by side.
+
+    The table takes a `get_impulse_response_function` result dict, each shock variable's
+    response table concatenated side by side under a top-level column per shock variable.
 
     Args:
         result (dict): A fitted IRF result dict, as returned by
@@ -580,9 +589,9 @@ def get_impulse_response_function(
     var_result: dict, periods: int = 10, orthogonalized: bool = True
 ) -> dict:
     """
-    Trace out the Impulse Response Function (IRF) of a fitted `get_var_forecast`
-    result -- how a one-standard-deviation shock to each variable propagates through
-    the whole system over `periods` periods ahead.
+    Calculate the Impulse Response Function (IRF) of a Vector Autoregression: how a
+    one-standard-deviation shock to each variable propagates through the whole system over
+    the periods ahead.
 
     Also known as: IRF.
 
@@ -590,7 +599,7 @@ def get_impulse_response_function(
     gives the reduced-form response `Psi_n` of the system `n` periods after a unit
     reduced-form shock `e_t`. Because the reduced-form residuals are typically
     contemporaneously correlated (a shock to one variable's equation coincides with
-    shocks to the others'), `orthogonalized=True` (the default, and the standard
+    shocks to the others'), the orthogonalized response (the default, and the standard
     choice for interpretation) instead identifies structural shocks via a Cholesky
     decomposition of the residual covariance matrix `Sigma_u = P @ P.T` and reports
     `Theta_n = Psi_n @ P` -- the response to a one-standard-deviation structural shock
@@ -605,6 +614,9 @@ def get_impulse_response_function(
 
     - Lütkepohl, H. (2005). "New Introduction to Multiple Time Series Analysis."
       Springer, Chapter 2.3.2.
+
+    Referenced against:
+    - statsmodels, VARResults.irf: https://www.statsmodels.org/stable/generated/statsmodels.tsa.vector_ar.var_model.VARResults.irf.html
 
     Args:
         var_result (dict): A fitted VAR result dict, from `get_var_forecast`.
@@ -692,9 +704,12 @@ def get_impulse_response_function(
 
 def variance_decomposition_summary_table(result: dict) -> pd.DataFrame:
     """
-    Builds a combined decomposition table from a `get_variance_decomposition` result
-    dict, each response variable's decomposition table concatenated side by side
-    under a top-level column per response variable.
+    Build the table of a Forecast Error Variance Decomposition: the decomposition of every
+    variable side by side.
+
+    The table takes a `get_variance_decomposition` result dict, each response variable's
+    decomposition table concatenated side by side under a top-level column per response
+    variable.
 
     Args:
         result (dict): A fitted FEVD result dict, as returned by
@@ -709,10 +724,11 @@ def variance_decomposition_summary_table(result: dict) -> pd.DataFrame:
 
 def get_variance_decomposition(var_result: dict, periods: int = 10) -> dict:
     """
-    Compute the (orthogonalized) Forecast Error Variance Decomposition (FEVD) of a
-    fitted `get_var_forecast` result -- what fraction of each variable's `h`-step-
-    ahead forecast error variance is attributable to each variable's own structural
-    shock, for `h = 1, ..., periods`.
+    Calculate the (orthogonalized) Forecast Error Variance Decomposition (FEVD) of a Vector
+    Autoregression: which share of each variable's forecast error variance comes from the
+    shock of each variable.
+
+    The shares are calculated for every horizon h = 1, ..., periods.
 
     Also known as: FEVD, variance decomposition.
 
@@ -735,6 +751,9 @@ def get_variance_decomposition(var_result: dict, periods: int = 10) -> dict:
 
     - Lütkepohl, H. (2005). "New Introduction to Multiple Time Series Analysis."
       Springer, Chapter 2.3.3.
+
+    Referenced against:
+    - statsmodels, VARResults.fevd: https://www.statsmodels.org/stable/generated/statsmodels.tsa.vector_ar.var_model.VARResults.fevd.html
 
     Args:
         var_result (dict): A fitted VAR result dict, from `get_var_forecast`.
@@ -817,9 +836,10 @@ def get_variance_decomposition(var_result: dict, periods: int = 10) -> dict:
 
 def vecm_summary_table(result: dict) -> pd.DataFrame:
     """
-    Builds a combined table of the cointegrating vector(s) (`beta`) and adjustment
-    speeds (`alpha`) from a `get_vecm_forecast` result dict, side by side, indexed by
-    variable name.
+    Build the table of a Vector Error Correction Model: the cointegrating vector(s) (beta)
+    and adjustment speeds (alpha) side by side.
+
+    The table takes a `get_vecm_forecast` result dict and is indexed by variable name.
 
     Args:
         result (dict): A fitted VECM result dict, as returned by `get_vecm_forecast`.
@@ -838,13 +858,15 @@ def vecm_summary_table(result: dict) -> pd.DataFrame:
 
 def get_vecm_forecast(
     data: pd.DataFrame,
-    k_ar_diff: int = 1,
+    lags: int = 1,
     forecast_steps: int = 1,
     significance: float = 0.05,
 ) -> dict:
     """
-    Fit a Vector Error Correction Model (VECM) to cointegrated series and produce
-    `forecast_steps`-ahead forecasts, via `statsmodels.tsa.vector_ar.vecm.VECM`.
+    Fit a Vector Error Correction Model (VECM) and forecast it: how cointegrated series move
+    back towards their long-run equilibrium while following their short-run dynamics.
+
+    The model is fitted with statsmodels' VECM.
 
     Also known as: VECM, error correction model (for the multivariate/cointegrated
     case).
@@ -856,17 +878,16 @@ def get_vecm_forecast(
     currently sits from its long-run equilibrium/equilibria (the "error correction"
     term) and partly to recent short-run dynamics:
 
-    - Delta_Y_t = Pi * Y_(t-1) + SUM_{i=1}^{k_ar_diff}(Gamma_i * Delta_Y_(t-i)) + c + e_t
+    - Delta_Y_t = Pi * Y_(t-1) + SUM_{i=1}^{lags}(Gamma_i * Delta_Y_(t-i)) + c + e_t
     - Pi = alpha * beta'
 
     Where `beta` (the cointegrating vector(s)) and the cointegrating rank are taken
     from `cointegration_model.get_johansen_cointegration` -- reused here rather than
     re-derived, since that function already contains this codebase's verified
     rank-testing machinery. Given the rank, `alpha`, `beta` and the `Gamma_i`
-    short-run matrices are then jointly estimated by `statsmodels.tsa.vector_ar.vecm.VECM`
-    (with `deterministic="co"`, an unrestricted constant outside the cointegrating
-    relation, Johansen's case 3, matching the `det_order=0` convention used for rank
-    determination).
+    short-run matrices are then jointly estimated by statsmodels' VECM (with an
+    unrestricted constant outside the cointegrating relation, Johansen's case 3, matching
+    the convention used for rank determination).
 
     Forecasts are produced on the levels scale via the fitted model's own multi-step
     forecast recursion.
@@ -880,7 +901,7 @@ def get_vecm_forecast(
         data (pd.DataFrame): One column per series, in LEVELS (e.g. price levels, not
         returns) -- a VECM only makes sense for non-stationary, cointegrated series,
         the same input `get_johansen_cointegration` expects.
-        k_ar_diff (int, optional): The number of lagged first differences to include
+        lags (int, optional): The number of lagged first differences to include
         as short-run dynamics. Defaults to 1.
         forecast_steps (int, optional): The number of periods ahead to forecast.
         Defaults to 1.
@@ -892,7 +913,7 @@ def get_vecm_forecast(
         dict: The fitted cointegrating vector(s), adjustment speeds, short-run
         coefficient matrices, in-sample fitted values/residuals (differenced scale),
         and the `forecast_steps`-ahead forecast (levels scale) -- keys `rank`,
-        `k_ar_diff`, `cointegrating_vectors` (`beta`, shape `(k, rank)`),
+        `lags`, `cointegrating_vectors` (`beta`, shape `(k, rank)`),
         `adjustment_speeds` (`alpha`, shape `(k, rank)`), `short_run_coefficients`
         (`{lag: (k, k) DataFrame}` of the `Gamma_l` matrices, same layout as
         `get_var_forecast`'s `coefficient_matrices`), `intercept`, `fitted_values`,
@@ -902,7 +923,7 @@ def get_vecm_forecast(
 
     Raises:
         TypeError: If `data` is not a `pd.DataFrame`.
-        ValueError: If `k_ar_diff` or `forecast_steps` is not a positive integer,
+        ValueError: If `lags` or `forecast_steps` is not a positive integer,
         `significance` is not one of 0.01/0.05/0.10, there are not enough
         observations, or -- most importantly -- the Johansen test does not reject a
         cointegrating rank of 0 at `significance`, in which case a VECM is not an
@@ -922,22 +943,22 @@ def get_vecm_forecast(
     series_b = common_trend * 1.5 + 3 + rng.standard_normal(n) * 0.2
 
     data = pd.DataFrame({"A": series_a, "B": series_b})
-    result = time_series_model.get_vecm_forecast(data, k_ar_diff=1, forecast_steps=5)
+    result = time_series_model.get_vecm_forecast(data, lags=1, forecast_steps=5)
     print(result["cointegrating_vectors"].round(4))
     print(result["forecast"].round(4))
     ```
     """
     if not isinstance(data, pd.DataFrame):
         raise TypeError(f"data must be a pd.DataFrame, received {type(data).__name__}.")
-    if k_ar_diff < 1:
+    if lags < 1:
         raise ValueError(
-            "k_ar_diff must be a positive integer -- k_ar_diff=0 leaves no short-run "
+            "lags must be a positive integer -- with 0 lags there is no short-run "
             "dynamics term to estimate."
         )
     if forecast_steps < 1:
         raise ValueError("forecast_steps must be a positive integer.")
     if significance not in JOHANSEN_TRACE_CRITICAL_VALUE_COLUMNS:
-        raise ValueError(
+        raise InvalidArgumentError(
             "significance must be one of 0.01, 0.05 or 0.10 -- the only levels "
             "tabulated by cointegration_model.get_johansen_cointegration."
         )
@@ -947,13 +968,13 @@ def get_vecm_forecast(
     k = len(variable_names)
 
     johansen_result = cointegration_model.get_johansen_cointegration(
-        aligned, det_order=0, k_ar_diff=k_ar_diff
+        aligned, det_order=0, lags=lags
     )
 
     if johansen_result["Trace Statistic"].isna().all():
         raise ValueError(
             f"Not enough observations to fit a Johansen/VECM model with "
-            f"k_ar_diff={k_ar_diff} across {k} series."
+            f"lags={lags} across {k} series."
         )
 
     critical_value_column = JOHANSEN_TRACE_CRITICAL_VALUE_COLUMNS[significance]
@@ -975,13 +996,15 @@ def get_vecm_forecast(
             "data instead."
         )
 
+    vecm = import_optional("statsmodels.tsa.vector_ar.vecm", "The VECM forecast")
+
     try:
-        sm_result = VECM(
-            aligned, k_ar_diff=k_ar_diff, coint_rank=rank, deterministic="co"
+        sm_result = vecm.VECM(
+            aligned, k_ar_diff=lags, coint_rank=rank, deterministic="co"
         ).fit()
     except (ValueError, np.linalg.LinAlgError) as error:
         raise ValueError(
-            f"Could not fit a VECM with rank {rank} and k_ar_diff={k_ar_diff} across "
+            f"Could not fit a VECM with rank {rank} and lags={lags} across "
             f"{k} series."
         ) from error
 
@@ -996,7 +1019,7 @@ def get_vecm_forecast(
     intercept = pd.Series(sm_result.const.ravel(), index=variable_names)
 
     short_run_coefficients = {}
-    for lag in range(1, k_ar_diff + 1):
+    for lag in range(1, lags + 1):
         block = sm_result.gamma[:, (lag - 1) * k : lag * k]
         matrix = pd.DataFrame(block, index=variable_names, columns=variable_names)
         matrix.index.name = "Equation"
@@ -1018,7 +1041,7 @@ def get_vecm_forecast(
 
     return {
         "rank": rank,
-        "k_ar_diff": k_ar_diff,
+        "lags": lags,
         "cointegrating_vectors": cointegrating_vectors,
         "adjustment_speeds": adjustment_speeds,
         "short_run_coefficients": short_run_coefficients,

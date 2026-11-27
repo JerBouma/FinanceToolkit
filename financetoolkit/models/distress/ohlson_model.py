@@ -13,9 +13,11 @@ def get_log_of_total_assets(
     price_level_index: float | pd.Series | pd.DataFrame | None = None,
 ) -> float | pd.Series | pd.DataFrame:
     """
-    The Log of Total Assets (SIZE) is a proxy for firm size used in the Ohlson O-Score model. Larger
-    firms are, all else equal, considered less likely to go bankrupt, so this term enters the O-Score
-    with a negative coefficient.
+    The Log of Total Assets (SIZE) is a proxy for firm size used in the Ohlson O-Score
+    model.
+
+    Larger firms are, all else equal, considered less likely to go bankrupt, so this term
+    enters the O-Score with a negative coefficient.
 
     The formula is as follows:
 
@@ -23,11 +25,11 @@ def get_log_of_total_assets(
 
     Args:
         total_assets (float | pd.Series | pd.DataFrame): The sum of a company's current and non-current
-        assets.
+            assets.
         price_level_index (float | pd.Series | pd.DataFrame | None, optional): The US GNP implicit
-        price deflator with 1968 = 100, of the period of the total assets (with a DataFrame of total
-        assets, a Series indexed by its columns). Defaults to None, which leaves the total assets
-        undeflated: ln(Total Assets).
+            price deflator with 1968 = 100, of the period of the total assets (with a DataFrame of total
+            assets, a Series indexed by its columns). Defaults to None, which leaves the total assets
+            undeflated: ln(Total Assets).
 
     Returns:
         float | pd.Series | pd.DataFrame: The Log of Total Assets.
@@ -57,9 +59,11 @@ def get_total_liabilities_to_total_assets_ratio(
     total_assets: float | pd.Series | pd.DataFrame,
 ) -> float | pd.Series | pd.DataFrame:
     """
-    The Total Liabilities to Total Assets Ratio (TLTA) measures the proportion of a company's assets
-    that are financed through debt rather than equity. It is one of the leverage components of the
-    Ohlson O-Score.
+    The Total Liabilities to Total Assets Ratio (TLTA) measures the proportion of a
+    company's assets that are financed through debt rather than equity.
+
+    It is one of the leverage components of the Ohlson O-Score and the leverage component of the
+    Zmijewski Score.
 
     The formula is as follows:
 
@@ -75,36 +79,10 @@ def get_total_liabilities_to_total_assets_ratio(
         float | pd.Series | pd.DataFrame: The Total Liabilities to Total Assets Ratio.
 
     Notes:
-    - A higher TLTA indicates higher leverage and, all else equal, a higher probability of bankruptcy.
+    - A higher TLTA indicates higher leverage and, all else equal, a higher probability of bankruptcy:
+      it raises both the Ohlson O-Score and the Zmijewski Score.
     """
     return drop_non_finite(total_liabilities / total_assets)
-
-
-def get_working_capital_to_total_assets_ratio(
-    working_capital: float | pd.Series | pd.DataFrame,
-    total_assets: float | pd.Series | pd.DataFrame,
-) -> float | pd.Series | pd.DataFrame:
-    """
-    The Working Capital to Total Assets Ratio (WCTA) measures a company's short-term liquidity relative
-    to the size of its balance sheet. It is one of the liquidity components of the Ohlson O-Score.
-
-    The formula is as follows:
-
-        - WCTA = Working Capital / Total Assets
-
-    Args:
-        working_capital (float | pd.Series | pd.DataFrame): The difference between a company's current
-        assets and its current liabilities.
-        total_assets (float | pd.Series | pd.DataFrame): The sum of a company's current and non-current
-        assets.
-
-    Returns:
-        float | pd.Series | pd.DataFrame: The Working Capital to Total Assets Ratio.
-
-    Notes:
-    - A lower (or negative) WCTA indicates weaker short-term liquidity, which raises the O-Score.
-    """
-    return drop_non_finite(working_capital / total_assets)
 
 
 def get_current_liabilities_to_current_assets_ratio(
@@ -112,9 +90,10 @@ def get_current_liabilities_to_current_assets_ratio(
     current_assets: float | pd.Series | pd.DataFrame,
 ) -> float | pd.Series | pd.DataFrame:
     """
-    The Current Liabilities to Current Assets Ratio (CLCA) is the inverse framing of the current ratio
-    and measures the extent to which short-term obligations exceed short-term resources. It is one of
-    the liquidity components of the Ohlson O-Score.
+    The Current Liabilities to Current Assets Ratio (CLCA) shows the extent to which
+    short-term obligations exceed short-term resources.
+
+    It is one of the liquidity components of the Ohlson O-Score.
 
     The formula is as follows:
 
@@ -140,9 +119,11 @@ def get_negative_equity_indicator(
     total_assets: float | pd.Series | pd.DataFrame,
 ) -> float | pd.Series | pd.DataFrame:
     """
-    The Negative Equity Indicator (OENEG) is a binary dummy variable used in the Ohlson O-Score that
-    flags companies whose total liabilities exceed their total assets, i.e. companies with negative
-    book equity.
+    The Negative Equity Indicator (OENEG) flags companies whose total liabilities exceed
+    their total assets.
+
+    It is a binary dummy variable of the Ohlson O-Score for companies with negative book
+    equity.
 
     The formula is as follows:
 
@@ -176,8 +157,10 @@ def get_net_income_to_total_assets_ratio(
     total_assets: float | pd.Series | pd.DataFrame,
 ) -> float | pd.Series | pd.DataFrame:
     """
-    The Net Income to Total Assets Ratio (NITA) measures a company's profitability relative to the size
-    of its balance sheet. It is the profitability component of the Ohlson O-Score.
+    The Net Income to Total Assets Ratio (NITA) measures a company's profitability relative
+    to the size of its balance sheet.
+
+    It is the profitability component of the Ohlson O-Score and of the Zmijewski Score.
 
     The formula is as follows:
 
@@ -196,6 +179,8 @@ def get_net_income_to_total_assets_ratio(
     - Unlike Altman's ROA-style component, NITA is not annualized/averaged across beginning and ending
       total assets — it uses the point-in-time Total Assets balance, matching Ohlson's (1980) original
       specification.
+    - A lower (or negative) ratio indicates weaker profitability, which raises the Zmijewski Score and,
+      in turn, the estimated probability of financial distress.
     """
     return drop_non_finite(net_income / total_assets)
 
@@ -237,8 +222,8 @@ def get_negative_income_indicator(
     lag: int = 1,
 ) -> pd.Series | pd.DataFrame:
     """
-    The Negative Income Indicator (INTWO) is a binary dummy variable used in the Ohlson O-Score that
-    flags companies that reported a net loss in both the current period and the prior period.
+    The Negative Income Indicator (INTWO) flags companies that reported a net loss in both
+    the current period and the prior period.
 
     The formula is as follows:
 
@@ -269,9 +254,11 @@ def get_change_in_net_income_ratio(
     lag: int = 1,
 ) -> pd.Series | pd.DataFrame:
     """
-    The Change in Net Income Ratio (CHIN) measures the direction and relative magnitude of the change in
-    net income between the current and prior period, scaled by the combined absolute size of both
-    periods' net income so that the measure stays bounded between -1 and 1.
+    The Change in Net Income Ratio (CHIN) measures the direction and relative magnitude of
+    the change in net income between the current and prior period.
+
+    It is scaled by the combined absolute size of both periods' net income so that the
+    measure stays bounded between -1 and 1.
 
     The formula is as follows:
 
@@ -307,13 +294,15 @@ def get_ohlson_o_score(
     change_in_net_income_ratio: float | pd.Series | pd.DataFrame,
 ) -> float | pd.Series | pd.DataFrame:
     """
-    The Ohlson O-Score is a bankruptcy prediction model developed by James Ohlson in 1980. Unlike the
-    Altman Z-Score, which is built with multiple discriminant analysis, the O-Score's coefficients come
-    from a fitted logistic regression (logit) model. This is why the two models are usually reported
-    side by side rather than one being treated as a replacement for the other: the Z-Score produces a
-    score that is only meaningful when compared against Altman's empirically derived threshold bands,
-    while the O-Score, run through the logistic transform (see `get_ohlson_bankruptcy_probability`),
-    is directly interpretable as a probability of bankruptcy between 0 and 1.
+    The Ohlson O-Score is a bankruptcy prediction model developed by James Ohlson in 1980.
+
+    Unlike the Altman Z-Score, which is built with multiple discriminant analysis, the
+    O-Score's coefficients come from a fitted logistic regression (logit) model. This is why
+    the two models are usually reported side by side rather than one being treated as a
+    replacement for the other: the Z-Score produces a score that is only meaningful when
+    compared against Altman's empirically derived threshold bands, while the O-Score, run
+    through the logistic transform (see `get_ohlson_bankruptcy_probability`), is directly
+    interpretable as a probability of bankruptcy between 0 and 1.
 
     The formula is as follows:
 
@@ -374,7 +363,7 @@ def get_ohlson_o_score(
     Accounting Research, Vol. 18, No. 1, 1980, pp. 109-131.
     """
     if isinstance(negative_equity_indicator, pd.Series | pd.DataFrame):
-        negative_equity_indicator = negative_equity_indicator.astype(int)
+        negative_equity_indicator = negative_equity_indicator.astype(float)
 
     if isinstance(negative_income_indicator, pd.Series | pd.DataFrame):
         negative_income_indicator = negative_income_indicator.astype(float)
@@ -397,10 +386,13 @@ def get_ohlson_bankruptcy_probability(
     ohlson_o_score: float | pd.Series | pd.DataFrame,
 ) -> float | pd.Series | pd.DataFrame:
     """
-    Converts the Ohlson O-Score into a probability of bankruptcy using the logistic (sigmoid) function.
-    This is the standard way the O-Score is consumed in practice, unlike the Altman Z-Score which is
-    typically compared against threshold bands directly, because the O-Score comes from a fitted
-    logistic regression and is therefore only meaningful on the probability scale after this transform.
+    Converts the Ohlson O-Score into a probability of bankruptcy using the logistic
+    (sigmoid) function.
+
+    This is the standard way the O-Score is consumed in practice, unlike the Altman Z-Score
+    which is typically compared against threshold bands directly, because the O-Score comes
+    from a fitted logistic regression and is therefore only meaningful on the probability
+    scale after this transform.
 
     The formula is as follows:
 

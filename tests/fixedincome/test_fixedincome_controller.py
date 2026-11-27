@@ -5,10 +5,13 @@
 import pandas as pd
 import pytest
 
+from financetoolkit.utilities.error_model import InvalidArgumentError
+
 from financetoolkit.fixedincome import fixedincome_controller
 from financetoolkit.fixedincome.sources import fred_model as fixedincome_fred_model
 from financetoolkit.fixedincome.sources import ecb_model as fixedincome_ecb_model
 from financetoolkit.fixedincome.helpers import maturity_in_years
+from financetoolkit.utilities.error_model import InvalidArgumentError
 
 
 def test_fixedincome_controller_initialization(recorder):
@@ -86,7 +89,7 @@ def test_ice_bofa_option_adjusted_spread_is_decimal(monkeypatch):
 
     def fake_fred_data(series, start_date, end_date, api_key):
         return pd.DataFrame(
-            [[0.77] * len(series)], index=pd.to_datetime(["2024-01-02"])
+            [[0.77] * len(series)], index=pd.to_datetime(["2024-01-02"]), columns=series
         )
 
     monkeypatch.setattr(fred_model, "get_fred_data", fake_fred_data)
@@ -140,6 +143,7 @@ def test_get_loan_payment_follows_the_mortgage_rate(weekly_mortgage_rates):
         "Payment",
         "Total Interest",
         "First Payment Interest",
+        "Change",
     ]
     assert payments["Payment"].iloc[0] == pytest.approx(1611.8552, abs=1e-4)
     assert payments["Payment"].iloc[-1] == pytest.approx(2709.7393, abs=1e-4)
@@ -147,6 +151,9 @@ def test_get_loan_payment_follows_the_mortgage_rate(weekly_mortgage_rates):
     assert payments["First Payment Interest"].iloc[0] == pytest.approx(
         883.3333, abs=1e-4
     )
+    # The Change is relative to the payment at the first date, as in get_affordable_loan.
+    assert payments["Change"].iloc[0] == 0
+    assert payments["Change"].iloc[-1] == pytest.approx(2709.7393 / 1611.8552 - 1)
 
 
 def test_get_affordable_loan_keeps_the_first_payment(weekly_mortgage_rates):
@@ -201,9 +208,8 @@ def test_european_central_bank_rates_take_the_rate_at_the_end_of_each_period(
         == 2
     )
 
-    assert fixedincome.get_european_central_bank_rates(
-        rate="deposit", period="hourly"
-    ).empty
+    with pytest.raises(InvalidArgumentError, match="period must be one of"):
+        fixedincome.get_european_central_bank_rates(rate="deposit", period="hourly")
 
 
 def test_moodys_yields_average_the_months_of_complete_years(monkeypatch):
@@ -224,3 +230,63 @@ def test_moodys_yields_average_the_months_of_complete_years(monkeypatch):
     assert yearly.loc[pd.Period("2024", "Y"), "Aaa"] == pytest.approx(0.05)
     # 2025 is not complete yet.
     assert yearly.loc[pd.Period("2025", "Y")].isna().all()
+
+
+@pytest.mark.parametrize(
+    ("method", "arguments"),
+    [
+        ("get_loan_payment", {"principal": 0}),
+        ("get_loan_payment", {"years": -5}),
+        ("get_affordable_loan", {"payment": 0}),
+        ("get_affordable_loan", {"payments_per_year": 0}),
+        ("get_amortization_schedule", {"years": 0}),
+    ],
+)
+def test_loan_terms_must_be_above_zero(weekly_mortgage_rates, method, arguments):
+    with pytest.raises(InvalidArgumentError, match="must be above 0"):
+        getattr(weekly_mortgage_rates, method)(**arguments)
+
+
+def test_unreachable_central_banks_are_reported(monkeypatch, caplog):
+    import requests
+
+    from financetoolkit.fixedincome import helpers as fixedincome_helpers
+    from financetoolkit.fixedincome.sources import fed_model
+
+    def unreachable(url, **kwargs):  # noqa: ARG001
+        raise requests.exceptions.ConnectionError("Failed to resolve the host")
+
+    monkeypatch.setattr(fixedincome_helpers, "get_request", unreachable)
+    monkeypatch.setattr(fed_model, "get_request", unreachable)
+    fixedincome = fixedincome_controller.FixedIncome(
+        start_date="2024-01-01", end_date="2024-12-31", use_cached_data=False
+    )
+
+    with caplog.at_level("ERROR"):
+        assert fixedincome.get_european_central_bank_rates().empty
+        assert fixedincome.get_euribor_rates().empty
+        assert fixedincome.get_federal_reserve_rates().empty
+    assert "Could not reach the European Central Bank" in caplog.text
+    assert "Could not reach the Federal Reserve Bank of New York" in caplog.text
+
+
+@pytest.mark.parametrize(
+    "method", ["get_loan_payment", "get_affordable_loan", "get_amortization_schedule"]
+)
+def test_an_unreachable_mortgage_rate_source_is_not_reported_twice(
+    monkeypatch, caplog, method
+):
+    from financetoolkit.economics.sources import freddie_mac_model
+
+    monkeypatch.delenv("FRED_API_KEY", raising=False)
+    # The source logs that it could not be reached and answers with no data.
+    monkeypatch.setattr(
+        freddie_mac_model, "get_mortgage_rate_30_year", lambda: pd.DataFrame()
+    )
+    fixedincome = fixedincome_controller.FixedIncome(
+        start_date="2021-01-01", end_date="2026-11-06", use_cached_data=False
+    )
+
+    assert getattr(fixedincome, method)().empty
+    assert "is missing" not in caplog.text
+    assert "could not be calculated" not in caplog.text

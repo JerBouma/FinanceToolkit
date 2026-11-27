@@ -39,10 +39,35 @@ def test_merton_model_solves_both_equations():
     )
 
 
+def test_merton_credit_spread_matches_financepy():
+    # FinancePy MertonFirm(60, 50, 2, 0.03, 0.03, 0.35): equity_value, debt_value and
+    # credit_spread. The equity and its volatility of that firm are the model's inputs.
+    asset_value, asset_volatility, face, rate, years = 60.0, 0.35, 50.0, 0.03, 2.0
+    d1 = (np.log(asset_value / face) + (rate + asset_volatility**2 / 2) * years) / (
+        asset_volatility * np.sqrt(years)
+    )
+    equity = 18.119660661926517
+    equity_volatility = norm.cdf(d1) * asset_volatility * asset_value / equity
+
+    result = credit_model.get_merton_model(
+        equity, equity_volatility, face, rate, time_horizon=years
+    )
+
+    assert result["Asset Value"] == pytest.approx(asset_value, rel=1e-6)
+    assert result["Debt Value"] == pytest.approx(41.88033933807348, rel=1e-6)
+    assert result["Credit Spread"] == pytest.approx(0.05860325841516467, rel=1e-5)
+    assert result["Credit Spread"] == pytest.approx(
+        -np.log(result["Debt Value"] / face) / years - rate
+    )
+    # The probability of default stays the last output, the score the factor analysis uses.
+    assert result.index[-1] == "Probability of Default"
+
+
 def test_merton_model_without_debt_or_data():
     assert (
         credit_model.get_merton_model(100, 0.4, 0, 0.04)["Probability of Default"] == 0
     )
+    assert credit_model.get_merton_model(100, 0.4, 0, 0.04)["Credit Spread"] == 0
     assert np.isnan(
         credit_model.get_merton_model(np.nan, 0.4, 80, 0.04)["Distance to Default"]
     )

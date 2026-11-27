@@ -1,0 +1,14 @@
+,AAPL,MSFT,Benchmark
+Kupiec Statistic,1.4281,3.8501,6.0175
+Kupiec P-Value,0.2321,0.0497,0.0142
+Christoffersen Statistic,2.4617,0.2892,0.0039
+Christoffersen P-Value,0.1167,0.5907,0.9502
+Conditional Coverage Statistic,3.8898,4.1393,6.0214
+Conditional Coverage P-Value,0.143,0.1262,0.0493
+Duration Statistic,0.0152,1.3414,0.3979
+Duration P-Value,0.907,0.381,0.639
+Weibull Shape,0.9785,1.2373,1.1138
+McNeil-Frey Statistic,0.0931,1.9048,1.5252
+McNeil-Frey P-Value,0.448,0.017,0.038
+Breaches,17.0,20.0,22.0
+Tick Loss,0.0022,0.0026,0.0017

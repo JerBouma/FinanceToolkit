@@ -86,6 +86,85 @@ def test_employee_count_keeps_the_latest_filing_per_period(responses):
     assert "limit=5" in requested[0]
 
 
+def test_employee_count_of_a_year_ending_in_early_january_is_the_year_before(responses):
+    canned, _ = responses
+    # A 52/53-week year: fiscal 2021 ends on 1 January 2022, fiscal 2022 on 31 December.
+    canned["historical-employee-count"] = [
+        {
+            "periodOfReport": "2022-01-01",
+            "filingDate": "2022-02-20",
+            "employeeCount": 300,
+        },
+        {
+            "periodOfReport": "2022-12-31",
+            "filingDate": "2023-02-20",
+            "employeeCount": 400,
+        },
+    ]
+
+    employees, _ = fmp_model.get_employee_count(
+        ["K"], "key", start_date="2020-01-01", user_subscription="Free"
+    )
+
+    assert employees["K"].to_dict() == {
+        pd.Period("2021", "Y"): 300,
+        pd.Period("2022", "Y"): 400,
+    }
+
+
+def test_employee_count_of_a_year_ending_on_the_first_sunday_of_january(responses):
+    canned, _ = responses
+    # Fiscal years ending on the first Sunday of January, 7 January included.
+    year_ends = ["2018-01-07", "2019-01-06", "2020-01-05", "2024-01-07", "2025-01-05"]
+    canned["historical-employee-count"] = [
+        {"periodOfReport": end, "filingDate": end, "employeeCount": 100 * (number + 1)}
+        for number, end in enumerate(year_ends)
+    ]
+
+    employees, _ = fmp_model.get_employee_count(
+        ["K"], "key", start_date="2017-01-01", user_subscription="Free"
+    )
+
+    assert employees["K"].to_dict() == {
+        pd.Period(year, "Y"): count
+        for year, count in zip(
+            ["2017", "2018", "2019", "2023", "2024"],
+            [100, 200, 300, 400, 500],
+            strict=True,
+        )
+    }
+
+
+def test_toolkit_employee_count_keeps_the_year_before_for_the_first_quarters(
+    responses, cache_location, known_fmp_plan
+):
+    canned, _ = responses
+    canned["historical-employee-count"] = [
+        {"periodOfReport": end, "filingDate": end, "employeeCount": count}
+        for end, count in [("2021-12-31", 100), ("2022-12-31", 200)]
+    ]
+
+    toolkit = toolkit_controller.Toolkit(
+        ["MSFT"],
+        api_key="test-key",
+        start_date="2022-01-01",
+        end_date="2023-06-30",
+        sleep_timer=False,
+        use_cached_data=cache_location,
+        benchmark_ticker=None,
+    )
+
+    # The rows shown start at the start date's year; the quarters of 2022 use the count of
+    # 2021, which is collected as well.
+    assert toolkit.get_employee_count()["MSFT"].to_dict() == {
+        pd.Period("2022", "Y"): 200
+    }
+    assert toolkit._employee_count["MSFT"].to_dict() == {
+        pd.Period("2021", "Y"): 100,
+        pd.Period("2022", "Y"): 200,
+    }
+
+
 def test_shares_float_and_etf_weights_are_decimals(responses):
     canned, _ = responses
     canned["shares-float"] = [
@@ -1657,7 +1736,8 @@ def test_an_error_message_sent_with_status_200_is_not_cached(
     first = discovery_model.get_cached_financial_data(url)
     second = discovery_model.get_cached_financial_data(url)
 
-    assert list(first.columns) == ["LIMIT REACH"]
+    # The rate limit is logged and answered with an empty frame, never cached.
+    assert first.empty and list(first.columns) == []
     assert second["symbol"].tolist() == ["M&M.NS"]
 
 
@@ -1952,3 +2032,92 @@ def test_intraday_bars_of_a_single_day_are_returned(responses):
     assert str(intraday.index[0]) == "2026-11-20 09:00"
     assert str(intraday.index[-1]) == "2026-11-20 15:00"
     assert intraday["Close"].iloc[-1] == pytest.approx(115.5)
+
+
+def test_dividends_on_the_same_ex_dividend_date_are_added_up(monkeypatch):
+    # An ordinary dividend of 1.5 and a special dividend of 0.5 on the same ex-dividend
+    # date, in either order, and a record that is served twice.
+    for records in (
+        [
+            {"date": "2024-01-04", "adjDividend": 0.5, "label": "special"},
+            {"date": "2024-01-04", "adjDividend": 1.5, "label": "ordinary"},
+        ],
+        [
+            {"date": "2024-01-04", "adjDividend": 1.5, "label": "ordinary"},
+            {"date": "2024-01-04", "adjDividend": 0.5, "label": "special"},
+            {"date": "2024-01-04", "adjDividend": 0.5, "label": "special"},
+        ],
+    ):
+        _fake_prices_with_a_dividend(monkeypatch, records)
+
+        data = fmp_model.get_historical_data(
+            "X",
+            api_key="KEY",
+            start="2024-01-02",
+            end="2024-01-08",
+            user_subscription="Premium",
+        )
+
+        assert data["Dividends"].loc["2024-01-04"] == pytest.approx(2.0)
+        assert data["Adj Close"].iloc[0] == pytest.approx(100 * (1 - 2 / 101))
+        assert data["Return"].iloc[2] == pytest.approx(0)
+
+
+@pytest.mark.parametrize(
+    ("status", "expected"), [(503, "REQUEST FAILED"), (429, "LIMIT REACH")]
+)
+def test_a_lasting_server_error_or_rate_limit_is_named(
+    monkeypatch, caplog, status, expected
+):
+    monkeypatch.setattr(
+        fmp_model, "get_request", lambda *_, **__: _Response(status, "Unavailable")
+    )
+    monkeypatch.setattr(fmp_model.time, "sleep", lambda _: None)
+
+    with caplog.at_level("ERROR"), fmp_model.log_server_errors_once():
+        first = fmp_model.get_financial_data("https://example.com")
+        second = fmp_model.get_financial_data("https://example.com")
+
+    assert list(first.columns) == list(second.columns) == [expected]
+    assert "unrecognised error" not in caplog.text
+    if status == 503:
+        # Logged once for both requests, with the status and the number of attempts.
+        assert caplog.text.count("answered HTTP 503 after 4 attempts") == 1
+
+
+def test_an_answer_that_is_not_json_is_named_once(monkeypatch, caplog):
+    page = "<!DOCTYPE html><html><body>Service Unavailable</body></html>"
+    monkeypatch.setattr(fmp_model, "get_request", lambda *_, **__: _Response(200, page))
+
+    with caplog.at_level("ERROR"):
+        for _call in range(2):
+            with fmp_model.log_server_errors_once():
+                for _ in range(3):
+                    result = fmp_model.get_financial_data("https://example.com")
+
+    assert list(result.columns) == ["REQUEST FAILED"]
+    assert "unrecognised error" not in caplog.text
+    # Once per call, so the second call (another MCP request) is told as well.
+    assert caplog.text.count("answered with something other than JSON") == 2
+
+
+@pytest.mark.parametrize(
+    ("error", "reason"),
+    [("NO ERRORS", "could not be reached"), ("LIMIT REACH", "rate limit was reached")],
+)
+def test_an_unanswered_market_risk_premium_is_empty_and_reported(
+    monkeypatch, caplog, error, reason
+):
+    from financetoolkit import Economics
+
+    monkeypatch.setattr(
+        fmp_model,
+        "get_financial_data",
+        lambda url: pd.DataFrame(columns=[error]),  # noqa: ARG005
+    )
+
+    premium = Economics(api_key="key").get_market_risk_premium()
+
+    assert premium.empty and list(premium.columns) == []
+    assert "The market risk premium could not be retrieved" in caplog.text
+    assert reason in caplog.text

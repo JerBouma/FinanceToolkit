@@ -1,18 +1,22 @@
 """Performance Model Tests"""
 
 import io
+import warnings
 import zipfile
 
 import numpy as np
 import pandas as pd
 import pytest
+from scipy import stats
 
 from financetoolkit.performance import performance_model
+from financetoolkit.risk import risk_model
 from financetoolkit.risk.helpers import (
     compound_risk_free_rate,
     get_observations_per_year,
 )
 from financetoolkit.risk.value_at_risk import cvar_model
+from financetoolkit.utilities.error_model import InvalidArgumentError
 
 RESIDUAL_STD_TOLERANCE = 0.002
 
@@ -35,12 +39,12 @@ def test_get_beta(recorder):
     )
 
 
-def test_get_rolling_beta(recorder):
+def test_get_beta_rolling(recorder):
     recorder.capture(
-        performance_model.get_rolling_beta(
+        performance_model.get_beta(
             returns=pd.Series([0.3, 0.2, 0.1, 0, 0.06]),
             benchmark_returns=pd.Series([0.31, 0.19, 0.5, 0, 0.03]),
-            window_size=2,
+            window=2,
         )
     )
 
@@ -137,12 +141,12 @@ def test_get_alpha(recorder):
     )
 
 
-def test_get_rolling_alpha(recorder):
+def test_get_alpha_rolling(recorder):
     recorder.capture(
-        performance_model.get_rolling_alpha(
+        performance_model.get_alpha(
             asset_returns=pd.Series([0.3, 0.2, 0.1, 0, 0.06]),
             benchmark_returns=pd.Series([0.31, 0.19, 0.5, 0, 0.03]),
-            window_size=2,
+            window=2,
         ).round(4)
     )
 
@@ -179,10 +183,10 @@ def test_get_sharpe_ratio(recorder):
     )
 
 
-def test_get_rolling_sharpe_ratio(recorder):
+def test_get_sharpe_ratio_rolling(recorder):
     recorder.capture(
-        performance_model.get_rolling_sharpe_ratio(
-            excess_returns=pd.Series([0.3, 0.2, 0.1, 0, 0.06]), window_size=2
+        performance_model.get_sharpe_ratio(
+            excess_returns=pd.Series([0.3, 0.2, 0.1, 0, 0.06]), window=2
         ).round(4)
     )
 
@@ -259,11 +263,11 @@ def test_get_sortino_ratio(recorder):
     )
 
 
-def test_get_rolling_sortino_ratio(recorder):
+def test_get_sortino_ratio_rolling(recorder):
     recorder.capture(
-        performance_model.get_rolling_sortino_ratio(
+        performance_model.get_sortino_ratio(
             excess_returns=pd.Series([0.3, 0.2, -0.1, -0.05, 0.06, -0.2, 0.1]),
-            window_size=3,
+            window=3,
         ).round(4)
     )
 
@@ -288,13 +292,13 @@ def test_get_m2_ratio(recorder):
     )
 
 
-def test_get_rolling_m2_ratio(recorder):
+def test_get_m2_ratio_rolling(recorder):
     recorder.capture(
-        performance_model.get_rolling_m2_ratio(
+        performance_model.get_m2_ratio(
             asset_returns=pd.Series([0.3, 0.2, 0.1, 0, 0.06]),
             risk_free_rate=pd.Series([0.01, 0.02, 0.01, 0.0, 0.006]),
             benchmark_returns=pd.Series([0.31, 0.19, 0.5, 0, 0.03]),
-            window_size=2,
+            window=2,
         ).round(4)
     )
 
@@ -323,12 +327,12 @@ def test_get_tracking_error_dataframe(recorder):
     )
 
 
-def test_get_rolling_tracking_error(recorder):
+def test_get_tracking_error_rolling(recorder):
     recorder.capture(
-        performance_model.get_rolling_tracking_error(
+        performance_model.get_tracking_error(
             asset_returns=pd.Series([0.3, 0.2, 0.1, 0, 0.06]),
             benchmark_returns=pd.Series([0.31, 0.19, 0.5, 0, 0.03]),
-            window_size=2,
+            window=2,
         ).round(4)
     )
 
@@ -342,12 +346,12 @@ def test_get_information_ratio(recorder):
     )
 
 
-def test_get_rolling_information_ratio(recorder):
+def test_get_information_ratio_rolling(recorder):
     recorder.capture(
-        performance_model.get_rolling_information_ratio(
+        performance_model.get_information_ratio(
             asset_returns=pd.Series([0.3, 0.2, 0.1, 0, 0.06]),
             benchmark_returns=pd.Series([0.31, 0.19, 0.5, 0, 0.03]),
-            window_size=2,
+            window=2,
         ).round(4)
     )
 
@@ -700,7 +704,7 @@ def test_get_compound_annual_growth_rate_uses_calendar_time():
     assert np.isnan(performance_model.get_compound_annual_growth_rate(crypto.iloc[:1]))
 
 
-def test_get_rolling_beta_masks_the_benchmark_per_asset():
+def test_get_beta_rolling_masks_the_benchmark_per_asset():
     # Asset B has no returns for the first three dates, so its benchmark variance must
     # cover only the dates on which B has a return, as the covariance does.
     benchmark = pd.Series([0.01, -0.02, 0.03, 0.015, -0.01, 0.02, -0.005])
@@ -711,7 +715,7 @@ def test_get_rolling_beta_masks_the_benchmark_per_asset():
         }
     )
 
-    rolling_beta = performance_model.get_rolling_beta(returns, benchmark, 4)
+    rolling_beta = performance_model.get_beta(returns, benchmark, window=4)
 
     # The first full window of B (dates 3-6) has four returns.
     assert np.isnan(rolling_beta["B"].iloc[5])
@@ -747,9 +751,10 @@ def test_get_sortino_ratio_needs_two_observations():
         np.mean([0.02, -0.01, 0.005]) / np.sqrt(0.01**2 / 3)
     )
     assert np.isnan(performance_model.get_sortino_ratio(pd.Series([-0.01])))
-    assert (
-        performance_model.get_rolling_sortino_ratio(excess_returns["A"], 1).isna().all()
-    )
+    with pytest.raises(
+        InvalidArgumentError, match="window is a number of observations"
+    ):
+        performance_model.get_sortino_ratio(excess_returns["A"], window=1)
 
 
 def test_get_tracking_error_and_information_ratio_per_column():
@@ -858,10 +863,10 @@ def test_rolling_omega_ratio_matches_every_window_and_is_infinite_without_losses
         axis=1,
     ).reindex(returns.index)
     pd.testing.assert_frame_equal(
-        performance_model.get_rolling_omega_ratio(returns, 20), expected, rtol=1e-12
+        performance_model.get_omega_ratio(returns, window=20), expected, rtol=1e-12
     )
     assert (
-        performance_model.get_rolling_omega_ratio(pd.Series([0.01, 0.02, 0.0, 0.0]), 2)
+        performance_model.get_omega_ratio(pd.Series([0.01, 0.02, 0.0, 0.0]), window=2)
         .iloc[1:]
         .isna()
         .all()
@@ -873,7 +878,7 @@ def test_omega_ratio_without_losses_is_nan():
 
     assert np.isnan(performance_model.get_omega_ratio(gains_only))
     assert np.isnan(performance_model.get_omega_ratio(pd.Series([0.0, 0.0])))
-    assert np.isnan(performance_model.get_rolling_omega_ratio(gains_only, 2).iloc[-1])
+    assert np.isnan(performance_model.get_omega_ratio(gains_only, window=2).iloc[-1])
 
 
 def test_burke_drawdown_measure_of_a_series_without_returns_is_nan():
@@ -1011,7 +1016,7 @@ def test_the_rolling_kelly_criterion_matches_each_window():
     returns = pd.DataFrame({"A": TRADES})
 
     for method in ("discrete", "continuous"):
-        rolling = performance_model.get_rolling_kelly_criterion(returns, 5, method)
+        rolling = performance_model.get_kelly_criterion(returns, method, window=5)
 
         assert rolling["A"].iloc[:4].isna().all()
         assert rolling["A"].iloc[-1] == pytest.approx(
@@ -1179,8 +1184,8 @@ def test_rolling_morningstar_risk_adjusted_return_matches_every_full_window():
     excess_returns = pd.DataFrame({"A": rng.normal(0.005, 0.04, 40)})
     excess_returns.iloc[5, 0] = np.nan
 
-    rolling = performance_model.get_rolling_morningstar_risk_adjusted_return(
-        excess_returns, 12
+    rolling = performance_model.get_morningstar_risk_adjusted_return(
+        excess_returns, window=12
     )
 
     # A window holding the missing month is not full, so it has no value.
@@ -1252,7 +1257,7 @@ def test_rolling_lo_sharpe_ratio_matches_every_window():
     excess_returns = pd.DataFrame(
         {"A": rng.normal(0.01, 0.05, 60), "B": rng.normal(0.0, 0.05, 60)}
     )
-    rolling = performance_model.get_rolling_lo_sharpe_ratio(excess_returns, 36, 12)
+    rolling = performance_model.get_lo_sharpe_ratio(excess_returns, 12, window=36)
 
     assert rolling.iloc[:35].isna().all().all()
     for end in (35, 47, 59):
@@ -1263,7 +1268,7 @@ def test_rolling_lo_sharpe_ratio_matches_every_window():
         )
     # Windows below the 30-observation minimum have no ratio.
     assert (
-        performance_model.get_rolling_lo_sharpe_ratio(excess_returns, 24, 12)
+        performance_model.get_lo_sharpe_ratio(excess_returns, 12, window=24)
         .isna()
         .all()
         .all()
@@ -1329,7 +1334,7 @@ def test_sharpe_ratio_standard_error_methods():
         rel=0.01,
     )
 
-    with pytest.raises(ValueError, match="iid, non_normal or gmm"):
+    with pytest.raises(ValueError, match="'iid', 'non_normal' or 'gmm'"):
         performance_model.get_sharpe_ratio_standard_error(normal, "other")
 
 
@@ -1448,41 +1453,67 @@ def test_get_calmar_ratio_divides_the_return_by_the_absolute_maximum_drawdown():
     pd.testing.assert_series_equal(result, pd.Series([2.0, 0.2]))
 
 
-def test_get_average_drawdown_averages_the_periods_under_water():
-    # Wealth 1.1, 0.55, 0.66, 1.32 against a running peak of 1.1, 1.1, 1.1, 1.32: two
-    # days under water, 50% and 40% below the peak.
-    returns = pd.Series([0.1, -0.5, 0.2, 1.0])
+def test_get_average_largest_drawdown_averages_the_deepest_episodes():
+    # Wealth 1.1, 0.55, 0.66, 1.32, 1.188, 1.2474, 1.4969, 1.0478: three drawdowns from their
+    # peaks, of 50% (1.1 to 0.55), 10% (1.32 to 1.188) and 30% (1.4969 to 1.0478, not recovered).
+    returns = pd.Series([0.1, -0.5, 0.2, 1.0, -0.1, 0.05, 0.2, -0.3])
 
-    assert performance_model.get_average_drawdown(returns) == pytest.approx(-0.45)
+    assert performance_model.get_average_largest_drawdown(returns, 1) == pytest.approx(
+        -0.5
+    )
+    assert performance_model.get_average_largest_drawdown(returns, 2) == pytest.approx(
+        -0.4
+    )
+    # With fewer drawdowns than d, all of them: Bacon's average drawdown.
+    for largest in (3, 10):
+        assert performance_model.get_average_largest_drawdown(
+            returns, largest
+        ) == pytest.approx((-0.5 - 0.1 - 0.3) / 3)
+
+    # The same depths as the drawdown table of the risk module.
+    table = risk_model.get_drawdown_table(returns.to_frame("A"), top=3)
+    assert performance_model.get_average_largest_drawdown(returns) == pytest.approx(
+        table["Drawdown"].mean()
+    )
 
     # On a level (a rate or a spread) the drawdown is the distance to the running peak.
-    levels = pd.Series([1.0, 3.0, 2.0, 1.0, 4.0])
-    assert performance_model.get_average_drawdown(
+    levels = pd.Series([1.0, 3.0, 2.0, 1.0, 4.0, 3.5])
+    assert performance_model.get_average_largest_drawdown(
         levels, method="level"
-    ) == pytest.approx(-1.5)
+    ) == pytest.approx((-2.0 - 0.5) / 2)
+
+    # Without a drawdown it is 0, without returns NaN.
+    assert performance_model.get_average_largest_drawdown(pd.Series([0.1, 0.2])) == 0
+    assert np.isnan(performance_model.get_average_largest_drawdown(pd.Series([np.nan])))
 
     with pytest.raises(ValueError, match="method"):
-        performance_model.get_average_drawdown(returns, method="price")
+        performance_model.get_average_largest_drawdown(returns, method="price")
+    with pytest.raises(ValueError, match="largest_drawdowns"):
+        performance_model.get_average_largest_drawdown(returns, 0)
 
 
-def test_get_average_drawdown_per_sub_period():
+def test_get_average_largest_drawdown_per_sub_period():
     index = pd.MultiIndex.from_tuples(
-        [("2020", 1), ("2020", 2), ("2021", 1), ("2021", 2)]
+        [("2020", 1), ("2020", 2), ("2020", 3), ("2021", 1), ("2021", 2)]
     )
-    returns = pd.DataFrame({"A": [0.1, -0.5, -0.2, 0.1]}, index=index)
+    returns = pd.DataFrame(
+        {"A": [-0.1, 0.2, -0.05, -0.2, 0.1], "B": [0.1, 0.1, 0.1, 0.1, np.nan]},
+        index=index,
+    )
 
-    result = performance_model.get_average_drawdown(returns)
+    result = performance_model.get_average_largest_drawdown(returns)
 
-    # Each sub-period starts with a fresh peak: 2020 falls 50% from 1.1, 2021 falls 20%
-    # and recovers to 12% below the starting value of 1.
-    assert result.loc["2020", "A"] == pytest.approx(-0.5)
-    assert result.loc["2021", "A"] == pytest.approx((-0.2 + 0.8 * 1.1 - 1) / 2)
+    # Each sub-period starts with a fresh peak: 2020 has a drawdown of 10% from the starting
+    # value of 1 and one of 5% from 1.08, 2021 one of 20%, which 10% does not end.
+    assert result.loc["2020", "A"] == pytest.approx((-0.1 - 0.05) / 2)
+    assert result.loc["2021", "A"] == pytest.approx(-0.2)
+    assert (result["B"] == 0).all()
 
 
-def test_get_sterling_ratio_adds_the_adjustment_to_the_average_drawdown():
+def test_get_sterling_ratio_adds_the_adjustment_to_the_average_largest_drawdown():
     result = performance_model.get_sterling_ratio(
         returns=pd.Series([0.2, 0.3]),
-        average_drawdown=pd.Series([-0.1, -0.2]),
+        average_largest_drawdown=pd.Series([-0.1, -0.2]),
     )
     pd.testing.assert_series_equal(result, pd.Series([1.0, 1.0]))
 
@@ -1564,7 +1595,9 @@ def test_sharpe_ratio_series_keeps_within_period_groups():
     # The Safety-First Ratio is the Sharpe ratio above the threshold: means of -0.02 and
     # 0.02 over a standard deviation of 0.02.
     pd.testing.assert_series_equal(
-        performance_model.get_safety_first_ratio(returns, threshold=0.02),
+        performance_model.get_safety_first_ratio(
+            returns, minimum_acceptable_return=0.02
+        ),
         pd.Series([-1.0, 1.0], index=expected.index, name="AAPL"),
     )
 
@@ -1651,15 +1684,18 @@ def test_residual_value_uses_the_market_cap_of_the_previous_close():
     assert monthly.loc["2024-02", "A"] == pytest.approx(0.2 * 120.0)
 
 
-def test_get_rolling_appraisal_ratio_uses_the_regression_of_each_window():
+def test_get_appraisal_ratio_rolling_uses_the_regression_of_each_window():
     index = pd.period_range("2020-01", periods=24, freq="M")
     rng = np.random.default_rng(3)
     benchmark = pd.Series(rng.normal(0.01, 0.04, 24), index=index)
     excess = pd.DataFrame({"A": 0.8 * benchmark + rng.normal(0, 0.02, 24)}, index=index)
     jensens_alpha = pd.DataFrame({"A": rng.normal(0.01, 0.01, 24)}, index=index)
 
-    ratio = performance_model.get_rolling_appraisal_ratio(
-        jensens_alpha, excess, benchmark, 12
+    ratio = performance_model.get_appraisal_ratio(
+        jensens_alpha,
+        excess_returns=excess,
+        benchmark_excess_returns=benchmark,
+        window=12,
     )
 
     # Each ratio divides by the residual standard deviation of the OLS regression over its
@@ -1696,12 +1732,12 @@ def test_rolling_ratios_of_a_stock_next_to_a_cryptocurrency_use_its_own_returns(
     stock = returns["Stock"].dropna()
 
     for function in (
-        performance_model.get_rolling_sharpe_ratio,
-        performance_model.get_rolling_sortino_ratio,
-        performance_model.get_rolling_kelly_criterion,
+        performance_model.get_sharpe_ratio,
+        performance_model.get_sortino_ratio,
+        performance_model.get_kelly_criterion,
     ):
-        mixed = function(returns, 20)
-        alone = function(stock.to_frame(), 20)
+        mixed = function(returns, window=20)
+        alone = function(stock.to_frame(), window=20)
 
         # The weekends the stock does not trade on do not break every window of it.
         assert mixed["Stock"].notna().sum() == len(stock) - 19
@@ -1782,11 +1818,9 @@ def test_the_rolling_standard_deviation_pairs_the_asset_with_the_benchmark_dates
         np.where(weekday, rng.normal(0, 0.01, len(days)), np.nan), index=days
     )
 
-    result = performance_model.get_rolling_standard_deviation(returns, 10, benchmark)
-    benchmark_deviation = performance_model.get_rolling_standard_deviation(
-        benchmark, 10
-    )
-    beta = performance_model.get_rolling_beta(returns, benchmark, 10)
+    result = performance_model.get_standard_deviation(returns, benchmark, window=10)
+    benchmark_deviation = performance_model.get_standard_deviation(benchmark, window=10)
+    beta = performance_model.get_beta(returns, benchmark, window=10)
 
     # The stock's windows hold its own trading days, as without the cryptocurrency.
     stock = returns["Stock"].dropna()
@@ -1810,7 +1844,9 @@ def test_the_rolling_standard_deviation_pairs_the_asset_with_the_benchmark_dates
 def test_the_safety_first_ratio_is_the_sharpe_ratio_above_the_threshold():
     returns = pd.Series([0.02, -0.01, 0.03, -0.02, 0.01])
 
-    result = performance_model.get_safety_first_ratio(returns, threshold=0.005)
+    result = performance_model.get_safety_first_ratio(
+        returns, minimum_acceptable_return=0.005
+    )
 
     assert result == pytest.approx((returns.mean() - 0.005) / returns.std(ddof=1))
     assert performance_model.get_safety_first_ratio(returns) == pytest.approx(
@@ -1829,10 +1865,10 @@ def test_constant_returns_have_no_sharpe_or_safety_first_ratio():
     assert performance_model.get_sharpe_ratio(returns).isna().all()
     assert np.isnan(performance_model.get_sharpe_ratio(returns["Flat"]))
     assert performance_model.get_sharpe_ratio(within_period).isna().all().all()
-    assert performance_model.get_rolling_sharpe_ratio(returns, 20).isna().all().all()
+    assert performance_model.get_sharpe_ratio(returns, window=20).isna().all().all()
     assert performance_model.get_safety_first_ratio(returns).isna().all()
     assert (
-        performance_model.get_rolling_safety_first_ratio(returns, 20).isna().all().all()
+        performance_model.get_safety_first_ratio(returns, window=20).isna().all().all()
     )
 
     # Returns with variation keep their ratio.
@@ -1852,7 +1888,7 @@ def test_ratios_without_a_denominator_are_nan_rather_than_infinite():
     assert performance_model.get_sortino_ratio(gains).isna().all()
     assert np.isnan(performance_model.get_sortino_ratio(gains["Gains"]))
     assert performance_model.get_sortino_ratio(within_period).isna().all().all()
-    assert performance_model.get_rolling_sortino_ratio(gains, 5).isna().all().all()
+    assert performance_model.get_sortino_ratio(gains, window=5).isna().all().all()
     assert performance_model.get_kappa_ratio(gains).isna().all()
     assert performance_model.get_kappa_ratio(within_period).isna().all().all()
     assert performance_model.get_gain_to_pain_ratio(gains).isna().all()
@@ -1864,7 +1900,7 @@ def test_ratios_without_a_denominator_are_nan_rather_than_infinite():
     tracking = pd.DataFrame({"Tracker": benchmark.to_numpy()})
     assert performance_model.get_information_ratio(tracking, benchmark).isna().all()
     assert (
-        performance_model.get_rolling_information_ratio(tracking, benchmark, 5)
+        performance_model.get_information_ratio(tracking, benchmark, window=5)
         .isna()
         .all()
         .all()
@@ -1889,7 +1925,7 @@ def test_the_upside_potential_ratio_averages_both_moments_over_every_return():
     result = performance_model.get_upside_potential_ratio(returns)
     assert result == pytest.approx(0.01 / np.sqrt(0.0001))
 
-    rolling = performance_model.get_rolling_upside_potential_ratio(returns, 5)
+    rolling = performance_model.get_upside_potential_ratio(returns, window=5)
     assert rolling.iloc[-1] == pytest.approx(result)
 
 
@@ -1899,8 +1935,8 @@ def test_the_upside_potential_ratio_without_a_loss_or_with_one_return_is_nan():
     )
     assert np.isnan(performance_model.get_upside_potential_ratio(pd.Series([-0.01])))
     assert (
-        performance_model.get_rolling_upside_potential_ratio(
-            pd.Series([0.01, 0.02, 0.03]), 2
+        performance_model.get_upside_potential_ratio(
+            pd.Series([0.01, 0.02, 0.03]), window=2
         )
         .isna()
         .all()
@@ -1912,3 +1948,1044 @@ def test_the_pain_ratio_without_a_drawdown_is_nan():
     assert performance_model.get_pain_ratio(
         pd.Series([0.05, 0.02]), pd.Series([0.0, 0.01])
     ).to_list() == [pytest.approx(2.0)]
+
+
+# A fixed series of daily returns, with the quantstats 0.0.86 values on it as the reference.
+QUANTSTATS_RETURNS = pd.Series(
+    [0.012, -0.004, 0.009, 0.015, -0.011, 0.003, 0.007, -0.002, 0.011, -0.008]
+    + [0.006, 0.004, -0.013, 0.010, 0.005, -0.001, 0.008, 0.002, -0.006, 0.013]
+)
+
+# PerformanceAnalytics' portfolio_bacon data (Bacon, 2008): 24 monthly returns of a portfolio
+# and its benchmark. The expected values are the outputs in PerformanceAnalytics 2.0.4's
+# tests/Examples/PerformanceAnalytics-Ex.Rout.save.
+BACON_PORTFOLIO = pd.Series(
+    [
+        0.003,
+        0.026,
+        0.011,
+        -0.010,
+        0.015,
+        0.025,
+        0.016,
+        0.067,
+        -0.014,
+        0.040,
+        -0.005,
+        0.081,
+    ]
+    + [
+        0.040,
+        -0.037,
+        -0.061,
+        0.017,
+        -0.049,
+        -0.022,
+        0.070,
+        0.058,
+        -0.065,
+        0.024,
+        -0.005,
+        -0.009,
+    ]
+)
+BACON_BENCHMARK = pd.Series(
+    [
+        0.002,
+        0.025,
+        0.018,
+        -0.011,
+        0.014,
+        0.018,
+        0.014,
+        0.065,
+        -0.015,
+        0.042,
+        -0.006,
+        0.083,
+    ]
+    + [
+        0.039,
+        -0.038,
+        -0.062,
+        0.015,
+        -0.048,
+        0.021,
+        0.060,
+        0.056,
+        -0.067,
+        0.019,
+        -0.003,
+        0.000,
+    ]
+)
+
+
+def _bacon_beta():
+    return np.cov(BACON_PORTFOLIO, BACON_BENCHMARK)[0, 1] / BACON_BENCHMARK.var()
+
+
+def test_smart_sharpe_and_sortino_ratios_match_quantstats():
+    returns = QUANTSTATS_RETURNS
+    penalty = performance_model.get_autocorrelation_penalty(returns)
+
+    assert penalty == pytest.approx(1.7127888057741563, abs=1e-12)
+    assert performance_model.get_sharpe_ratio(returns) / penalty == pytest.approx(
+        0.21389937978423693, abs=1e-12
+    )
+    sortino_ratio = performance_model.get_sortino_ratio(returns)
+    assert sortino_ratio / penalty == pytest.approx(0.38637723096820564, abs=1e-12)
+    assert sortino_ratio / np.sqrt(2) == pytest.approx(0.4679509613087476, abs=1e-12)
+
+
+def test_probabilistic_sortino_ratios_match_quantstats():
+    returns = QUANTSTATS_RETURNS
+    sortino_ratio = performance_model.get_sortino_ratio(returns)
+
+    def probabilistic(ratio):
+        return performance_model.get_probabilistic_sharpe_ratio(
+            ratio, 0.0, returns.skew(), returns.kurtosis() + 3, len(returns)
+        )
+
+    assert probabilistic(sortino_ratio) == pytest.approx(0.9913569550407476, abs=1e-12)
+    assert probabilistic(sortino_ratio / np.sqrt(2)) == pytest.approx(
+        0.963053346398112, abs=1e-12
+    )
+
+
+def test_autocorrelation_penalty_per_period_and_rolling():
+    index = pd.MultiIndex.from_product([["2024", "2025"], range(20)])
+    within = pd.DataFrame(
+        {"A": np.tile(QUANTSTATS_RETURNS, 2), "B": np.tile(-QUANTSTATS_RETURNS, 2)},
+        index=index,
+    )
+    penalty = performance_model.get_autocorrelation_penalty(within)
+
+    # The absolute autocorrelation is the same for the series and its mirror image.
+    np.testing.assert_allclose(penalty.to_numpy(), 1.7127888057741563, atol=1e-12)
+
+    rolling = performance_model.get_autocorrelation_penalty(
+        QUANTSTATS_RETURNS.to_frame("A"), window=20
+    )
+    assert rolling["A"].iloc[-1] == pytest.approx(1.7127888057741563, abs=1e-12)
+    assert rolling["A"].iloc[:-1].isna().all()
+
+    # Without variation there is no autocorrelation to penalize.
+    assert np.isnan(
+        performance_model.get_autocorrelation_penalty(pd.Series([0.01] * 5))
+    )
+
+
+def test_annualized_return_matches_performance_analytics():
+    # Return.annualized(portfolio_bacon[, 1]) with 12 observations a year.
+    expected = np.prod(1 + BACON_PORTFOLIO) ** (12 / 24) - 1
+    assert performance_model.get_annualized_return(
+        BACON_PORTFOLIO, 12
+    ) == pytest.approx(expected, abs=1e-15)
+    assert np.isnan(
+        performance_model.get_annualized_return(pd.Series([np.nan, np.nan]), 12)
+    )
+
+
+def test_modified_and_alternative_jensens_alpha_match_performance_analytics():
+    beta = _bacon_beta()
+    annualized_portfolio = performance_model.get_annualized_return(BACON_PORTFOLIO, 12)
+    annualized_benchmark = performance_model.get_annualized_return(BACON_BENCHMARK, 12)
+    jensens_alpha = pd.Series([annualized_portfolio - beta * annualized_benchmark])
+    benchmark_volatility = BACON_BENCHMARK.std() * np.sqrt(12)
+
+    # AppraisalRatio(method = "modified") and (method = "alternative").
+    assert performance_model.get_modified_jensens_alpha(
+        jensens_alpha, pd.Series([beta])
+    )[0] == pytest.approx(-0.01418576, abs=1e-8)
+    assert performance_model.get_modified_jensens_alpha(
+        jensens_alpha, pd.Series([beta]), benchmark_volatility
+    )[0] == pytest.approx(-0.1066928, abs=1e-7)
+
+    # TreynorRatio(modified = TRUE).
+    assert performance_model.get_treynor_ratio(
+        pd.Series([annualized_portfolio]), 0.0, pd.Series([beta]), benchmark_volatility
+    )[0] == pytest.approx(0.7806747, abs=1e-7)
+
+
+def test_m2_excess_return_matches_performance_analytics():
+    # MSquared uses population standard deviations.
+    m2_ratio = performance_model.get_m2_ratio(
+        pd.Series([performance_model.get_annualized_return(BACON_PORTFOLIO, 12)]),
+        0.0,
+        pd.Series([BACON_PORTFOLIO.std(ddof=0) * np.sqrt(12)]),
+        BACON_BENCHMARK.std(ddof=0) * np.sqrt(12),
+    )
+    annualized_benchmark = performance_model.get_annualized_return(BACON_BENCHMARK, 12)
+
+    assert m2_ratio[0] == pytest.approx(0.10062, abs=1e-6)
+    assert performance_model.get_m2_excess_return(
+        m2_ratio, annualized_benchmark, "geometric"
+    )[0] == pytest.approx(-0.01553103, abs=1e-8)
+    assert performance_model.get_m2_excess_return(
+        m2_ratio, annualized_benchmark, "arithmetic"
+    )[0] == pytest.approx(-0.01736344, abs=1e-8)
+
+    with pytest.raises(ValueError, match="arithmetic"):
+        performance_model.get_m2_excess_return(m2_ratio, 0.0, "other")
+
+
+def test_omega_excess_return_matches_performance_analytics():
+    minimum_acceptable_return = 0.005
+
+    def downside_deviation(returns):
+        shortfall = (returns - minimum_acceptable_return).clip(upper=0)
+        return np.sqrt((shortfall**2).mean()) * np.sqrt(12)
+
+    assert performance_model.get_omega_excess_return(
+        pd.Series([performance_model.get_annualized_return(BACON_PORTFOLIO, 12)]),
+        pd.Series([downside_deviation(BACON_PORTFOLIO)]),
+        downside_deviation(BACON_BENCHMARK),
+    )[0] == pytest.approx(0.08053795, abs=1e-8)
+
+
+def test_omega_sharpe_ratio_and_gain_to_pain_ratio_match_the_references():
+    # OmegaSharpeRatio(portfolio_bacon[, 1], MAR = 0.005) and quantstats' gain_to_pain_ratio.
+    assert performance_model.get_gain_to_pain_ratio(
+        BACON_PORTFOLIO, 0.005
+    ) == pytest.approx(0.2917933, abs=1e-7)
+    assert performance_model.get_gain_to_pain_ratio(
+        QUANTSTATS_RETURNS
+    ) == pytest.approx(1.3333333333333335, abs=1e-12)
+
+    # The Omega-Sharpe ratio is the Omega ratio minus 1.
+    assert performance_model.get_gain_to_pain_ratio(
+        BACON_PORTFOLIO, 0.005
+    ) == pytest.approx(performance_model.get_omega_ratio(BACON_PORTFOLIO, 0.005) - 1)
+
+
+def test_d_ratio_matches_performance_analytics():
+    assert performance_model.get_d_ratio(BACON_PORTFOLIO) == pytest.approx(
+        0.4013329, abs=1e-7
+    )
+    # No losses gives 0, no gains leaves the ratio undefined.
+    assert performance_model.get_d_ratio(pd.Series([0.01, 0.02])) == 0
+    assert np.isnan(performance_model.get_d_ratio(pd.Series([-0.01, -0.02])))
+
+    within = pd.DataFrame(
+        {"A": np.tile(BACON_PORTFOLIO, 2)},
+        index=pd.MultiIndex.from_product([["2024", "2025"], range(24)]),
+    )
+    np.testing.assert_allclose(
+        performance_model.get_d_ratio(within)["A"].to_numpy(), 0.4013329, atol=1e-7
+    )
+
+
+def test_prospect_ratio_matches_performance_analytics():
+    gains = BACON_PORTFOLIO.clip(lower=0).sum()
+    losses = BACON_PORTFOLIO.clip(upper=0).sum()
+    downside_deviation = np.sqrt((BACON_PORTFOLIO.clip(upper=0) ** 2).mean())
+
+    # ProspectRatio(portfolio_bacon[, 1], MAR = 0), as its R code calculates it.
+    assert performance_model.get_prospect_ratio(BACON_PORTFOLIO) == pytest.approx(
+        (gains + 2.25 * losses) / (downside_deviation * 24), abs=1e-12
+    )
+
+    # With a MAR the documented formula subtracts the MAR from the average.
+    shortfall = (BACON_PORTFOLIO - 0.05).clip(upper=0)
+    assert performance_model.get_prospect_ratio(BACON_PORTFOLIO, 0.05) == pytest.approx(
+        ((gains + 2.25 * losses) / 24 - 0.05) / np.sqrt((shortfall**2).mean()),
+        abs=1e-12,
+    )
+    assert np.isnan(performance_model.get_prospect_ratio(pd.Series([0.01, 0.02])))
+
+
+def test_modified_burke_ratio_divides_by_the_root_mean_square_drawdown():
+    excess_returns = pd.Series([0.1, -0.05])
+    burke_drawdown_measure = pd.Series([0.2, 0.4])
+
+    np.testing.assert_allclose(
+        performance_model.get_burke_ratio(
+            excess_returns, burke_drawdown_measure, n_observations=24
+        ),
+        performance_model.get_burke_ratio(excess_returns, burke_drawdown_measure)
+        * np.sqrt(24),
+    )
+
+
+def test_return_statistics_extensions_match_quantstats_and_performance_analytics():
+    statistics = performance_model.get_return_statistics(QUANTSTATS_RETURNS)
+
+    # quantstats 0.0.86 on the same returns (no return is exactly 0, so the win
+    # conventions agree), and PerformanceAnalytics' mean.stderr, mean.LCL and mean.UCL.
+    expected = {
+        "Expectancy": 0.003,
+        "Best Return": 0.015,
+        "Worst Return": -0.013,
+        "Exposure": 1.0,
+        "CPC Index": 1.9055555555555557,
+        "Profit Ratio": 0.6765285996055227,
+        "Outlier Win Ratio": 1.8100952380952378,
+        "Outlier Loss Ratio": 1.963111111111111,
+        "Risk of Ruin": 3.4015902868396653e-14,
+        "Mean Return": 0.003,
+        "Standard Error": 0.001831019273232089,
+        "Lower Confidence Limit": -0.0008323673829599815,
+        "Upper Confidence Limit": 0.006832367382959982,
+    }
+    for statistic, value in expected.items():
+        assert statistics[statistic] == pytest.approx(value, rel=1e-12, abs=1e-15)
+
+    # The Risk-Adjusted Return is the annualized return over the exposure.
+    annualized_return = (1 + QUANTSTATS_RETURNS).prod() ** (252 / 20) - 1
+    assert statistics["Risk-Adjusted Return"] == pytest.approx(annualized_return)
+
+
+def test_return_statistics_leave_zero_returns_out_of_the_wins():
+    returns = pd.Series([0.02, 0.0, -0.01, 0.0, 0.03, -0.02])
+    statistics = performance_model.get_return_statistics(returns, periods_per_year=12)
+
+    assert statistics["Exposure"] == pytest.approx(4 / 6)
+    # Average win 0.025 over 2 wins, average loss 0.015 over 2 losses.
+    assert statistics["Profit Ratio"] == pytest.approx((0.025 / 2) / (0.015 / 2))
+    assert statistics["Outlier Win Ratio"] == pytest.approx(
+        returns.quantile(0.99) / 0.025
+    )
+    assert statistics["Risk-Adjusted Return"] == pytest.approx(
+        ((1 + returns).prod() ** (12 / 6) - 1) / (4 / 6)
+    )
+
+
+def test_capture_ratio_methods_match_empyrical_and_performance_analytics():
+    portfolio, benchmark = BACON_PORTFOLIO, BACON_BENCHMARK
+
+    # empyrical 0.7.3 on the monthly returns (period="monthly", 12 a year).
+    assert performance_model.get_upside_capture_ratio(
+        portfolio, benchmark, method="annualized", periods_per_year=12
+    ) == pytest.approx(0.9478779356059414, rel=1e-12)
+    assert performance_model.get_downside_capture_ratio(
+        portfolio, benchmark, method="annualized", periods_per_year=12
+    ) == pytest.approx(0.9864739725390025, rel=1e-12)
+    assert performance_model.get_capture_ratio(
+        portfolio, benchmark, method="annualized", periods_per_year=12
+    ) == pytest.approx(0.8787532646895315, rel=1e-12)
+
+    # PerformanceAnalytics' UpDownRatios; its Down Capture also counts the month the
+    # benchmark returned 0, which the Toolkit leaves out.
+    assert performance_model.get_upside_capture_ratio(
+        portfolio, benchmark, method="arithmetic"
+    ) == pytest.approx(0.9592668024439919, rel=1e-12)
+    down = benchmark < 0
+    assert performance_model.get_downside_capture_ratio(
+        portfolio, benchmark, method="arithmetic"
+    ) == pytest.approx(portfolio[down].sum() / benchmark[down].sum(), rel=1e-12)
+    assert performance_model.get_up_down_number(
+        portfolio, benchmark, market="up"
+    ) == pytest.approx(0.9333333333333333)
+    assert performance_model.get_up_down_number(
+        portfolio, benchmark, market="down"
+    ) == pytest.approx(1.0)
+
+    with pytest.raises(ValueError, match="'geometric', 'annualized' or 'arithmetic'"):
+        performance_model.get_capture_ratio(portfolio, benchmark, method="median")
+
+
+def test_rolling_capture_ratio_uses_the_returns_of_each_window():
+    portfolio = BACON_PORTFOLIO.to_frame("Portfolio")
+    rolling = performance_model.get_capture_ratio(
+        portfolio, BACON_BENCHMARK, window=12, side="up_down"
+    )
+
+    assert rolling["Portfolio"].iloc[:11].isna().all()
+    expected = performance_model.get_upside_capture_ratio(
+        BACON_PORTFOLIO.iloc[-12:], BACON_BENCHMARK.iloc[-12:]
+    ) / performance_model.get_downside_capture_ratio(
+        BACON_PORTFOLIO.iloc[-12:], BACON_BENCHMARK.iloc[-12:]
+    )
+    assert rolling["Portfolio"].iloc[-1] == pytest.approx(expected)
+
+
+def test_up_and_down_market_win_rates_match_performance_analytics():
+    portfolio, benchmark = BACON_PORTFOLIO, BACON_BENCHMARK
+
+    # PerformanceAnalytics' Up and Down Percent; empyrical's batting average counts the
+    # month the benchmark returned 0 as an up market (0.6875 there).
+    assert performance_model.get_win_rate(portfolio, benchmark) == pytest.approx(
+        0.7083333333333334
+    )
+    assert performance_model.get_win_rate(
+        portfolio, benchmark, market="up"
+    ) == pytest.approx(0.7333333333333333)
+    assert performance_model.get_win_rate(
+        portfolio, benchmark, market="down"
+    ) == pytest.approx(0.75)
+
+
+def test_outperformance_probability_matches_performance_analytics():
+    probability = performance_model.get_outperformance_probability(
+        BACON_PORTFOLIO.to_frame("Portfolio"), BACON_BENCHMARK, windows=[1, 3, 6, 12]
+    )["Portfolio"]
+
+    # PerformanceAnalytics' table.ProbOutPerformance, transcribed and checked against
+    # its recorded output on the edhec data.
+    assert probability.to_list() == pytest.approx(
+        [
+            0.7083333333333334,
+            0.6363636363636364,
+            0.6842105263157895,
+            0.46153846153846156,
+        ]
+    )
+
+    # Without a benchmark each window return is compared with 0.
+    absolute = performance_model.get_outperformance_probability(
+        BACON_PORTFOLIO.to_frame("Portfolio"), windows=[1]
+    )
+    assert absolute.loc[1, "Portfolio"] == pytest.approx(
+        (BACON_PORTFOLIO > 0).sum() / (BACON_PORTFOLIO != 0).sum()
+    )
+
+
+def test_bull_bear_beta_matches_performance_analytics_and_empyrical():
+    results = performance_model.get_bull_bear_beta(
+        BACON_PORTFOLIO, BACON_BENCHMARK, periods_per_year=12
+    )
+
+    # PerformanceAnalytics' CAPM.beta.bull and CAPM.beta.bear, and empyrical's
+    # up_alpha_beta and down_alpha_beta (period="monthly").
+    assert results["Bull Beta"] == pytest.approx(1.0743229309870772, rel=1e-12)
+    assert results["Bear Beta"] == pytest.approx(0.9813284687198197, rel=1e-12)
+    assert results["Timing Ratio"] == pytest.approx(
+        1.0743229309870772 / 0.9813284687198197
+    )
+    assert results["Bull Alpha"] == pytest.approx(-0.04426955, abs=1e-8)
+    assert results["Bear Alpha"] == pytest.approx(-0.00100136, abs=1e-8)
+
+
+def test_beta_fragility_heuristic_matches_empyrical():
+    # empyrical's beta_fragility_heuristic on Bacon's monthly returns.
+    assert performance_model.get_beta_fragility_heuristic(
+        BACON_PORTFOLIO, BACON_BENCHMARK
+    ) == pytest.approx(-0.0021866666666666666, abs=1e-15)
+    assert np.isnan(
+        performance_model.get_beta_fragility_heuristic(
+            pd.Series([0.01, 0.02]), pd.Series([0.01, 0.03])
+        )
+    )
+
+
+def test_stability_and_r_squared_match_empyrical_and_quantstats():
+    assert performance_model.get_stability_of_returns(BACON_PORTFOLIO) == pytest.approx(
+        0.5879117296650359, rel=1e-12
+    )
+    assert performance_model.get_r_squared(
+        BACON_PORTFOLIO, BACON_BENCHMARK
+    ) == pytest.approx(0.9397088580814588, rel=1e-12)
+
+    frame = pd.DataFrame({"A": BACON_PORTFOLIO, "B": BACON_PORTFOLIO * 2})
+    rolling = performance_model.get_r_squared(frame, BACON_BENCHMARK, window=24)
+    assert rolling.iloc[-1].to_list() == pytest.approx([0.9397088580814588] * 2)
+
+
+def test_risk_decomposition_matches_performance_analytics():
+    n = len(BACON_PORTFOLIO)
+    risks = performance_model.get_risk_decomposition(
+        BACON_PORTFOLIO, BACON_BENCHMARK, observations=12
+    )
+
+    # PerformanceAnalytics' SystematicRisk (0.132806); its SpecificRisk (0.03293109)
+    # divides by n where the Toolkit divides by n - 1.
+    assert risks["Systematic Risk"] == pytest.approx(0.132806, abs=1e-6)
+    assert risks["Specific Risk"] == pytest.approx(
+        0.03293109 * np.sqrt(n / (n - 1)), abs=1e-7
+    )
+    assert risks["Total Risk"] == pytest.approx(BACON_PORTFOLIO.std() * np.sqrt(12))
+
+
+def test_capital_market_line_and_regression_epsilon_match_performance_analytics():
+    risk_free = pd.Series(0.0, index=BACON_BENCHMARK.index)
+    line = performance_model.get_capital_market_line(
+        BACON_PORTFOLIO, BACON_BENCHMARK, risk_free
+    )
+
+    # PerformanceAnalytics' CAPM.CML.slope, and the reciprocal of its CAPM.SML.slope.
+    assert line["Capital Market Line Slope"] == pytest.approx(0.26162488955600705)
+    assert line["Security Market Line Slope"] == pytest.approx(0.010041666666666667)
+    assert line["Capital Market Line Return"] == pytest.approx(
+        0.26162488955600705 * BACON_PORTFOLIO.std()
+    )
+
+    # PerformanceAnalytics' CAPM.epsilon (-0.01313932) uses the annualized returns.
+    epsilon = performance_model.get_regression_epsilon(
+        BACON_PORTFOLIO,
+        BACON_BENCHMARK,
+        (1 + BACON_PORTFOLIO).prod() ** (12 / 24) - 1,
+        (1 + BACON_BENCHMARK).prod() ** (12 / 24) - 1,
+    )
+    assert epsilon == pytest.approx(-0.013139323809325809, rel=1e-10)
+
+
+def test_log_returns_add_up_to_the_cumulative_return():
+    log_returns = performance_model.get_log_returns(QUANTSTATS_RETURNS)
+
+    assert log_returns.sum() == pytest.approx(np.log((1 + QUANTSTATS_RETURNS).prod()))
+
+
+def test_geltner_returns_match_performance_analytics():
+    # Return.Geltner: (R_t - ρ1 R_t-1) / (1 - ρ1) with ρ1 the lag-1 sample autocorrelation.
+    returns = BACON_PORTFOLIO
+    deviations = returns - returns.mean()
+    autocorrelation = (deviations * deviations.shift(1)).sum() / (deviations**2).sum()
+    expected = (returns - autocorrelation * returns.shift(1)) / (1 - autocorrelation)
+
+    unsmoothed = performance_model.get_geltner_returns(returns)
+
+    assert np.isnan(unsmoothed.iloc[0])
+    np.testing.assert_allclose(unsmoothed.iloc[1:], expected.iloc[1:], atol=1e-15)
+
+    # Each column on its own history: a later start leaves the other column unchanged.
+    frame = pd.DataFrame({"A": returns, "B": returns.where(returns.index >= 5)})
+    np.testing.assert_allclose(
+        performance_model.get_geltner_returns(frame)["A"].iloc[1:], expected.iloc[1:]
+    )
+    assert performance_model.get_geltner_returns(frame)["B"].iloc[:6].isna().all()
+
+
+def test_smoothing_index_matches_the_maximum_likelihood_of_statsmodels():
+    rng = np.random.default_rng(5)
+    innovations = rng.normal(0, 0.02, 122)
+    returns = pd.Series(
+        0.6 * innovations[2:] + 0.3 * innovations[1:-1] + 0.1 * innovations[:-2]
+    )
+
+    smoothing = performance_model.get_smoothing_index(returns)
+
+    # statsmodels ARIMA(0, 0, 2) without a mean, exact maximum likelihood, normalized.
+    np.testing.assert_allclose(
+        smoothing[["Theta 0", "Theta 1", "Theta 2"]],
+        [0.61095141, 0.31326356, 0.07578503],
+        atol=1e-6,
+    )
+    assert smoothing["Smoothing Index"] == pytest.approx(0.47713905, abs=1e-6)
+
+    # Returns without smoothing have an index close to 1, too few returns give NaN.
+    assert (
+        performance_model.get_smoothing_index(pd.Series(rng.normal(0, 0.02, 500)))[
+            "Smoothing Index"
+        ]
+        > 0.8
+    )  # noqa: PLR2004
+    assert performance_model.get_smoothing_index(pd.Series([0.01] * 5)).isna().all()
+
+
+def test_serenity_index_is_the_ulcer_performance_index_over_the_pitfall():
+    excess_returns = pd.Series([0.2, -0.1])
+    ulcer_index = pd.Series([0.05, 0.1])
+    conditional_drawdown_at_risk = pd.Series([-0.15, -0.3])
+    volatility = pd.Series([0.2, 0.3])
+
+    serenity_index = performance_model.get_serenity_index(
+        excess_returns, ulcer_index, conditional_drawdown_at_risk, volatility
+    )
+
+    np.testing.assert_allclose(
+        serenity_index, [0.2 / (0.05 * 0.75), -0.1 / (0.1 * 1.0)]
+    )
+
+
+def test_risk_measure_ratio_matches_skfolio():
+    # skfolio 1.14: mean(returns) / measure, with the compounded drawdowns.
+    expected = {
+        "mad": 0.44776119402985076,
+        "lpm": 0.8955223880597015,
+        "gmd": 0.31456953642384106,
+        "worst": 0.23076923076923078,
+        "max_drawdown": 0.2307692307692286,
+        "average_drawdown": 0.9935866706480108,
+        "ulcer": 0.6022708609459754,
+    }
+
+    for risk_measure, value in expected.items():
+        assert performance_model.get_risk_measure_ratio(
+            QUANTSTATS_RETURNS, QUANTSTATS_RETURNS, risk_measure
+        ) == pytest.approx(value, rel=1e-10), risk_measure
+
+    within = pd.DataFrame(
+        {"A": np.tile(QUANTSTATS_RETURNS, 2)},
+        index=pd.MultiIndex.from_product([["2024", "2025"], range(20)]),
+    )
+    np.testing.assert_allclose(
+        performance_model.get_risk_measure_ratio(within, within, "mad")["A"],
+        expected["mad"],
+    )
+
+    with pytest.raises(ValueError, match="risk_measure must be one of"):
+        performance_model.get_risk_measure(QUANTSTATS_RETURNS, "other")
+
+
+def test_trailing_returns_match_ffn():
+    rng = np.random.default_rng(11)
+    dates = pd.bdate_range("2021-01-01", "2024-06-28")
+    prices = pd.Series(
+        100 * np.cumprod(1 + rng.normal(0.0004, 0.01, len(dates))), index=dates
+    )
+
+    trailing_returns = performance_model.get_trailing_returns(prices)
+
+    # ffn 1.4.1 PerformanceStats: mtd, three_month, six_month, ytd, one_year and incep.
+    expected = {
+        "Month to Date": 0.06527024676855553,
+        "3 Months": 0.1084229852355938,
+        "6 Months": 0.21728091531533877,
+        "Year to Date": 0.21728091531533877,
+        "1 Year": 0.2407967411419052,
+        "Since Inception (Annualized)": 0.1794947378121643,
+    }
+    for label, value in expected.items():
+        assert trailing_returns[label] == pytest.approx(value, rel=1e-10), label
+
+    # The 3 year window starts at the close of June 2021, annualized over its calendar days.
+    start = prices.loc[:"2021-06-30"]
+    years = (dates[-1] - start.index[-1]).days / 365.25
+    assert trailing_returns["3 Years (Annualized)"] == pytest.approx(
+        (prices.iloc[-1] / start.iloc[-1]) ** (1 / years) - 1
+    )
+    assert np.isnan(trailing_returns["5 Years (Annualized)"])
+
+
+def test_calendar_returns_compound_the_months_and_years():
+    dates = pd.bdate_range("2023-11-15", "2025-02-14").to_period("D")
+    returns = pd.Series(np.linspace(-0.01, 0.012, len(dates)), index=dates)
+
+    calendar = performance_model.get_calendar_returns(returns)
+    monthly = performance_model.get_returns(returns, "monthly")
+    yearly = performance_model.get_returns(returns, "yearly")
+
+    assert list(calendar.columns) == [*performance_model.MONTH_NAMES, "Year"]
+    assert calendar.loc["2024", "Mar"] == pytest.approx(monthly.loc["2024-03"])
+    np.testing.assert_allclose(calendar["Year"], yearly)
+    # Months without returns are NaN rather than 0.
+    assert calendar.loc["2023", "Jan":"Oct"].isna().all()
+    assert calendar.loc["2025", "Mar":"Dec"].isna().all()
+
+
+def test_bootstrap_statistics_summarize_the_simulated_histories():
+    returns = QUANTSTATS_RETURNS
+    excess_returns = QUANTSTATS_RETURNS - 0.0001
+
+    statistics = performance_model.get_bootstrap_statistics(
+        returns, excess_returns, 252, n_bootstrap=500, seed=3
+    )
+
+    positions = performance_model.get_bootstrap_samples(20, 500, "resample", seed=3)
+    samples = returns.to_numpy()[positions]
+    cumulative = np.prod(1 + samples, axis=1) - 1
+
+    assert statistics.loc["Cumulative Return", "Mean"] == pytest.approx(
+        cumulative.mean()
+    )
+    assert statistics.loc["Cumulative Return", "5%"] == pytest.approx(
+        np.percentile(cumulative, 5)
+    )
+    assert statistics.loc["Annualized Volatility", "Median"] == pytest.approx(
+        np.median(samples.std(axis=1, ddof=1) * np.sqrt(252))
+    )
+
+    # Shuffling keeps the returns, so only the order (and the drawdown) changes.
+    shuffled = performance_model.get_bootstrap_statistics(
+        returns, excess_returns, 252, n_bootstrap=500, method="shuffle"
+    )
+    assert shuffled.loc["Cumulative Return", "Std"] == pytest.approx(0, abs=1e-15)
+    assert shuffled.loc["Sharpe Ratio", "Std"] == pytest.approx(0, abs=1e-12)
+    assert shuffled.loc["Maximum Drawdown", "Std"] > 0
+
+    with pytest.raises(ValueError, match="'resample' or 'shuffle'"):
+        performance_model.get_bootstrap_samples(20, 10, "other")
+
+
+def test_forecast_cone_matches_pyfolio_on_the_same_paths():
+    returns = QUANTSTATS_RETURNS
+
+    cone = performance_model.get_forecast_cone(returns, horizon=5, simulations=300)
+
+    # pyfolio's summarize_paths: the mean and standard deviation of the cumulative paths.
+    positions = performance_model.get_bootstrap_samples(
+        20, 300, "resample", length=5, seed=0
+    )
+    wealth = np.cumprod(1 + returns.to_numpy()[positions], axis=1)
+    np.testing.assert_allclose(cone["Mean"], wealth.mean(axis=0))
+    np.testing.assert_allclose(
+        cone["Upper 1.5"], wealth.mean(axis=0) + 1.5 * wealth.std(axis=0, ddof=1)
+    )
+    assert list(cone.columns) == [
+        "Lower 2",
+        "Lower 1.5",
+        "Lower 1",
+        "Mean",
+        "Upper 1",
+        "Upper 1.5",
+        "Upper 2",
+    ]
+
+
+def test_probability_of_backtest_overfitting_matches_ffn():
+    rng = np.random.default_rng(7)
+    returns = pd.DataFrame(rng.normal(0.0005, 0.01, (480, 6)))
+
+    result = performance_model.get_probability_of_backtest_overfitting(returns, 8)
+
+    # ffn 1.4.1 calc_prob_backtest_overfitting(n_blocks=8, full_output=True).
+    assert result["Probability of Backtest Overfitting"] == pytest.approx(
+        0.4857142857142857, abs=1e-12
+    )
+    assert result["Average Out-of-Sample Rank"] == pytest.approx(
+        0.5061224489795918, abs=1e-12
+    )
+    assert result["Combinations"] == 70  # noqa: PLR2004
+
+    # A strategy that is best in every block is never overfit.
+    returns[0] = returns[0] + 0.01
+    assert (
+        performance_model.get_probability_of_backtest_overfitting(returns, 8)[
+            "Probability of Backtest Overfitting"
+        ]
+        == 0
+    )
+
+    with pytest.raises(ValueError, match="even"):
+        performance_model.get_probability_of_backtest_overfitting(returns, 7)
+
+
+def test_probabilistic_momentum_matches_ffn():
+    difference = QUANTSTATS_RETURNS - BACON_PORTFOLIO.iloc[:20]
+    information_ratio = difference.mean() / difference.std()
+
+    # ffn 1.4.1 calc_prob_mom(QUANTSTATS_RETURNS, the first 20 returns of portfolio_bacon).
+    assert performance_model.get_probabilistic_momentum(
+        information_ratio, 20
+    ) == pytest.approx(0.14496828978990775, abs=1e-12)
+
+    probability = performance_model.get_probabilistic_momentum(
+        pd.Series([0.0, information_ratio]), pd.Series([20, 1])
+    )
+    assert probability.iloc[0] == pytest.approx(0.5)
+    assert np.isnan(probability.iloc[1])
+
+
+def test_rolling_factor_regression_matches_pyfolio():
+    rng = np.random.default_rng(1)
+    dates = pd.bdate_range("2021-01-01", periods=60)
+    factors = pd.DataFrame(
+        rng.normal(0, 0.01, (60, 2)), index=dates, columns=["Mkt-RF", "SMB"]
+    )
+    excess_returns = pd.Series(
+        0.0002 + factors @ [1.1, 0.3] + rng.normal(0, 0.005, 60), index=dates
+    )
+
+    regression = performance_model.get_factor_regression(
+        excess_returns, factors, window=30
+    )
+
+    # pyfolio 0.10.2 rolling_regression(rolling_window=29), whose windows hold 30 days.
+    assert regression.index[0] == pd.Timestamp("2021-02-11")
+    np.testing.assert_allclose(
+        regression.iloc[-1][["Intercept", "Mkt-RF Slope", "SMB Slope"]],
+        [5.146401340738521e-05, 1.1124490824735467, 0.3731852476859474],
+        rtol=1e-9,
+    )
+    # A complete window equals one ordinary least squares fit with its R Squared.
+    window = slice(10, 40)
+    design = np.column_stack([np.ones(30), factors.iloc[window]])
+    coefficients, residuals = np.linalg.lstsq(
+        design, excess_returns.iloc[window], rcond=None
+    )[:2]
+    np.testing.assert_allclose(
+        regression.iloc[10][["Intercept", "Mkt-RF Slope", "SMB Slope"]], coefficients
+    )
+    total = (
+        (excess_returns.iloc[window] - excess_returns.iloc[window].mean()) ** 2
+    ).sum()
+    assert regression.iloc[10]["R Squared"] == pytest.approx(1 - residuals[0] / total)
+
+
+def test_get_variability_weighted_return_by_hand():
+    # Constant returns follow the exponential path exactly, so the VWR is the annualized return.
+    constant = pd.Series([0.001] * 50)
+    assert performance_model.get_variability_weighted_return(
+        constant, 252
+    ) == pytest.approx(1.001**252 - 1)
+
+    returns = pd.Series([0.02, -0.01, 0.03, -0.02])
+    values = np.cumprod(1 + returns.to_numpy())
+    average = np.log(values[-1]) / 4
+    deviations = values / np.exp(average * np.arange(1, 5)) - 1
+    expected = (np.exp(average * 12) - 1) * (1 - (deviations.std(ddof=1) / 0.2) ** 2)
+    assert performance_model.get_variability_weighted_return(
+        returns, 12
+    ) == pytest.approx(expected)
+
+    frame = pd.DataFrame({"A": returns, "B": [0.01, np.nan, 0.01, 0.01]})
+    result = performance_model.get_variability_weighted_return(
+        frame, pd.Series({"A": 12.0, "B": 12.0})
+    )
+    assert result["A"] == pytest.approx(expected)
+    assert result["B"] == pytest.approx(1.01**12 - 1)
+    assert np.isnan(performance_model.get_variability_weighted_return(pd.Series([0.1])))
+
+
+def test_get_return_concentration_by_hand():
+    dates = pd.period_range("2024-01-30", periods=6, freq="D")
+    returns = pd.Series([0.01, 0.03, 0.0, -0.01, -0.01, -0.02], index=dates)
+    concentration = performance_model.get_return_concentration(returns)
+
+    def hhi(values):
+        weights = np.array(values) / np.sum(values)
+        count = len(values)
+        return ((weights**2).sum() - 1 / count) / (1 - 1 / count)
+
+    assert concentration["Positive Concentration"] == pytest.approx(
+        hhi([0.01, 0.03, 0.0])
+    )
+    assert concentration["Negative Concentration"] == pytest.approx(
+        hhi([0.01, 0.01, 0.02])
+    )
+    # Two returns in January and four in February: too few months for a concentration.
+    assert np.isnan(concentration["Time Concentration"])
+    # Equal returns are not concentrated at all.
+    assert performance_model.get_return_concentration(
+        pd.Series([0.01] * 3, index=dates[:3])
+    )["Positive Concentration"] == pytest.approx(0)
+
+
+def test_get_strategy_risk_by_hand():
+    # Symmetric bets: SR = (2p - 1) / (2 x SQRT(p (1 - p))) x SQRT(n).
+    sharpe_ratio = performance_model.get_binomial_sharpe_ratio(0.01, -0.01, 0.55, 252)
+    assert sharpe_ratio == pytest.approx(0.1 / (2 * np.sqrt(0.2475)) * np.sqrt(252))
+
+    # The implied precision and frequency give back the target Sharpe ratio.
+    precision = performance_model.get_implied_precision(0.02, -0.01, 52, 2.0)
+    assert performance_model.get_binomial_sharpe_ratio(
+        0.02, -0.01, precision, 52
+    ) == pytest.approx(2.0)
+    frequency = performance_model.get_implied_frequency(0.02, -0.01, 0.4, 2.0)
+    assert performance_model.get_binomial_sharpe_ratio(
+        0.02, -0.01, 0.4, frequency
+    ) == pytest.approx(2.0)
+    # A losing bet on average reaches no positive target.
+    assert np.isnan(performance_model.get_implied_frequency(0.01, -0.02, 0.5, 2.0))
+
+    returns = pd.Series([0.02, -0.01, 0.03, 0.0, -0.02, 0.01, 0.015, -0.005])
+    risk = performance_model.get_strategy_risk(returns, frequency=52)
+    assert risk["Precision"] == pytest.approx(4 / 8)
+    assert risk["Average Gain"] == pytest.approx(0.075 / 4)
+    assert risk["Average Loss"] == pytest.approx(-0.035 / 4)
+    implied = performance_model.get_implied_precision(0.075 / 4, -0.035 / 4, 52, 2.0)
+    assert risk["Implied Precision"] == pytest.approx(implied)
+    assert risk["Probability of Failure"] == pytest.approx(
+        stats.norm.cdf((implied - 0.5) / np.sqrt(0.25 / 8))
+    )
+    assert performance_model.get_strategy_risk(pd.Series([0.01, 0.02])).isna().all()
+
+
+def sharpe_difference_returns() -> tuple[pd.Series, pd.Series]:
+    """Two correlated, fat-tailed and serially correlated excess return series."""
+    shocks = np.random.default_rng(3).standard_t(5, (751, 2)) * 0.01
+    first = 0.0005 + shocks[1:, 0] + 0.3 * shocks[:-1, 0]
+    second = 0.0002 + 0.6 * shocks[1:, 0] + 0.8 * shocks[1:, 1]
+
+    return pd.Series(first), pd.Series(second)
+
+
+@pytest.mark.parametrize("lags", [0, 3, 8])
+def test_ledoit_wolf_sharpe_difference_matches_a_hac_delta_method(lags):
+    # Ledoit and Wolf (2008, section 3.1): the long-run covariance of the moments from
+    # statsmodels' Bartlett estimate (a sum, so divided by n) times n / (n - 4), and the
+    # gradient of the Sharpe difference taken numerically.
+    sandwich = pytest.importorskip("statsmodels.stats.sandwich_covariance")
+    first, second = sharpe_difference_returns()
+    a, b = first.to_numpy(), second.to_numpy()
+    n = len(a)
+    moments = np.array([a.mean(), b.mean(), (a**2).mean(), (b**2).mean()])
+    deviations = np.column_stack(
+        [a - moments[0], b - moments[1], a**2 - moments[2], b**2 - moments[3]]
+    )
+    covariance = sandwich.S_hac_simple(deviations, nlags=lags) / (n - 4)
+
+    def difference(v):
+        return v[0] / np.sqrt(v[2] - v[0] ** 2) - v[1] / np.sqrt(v[3] - v[1] ** 2)
+
+    step = np.eye(4) * 1e-7
+    gradient = np.array(
+        [(difference(moments + s) - difference(moments - s)) / 2e-7 for s in step]
+    )
+    standard_error = np.sqrt(gradient @ covariance @ gradient / n)
+
+    result = performance_model.get_sharpe_ratio_difference(
+        first, second, "ledoit_wolf", lags=lags
+    )
+
+    assert result["Sharpe Difference"] == pytest.approx(difference(moments), abs=1e-14)
+    assert result["Standard Error"] == pytest.approx(standard_error, rel=1e-7)
+    assert result["P-Value"] == pytest.approx(
+        2 * stats.norm.sf(abs(difference(moments) / standard_error)), rel=1e-6
+    )
+
+
+def test_memmel_sharpe_difference_is_the_normal_delta_method():
+    # Jobson and Korkie (1981) with Memmel (2003): Var(SR_i) = (1 + SR_i^2 / 2) / n and
+    # Cov(SR_a, SR_b) = (ρ + SR_a·SR_b·ρ^2 / 2) / n under joint normality.
+    first, second = sharpe_difference_returns()
+    n = len(first)
+    sharpe_a = first.mean() / first.std(ddof=1)
+    sharpe_b = second.mean() / second.std(ddof=1)
+    correlation = first.corr(second)
+    covariance = (
+        np.array(
+            [
+                [
+                    1 + sharpe_a**2 / 2,
+                    correlation + sharpe_a * sharpe_b * correlation**2 / 2,
+                ],
+                [
+                    correlation + sharpe_a * sharpe_b * correlation**2 / 2,
+                    1 + sharpe_b**2 / 2,
+                ],
+            ]
+        )
+        / n
+    )
+    standard_error = np.sqrt(np.array([1, -1]) @ covariance @ np.array([1, -1]))
+
+    result = performance_model.get_sharpe_ratio_difference(first, second)
+
+    assert result["Sharpe Difference"] == pytest.approx(sharpe_a - sharpe_b, abs=1e-14)
+    assert result["Standard Error"] == pytest.approx(standard_error, rel=1e-12)
+
+
+def test_sharpe_difference_tests_hold_their_size_on_equal_sharpe_ratios():
+    # Jointly normal returns with the same Sharpe ratio: both tests reject at 5% about 5% of
+    # the time (400 draws, so within 2.5% to 8%).
+    rng = np.random.default_rng(7)
+    rejections = {"memmel": 0, "ledoit_wolf": 0}
+
+    for _ in range(400):
+        draws = rng.multivariate_normal([0.05, 0.05], [[1, 0.5], [0.5, 1]], size=250)
+        for method in rejections:
+            result = performance_model.get_sharpe_ratio_difference(
+                pd.Series(draws[:, 0]), pd.Series(draws[:, 1]), method
+            )
+            rejections[method] += result["P-Value"] < 0.05  # noqa: PLR2004
+
+    assert all(0.025 <= count / 400 <= 0.08 for count in rejections.values())
+
+
+def test_sharpe_difference_test_per_period():
+    first, second = sharpe_difference_returns()
+    index = pd.MultiIndex.from_arrays(
+        [
+            pd.period_range("2020-01-01", periods=750, freq="D").asfreq("Y"),
+            pd.period_range("2020-01-01", periods=750, freq="D"),
+        ]
+    )
+    returns = pd.DataFrame({"A": first.to_numpy()}, index=index)
+    benchmark = pd.Series(second.to_numpy(), index=index)
+
+    result = performance_model.get_sharpe_ratio_difference_test(returns, benchmark)
+
+    assert list(result.index.astype(str)) == ["2020", "2021", "2022"]
+    assert result.loc[pd.Period("2021", "Y"), ("A", "Z-Statistic")] == pytest.approx(
+        performance_model.get_sharpe_ratio_difference(
+            returns.loc[pd.Period("2021", "Y"), "A"],
+            benchmark.loc[pd.Period("2021", "Y")],
+        )["Z-Statistic"]
+    )
+    # Fewer than five shared dates give no test.
+    assert (
+        performance_model.get_sharpe_ratio_difference(first[:4], second[:4])
+        .isna()
+        .all()
+    )
+
+    with pytest.raises(ValueError, match="'memmel' or 'ledoit_wolf'"):
+        performance_model.get_sharpe_ratio_difference_test(returns, benchmark, "jk")
+
+
+def test_sharpe_ratio_difference_is_nan_without_variation():
+    # A constant return has no Sharpe ratio: its standard deviation is rounding noise, which
+    # gave the Memmel difference a value in the 1e15.
+    other = pd.Series(np.random.default_rng(4).normal(0.0005, 0.01, 500))
+    constant = pd.Series(np.full(500, 0.0003))
+
+    for method in ("memmel", "ledoit_wolf"):
+        result = performance_model.get_sharpe_ratio_difference(constant, other, method)
+        assert result.isna().all()
+
+
+def test_rolling_capture_ratio_of_a_series_is_a_series():
+    returns = pd.read_pickle("tests/datasets/historical_dataset.pickle")["Return"].iloc[
+        1:
+    ]
+
+    single = performance_model.get_capture_ratio(
+        returns["AAPL"], returns["Benchmark"], window=63
+    )
+    as_frame = performance_model.get_capture_ratio(
+        returns[["AAPL"]], returns["Benchmark"], window=63
+    )
+
+    assert isinstance(single, pd.Series)
+    pd.testing.assert_series_equal(single, as_frame["AAPL"])
+
+
+def test_regression_ratios_of_too_few_observations_are_nan():
+    index = pd.period_range("2020-01", periods=24, freq="M")
+    rng = np.random.default_rng(3)
+    # The benchmark repeats every return once, so every window of two has no variance.
+    benchmark = pd.Series(np.repeat(rng.normal(0.01, 0.04, 12), 2), index=index)
+    excess = pd.DataFrame({"A": 0.8 * benchmark + rng.normal(0, 0.02, 24)}, index=index)
+
+    beta = performance_model.get_beta(excess, benchmark, window=2)
+    assert not np.isinf(beta.to_numpy(float)).any()
+    assert beta["A"].iloc[1::2].isna().all()
+
+    # A line through two returns fits them exactly, so there is no residual risk.
+    jensens_alpha = pd.DataFrame({"A": rng.normal(0.01, 0.01, 24)}, index=index)
+    appraisal_ratio = performance_model.get_appraisal_ratio(
+        jensens_alpha,
+        excess_returns=excess,
+        benchmark_excess_returns=benchmark,
+        window=2,
+    )
+    assert appraisal_ratio["A"].isna().all()
+
+    # Three returns per side clear the default minimum but not a minimum of 20.
+    days = pd.Series([0.01, 0.02, 0.015, -0.01, -0.02, -0.03])
+    asset = 1.2 * days + pd.Series([0.001, -0.002, 0.003, 0.002, -0.001, 0.0])
+    assert not np.isnan(performance_model.get_bull_bear_beta(asset, days)["Bull Beta"])
+    twenty_days = performance_model.get_bull_bear_beta(
+        asset, days, minimum_observations=20
+    )
+    assert all(np.isnan(value) for value in twenty_days.values())
+
+
+def test_a_window_of_no_observations_raises():
+    rng = np.random.default_rng(2)
+    returns = pd.DataFrame({"A": rng.normal(0, 0.01, 60)})
+    styles = pd.DataFrame(rng.normal(0, 0.01, (60, 2)), columns=["B", "C"])
+
+    for window in (0, -1):
+        with pytest.raises(InvalidArgumentError, match="window is a number"):
+            performance_model.get_kelly_criterion(returns, window=window)
+        with pytest.raises(InvalidArgumentError, match="window is a number"):
+            performance_model.get_omega_ratio(returns, window=window)
+        with pytest.raises(InvalidArgumentError, match="window is a number"):
+            performance_model.get_style_analysis(returns["A"], styles, window=window)
+    # An Omega ratio of one return is defined; a Kelly criterion needs wins and losses.
+    assert performance_model.get_omega_ratio(returns, window=1).notna().any().any()
+    with pytest.raises(InvalidArgumentError, match="at least 2"):
+        performance_model.get_kelly_criterion(returns, window=1)
+
+
+def test_autocorrelation_penalty_of_two_returns_does_not_warn():
+    returns = pd.Series(np.random.default_rng(4).normal(0, 0.01, 40))
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        penalty = performance_model.get_autocorrelation_penalty(returns, window=2)
+
+    assert len(penalty) == len(returns)

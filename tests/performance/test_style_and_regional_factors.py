@@ -57,7 +57,7 @@ def test_factor_urls_per_region():
     assert performance_model.factor_url("Europe", "momentum").endswith(
         "Europe_Mom_Factor_Daily_CSV.zip"
     )
-    with pytest.raises(ValueError, match="not published"):
+    with pytest.raises(ValueError, match="region must be one of 'United States'"):
         performance_model.factor_url("Mars")
 
 
@@ -86,7 +86,7 @@ def test_style_analysis_on_the_toolkit(performance_module):
     assert result.loc["AAPL", ["MSFT", "Benchmark"]].sum() == pytest.approx(1, abs=1e-3)
 
     rolling = performance_module.get_style_analysis(
-        ["MSFT", "Benchmark"], period="weekly", window=52
+        ["MSFT", "Benchmark"], period="weekly", rolling=52
     )
     assert ("AAPL", "R Squared") in rolling.columns
 
@@ -186,7 +186,7 @@ def test_rolling_style_analysis_measures_selection_out_of_sample():
     # The fund lists late: its first windows have too few returns to estimate.
     fund.iloc[:40] = np.nan
 
-    rolling = performance_model.get_rolling_style_analysis(fund, styles, window=36)
+    rolling = performance_model.get_style_analysis(fund, styles, window=36)
 
     assert list(rolling.index) == list(index[35:])
     # A window with no more returns than styles is NaN, the next one is estimated.
@@ -214,14 +214,17 @@ def test_style_analysis_keeps_the_funds_with_enough_data(performance_module):
     weekly = module._historical_data["weekly"].copy()
     # MSFT lists a week before the end: one return is too few for even one style.
     weekly.loc[weekly.index[:-1], ("Return", "MSFT")] = np.nan
-    module._historical_data = {**module._historical_data, "weekly": weekly}
+    # A copy of the lazily loaded periods, so the daily data still loads when no test read it yet.
+    historical_data = copy.copy(module._historical_data)
+    historical_data["weekly"] = weekly
+    module._historical_data = historical_data
 
     result = module.get_style_analysis("Benchmark", period="weekly")
 
     assert result.loc["MSFT"].isna().all()
     assert result.loc["AAPL", "Benchmark"] == pytest.approx(1)
 
-    rolling = module.get_style_analysis("Benchmark", period="weekly", window=10)
+    rolling = module.get_style_analysis("Benchmark", period="weekly", rolling=10)
     assert rolling["MSFT"].isna().all().all()
     assert rolling[("AAPL", "R Squared")].notna().all()
 
@@ -234,7 +237,7 @@ def test_rolling_style_analysis_on_the_toolkit_starts_with_a_full_window(
     ]
 
     rolling = performance_module.get_style_analysis(
-        ["MSFT", "Benchmark"], period="weekly", window=52
+        ["MSFT", "Benchmark"], period="weekly", rolling=52
     )
 
     # The first week has no return, so the first full window ends a week later.
@@ -301,7 +304,7 @@ def test_style_returns_on_dates_the_toolkit_lacks_stay_in_date_order(
         )
 
     module._returns_function = returns_function
-    rolling = module.get_style_analysis(period="daily", window=252)
+    rolling = module.get_style_analysis(period="daily", rolling=252)
 
     assert rolling.index.is_monotonic_increasing
     assert extra_day in rolling.index

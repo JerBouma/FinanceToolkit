@@ -1,0 +1,5 @@
+,Weight,Expected Return,Volatility,Sharpe Ratio,Risk Contribution,Semideviation,Semideviation Ratio
+AAPL,0.5248,0.2651,0.3691,0.6708,0.6156,0.0163,0.0601
+MSFT,0.1071,0.2088,0.3473,0.5507,0.1078,0.0155,0.049
+Benchmark,0.3681,0.1046,0.2498,0.3482,0.2766,0.0116,0.0298
+Portfolio,1.0,0.2,0.3071,0.5941,1.0,0.0139,0.0521

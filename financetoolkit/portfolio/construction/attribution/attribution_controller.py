@@ -6,8 +6,13 @@ import numpy as np
 import pandas as pd
 
 from financetoolkit.portfolio.construction.attribution import attribution_model
+from financetoolkit.portfolio.construction.optimization import estimation_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
-from financetoolkit.utilities.error_model import handle_errors
+from financetoolkit.utilities.error_model import (
+    InvalidArgumentError,
+    check_option,
+    handle_errors,
+)
 from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.sources_model import track_sources
 
@@ -32,14 +37,17 @@ SUB_PERIODS = {
 @track_sources
 class AttributionConstruction:
     """
-    Exposures and attribution: the stress test, the look-through exposure and the Brinson attribution.
+    Exposures and attribution: the stress test, the look-through exposure, the Brinson attribution and the
+    factor attribution.
     """
 
     def _get_prices(self, tickers: list[str], start: str, end: str) -> pd.DataFrame:
         """The daily prices of other tickers over a date range."""
         if self._price_function is None:
-            raise ValueError(
-                "Prices of other tickers are not available for this Toolkit."
+            raise InvalidArgumentError(
+                "The prices of other tickers come from the Toolkit. Please use this method from a "
+                "Toolkit (toolkit.portfolio), or pass price_function when creating the "
+                "PortfolioConstruction class."
             )
         return self._price_function(tickers, start, end)
 
@@ -52,12 +60,13 @@ class AttributionConstruction:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculate how a portfolio would have fared in historical market crises: the return
-        of every asset and of the buy-and-hold portfolio from the start to the end of each
-        scenario, next to the benchmark. The default scenarios run from the peak to the
-        trough of the S&P 500: the Dot-com Crash, the Global Financial Crisis, the Euro
-        Area Debt Crisis, the 2015-2016 and 2018 Q4 sell-offs, the COVID-19 Crash and the
-        2022 Rate Shock.
+        Calculate how a portfolio would have fared in historical market crises.
+
+        It shows the return of every asset and of the buy-and-hold portfolio from the start to
+        the end of each scenario, next to the benchmark. The default scenarios run from the peak
+        to the trough of the S&P 500: the Dot-com Crash, the Global Financial Crisis, the Euro
+        Area Debt Crisis, the 2015-2016 and 2018 Q4 sell-offs, the COVID-19 Crash and the 2022
+        Rate Shock.
 
         The prices are retrieved for each scenario, so the scenarios do not have to fall
         within the Toolkit's date range.
@@ -179,10 +188,19 @@ class AttributionConstruction:
         table[numeric] = table[numeric].astype(float)
         return self._round(table, rounding)
 
-    def _get_exposures(self, assets: list[str], by: str) -> dict[str, pd.Series]:
-        """The sector, country or holding exposure of every asset."""
+    def _get_exposures(
+        self, assets: list[str], by: str, alternative: str = ""
+    ) -> dict[str, pd.Series]:
+        """
+        The sector, country or holding exposure of every asset; the alternative is named
+        when the company profiles the sectors and countries of stocks come from are missing.
+        """
         if self._fund_function is None:
-            raise ValueError("Fund data is not available for this Toolkit.")
+            raise InvalidArgumentError(
+                "The fund holdings come from the Toolkit. Please use this method from a Toolkit "
+                "(toolkit.portfolio), or pass fund_function when creating the "
+                "PortfolioConstruction class."
+            )
 
         funds = self._fund_function(by, assets)
         exposures: dict[str, pd.Series] = {}
@@ -202,7 +220,9 @@ class AttributionConstruction:
                     exposures[asset] = pd.Series({asset: 1.0})
             else:
                 classification = self._get_classification(
-                    stocks, "Sector" if by == "sector" else "Country"
+                    stocks,
+                    "Sector" if by == "sector" else "Country",
+                    alternative,
                 )
                 for asset, value in classification.dropna().items():
                     exposures[asset] = pd.Series({value: 1.0})
@@ -218,12 +238,13 @@ class AttributionConstruction:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculate a portfolio's exposure after looking through its funds. An ETF's weight is
-        spread over its own sectors, countries or holdings, a stock counts fully towards its
-        own sector, country or itself, and everything is summed. It shows, for example, that
-        a portfolio of a technology ETF and Apple holds far more Apple and technology than
-        either position suggests. The benchmark's exposure and the difference (the active
-        exposure) are shown next to it when the benchmark is a fund.
+        Calculate a portfolio's exposure after looking through its funds.
+
+        An ETF's weight is spread over its own sectors, countries or holdings, a stock counts
+        fully towards its own sector, country or itself, and everything is summed. It shows, for
+        example, that a portfolio of a technology ETF and Apple holds far more Apple and
+        technology than either position suggests. The benchmark's exposure and the difference
+        (the active exposure) are shown next to it when the benchmark is a fund.
 
         Also known as: look-through analysis, underlying exposure, X-ray.
 
@@ -231,8 +252,8 @@ class AttributionConstruction:
             weights (dict[str, float] | None, optional): The weight per asset. Defaults to
                 None, which uses the latest weights of the Portfolio the Toolkit came from,
                 or equal weights.
-            by (str, optional): What to look through to: "sector", "country" or "holdings".
-                Defaults to "sector".
+            by (str, optional): What to look through to. Options are: "sector" (the sectors), "country" (the
+                countries), "holdings" (the holdings). Defaults to "sector".
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -280,13 +301,15 @@ class AttributionConstruction:
         | Cash & Others          |     0.0004 |               0      |            0.0004 |
         | Real Estate            |     0      |               0.0175 |           -0.0175 |
         """
-        if by not in ("sector", "country", "holdings"):
-            raise ValueError("by must be 'sector', 'country' or 'holdings'.")
+        check_option("by", by, ("sector", "country", "holdings"))
 
         assets = self._get_assets()
         resolved = self._resolve_weights(weights, assets)
         exposure = attribution_model.get_look_through_exposure(
-            resolved, self._get_exposures(assets, by)
+            resolved,
+            self._get_exposures(
+                assets, by, 'look through to the holdings with by="holdings"'
+            ),
         ).to_frame()
 
         if self._benchmark_name and by != "holdings" and self._fund_function:
@@ -318,9 +341,10 @@ class AttributionConstruction:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculate the Brinson-Fachler attribution of the portfolio's return over the
-        benchmark, by sector, over the Toolkit's date range. The excess return is split
-        into three effects per sector:
+        Calculate the Brinson-Fachler attribution of the portfolio's return over the benchmark,
+        by sector, over the Toolkit's date range.
+
+        The excess return is split into three effects per sector:
 
         - Allocation: the reward for overweighting sectors that beat the benchmark (and
           underweighting those that lagged).
@@ -370,7 +394,7 @@ class AttributionConstruction:
         - Brinson, G.P., Hood, L.R. and Beebower, G.L. (1986). "Determinants of Portfolio
           Performance." Financial Analysts Journal, 42(4), 39-44.
         - Cariño, D.R. (1999). "Combining Attribution Effects Over Time." The Journal of
-          Performance Measurement, 4(1), 5-14.
+          Performance Measurement, 3(4), 5-14.
         - Menchero, J. (2000). "An Optimized Approach to Linking Attribution Effects Over
           Time." The Journal of Performance Measurement, 5(1), 36-42.
         - Bacon, C. (2004). Practical Portfolio Performance Measurement and Attribution.
@@ -382,13 +406,11 @@ class AttributionConstruction:
             weights (dict[str, float] | None, optional): The weight per asset at the start of
                 the date range. Defaults to None, which uses the latest weights of the
                 Portfolio the Toolkit came from, or equal weights.
-            period (str | None, optional): The sub-periods whose attributions are linked:
-                "weekly", "monthly", "quarterly" or "yearly", each ending on the last
-                trading day of the calendar period. Defaults to None, which attributes the
-                whole range as one period.
-            linking (str, optional): How the effects of the sub-periods are linked when a
-                period is given: "carino" (Cariño, 1999) or "menchero" (Menchero, 2000).
-                Defaults to "carino".
+            period (str | None, optional): The sub-periods whose attributions are linked, each ending on the last
+                trading day of the calendar period. Options are: "weekly", "monthly", "quarterly", "yearly". Defaults
+                to None, which attributes the whole range as one period.
+            linking (str, optional): How the effects of the sub-periods are linked when a period is given. Options
+                are: "carino" (Cariño, 1999), "menchero" (Menchero, 2000). Defaults to "carino".
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -459,14 +481,11 @@ class AttributionConstruction:
         | Total                  |                1   |             1      |             0.2596 |             0.1798 |             -0.0077 |             0.0233 |               0.0642 |         0.0798 |
         """
         if period is not None and period not in SUB_PERIODS:
-            raise ValueError(
-                f"period must be {', '.join(SUB_PERIODS)}, or left out to attribute the whole "
-                "range as one period."
+            raise InvalidArgumentError(
+                f"period must be {', '.join(SUB_PERIODS)}, not {period!r}. Please pass one of "
+                "these as period, or leave it out to attribute the whole range as one period."
             )
-        if linking not in attribution_model.LINKING_METHODS:
-            raise ValueError(
-                f"linking must be one of {', '.join(attribution_model.LINKING_METHODS)}."
-            )
+        check_option("linking", linking, attribution_model.LINKING_METHODS)
         if not self._benchmark_name or self._fund_function is None:
             raise ValueError("The attribution needs a benchmark fund, e.g. SPY.")
 
@@ -656,4 +675,147 @@ class AttributionConstruction:
                 linking,
             )
         table.index.name = "Sector"
+        return self._round(table, rounding)
+
+    @handle_errors
+    def get_factor_attribution(
+        self,
+        weights: dict[str, float] | None = None,
+        selection: str = "ols",
+        factors: pd.DataFrame | None = None,
+        region: str = "United States",
+        period: str = "daily",
+        include_benchmark: bool = False,
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Attribute the return of a portfolio in every period to factors, by default the five
+        factors of Fama and French (market, size, value, profitability and investment).
+
+        It shows the part of the return its exposure to each factor explains, and the specific
+        return that is left. The loadings of the assets on the factors come from a regression
+        over the whole period (see get_factor_loadings), and the portfolio's exposure to a
+        factor is the weighted sum of its assets' loadings.
+
+        - Exposure_f,t = Σ_i w_i,t β_i,f
+        - Contribution_f,t = Exposure_f,t × Factor Return_f,t
+        - Common Return = Σ_f Contribution_f,t
+        - Specific Return = Total Return - Common Return
+        - Tilt Return = Σ_f Average Exposure_f × Factor Return_f,t
+        - Timing Return = Common Return - Tilt Return
+
+        The Specific Return holds the alphas of the assets (and the risk free rate, as the
+        Fama and French factors are excess returns) and their residual returns. The Tilt
+        Return is what the average exposure earned and the Timing Return what moving the
+        exposures around it added, which is zero for weights that stay the same.
+
+        The weights are those of the Portfolio the Toolkit came from at the end of the
+        period before, or, when weights are given (or there is no Portfolio), those weights
+        restored every period.
+
+        For more information, see the following sources:
+
+        - Grinold, R. C. and Kahn, R. N. (2000). "Active Portfolio Management." 2nd
+          edition, McGraw-Hill, chapter 17.
+        - Fama, E. F. and French, K. R. (2015). "A Five-Factor Asset Pricing Model."
+          Journal of Financial Economics, 116(1), 1-22.
+
+        Also known as: performance attribution to risk factors, factor return attribution,
+        returns-based attribution, common and specific returns.
+
+        Referenced against:
+        - empyrical, perf_attrib: https://github.com/stefan-jansen/empyrical-reloaded/blob/0.7.3/src/empyrical/perf_attrib.py#L5
+
+        Shares similar logic:
+        - empyrical, compute_exposures: https://github.com/stefan-jansen/empyrical-reloaded/blob/0.7.3/src/empyrical/perf_attrib.py#L139
+        - pyfolio, perf_attrib: https://github.com/stefan-jansen/pyfolio-reloaded/blob/0.9.9/src/pyfolio/perf_attrib.py#L29
+
+        Args:
+            weights (dict[str, float] | None, optional): The weight per asset. Defaults to
+                None, which uses the weights of the Portfolio the Toolkit came from over
+                time, or equal weights.
+            selection (str, optional): How the loadings are estimated (see get_factor_loadings). Options are: "ols"
+                (every factor), "forward" (forward selection), "backward" (backward selection), "pcr" (principal
+                components regression). Defaults to "ols".
+            factors (pd.DataFrame | None, optional): The factor returns, one column per
+                factor, at the frequency of the period. Defaults to None, the Fama and
+                French five factors of the region.
+            region (str, optional): The region of the Fama and French factors. Options are: "United States",
+                "Developed", "Developed ex US", "Europe", "Japan", "Asia Pacific ex Japan", "North America".
+                Defaults to "United States".
+            period (str, optional): The frequency of the returns. Options are: "daily" (daily returns), "weekly"
+                (weekly returns), "monthly" (monthly returns), "quarterly" (quarterly returns), "yearly" (yearly
+                returns). Defaults to "daily".
+            include_benchmark (bool, optional): Whether to include the benchmark as an
+                asset. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the Toolkit's rounding.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: Per period the contribution of every factor and the Common,
+            Specific, Total, Tilt and Timing Return, on the periods in which the assets and
+            the factors all have a return.
+
+        Notes:
+        - The loadings are estimated on the whole period, so the attribution of an early
+          period uses information from later ones; it explains the past, it does not
+          forecast.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["AAPL", "MSFT", "JNJ", "XOM"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.portfolio.get_factor_attribution(
+            weights={"AAPL": 0.4, "MSFT": 0.3, "JNJ": 0.2, "XOM": 0.1}, period="monthly"
+        ).tail(4).T
+        ```
+
+        Which returns:
+
+        |                 |   2025-09 |   2025-10 |   2025-11 |   2025-12 |
+        |:----------------|----------:|----------:|----------:|----------:|
+        | Mkt-RF          |    0.0297 |    0.017  |   -0.0012 |   -0.003  |
+        | SMB             |    0.0043 |    0.0028 |   -0.0033 |    0.0004 |
+        | HML             |    0.0019 |    0.0058 |   -0.0068 |   -0.0042 |
+        | RMW             |   -0.005  |   -0.013  |    0.0032 |    0.0006 |
+        | CMA             |   -0.003  |   -0.0055 |    0.0008 |    0.0005 |
+        | Common Return   |    0.0278 |    0.0071 |   -0.0072 |   -0.0058 |
+        | Specific Return |    0.0256 |    0.0227 |    0.0284 |   -0.0055 |
+        | Total Return    |    0.0534 |    0.0298 |    0.0213 |   -0.0113 |
+        | Tilt Return     |    0.0278 |    0.0071 |   -0.0072 |   -0.0058 |
+        | Timing Return   |    0      |    0      |    0      |    0      |
+        """
+        if weights is None and self._portfolio_weights:
+            assets = self._get_loaded_assets(period, include_benchmark)
+        else:
+            assets = self._get_held_weights(
+                weights, period, include_benchmark
+            ).index.tolist()
+        returns, factor_returns = self._align_factors(
+            self._get_returns(period, include_benchmark, assets),
+            self._get_factor_returns(period, factors, region),
+        )
+        loadings = estimation_model.get_factor_loadings(
+            returns, factor_returns, selection
+        ).drop(columns="Intercept")
+        table = attribution_model.get_factor_attribution(
+            returns,
+            self._get_weights_over_time(weights, period, assets, returns.index),
+            loadings,
+            factor_returns,
+        )
+        table.index.name = "Date"
         return self._round(table, rounding)

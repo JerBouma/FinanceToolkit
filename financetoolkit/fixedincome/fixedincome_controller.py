@@ -5,8 +5,6 @@ __docformat__ = "google"
 import os
 from datetime import datetime, timedelta
 
-import pandas as pd
-
 from financetoolkit.cache.cache_controller import Cache, resolve_cache, set_active_cache
 from financetoolkit.economics.sources import (
     boe_model,
@@ -17,6 +15,9 @@ from financetoolkit.economics.sources import (
 from financetoolkit.fixedincome.bonds.bonds_controller import BondsFixedIncome
 from financetoolkit.fixedincome.credit.credit_controller import CreditFixedIncome
 from financetoolkit.fixedincome.curves.curves_controller import CurvesFixedIncome
+from financetoolkit.fixedincome.inflation.inflation_controller import (
+    InflationFixedIncome,
+)
 from financetoolkit.fixedincome.loans.loans_controller import LoansFixedIncome
 from financetoolkit.fixedincome.markets.markets_controller import MarketsFixedIncome
 from financetoolkit.fixedincome.policy.policy_controller import PolicyFixedIncome
@@ -30,31 +31,12 @@ from financetoolkit.fixedincome.sources import (
     rba_model,
     riksbank_model,
 )
+from financetoolkit.fixedincome.swaps.swaps_controller import SwapsFixedIncome
 from financetoolkit.utilities import logger_model, validation_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
 from financetoolkit.utilities.sources_model import track_sources
 
 logger = logger_model.get_logger()
-
-
-# The Treasury's names for the maturities of the US par yield curve, in the labels the
-# government bond yield curve uses for every country.
-TREASURY_MATURITIES = {
-    "1 Mo": "1M",
-    "1.5 Month": "1.5M",
-    "2 Mo": "2M",
-    "3 Mo": "3M",
-    "4 Mo": "4M",
-    "6 Mo": "6M",
-    "1 Yr": "1Y",
-    "2 Yr": "2Y",
-    "3 Yr": "3Y",
-    "5 Yr": "5Y",
-    "7 Yr": "7Y",
-    "10 Yr": "10Y",
-    "20 Yr": "20Y",
-    "30 Yr": "30Y",
-}
 
 
 FRED_API_KEY: str = os.environ.get("FRED_API_KEY", "")
@@ -174,38 +156,20 @@ class FixedIncomeBase:
         """
         end_date = self._end_date
 
-        def united_states() -> pd.DataFrame:
-            curve = treasury_model.get_yield_curve("nominal", start_date, end_date)
-            return curve.rename(columns=TREASURY_MATURITIES)[
-                [
-                    label
-                    for column, label in TREASURY_MATURITIES.items()
-                    if column in curve
-                ]
-            ]
-
-        def australia() -> pd.DataFrame:
-            # The Reserve Bank of Australia publishes one file with the history from 2013.
-            curve = rba_model.get_yield_curve()
-            return curve.loc[pd.Period(start_date, "D") :] if not curve.empty else curve
-
-        def japan() -> pd.DataFrame:
-            # The Ministry of Finance publishes one file with the full history.
-            curve = mof_model.get_government_bond_yields()
-            return curve.loc[pd.Period(start_date, "D") :] if not curve.empty else curve
-
         return {
-            "United States": united_states,
+            "United States": lambda: treasury_model.get_labelled_yield_curve(
+                start_date, end_date
+            ),
             "Euro Area": lambda: economics_ecb_model.get_yield_curve(
                 start_date, end_date
             ),
             "Germany": lambda: bundesbank_model.get_yield_curve(start_date, end_date),
             "United Kingdom": lambda: boe_model.get_yield_curve(start_date, end_date),
-            "Japan": japan,
+            "Japan": lambda: mof_model.get_government_bond_yields(start_date),
             "Canada": lambda: boc_model.get_yield_curve(start_date, end_date),
             "Sweden": lambda: riksbank_model.get_yield_curve(start_date, end_date),
             "Norway": lambda: norgesbank_model.get_yield_curve(start_date, end_date),
-            "Australia": australia,
+            "Australia": lambda: rba_model.get_yield_curve(start_date),
         }
 
 
@@ -216,6 +180,8 @@ class FixedIncomeBase:
 @track_sources
 class FixedIncome(
     BondsFixedIncome,
+    SwapsFixedIncome,
+    InflationFixedIncome,
     MarketsFixedIncome,
     ShortRatesFixedIncome,
     CurvesFixedIncome,
@@ -227,6 +193,12 @@ class FixedIncome(
     """
     The Fixed income module contains methods to obtain data related to Central Banks, yield curves, credit
     spreads and individual bonds, and calculates bond measures from their market prices. The formulas for
-    terms of your own (bond pricing, swaptions with the Black and Bachelier models, the option-adjusted
-    spread of a callable bond) are in bond_model, yieldcurve_model, derivative_model and short_rate_model.
+    terms of your own (bond pricing, swaptions, caps, floors, collars and year-on-year inflation caps with
+    the Black, shifted Black and Bachelier models and their implied volatilities, bond options, caplets,
+    swaptions and CIR++ shifts in the Vasicek, Hull-White, CIR and CIR++ models, the option-adjusted
+    spread of a callable or puttable bond, Hull-White, Black-Karasinski and Black-Derman-Toy trees with
+    callable and puttable bonds, Bermudan swaptions and American bond options, swaps and forwards, CDS
+    options, inflation swaps and the forward inflation index) are in bond_model, yieldcurve_model,
+    derivative_model, short_rate_model, trinomial_tree_model, swap_model, forward_model, cds_model and
+    inflation_swap_model.
     """

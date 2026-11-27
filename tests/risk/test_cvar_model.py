@@ -43,16 +43,14 @@ def test_get_cvar_laplace(recorder):
     )
 
 
-def test_get_rolling_cvar_historic(recorder):
+def test_get_cvar_historic_rolling(recorder):
     returns = pd.Series([0.3, 0.2, 0.1, 0, 0.06, -0.1, -0.15, -0.05, 0.08, 0.12])
     recorder.capture(
-        cvar_model.get_rolling_cvar_historic(
-            returns=returns, alpha=0.05, window_size=3
-        ).round(4)
+        cvar_model.get_cvar_historic(returns=returns, alpha=0.05, window=3).round(4)
     )
 
 
-def test_get_rolling_cvar_historic_dataframe(recorder):
+def test_get_cvar_historic_rolling_dataframe(recorder):
     returns_df = pd.DataFrame(
         {
             "AAPL": [0.3, 0.2, 0.1, 0, 0.06, -0.1, -0.05],
@@ -60,9 +58,7 @@ def test_get_rolling_cvar_historic_dataframe(recorder):
         }
     )
     recorder.capture(
-        cvar_model.get_rolling_cvar_historic(
-            returns=returns_df, alpha=0.05, window_size=3
-        ).round(4)
+        cvar_model.get_cvar_historic(returns=returns_df, alpha=0.05, window=3).round(4)
     )
 
 
@@ -297,17 +293,17 @@ def test_rolling_cvar_historic_matches_the_cvar_of_every_window():
             for column in returns.columns
         }
     ).reindex(returns.index)
-    rolling_cvar = cvar_model.get_rolling_cvar_historic(returns, 0.05, 30)
+    rolling_cvar = cvar_model.get_cvar_historic(returns, 0.05, window=30)
 
     pd.testing.assert_frame_equal(rolling_cvar, expected, rtol=1e-12, atol=1e-15)
     pd.testing.assert_series_equal(
-        cvar_model.get_rolling_cvar_historic(returns["A"], 0.05, 30),
+        cvar_model.get_cvar_historic(returns["A"], 0.05, window=30),
         expected["A"],
         rtol=1e-12,
         atol=1e-15,
     )
     assert (
-        cvar_model.get_rolling_cvar_historic(returns.iloc[:10], 0.05, 30)
+        cvar_model.get_cvar_historic(returns.iloc[:10], 0.05, window=30)
         .isna()
         .all()
         .all()
@@ -352,3 +348,167 @@ def test_get_cvar_historic_of_a_period_with_a_single_return_is_nan():
 
     assert np.isnan(result.loc[pd.Period("2021", "Y"), "A"])
     assert result.loc[pd.Period("2022", "Y"), "A"] == pytest.approx(-0.03)
+
+
+# Forty returns of a Student-t(4) draw; the kernel reference is the integral of the return
+# times scipy's gaussian_kde(bw_method="silverman") density below its 5% quantile, over 0.05.
+KERNEL_REFERENCE_RETURNS = pd.Series(
+    [0.0004, -0.0137, 0.0009, -0.0064, 0.0025, 0.0177, -0.0455, -0.0052, 0.0026, -0.0068,
+     -0.0241, -0.007, 0.0001, -0.001, -0.0152, -0.0147, -0.0041, -0.0149, -0.0015, 0.0059,
+     0.0036, -0.0195, 0.0084, -0.0079, -0.0059, 0.0107, -0.0016, -0.0031, -0.0039, -0.0035,
+     0.0002, 0.0143, -0.0145, -0.0299, 0.0015, -0.0072, -0.0021, 0.0113, 0.0011, -0.0077]
+)  # fmt: skip
+
+
+def test_get_cvar_kernel_reference_value():
+    assert np.isclose(
+        cvar_model.get_cvar_kernel(KERNEL_REFERENCE_RETURNS, 0.05),
+        -0.039120756350325525,
+        atol=1e-12,
+    )
+    assert cvar_model.get_cvar_kernel(
+        KERNEL_REFERENCE_RETURNS, 0.05
+    ) < var_model.get_var_kernel(KERNEL_REFERENCE_RETURNS, 0.05)
+
+
+def test_get_weighted_cvar():
+    frame = pd.DataFrame({"A": KERNEL_REFERENCE_RETURNS})
+    first = cvar_model.get_cvar_historic(frame, 0.05)
+    second = cvar_model.get_cvar_historic(frame, 0.2)
+    weighted = cvar_model.get_weighted_cvar([first, second], [0.25, 0.75])
+    assert np.isclose(weighted["A"], 0.25 * first["A"] + 0.75 * second["A"])
+
+    with pytest.raises(ValueError):
+        cvar_model.get_weighted_cvar([first, second], [0.5, 0.6])
+    with pytest.raises(ValueError):
+        cvar_model.get_weighted_cvar([first, second], [1.0])
+
+
+def _higher_moment_objective(losses, order, alpha):
+    return (
+        lambda threshold: threshold
+        + np.mean(np.maximum(losses - threshold, 0) ** order) ** (1 / order) / alpha
+    )
+
+
+@pytest.mark.parametrize(
+    ("size", "order", "alpha"),
+    [(1000, 2, 0.05), (250, 2, 0.05), (300, 3, 0.1), (500, 1.5, 0.01), (15, 2, 0.05)],
+)
+def test_higher_moment_coherent_risk_is_the_minimum_of_krokhmal(size, order, alpha):
+    # Krokhmal (2007): min over ζ of ζ + (1 / alpha) * mean(max(L - ζ, 0)^p)^(1/p), minimized
+    # independently with scipy's bounded Brent search and checked on a dense grid.
+    from scipy.optimize import minimize_scalar
+
+    returns = np.random.default_rng(1).standard_t(4, size=size) * 0.01
+    losses = -returns
+    objective = _higher_moment_objective(losses, order, alpha)
+    reference = minimize_scalar(
+        objective,
+        bounds=(losses.min() - 1, losses.max()),
+        method="bounded",
+        options={"xatol": 1e-14},
+    ).fun
+    grid = min(
+        objective(z) for z in np.linspace(losses.min() - 0.2, losses.max(), 4001)
+    )
+
+    result = -cvar_model.get_higher_moment_coherent_risk(
+        pd.Series(returns), order, alpha
+    )
+
+    assert result <= min(reference, grid) + 1e-15
+    assert result == pytest.approx(reference, abs=1e-8)
+
+
+def test_higher_moment_coherent_risk_of_order_one_is_the_exact_cvar():
+    # Rockafellar and Uryasev (2002): the average of the n * alpha largest losses, the one at
+    # the boundary counted with its fraction (1000 * 0.05 = 50 exactly, 37 * 0.05 = 1.85).
+    rng = np.random.default_rng(2)
+
+    for size in (1000, 37):
+        returns = rng.normal(0, 0.01, size)
+        losses = np.sort(-returns)[::-1]
+        tail = size * 0.05
+        whole = int(tail)
+        expected = (losses[:whole].sum() + (tail - whole) * losses[whole]) / tail
+
+        assert -cvar_model.get_higher_moment_coherent_risk(
+            pd.Series(returns), 1, 0.05
+        ) == pytest.approx(expected, abs=1e-14)
+
+
+def test_higher_moment_coherent_risk_rises_with_the_order_and_not_with_the_sample():
+    rng = np.random.default_rng(3)
+    returns = pd.Series(rng.standard_t(4, 2000) * 0.01)
+    by_order = [
+        cvar_model.get_higher_moment_coherent_risk(returns, order, 0.05)
+        for order in (1, 1.5, 2)
+    ]
+
+    assert by_order[0] > by_order[1] > by_order[2] > returns.min()
+    # With n^(-1 / p) >= alpha the minimum is at the worst loss: 2000^(-1/3) = 0.079 for p = 3.
+    assert cvar_model.get_higher_moment_coherent_risk(
+        returns, 3, 0.05
+    ) == pytest.approx(returns.min(), abs=1e-15)
+    assert cvar_model.get_higher_moment_coherent_risk(returns, 3, 0.1) > returns.min()
+    # The moment is a mean, so the same returns repeated give the same measure (with a norm
+    # without 1 / √n it would grow towards the worst loss).
+    assert cvar_model.get_higher_moment_coherent_risk(
+        pd.concat([returns] * 3), 2, 0.05
+    ) == pytest.approx(by_order[2], abs=1e-12)
+
+
+def test_higher_moment_coherent_risk_per_period_and_rolling():
+    rng = np.random.default_rng(4)
+    returns = pd.DataFrame(
+        rng.normal(0, 0.01, (60, 2)),
+        columns=["A", "B"],
+        index=pd.date_range("2024-01-01", periods=60, freq="D"),
+    )
+    rolling = cvar_model.get_higher_moment_coherent_risk(returns, window_size=20)
+
+    assert rolling.iloc[:19].isna().all().all()
+    assert rolling.iloc[-1]["A"] == pytest.approx(
+        cvar_model.get_higher_moment_coherent_risk(returns["A"].iloc[-20:]), abs=1e-14
+    )
+
+    with pytest.raises(ValueError, match="order"):
+        cvar_model.get_higher_moment_coherent_risk(returns, order=0.5)
+
+
+def test_expected_quadratic_shortfall_is_the_cvar_of_the_squared_losses():
+    # The Rockafellar and Uryasev form minimized by scipy's linprog: min ζ + Σ u / (n alpha)
+    # with u >= S - ζ and u >= 0, S the squared losses.
+    from scipy.optimize import linprog
+
+    rng = np.random.default_rng(5)
+
+    for size, alpha in [(250, 0.05), (37, 0.05), (500, 0.01)]:
+        returns = rng.standard_t(4, size) * 0.01
+        squared = np.maximum(-returns, 0) ** 2
+        cost = np.concatenate([[1.0], np.full(size, 1 / (size * alpha))])
+        constraints = np.hstack([-np.ones((size, 1)), -np.eye(size)])
+        reference = linprog(
+            cost,
+            A_ub=constraints,
+            b_ub=-squared,
+            bounds=[(None, None)] + [(0, None)] * size,
+            method="highs",
+        ).fun
+
+        assert cvar_model.get_expected_quadratic_shortfall(
+            pd.Series(returns), alpha
+        ) == pytest.approx(reference, rel=1e-9)
+
+
+def test_expected_quadratic_shortfall_ignores_gains():
+    losses = pd.Series([-0.03, -0.01, 0.0, 0.02, 0.05] * 20)
+
+    # alpha * n = 20: the twenty losses of 3% exactly.
+    assert cvar_model.get_expected_quadratic_shortfall(losses, 0.2) == pytest.approx(
+        0.0009, abs=1e-15
+    )
+    assert cvar_model.get_expected_quadratic_shortfall(
+        pd.Series([0.01, 0.02, 0.03] * 10), 0.05
+    ) == pytest.approx(0)

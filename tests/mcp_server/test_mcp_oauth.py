@@ -17,6 +17,7 @@ from starlette.testclient import TestClient
 
 from financetoolkit.mcp_server.auth.auth_model import (
     MCPAuthMiddleware,
+    allows_anonymous_access,
     get_api_key_from_request,
     issue_token,
     read_token,
@@ -909,3 +910,32 @@ def test_the_pages_send_security_headers_and_only_run_their_own_script() -> None
     root = client.get("/")
     assert root.headers["X-Content-Type-Options"] == "nosniff"
     assert "script-src" not in root.headers["Content-Security-Policy"]
+
+
+@pytest.mark.parametrize("path", ["/mcp", "/sse", "/messages/"])
+def test_a_server_key_alone_does_not_let_anonymous_callers_in(
+    monkeypatch, path
+) -> None:
+    # The server key only serves callers without credentials when the operator chose so.
+    mcp = FastMCP("TestAnonymousServer")
+    register_auth_routes(mcp)
+    app = mcp.sse_app()
+    app.add_middleware(MCPAuthMiddleware)
+    client = TestClient(app, base_url="http://127.0.0.1:8000")
+    monkeypatch.setenv("FINANCIAL_MODELING_PREP_API_KEY", "server-key")
+    monkeypatch.delenv("FT_MCP_ALLOW_ANONYMOUS", raising=False)
+
+    for value in (None, "0", "false", ""):
+        if value is not None:
+            monkeypatch.setenv("FT_MCP_ALLOW_ANONYMOUS", value)
+        assert not allows_anonymous_access()
+        assert client.post(path).status_code == 401  # noqa
+
+    monkeypatch.setenv("FT_MCP_ALLOW_ANONYMOUS", "1")
+    assert allows_anonymous_access()
+    assert client.post(path).status_code != 401  # noqa
+
+    # The choice without a server key leaves nothing to use: callers still authenticate.
+    monkeypatch.delenv("FINANCIAL_MODELING_PREP_API_KEY")
+    assert not allows_anonymous_access()
+    assert client.post(path).status_code == 401  # noqa

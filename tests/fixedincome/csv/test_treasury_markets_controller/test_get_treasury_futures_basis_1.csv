@@ -1,0 +1,3 @@
+CUSIP,Coupon,Maturity,Price,Conversion Factor,Futures Price,Invoice Price,Gross Basis,Carry,Net Basis,Implied Repo Rate,Repo Rate,Cheapest to Deliver,Futures Symbol,Delivery Date,Price Date
+91282CRP8,0.0475,2028-09-30,100.0938,0.9794,101.9453,101.111,0.2486,0.103,0.1456,0.0277,0.0388,True,ZTZ26.CBT,2027-01-05,2026-11-19
+91282CJA0,0.0462,2028-09-30,99.875,0.9774,101.9453,100.8738,0.2337,0.088,0.1456,0.0277,0.0388,False,ZTZ26.CBT,2027-01-05,2026-11-19

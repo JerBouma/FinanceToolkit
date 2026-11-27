@@ -36,7 +36,7 @@ def types_of(schema):
 
 
 def call(tool, arguments):
-    return asyncio.run(mcp_controller.mcp.call_tool(tool, arguments))[0][0].text
+    return asyncio.run(mcp_controller.mcp.call_tool(tool, arguments))[0].text
 
 
 @pytest.mark.parametrize(
@@ -48,13 +48,33 @@ def call(tool, arguments):
         ("discovery", "price_higher"),
         ("discovery", "dividend_lower"),
         ("discovery", "dividend_higher"),
-        ("volatility", "num_std_dev"),
-        ("volatility", "atr_multiplier"),
+        ("volatility", "multiplier"),
         ("options", "time_to_expiration"),
     ],
 )
 def test_a_fractional_parameter_is_a_number(schemas, tool, parameter):
     assert types_of(schemas[tool][parameter]) == {"number"}
+
+
+@pytest.mark.parametrize(
+    ("indicator", "given", "expected"),
+    [
+        ("get_bollinger_bands", 2.5, 2.5),
+        ("get_standard_deviation_channel", "1,2", [1.0, 2.0]),
+        ("get_standard_deviation_channel", [1, 2.5], [1.0, 2.5]),
+    ],
+)
+def test_the_band_width_is_a_number_or_a_list_of_bands(
+    schemas, captured, indicator, given, expected
+):
+    # The Bollinger Bands take one width; the Standard Deviation Channel takes several bands.
+    assert "number" in types_of(schemas["volatility"]["num_std_dev"])
+    call(
+        "volatility",
+        {"indicator": indicator, "tickers": "AAPL", "num_std_dev": given},
+    )
+
+    assert captured[-1]["num_std_dev"] == expected
 
 
 def test_the_screener_takes_a_fractional_beta(captured):
@@ -69,8 +89,9 @@ def test_the_screener_takes_a_fractional_beta(captured):
 def test_a_restriction_matrix_is_an_array_of_arrays(schemas):
     matrix = schemas["econometrics"]["restriction_matrix"]
 
+    # A parameter that may be left out is listed without its null option.
     assert types_of(matrix) == {"array"}
-    assert matrix["anyOf"][0]["items"]["type"] == "array"
+    assert matrix["items"]["type"] == "array"
 
 
 @pytest.mark.parametrize("matrix", ["[[0, 1, 0], [0, 0, 1]]", [[0, 1, 0], [0, 0, 1]]])
@@ -127,7 +148,7 @@ def test_no_benchmark_written_as_text_means_no_benchmark(captured, benchmark):
     call(
         "breadth",
         {
-            "indicator": "get_negative_volume_index",
+            "indicator": "get_volume_index",
             "tickers": "SPY",
             "benchmark_ticker": benchmark,
         },
@@ -340,7 +361,7 @@ def test_an_empty_benchmark_is_the_default_benchmark(captured):
     call(
         "breadth",
         {
-            "indicator": "get_negative_volume_index",
+            "indicator": "get_volume_index",
             "tickers": "AAPL",
             "benchmark_ticker": "",
         },
@@ -353,7 +374,7 @@ def test_strategy_legs_are_an_array_of_objects(schemas):
     legs = schemas["options"]["legs"]
 
     assert types_of(legs) == {"array"}
-    assert legs["anyOf"][0]["items"]["type"] == "object"
+    assert legs["items"]["type"] == "object"
 
 
 @pytest.mark.parametrize(

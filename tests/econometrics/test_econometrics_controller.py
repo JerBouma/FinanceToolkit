@@ -4,6 +4,10 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from financetoolkit.econometrics.helpers import calculate_per_series
+from financetoolkit.econometrics.statistics import entropy_model, statistics_model
+from financetoolkit.utilities.error_model import InvalidArgumentError
+
 
 def test_get_arch_lm_test(recorder, econometrics_module):
     recorder.capture(econometrics_module.get_arch_lm_test())
@@ -51,35 +55,47 @@ def test_default_period_is_daily(econometrics_module):
 
 def test_within_period_daily_requires_intraday(econometrics_module):
     # Nesting observations inside a single day needs intraday data, which this Toolkit
-    # instance does not have. @handle_errors returns an empty Series rather than
-    # propagating the ValueError.
-    assert econometrics_module.get_jarque_bera_test(
-        period="daily", within_period=True
-    ).empty
+    # instance does not have, so the call raises and says what to pass instead.
+    with pytest.raises(InvalidArgumentError, match="within_period=False"):
+        econometrics_module.get_jarque_bera_test(period="daily", within_period=True)
 
 
-def test_get_augmented_dickey_fuller(recorder, econometrics_module):
+def test_get_unit_root_test(recorder, econometrics_module):
+    recorder.capture(econometrics_module.get_unit_root_test(period="quarterly"))
     recorder.capture(
-        econometrics_module.get_augmented_dickey_fuller(period="quarterly")
+        econometrics_module.get_unit_root_test(period="monthly", regression="n")
     )
     recorder.capture(
-        econometrics_module.get_augmented_dickey_fuller(
-            period="monthly", regression="n"
+        econometrics_module.get_unit_root_test(
+            period="quarterly", method="phillips_perron"
         )
     )
+    recorder.capture(
+        econometrics_module.get_unit_root_test(
+            period="monthly", method="phillips_perron", regression="ct"
+        )
+    )
+    recorder.capture(
+        econometrics_module.get_unit_root_test(period="weekly", method="zivot_andrews")
+    )
+    recorder.capture(
+        econometrics_module.get_unit_root_test(
+            period="weekly", method="zivot_andrews", regression="ct"
+        )
+    )
+
+
+def test_get_unit_root_test_rejects_an_unknown_method(econometrics_module, monkeypatch):
+    monkeypatch.setenv("FINANCETOOLKIT_STRICT_ERRORS", "1")
+
+    with pytest.raises(ValueError, match="augmented_dickey_fuller"):
+        econometrics_module.get_unit_root_test(method="kpss")
 
 
 def test_get_kpss_test(recorder, econometrics_module):
     recorder.capture(econometrics_module.get_kpss_test(period="quarterly"))
     recorder.capture(
         econometrics_module.get_kpss_test(period="monthly", regression="ct")
-    )
-
-
-def test_get_phillips_perron_test(recorder, econometrics_module):
-    recorder.capture(econometrics_module.get_phillips_perron_test(period="quarterly"))
-    recorder.capture(
-        econometrics_module.get_phillips_perron_test(period="monthly", regression="ct")
     )
 
 
@@ -120,13 +136,6 @@ def test_get_granger_causality(recorder, econometrics_module):
     )
 
 
-def test_get_zivot_andrews_test(recorder, econometrics_module):
-    recorder.capture(econometrics_module.get_zivot_andrews_test(period="weekly"))
-    recorder.capture(
-        econometrics_module.get_zivot_andrews_test(period="weekly", regression="ct")
-    )
-
-
 def test_get_cusum_test(recorder, econometrics_module):
     recorder.capture(econometrics_module.get_cusum_test(period="quarterly"))
     recorder.capture(
@@ -142,9 +151,8 @@ def test_get_diebold_mariano_test(recorder, econometrics_module):
 
 
 def test_get_diebold_mariano_test_invalid_method(econometrics_module):
-    # @handle_errors returns an empty Series rather than propagating the ValueError.
-    result = econometrics_module.get_diebold_mariano_test(method_a="bad")
-    assert result.empty
+    with pytest.raises(InvalidArgumentError, match="'ewma' or 'rolling'"):
+        econometrics_module.get_diebold_mariano_test(method_a="bad")
 
 
 def test_get_ols(recorder, econometrics_module):
@@ -184,7 +192,7 @@ def test_get_ols_explicit_dependent_ticker(recorder, econometrics_module):
 
 def test_get_ols_hac(recorder, econometrics_module):
     recorder.capture(
-        econometrics_module.get_ols(period="weekly", cov_type="HAC", maxlags=4)
+        econometrics_module.get_ols(period="weekly", cov_type="HAC", lags=4)
     )
 
 
@@ -192,7 +200,7 @@ def test_get_wls_hac(recorder, econometrics_module):
     returns = econometrics_module._get_series_column("weekly", "Return")
     weights = pd.Series(1.0, index=returns.index)
     recorder.capture(
-        econometrics_module.get_wls(weights, period="weekly", cov_type="HAC", maxlags=4)
+        econometrics_module.get_wls(weights, period="weekly", cov_type="HAC", lags=4)
     )
 
 
@@ -209,18 +217,15 @@ def test_get_gls(recorder, econometrics_module):
     recorder.capture(econometrics_module.get_gls(omega, period="weekly"))
 
 
-def test_get_logistic_regression(recorder, econometrics_module):
+def test_get_binary_choice_regression(recorder, econometrics_module):
     recorder.capture(
-        econometrics_module.get_logistic_regression(
+        econometrics_module.get_binary_choice_regression(
             independent_tickers=["MSFT", "Benchmark"], period="weekly"
         )
     )
-
-
-def test_get_probit_regression(recorder, econometrics_module):
     recorder.capture(
-        econometrics_module.get_probit_regression(
-            independent_tickers=["MSFT", "Benchmark"], period="weekly"
+        econometrics_module.get_binary_choice_regression(
+            independent_tickers=["MSFT", "Benchmark"], period="weekly", method="probit"
         )
     )
 
@@ -354,18 +359,15 @@ def test_get_hausman_wu_test_reversed_dependent_and_suspect(
     )
 
 
-def test_get_breusch_pagan_test(recorder, econometrics_module):
+def test_get_heteroskedasticity_test(recorder, econometrics_module):
     recorder.capture(
-        econometrics_module.get_breusch_pagan_test(
+        econometrics_module.get_heteroskedasticity_test(
             independent_tickers=["MSFT", "Benchmark"], period="weekly"
         )
     )
-
-
-def test_get_white_test(recorder, econometrics_module):
     recorder.capture(
-        econometrics_module.get_white_test(
-            independent_tickers=["MSFT", "Benchmark"], period="weekly"
+        econometrics_module.get_heteroskedasticity_test(
+            independent_tickers=["MSFT", "Benchmark"], period="weekly", method="white"
         )
     )
 
@@ -500,11 +502,10 @@ def test_get_regression_discontinuity_triangular_kernel(recorder, econometrics_m
 
 
 def test_get_regression_discontinuity_invalid_kernel(econometrics_module):
-    # @handle_errors returns an empty Series rather than propagating the ValueError.
-    result = econometrics_module.get_regression_discontinuity(
-        "AAPL", "MSFT", cutoff=0.0, period="weekly", kernel="gaussian"
-    )
-    assert result.empty
+    with pytest.raises(InvalidArgumentError, match="'uniform' or 'triangular'"):
+        econometrics_module.get_regression_discontinuity(
+            "AAPL", "MSFT", cutoff=0.0, period="weekly", kernel="gaussian"
+        )
 
 
 def test_get_propensity_score_matching(recorder, econometrics_module):
@@ -568,9 +569,7 @@ def test_get_arima_forecast(recorder, econometrics_module):
 
 def test_get_arima_forecast_no_constant(recorder, econometrics_module):
     recorder.capture(
-        econometrics_module.get_arima_forecast(
-            period="quarterly", include_constant=False
-        )
+        econometrics_module.get_arima_forecast(period="quarterly", add_constant=False)
     )
 
 
@@ -633,17 +632,16 @@ def test_get_vecm_forecast_not_cointegrated_returns_empty(econometrics_module):
     assert result.empty
 
 
-def test_get_vecm_forecast_invalid_k_ar_diff(econometrics_module):
-    result = econometrics_module.get_vecm_forecast(period="weekly", k_ar_diff=0)
+def test_get_vecm_forecast_invalid_lags(econometrics_module):
+    result = econometrics_module.get_vecm_forecast(period="weekly", lags=0)
     assert result.empty
 
 
-def test_get_rmse(recorder, econometrics_module):
-    recorder.capture(econometrics_module.get_rmse(period="quarterly"))
-
-
-def test_get_mae(recorder, econometrics_module):
-    recorder.capture(econometrics_module.get_mae(period="quarterly"))
+def test_get_forecast_error(recorder, econometrics_module):
+    recorder.capture(econometrics_module.get_forecast_error(period="quarterly"))
+    recorder.capture(
+        econometrics_module.get_forecast_error(period="quarterly", method="mae")
+    )
 
 
 def test_get_out_of_sample_validation_arima(recorder, econometrics_module):
@@ -665,17 +663,15 @@ def test_get_out_of_sample_validation_var(recorder, econometrics_module):
 
 def test_get_out_of_sample_validation_var_missing_other_tickers(econometrics_module):
     # An explicit empty other_tickers exercises the 'nothing to model jointly' error.
-    result = econometrics_module.get_out_of_sample_validation(
-        period="weekly", model="var", other_tickers=[]
-    )
-    assert result.empty
+    with pytest.raises(InvalidArgumentError, match="other_tickers must be provided"):
+        econometrics_module.get_out_of_sample_validation(
+            period="weekly", model="var", other_tickers=[]
+        )
 
 
 def test_get_out_of_sample_validation_invalid_model(econometrics_module):
-    result = econometrics_module.get_out_of_sample_validation(
-        period="weekly", model="bad"
-    )
-    assert result.empty
+    with pytest.raises(InvalidArgumentError, match="'arima' or 'var'"):
+        econometrics_module.get_out_of_sample_validation(period="weekly", model="bad")
 
 
 def test_get_fixed_effects_broadcast_factor(recorder, econometrics_module):
@@ -705,18 +701,32 @@ def test_get_fixed_effects_time_effects(recorder, econometrics_module):
     )
 
 
-def test_get_fixed_effects_missing_regressor_args(econometrics_module):
-    # @handle_errors returns an empty result rather than propagating the ValueError.
-    result = econometrics_module.get_fixed_effects(period="weekly")
-    assert result.empty
+def test_get_fixed_effects_defaults_to_the_benchmark(econometrics_module):
+    # Without a regressor the market factor is used, as in the other regressions.
+    pd.testing.assert_frame_equal(
+        econometrics_module.get_fixed_effects(period="weekly"),
+        econometrics_module.get_fixed_effects(
+            independent_tickers="Benchmark", period="weekly"
+        ),
+    )
+
+
+def test_random_effects_and_hausman_test_need_a_regressor(econometrics_module):
+    # A common factor such as the Benchmark has no between-ticker variation, so these two
+    # have no default and say what to pass.
+    with pytest.raises(InvalidArgumentError, match="have no default"):
+        econometrics_module.get_random_effects(period="weekly")
+    with pytest.raises(InvalidArgumentError, match="have no default"):
+        econometrics_module.get_hausman_test(period="weekly")
 
 
 def test_get_fixed_effects_both_regressor_args(econometrics_module):
-    # @handle_errors returns an empty result rather than propagating the ValueError.
-    result = econometrics_module.get_fixed_effects(
-        independent_tickers="Benchmark", independent_column="Volume", period="weekly"
-    )
-    assert result.empty
+    with pytest.raises(InvalidArgumentError, match="Provide exactly one"):
+        econometrics_module.get_fixed_effects(
+            independent_tickers="Benchmark",
+            independent_column="Volume",
+            period="weekly",
+        )
 
 
 def test_get_random_effects(recorder, econometrics_module):
@@ -829,10 +839,10 @@ def test_per_ticker_statistics_ignore_a_younger_ticker(econometrics_module):
     )
 
     for method, kwargs in [
-        ("get_augmented_dickey_fuller", {"period": "weekly"}),
+        ("get_unit_root_test", {"period": "weekly"}),
         ("get_kpss_test", {"period": "weekly"}),
-        ("get_phillips_perron_test", {"period": "weekly"}),
-        ("get_zivot_andrews_test", {"period": "monthly"}),
+        ("get_unit_root_test", {"period": "weekly", "method": "phillips_perron"}),
+        ("get_unit_root_test", {"period": "monthly", "method": "zivot_andrews"}),
         ("get_arch_lm_test", {}),
         ("get_jarque_bera_test", {}),
         ("get_ljung_box_test", {}),
@@ -847,11 +857,17 @@ def test_per_ticker_statistics_ignore_a_younger_ticker(econometrics_module):
         )
         assert not result["MSFT"].equals(original["MSFT"]), method
 
-    for method in ("get_two_sample_t_test", "get_rmse", "get_mae"):
+    for method, kwargs in [
+        ("get_two_sample_t_test", {}),
+        ("get_forecast_error", {"method": "rmse"}),
+        ("get_forecast_error", {"method": "mae"}),
+    ]:
         original = getattr(econometrics_module, method)(
-            include_benchmark=True, rounding=None
+            include_benchmark=True, rounding=None, **kwargs
         )
-        result = getattr(younger, method)(include_benchmark=True, rounding=None)
+        result = getattr(younger, method)(
+            include_benchmark=True, rounding=None, **kwargs
+        )
         pd.testing.assert_series_equal(
             pd.Series(result.loc[("AAPL", "Benchmark")]),
             pd.Series(original.loc[("AAPL", "Benchmark")]),
@@ -970,7 +986,8 @@ def test_get_wls_estimates_feasible_weights_by_default(econometrics_module):
         econometrics_module.get_wls(period="weekly"),
         econometrics_module.get_wls(weights, period="weekly"),
     )
-    assert econometrics_module.get_wls("unknown", period="weekly").empty
+    with pytest.raises(InvalidArgumentError, match="'feasible'"):
+        econometrics_module.get_wls("unknown", period="weekly")
 
 
 def test_get_gls_estimates_an_ar1_structure_by_default(econometrics_module):
@@ -1090,3 +1107,806 @@ def test_a_data_series_keeps_its_observations():
         econometrics.get_level_significance(period="daily").loc["Rate", "Observations"]
         == 3
     )
+
+
+def test_get_linear_regression(recorder, econometrics_module):
+    recorder.capture(econometrics_module.get_linear_regression())
+    recorder.capture(econometrics_module.get_linear_regression(window=20))
+    recorder.capture(econometrics_module.get_linear_regression(include_benchmark=True))
+
+
+def test_get_slope(recorder, econometrics_module):
+    recorder.capture(econometrics_module.get_slope())
+    recorder.capture(econometrics_module.get_slope(window=5))
+    recorder.capture(econometrics_module.get_slope(as_angle=True))
+    recorder.capture(econometrics_module.get_slope(period="weekly"))
+
+
+def test_get_correlation(recorder, econometrics_module):
+    recorder.capture(
+        econometrics_module.get_correlation(column="Adj Close", rolling=30)
+    )
+    recorder.capture(
+        econometrics_module.get_correlation(column="High", against="Low", rolling=30)
+    )
+    recorder.capture(
+        econometrics_module.get_correlation(
+            column="Adj Close", against="MSFT", rolling=30
+        )
+    )
+    recorder.capture(econometrics_module.get_correlation(rolling=30))
+    recorder.capture(econometrics_module.get_correlation())
+
+
+def test_get_percentile_median(recorder, econometrics_module):
+    recorder.capture(econometrics_module.get_percentile(rolling=30))
+    recorder.capture(econometrics_module.get_percentile(rolling=9))
+    recorder.capture(econometrics_module.get_percentile(rolling=30, column="Return"))
+
+
+def test_get_percentile(recorder, econometrics_module):
+    recorder.capture(
+        econometrics_module.get_percentile(rolling=100, method="nearest_rank")
+    )
+    recorder.capture(
+        econometrics_module.get_percentile(
+            rolling=30, percentile=0.75, method="nearest_rank"
+        )
+    )
+    recorder.capture(econometrics_module.get_percentile(rolling=100))
+    recorder.capture(
+        econometrics_module.get_percentile(
+            rolling=100, method="nearest_rank", period="weekly"
+        )
+    )
+    recorder.capture(econometrics_module.get_percentile())
+
+
+def test_get_percent_rank(recorder, econometrics_module):
+    recorder.capture(econometrics_module.get_percent_rank(rolling=100))
+    recorder.capture(econometrics_module.get_percent_rank(rolling=30))
+    recorder.capture(econometrics_module.get_percent_rank(rolling=100, column="Return"))
+    recorder.capture(econometrics_module.get_percent_rank())
+
+
+def test_get_z_score(recorder, econometrics_module):
+    recorder.capture(econometrics_module.get_z_score(rolling=30))
+    recorder.capture(econometrics_module.get_z_score(rolling=20))
+    recorder.capture(econometrics_module.get_z_score(rolling=30, column="Return"))
+    recorder.capture(econometrics_module.get_z_score())
+
+
+def test_get_mean_absolute_deviation(recorder, econometrics_module):
+    recorder.capture(econometrics_module.get_mean_absolute_deviation(rolling=14))
+    recorder.capture(econometrics_module.get_mean_absolute_deviation(rolling=30))
+    recorder.capture(
+        econometrics_module.get_mean_absolute_deviation(rolling=14, column="Return")
+    )
+    recorder.capture(econometrics_module.get_mean_absolute_deviation())
+
+
+def test_get_standard_error(recorder, econometrics_module):
+    recorder.capture(econometrics_module.get_standard_error(rolling=14))
+    recorder.capture(econometrics_module.get_standard_error(rolling=30))
+    recorder.capture(
+        econometrics_module.get_standard_error(rolling=14, include_benchmark=True)
+    )
+    recorder.capture(econometrics_module.get_standard_error())
+
+
+def test_get_entropy_share(recorder, econometrics_module):
+    recorder.capture(
+        econometrics_module.get_entropy(method="share", rolling=10, normalize=False)
+    )
+    recorder.capture(
+        econometrics_module.get_entropy(
+            method="share", rolling=20, base=np.e, normalize=False
+        )
+    )
+    recorder.capture(
+        econometrics_module.get_entropy(
+            method="share", rolling=10, normalize=False, period="weekly"
+        )
+    )
+    recorder.capture(econometrics_module.get_entropy(method="share"))
+
+
+def test_whole_sample_statistics_equal_pandas(econometrics_module):
+    """Without rolling, each statistic is one value per asset over all its observations."""
+    prices = econometrics_module._get_series_column("daily", "Adj Close").drop(
+        columns="Benchmark", errors="ignore"
+    )
+    returns = econometrics_module._get_series_column("daily", "Return")
+
+    expected = {
+        "get_percentile": prices.median(),
+        "get_z_score": prices.apply(
+            lambda price: (price.dropna().iloc[-1] - price.mean()) / price.std(ddof=1)
+        ),
+        "get_mean_absolute_deviation": prices.apply(
+            lambda price: (price - price.mean()).abs().mean()
+        ),
+        "get_standard_error": prices.std(ddof=1) / np.sqrt(prices.count()),
+        "get_percent_rank": prices.apply(
+            lambda price: (price.dropna().iloc[:-1] < price.dropna().iloc[-1]).mean()
+        ),
+    }
+    for method, values in expected.items():
+        result = getattr(econometrics_module, method)(rounding=12)
+        assert isinstance(result, pd.Series)
+        assert list(result.index) == list(prices.columns)
+        assert result.to_numpy() == pytest.approx(values.to_numpy(), abs=1e-10), method
+
+    pair = pd.concat([returns["AAPL"], returns["Benchmark"]], axis=1).dropna()
+    assert econometrics_module.get_correlation(rounding=12)["AAPL"] == pytest.approx(
+        np.corrcoef(pair.iloc[:, 0], pair.iloc[:, 1])[0, 1], abs=1e-10
+    )
+
+    shares = prices["AAPL"].dropna() / prices["AAPL"].sum()
+    assert econometrics_module.get_entropy(method="share", rounding=12)[
+        "AAPL"
+    ] == pytest.approx(
+        -(shares * np.log(shares)).sum() / np.log(len(shares)), abs=1e-10
+    )
+
+
+def test_median_is_the_linear_half_percentile(econometrics_module):
+    """The default percentile equals pandas' rolling median to the last digit."""
+    for column in ("Adj Close", "Return"):
+        data = econometrics_module._get_series_column("daily", column)
+
+        for window in (9, 30, 100):
+            percentile = calculate_per_series(
+                data, statistics_model.get_percentile, window
+            )
+            median = calculate_per_series(
+                data, lambda series, size: series.rolling(size).median(), window
+            )
+            assert percentile.equals(median)
+
+
+def test_correlation_with_an_unknown_series_raises(econometrics_module):
+    with pytest.raises(InvalidArgumentError, match="choose from AAPL, MSFT"):
+        econometrics_module.get_correlation(against="UNKNOWN")
+
+
+def test_correlation_leaves_out_the_series_it_is_correlated_with(
+    econometrics_module,
+):
+    # MSFT against itself would be 1 everywhere; the Benchmark is left out by default.
+    correlation = econometrics_module.get_correlation(against="MSFT", rolling=30)
+    assert list(correlation.columns) == ["AAPL"]
+
+    with_benchmark = econometrics_module.get_correlation(
+        against="MSFT", rolling=30, include_benchmark=True
+    )
+    assert list(with_benchmark.columns) == ["AAPL", "Benchmark"]
+
+    whole_sample = econometrics_module.get_correlation(
+        against="MSFT", include_benchmark=True
+    )
+    assert list(whole_sample.index) == ["AAPL", "Benchmark"]
+
+
+def test_rolling_statistics_skip_the_dates_a_series_has_no_value():
+    from financetoolkit.econometrics.econometrics_controller import Econometrics
+
+    # A monthly series next to a daily one: each window counts its own observations.
+    dates = pd.period_range("2025-01-01", periods=90, freq="D")
+    daily = pd.Series(np.arange(90.0) + 1, index=dates)
+    monthly = daily[daily.index.day == 1]
+    econometrics = Econometrics(
+        data={"Daily": daily, "Monthly": monthly}, rounding=None
+    )
+
+    median = econometrics.get_percentile(rolling=3)
+
+    assert median["Monthly"].dropna().tolist() == [32.0]
+    assert median["Daily"].dropna().iloc[0] == 2.0
+
+
+def test_statistics_default_to_the_whole_sample():
+    import inspect
+
+    from financetoolkit.econometrics.econometrics_controller import Econometrics
+
+    for method in (
+        Econometrics.get_correlation,
+        Econometrics.get_percentile,
+        Econometrics.get_percent_rank,
+        Econometrics.get_mean_absolute_deviation,
+        Econometrics.get_z_score,
+        Econometrics.get_standard_error,
+        Econometrics.get_entropy,
+        Econometrics.get_lempel_ziv_complexity,
+        Econometrics.get_hjorth_parameters,
+    ):
+        parameters = inspect.signature(method).parameters
+        assert parameters["rolling"].default is None
+        assert "window" not in parameters
+
+    # The window of the linear regression and slope is part of the formula (TA-Lib's defaults).
+    for method, window in (
+        (Econometrics.get_linear_regression, 14),
+        (Econometrics.get_slope, 1),
+    ):
+        assert inspect.signature(method).parameters["window"].default == window
+
+
+def test_the_portfolio_is_no_default_independent_of_its_holdings():
+    """A holding regressed on the others and their Portfolio is collinear by construction."""
+    from types import SimpleNamespace
+
+    from financetoolkit.econometrics.econometrics_controller import EconometricsBase
+
+    stub = SimpleNamespace(
+        _get_tickers=lambda include_benchmark=False: ["AAPL", "MSFT", "Portfolio"]
+    )
+
+    assert EconometricsBase._resolve_dependent_independent(stub) == ("AAPL", ["MSFT"])
+    assert EconometricsBase._resolve_dependent_independent(
+        stub, dependent_ticker="Portfolio"
+    ) == ("Portfolio", ["AAPL", "MSFT"])
+    assert EconometricsBase._resolve_dependent_independent(
+        stub, independent_tickers=["MSFT", "Portfolio"]
+    ) == ("AAPL", ["MSFT", "Portfolio"])
+
+
+def test_get_fractional_difference(recorder, econometrics_module):
+    recorder.capture(
+        econometrics_module.get_fractional_difference(period="weekly", threshold=1e-3)
+    )
+    recorder.capture(
+        econometrics_module.get_fractional_difference(
+            period="weekly", d=0.6, method="expanding"
+        )
+    )
+
+
+def test_get_minimum_fractional_difference(recorder, econometrics_module):
+    recorder.capture(
+        econometrics_module.get_minimum_fractional_difference(period="weekly")
+    )
+    recorder.capture(
+        econometrics_module.get_minimum_fractional_difference(
+            period="weekly", threshold=1e-3, grid=True
+        )
+    )
+
+
+def test_get_bubble_test(recorder, econometrics_module):
+    recorder.capture(
+        econometrics_module.get_bubble_test(period="weekly", simulations=100)
+    )
+    recorder.capture(
+        econometrics_module.get_bubble_test(
+            period="weekly", method="sadf", lag_order=1, simulations=100
+        )
+    )
+
+
+def test_get_bubble_episodes(recorder, econometrics_module):
+    recorder.capture(
+        econometrics_module.get_bubble_episodes(period="weekly", simulations=100)
+    )
+    recorder.capture(
+        econometrics_module.get_bubble_episodes(
+            period="weekly", simulations=100, time_series=True
+        )
+    )
+    # The runs above the critical value in the test data are shorter than the default
+    # minimum duration (round(log(157)) = 5 weeks), so these episodes only appear with 1.
+    recorder.capture(
+        econometrics_module.get_bubble_episodes(
+            period="weekly", simulations=100, minimum_duration=1
+        )
+    )
+
+
+def test_get_chow_dickey_fuller_test(recorder, econometrics_module):
+    recorder.capture(
+        econometrics_module.get_chow_dickey_fuller_test(
+            period="weekly", simulations=200
+        )
+    )
+    recorder.capture(
+        econometrics_module.get_chow_dickey_fuller_test(
+            period="weekly", time_series=True
+        )
+    )
+
+
+def test_log_prices_need_positive_values(econometrics_module):
+    # @handle_errors returns an empty Series for the ValueError on a non-positive series.
+    assert econometrics_module.get_fractional_difference(column="Return").empty
+
+
+def test_get_entropy(recorder, econometrics_module):
+    recorder.capture(econometrics_module.get_entropy())
+    recorder.capture(econometrics_module.get_entropy(method="approximate", rolling=100))
+    recorder.capture(econometrics_module.get_entropy(method="permutation", order=4))
+    recorder.capture(
+        econometrics_module.get_entropy(method="spectral", estimator="welch")
+    )
+    recorder.capture(econometrics_module.get_entropy(method="svd", period="weekly"))
+    recorder.capture(econometrics_module.get_entropy(method="shannon", word_length=2))
+    recorder.capture(
+        econometrics_module.get_entropy(method="lempel_ziv", encoding="quantile")
+    )
+    recorder.capture(
+        econometrics_module.get_entropy(
+            method="kontoyiannis", rolling=252, encoding="sigma"
+        )
+    )
+
+
+def test_get_lempel_ziv_complexity(recorder, econometrics_module):
+    recorder.capture(econometrics_module.get_lempel_ziv_complexity())
+    recorder.capture(econometrics_module.get_lempel_ziv_complexity(rolling=100))
+    recorder.capture(
+        econometrics_module.get_lempel_ziv_complexity(encoding="quantile", bins=4)
+    )
+
+
+def test_get_hjorth_parameters(recorder, econometrics_module):
+    recorder.capture(econometrics_module.get_hjorth_parameters())
+    recorder.capture(econometrics_module.get_hjorth_parameters(rolling=100))
+
+
+def test_entropy_of_each_series_over_its_own_dates(econometrics_module):
+    entropy = econometrics_module.get_entropy(method="permutation", rounding=10)
+    returns = econometrics_module._get_series_column("daily", "Return")
+
+    for ticker in entropy.index:
+        assert entropy[ticker] == pytest.approx(
+            entropy_model.get_permutation_entropy(returns[ticker].dropna().to_numpy())
+        )
+
+
+def test_entropy_with_an_unknown_method_raises(econometrics_module):
+    with pytest.raises(InvalidArgumentError, match="method must be one of 'sample'"):
+        econometrics_module.get_entropy(method="unknown")
+
+
+def test_get_berkowitz_test(recorder, econometrics_module):
+    recorder.capture(econometrics_module.get_berkowitz_test(refit_every=63))
+    recorder.capture(
+        econometrics_module.get_berkowitz_test(model="gaussian", alpha=0.05)
+    )
+
+
+def test_get_hong_li_test(recorder, econometrics_module):
+    recorder.capture(econometrics_module.get_hong_li_test(model="gaussian"))
+    # The GARCH refits move the statistics by up to 5e-7 with the fit, so two decimals.
+    recorder.capture(econometrics_module.get_hong_li_test(refit_every=63, rounding=2))
+
+
+def test_get_directional_accuracy_test(recorder, econometrics_module):
+    recorder.capture(econometrics_module.get_directional_accuracy_test())
+    recorder.capture(
+        econometrics_module.get_directional_accuracy_test(
+            method="anatolyev_gerko", forecast="autoregressive", window=60
+        )
+    )
+
+
+def test_get_model_confidence_set(recorder, econometrics_module):
+    recorder.capture(
+        econometrics_module.get_model_confidence_set(
+            models=["ewma", "rolling", "garch"], refit_every=63
+        )
+    )
+    recorder.capture(
+        econometrics_module.get_model_confidence_set(
+            models=["ewma", "rolling"], loss="squared", statistic="range", rounding=12
+        )
+    )
+
+
+def test_get_model_confidence_set_needs_two_models(econometrics_module):
+    assert econometrics_module.get_model_confidence_set(models=["ewma"]).empty
+
+
+def test_get_arch_lm_test_weighted(recorder, econometrics_module):
+    recorder.capture(econometrics_module.get_arch_lm_test(weighted=True))
+    recorder.capture(
+        econometrics_module.get_arch_lm_test(period="weekly", lags=10, weighted=True)
+    )
+
+
+def test_get_ljung_box_test_weighted(recorder, econometrics_module):
+    recorder.capture(econometrics_module.get_ljung_box_test(weighted=True))
+    recorder.capture(
+        econometrics_module.get_ljung_box_test(period="weekly", lags=5, weighted=True)
+    )
+
+
+def test_get_cusum_test_methods(recorder, econometrics_module):
+    recorder.capture(econometrics_module.get_cusum_test(method="recursive"))
+    recorder.capture(econometrics_module.get_cusum_test(method="chu_stinchcombe_white"))
+    recorder.capture(
+        econometrics_module.get_cusum_test(
+            period="weekly", method="chu_stinchcombe_white", time_series=True
+        ).astype(float)
+    )
+
+
+def test_get_cusum_test_time_series_needs_chu_stinchcombe_white(econometrics_module):
+    with pytest.raises(InvalidArgumentError, match="chu_stinchcombe_white"):
+        econometrics_module.get_cusum_test(time_series=True)
+
+
+def test_get_sign_bias_test(recorder, econometrics_module):
+    recorder.capture(econometrics_module.get_sign_bias_test())
+    recorder.capture(econometrics_module.get_sign_bias_test(method="gjr"))
+
+
+def test_get_pearson_goodness_of_fit_test(recorder, econometrics_module):
+    normal = econometrics_module.get_pearson_goodness_of_fit_test()
+    student = econometrics_module.get_pearson_goodness_of_fit_test(distribution="t")
+    # Daily returns have fatter tails than normal innovations allow.
+    assert (student.loc["Pearson Statistic"] < normal.loc["Pearson Statistic"]).all()
+    recorder.capture(normal)
+    recorder.capture(student)
+    recorder.capture(econometrics_module.get_pearson_goodness_of_fit_test(bins=10))
+
+
+def test_get_nyblom_test(recorder, econometrics_module):
+    # The fit stops within its tolerance: a move of 1e-12 in the prices moves the statistics
+    # by up to 1e-6, so they are recorded at two decimals.
+    recorder.capture(econometrics_module.get_nyblom_test(rounding=2))
+
+
+def test_get_gmm_moment_test(recorder, econometrics_module):
+    # As for the Nyblom test: the Joint Statistic moves by up to 4e-6 with the fit.
+    recorder.capture(econometrics_module.get_gmm_moment_test(rounding=2))
+    recorder.capture(
+        econometrics_module.get_gmm_moment_test(distribution="t", lags=2, rounding=2)
+    )
+
+
+def test_get_change_points(recorder, econometrics_module):
+    recorder.capture(econometrics_module.get_change_points())
+    recorder.capture(
+        econometrics_module.get_change_points(period="weekly", cost="variance")
+    )
+    recorder.capture(
+        econometrics_module.get_change_points(
+            column="Adj Close", period="monthly", cost="mean"
+        )
+    )
+
+
+def test_get_optimal_trading_rule(recorder, econometrics_module):
+    # Monte Carlo results are recorded to two decimals: a path that lands on a threshold
+    # after a last-bit difference on another platform moves a mean by at most
+    # (profit-taking + stop-loss) / paths, and the simulation error is larger still.
+    recorder.capture(
+        econometrics_module.get_optimal_trading_rule(
+            grid_size=5, simulations=2000, rounding=2
+        )
+    )
+    recorder.capture(
+        econometrics_module.get_optimal_trading_rule(
+            period="weekly",
+            grid_size=3,
+            maximum_holding_period=20,
+            simulations=1000,
+            grid=True,
+            rounding=2,
+        )
+    )
+
+
+def test_move_significance_of_the_toolkit_measures_each_return(econometrics_module):
+    from financetoolkit.risk import risk_model
+
+    significance = econometrics_module.get_move_significance(
+        window=20, include_benchmark=True
+    )
+
+    measures = significance.columns.get_level_values(0).unique().tolist()
+    assert measures == [
+        "Return",
+        "Volatility Multiple",
+        "VaR Multiple",
+        "Percentile",
+        "Largest Since",
+    ]
+    assert "Benchmark" in significance.columns.get_level_values(1)
+
+    returns = econometrics_module._historical_data["daily"]["Return"]
+    ticker = returns.columns[0]
+    expected = risk_model.get_move_significance(returns[ticker].dropna(), 20)
+    expected = expected.loc[significance.index]
+
+    pd.testing.assert_series_equal(
+        significance[("Volatility Multiple", ticker)],
+        expected["Volatility Multiple"],
+        check_names=False,
+        check_dtype=False,
+        atol=1e-4,
+    )
+    assert (significance[("Largest Since", ticker)].dropna() < "9999").all()
+
+
+# Robustness: invalid arguments raise, one unusable ticker does not empty the others, and an
+# empty or all-NaN result says why.
+
+
+@pytest.fixture(scope="module")
+def prices_with_a_constant_series():
+    rng = np.random.default_rng(1)
+    index = pd.period_range("2015-01-01", periods=400, freq="D")
+    return pd.DataFrame(
+        {
+            "A": 100 * np.exp(np.cumsum(rng.normal(0, 0.01, 400))),
+            "B": 100 * np.exp(np.cumsum(rng.normal(0, 0.01, 400))),
+            "C": np.full(400, 50.0),
+        },
+        index=index,
+    )
+
+
+@pytest.mark.parametrize(
+    ("method", "arguments"),
+    [
+        ("get_change_points", {}),
+        ("get_structural_breaks", {}),
+        ("get_time_varying_beta", {"independent_ticker": "B"}),
+        ("get_optimal_trading_rule", {"simulations": 100, "grid_size": 3}),
+        ("get_markov_regime_switching", {}),
+        ("get_berkowitz_test", {"window": 200, "refit_every": 100}),
+    ],
+)
+def test_one_unusable_ticker_leaves_the_others(
+    prices_with_a_constant_series, caplog, method, arguments
+):
+    from financetoolkit import Econometrics
+
+    econometrics = Econometrics(data=prices_with_a_constant_series)
+    with caplog.at_level("WARNING", logger="financetoolkit"):
+        result = getattr(econometrics, method)(**arguments)
+
+    # The constant series is skipped with its reason, the others keep their result.
+    assert not result.empty
+    assert "A" in str(result.columns.tolist() + result.index.tolist())
+    assert "for C:" in caplog.text
+
+
+def test_model_confidence_set_validates_its_windows_and_names_a_constant_series(
+    prices_with_a_constant_series, caplog
+):
+    from financetoolkit import Econometrics
+
+    econometrics = Econometrics(data=prices_with_a_constant_series)
+    with pytest.raises(InvalidArgumentError, match="garch_window"):
+        econometrics.get_model_confidence_set(garch_window=2)
+    with pytest.raises(InvalidArgumentError, match="window"):
+        econometrics.get_model_confidence_set(window=0)
+
+    with caplog.at_level("WARNING", logger="financetoolkit"):
+        result = econometrics.get_model_confidence_set(
+            models=["ewma", "rolling"], n_bootstrap=50
+        )
+    assert "C has constant returns" in caplog.text
+    assert set(result.index.get_level_values(0)) == {"A", "B"}
+
+
+@pytest.mark.parametrize(
+    "method",
+    [
+        "get_diebold_mariano_test",
+        "get_berkowitz_test",
+        "get_hong_li_test",
+        "get_directional_accuracy_test",
+        "get_move_significance",
+    ],
+)
+def test_a_window_of_zero_is_rejected(econometrics_module, method):
+    # A window of 0 used to fall back to the default without a word.
+    with pytest.raises(InvalidArgumentError, match="window"):
+        getattr(econometrics_module, method)(window=0)
+
+
+@pytest.mark.parametrize(
+    ("method", "minimum"),
+    [
+        ("get_correlation", 2),
+        ("get_z_score", 2),
+        ("get_standard_error", 2),
+        ("get_entropy", 4),
+        ("get_hjorth_parameters", 4),
+        ("get_lempel_ziv_complexity", 2),
+        ("get_percentile", 1),
+        ("get_percent_rank", 1),
+        ("get_mean_absolute_deviation", 1),
+        ("get_pairs_trading", 2),
+    ],
+)
+def test_rolling_below_its_minimum_is_rejected(econometrics_module, method, minimum):
+    with pytest.raises(InvalidArgumentError, match=f"at least {minimum}"):
+        getattr(econometrics_module, method)(rolling=minimum - 1)
+
+
+def test_unknown_columns_and_options_are_rejected(econometrics_module):
+    with pytest.raises(InvalidArgumentError, match="column must be one of"):
+        econometrics_module.get_change_points(column="Bogus")
+    with pytest.raises(InvalidArgumentError, match="column must be one of"):
+        econometrics_module.get_fixed_effects(column="Bogus")
+    with pytest.raises(InvalidArgumentError, match="independent_column must be one of"):
+        econometrics_module.get_random_effects(independent_column="Bogus")
+    # The entropy checks its estimator and encoding also for a method that does not use them.
+    with pytest.raises(InvalidArgumentError, match="estimator"):
+        econometrics_module.get_entropy(estimator="bogus")
+    with pytest.raises(InvalidArgumentError, match="encoding"):
+        econometrics_module.get_entropy(encoding="bogus")
+
+
+def test_f_and_likelihood_ratio_tests_fit_both_models_on_the_same_dates():
+    from financetoolkit import Econometrics
+
+    rng = np.random.default_rng(3)
+    index = pd.period_range("2015-01-01", periods=300, freq="D")
+    x = rng.normal(0, 0.01, 300)
+    z = rng.normal(0, 0.01, 300)
+    y = 0.8 * x + 0.3 * z + rng.normal(0, 0.005, 300)
+    data = pd.DataFrame({"Y": y, "X": x, "Z": z}, index=index)
+    # The regressor of only the unrestricted model has a gap.
+    data.iloc[100:120, 2] = np.nan
+    econometrics = Econometrics(data=data, changes="difference")
+
+    arguments = {
+        "dependent_ticker": "Y",
+        "restricted_independent_tickers": ["X"],
+        "unrestricted_independent_tickers": ["X", "Z"],
+        "column": "Level",
+    }
+    f_test = econometrics.get_f_test(**arguments)
+    likelihood_ratio = econometrics.get_likelihood_ratio_test(**arguments)
+
+    # 280 shared dates less the three parameters of the unrestricted model.
+    assert f_test["Df Denominator"] == 277  # noqa: PLR2004
+    assert not likelihood_ratio.empty
+
+
+def test_pairs_trading_has_no_signal_without_a_z_score(econometrics_module):
+    series = econometrics_module.get_pairs_trading(rolling=60, time_series=True)
+    pair = series.columns.get_level_values(0)[0]
+    warm_up = series[pair]["Z-Score"].isna()
+    assert warm_up.any()
+    assert series[pair]["Signal"][warm_up].isna().all()
+
+    # A window longer than the data leaves no z-score, so no signal and no trades either.
+    summary = econometrics_module.get_pairs_trading(rolling=5000)
+    assert summary["Signal"].isna().all()
+    assert summary["Number of Trades"].isna().all()
+
+
+def test_fractional_difference_says_how_long_the_window_is(econometrics_module, caplog):
+    with caplog.at_level("WARNING", logger="financetoolkit"):
+        result = econometrics_module.get_fractional_difference()
+    assert result.isna().all().all()
+    assert "fixed-width window of d = 0.4 needs at least" in caplog.text
+
+
+@pytest.mark.parametrize(
+    "method",
+    [
+        "get_engle_granger_cointegration",
+        "get_granger_causality",
+        "get_two_sample_t_test",
+    ],
+)
+def test_pairwise_tests_need_two_series(method, monkeypatch):
+    from financetoolkit import Econometrics
+
+    rng = np.random.default_rng(4)
+    index = pd.period_range("2015-01-01", periods=200, freq="D")
+    econometrics = Econometrics(
+        data=pd.DataFrame({"A": 100 + np.cumsum(rng.normal(size=200))}, index=index)
+    )
+    monkeypatch.setenv("FINANCETOOLKIT_STRICT_ERRORS", "1")
+    with pytest.raises(ValueError, match="needs at least two series"):
+        getattr(econometrics, method)()
+
+
+def test_bubble_test_without_data_says_so():
+    from financetoolkit.econometrics.stationarity import bubble_model
+
+    with pytest.raises(ValueError, match="no observations"):
+        bubble_model.get_bubble_test(pd.Series(dtype=float))
+
+
+def test_two_sample_t_test_without_data_is_quiet():
+    import warnings
+
+    from financetoolkit.econometrics.testing import hypothesis_testing_model
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        result = hypothesis_testing_model.get_two_sample_t_test(
+            pd.Series([1.0]), pd.Series(dtype=float)
+        )
+    assert result.isna()[["t-Statistic", "P-Value", "Mean B"]].all()
+    assert result["Mean A"] == 1.0
+
+
+def test_model_confidence_set_is_quiet_about_zero_forecasts(econometrics_module):
+    import warnings
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", RuntimeWarning)
+        result = econometrics_module.get_model_confidence_set(n_bootstrap=50)
+    assert not result.empty
+
+
+def test_fixed_effects_default_is_meaningful(econometrics_module):
+    result = econometrics_module.get_fixed_effects(period="weekly")
+    assert result.loc["Benchmark", "Coefficient"] > 0
+
+
+def test_a_mistake_in_the_call_is_not_skipped_per_ticker(econometrics_module):
+    # The per-ticker fits skip a ticker without data, never an invalid option.
+    with pytest.raises(InvalidArgumentError, match="cost"):
+        econometrics_module.get_change_points(cost="bogus")
+    with pytest.raises(InvalidArgumentError, match="method"):
+        econometrics_module.get_berkowitz_test(garch_method="bogus")
+
+
+@pytest.mark.parametrize(
+    ("method", "arguments", "minimum"),
+    [
+        ("get_entropy", {"rolling": 2, "method": "permutation"}, 3),
+        ("get_entropy", {"rolling": 4, "method": "sample", "order": 3}, 5),
+    ],
+)
+def test_a_rolling_window_below_the_measure_minimum_raises(
+    econometrics_module, method, arguments, minimum
+):
+    with pytest.raises(InvalidArgumentError, match=f"at least {minimum}"):
+        getattr(econometrics_module, method)(**arguments)
+
+
+def test_a_series_without_values_is_named(caplog):
+    from financetoolkit import Toolkit
+
+    historical = pd.read_pickle("tests/datasets/historical_dataset.pickle")
+    historical = historical.drop(columns=["Return", "Cumulative Return"], level=0)
+    for column in historical.columns.get_level_values(0).unique():
+        historical[(column, "MSFT")] = np.nan
+    toolkit = Toolkit(
+        tickers=["AAPL", "MSFT"],
+        historical=historical,
+        convert_currency=False,
+        start_date="2019-12-31",
+        end_date="2023-01-01",
+        sleep_timer=False,
+    )
+    toolkit._daily_risk_free_rate = pd.read_pickle(
+        "tests/datasets/risk_free_rate.pickle"
+    )
+    toolkit._daily_treasury_data = pd.read_pickle("tests/datasets/treasury_data.pickle")
+
+    with caplog.at_level("WARNING", logger="financetoolkit"):
+        johansen = toolkit.econometrics.get_johansen_cointegration()
+
+    assert johansen.select_dtypes("number").isna().all().all()
+    assert "MSFT has no daily Adj Close values" in caplog.text
+    assert "also those of the series it is combined with" in caplog.text
+
+
+def test_a_rolling_sample_entropy_without_values_is_logged(econometrics_module, caplog):
+    # Four returns rarely hold two matching templates, so every window is NaN.
+    with caplog.at_level("WARNING", logger="financetoolkit"):
+        entropy = econometrics_module.get_entropy(rolling=4)
+
+    assert entropy.isna().all().all()
+    assert caplog.text.count("leaves the sample entropy NaN throughout") == 1
+
+    caplog.clear()
+    with caplog.at_level("WARNING", logger="financetoolkit"):
+        entropy = econometrics_module.get_entropy(rolling=60)
+
+    assert entropy.notna().any().any()
+    assert "NaN throughout" not in caplog.text

@@ -20,9 +20,12 @@ def get_merton_model(
     time_horizon: float = 1.0,
 ) -> pd.Series:
     """
-    The Merton (1974) structural credit model. Equity is a call option on the company's
-    assets with the debt as strike price, so the market value and volatility of the assets,
-    which cannot be observed, follow from those of the equity by solving
+    The default risk of a company by the Merton (1974) structural credit model: its asset
+    value, distance to default, probability of default and credit spread.
+
+    Equity is a call option on the company's assets with the debt as strike price, so the
+    market value and volatility of the assets, which cannot be observed, follow from those
+    of the equity by solving
 
         E = V N(d1) - D e^(-rT) N(d2)  and  σ_E E = N(d1) σ_V V,
 
@@ -30,9 +33,22 @@ def get_merton_model(
     default d2 is the number of standard deviations the assets are above the default point
     after the time horizon, and N(-d2) the probability that they fall below it.
 
+    The debt is the rest of the assets, a risk-free zero-coupon bond with face value D less a
+    put on the assets, so its value and the credit spread it yields over the risk free rate
+    are
+
+        Debt Value = V - E  and  Credit Spread = -ln(Debt Value / D) / T - r,
+
+    both continuously compounded, like the risk free rate the model takes (Merton, 1974); a
+    rate quoted with periodic compounding, such as a Treasury yield, is converted first.
+
     The default point is usually set at short-term debt plus half of long-term debt (the
     KMV convention of Crosbie and Bohn, 2003), as long-term debt need not be repaid within
     the horizon.
+
+    Referenced against:
+    - FinancePy, MertonFirm.credit_spread: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/models/merton_firm.py#L124
+    - FinancePy, MertonFirm.debt_value: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/models/merton_firm.py#L109
 
     Args:
         equity_value (float): The market value of the equity (market capitalization).
@@ -42,15 +58,17 @@ def get_merton_model(
         time_horizon (float, optional): The positive, finite horizon in years. Defaults to 1.
 
     Returns:
-        pd.Series: The Asset Value, Asset Volatility, Default Point, Distance to Default and
-        Probability of Default. Invalid inputs, including a non-positive or non-finite
-        horizon, leave the estimated values as NaN.
+        pd.Series: The Asset Value, Asset Volatility, Default Point, Debt Value, Credit
+        Spread, Distance to Default and Probability of Default. Invalid inputs, including a
+        non-positive or non-finite horizon, leave the estimated values as NaN.
     """
     result = pd.Series(
         {
             "Asset Value": np.nan,
             "Asset Volatility": np.nan,
             "Default Point": default_point,
+            "Debt Value": np.nan,
+            "Credit Spread": np.nan,
             "Distance to Default": np.nan,
             "Probability of Default": np.nan,
         }
@@ -77,6 +95,8 @@ def get_merton_model(
         result["Asset Value"] = equity_value
         result["Asset Volatility"] = equity_volatility
         result["Probability of Default"] = 0.0
+        result["Debt Value"] = 0.0
+        result["Credit Spread"] = 0.0
         return result
 
     root_t = np.sqrt(time_horizon)
@@ -121,6 +141,15 @@ def get_merton_model(
     result["Asset Volatility"] = asset_volatility
     result["Distance to Default"] = distance
     result["Probability of Default"] = norm.cdf(-distance)
+
+    # The debt is worth what the assets are worth beyond the equity, which the solution
+    # values at the market capitalization.
+    debt_value = asset_value - equity_value
+    result["Debt Value"] = debt_value
+    if debt_value > 0:
+        result["Credit Spread"] = (
+            -np.log(debt_value / default_point) / time_horizon - risk_free_rate
+        )
 
     return result
 

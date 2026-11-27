@@ -6,7 +6,9 @@ import warnings
 
 import numpy as np
 import pandas as pd
-from statsmodels.tsa.regime_switching.markov_regression import MarkovRegression
+
+from financetoolkit.econometrics.helpers import import_optional
+from financetoolkit.utilities.error_model import check_option
 
 # Returns are scaled up before the Markov model is fitted, as the optimizer handles a
 # daily variance of 1e-4 poorly, and scaled back afterwards.
@@ -19,9 +21,11 @@ def get_markov_regime_switching(
     series: pd.Series, regimes: int = 2, switching_variance: bool = True
 ) -> tuple[dict[str, float], pd.DataFrame]:
     """
-    Fit a Markov regime switching model (Hamilton, 1989) in which the mean (and the
-    variance) of a series depend on a regime that is not observed and switches with fixed
-    probabilities. With returns, two regimes typically separate calm markets (a higher
+    Fit a Markov regime switching model (Hamilton, 1989): the hidden regimes, such as calm and
+    turbulent markets, that set the mean (and the variance) of a series.
+
+    The regime is not observed and switches with fixed probabilities, and the model is
+    fitted with statsmodels' MarkovRegression. With returns, two regimes typically separate calm markets (a higher
     mean and a low volatility) from turbulent ones (a lower mean and a high volatility).
     The regimes are ordered from the lowest to the highest volatility (or mean, without a
     switching variance).
@@ -52,7 +56,11 @@ def get_markov_regime_switching(
             f"At least {30 * regimes} observations are needed for {regimes} regimes."
         )
 
-    model = MarkovRegression(
+    markov_regression = import_optional(
+        "statsmodels.tsa.regime_switching.markov_regression",
+        "The Markov regime switching model",
+    )
+    model = markov_regression.MarkovRegression(
         values.to_numpy(dtype=float) * SCALE,
         k_regimes=regimes,
         trend="c",
@@ -137,8 +145,10 @@ def get_structural_breaks(
     breaks: int | None = None,
 ) -> pd.DataFrame:
     """
-    Find the dates at which the mean of a series shifts (Bai and Perron, 1998, 2003): for
-    every number of breaks the break dates that minimize the sum of squared residuals of a
+    Find the structural breaks of a series (Bai and Perron, 1998, 2003): the dates at which
+    its mean shifts.
+
+    For every number of breaks the break dates that minimize the sum of squared residuals of a
     mean per segment are found exactly by dynamic programming, and the number of breaks is
     chosen by the Bayesian information criterion (unless given). Every segment covers at
     least a share of the observations (the trimming h = [εT], the integer part as in Bai
@@ -233,4 +243,187 @@ def get_structural_breaks(
 
     result = pd.DataFrame(rows, index=pd.Index(range(1, len(rows) + 1), name="Segment"))
     result["BIC"] = criteria.get(chosen, np.nan)
+    return result
+
+
+# The parameters a segment of each PELT cost fits: its mean, its variance or both.
+CHANGE_POINT_COST_PARAMETERS = {"mean": 1, "variance": 1, "mean_variance": 2}
+
+# The variance of a segment is floored at this share of the variance of the whole series, so
+# a segment of equal values (a variance of 0) has a finite cost, as ruptures adds 1e-6.
+VARIANCE_FLOOR = 1e-6
+
+# The median absolute deviation of a normal distribution is 0.6745 standard deviations.
+NORMAL_MEDIAN_ABSOLUTE_DEVIATION = 0.6744897501960817
+
+
+def get_change_points(
+    series: pd.Series,
+    cost: str = "mean_variance",
+    penalty: float | None = None,
+    minimum_segment: int = 5,
+) -> pd.DataFrame:
+    """
+    Find the change points of a series with the Pruned Exact Linear Time (PELT) method of
+    Killick, Fearnhead and Eckley (2012): the dates at which its mean or volatility changes.
+
+    PELT finds the segmentation that minimizes the cost of every segment, minus twice its
+    Gaussian log-likelihood, plus a penalty per change point, exactly. Unlike the Bai-Perron
+    breaks the number of change points has no upper bound, and with the variance or the mean
+    and variance cost a change in the volatility counts as well.
+
+    The formula is as follows, with yₜ the series, n observations and a segment s of nₛ
+    observations:
+
+    - Mean cost: C(s) = Σ(t in s) (yₜ - ȳₛ)² / σ̂², with σ̂ = MAD(Δy) / (0.6745·√2) the robust
+      standard deviation of the series from its changes, which a shift in the mean hardly moves
+    - Variance cost: C(s) = nₛ·ln(Σ(t in s) (yₜ - ȳ)² / nₛ), with ȳ the mean of the whole series
+    - Mean and variance cost: C(s) = nₛ·ln(Σ(t in s) (yₜ - ȳₛ)² / nₛ)
+    - F(t) = min over τ of F(τ) + C(y_(τ+1..t)) + β, with F(0) = -β, every segment at least
+      `minimum_segment` = m observations long (5 by default); once F(τ) + C(y_(τ+1..t)) > F(t), τ is
+      dropped from the candidates from t + m on, which never drops the optimum (K = 0 for these costs;
+      the segment after t needs m observations, so with m = 1 this is the pruning of PELT itself)
+    - β = (p + 1)·ln(n), the BIC with p the parameters per segment (1 for the mean and the variance
+      cost, 2 for the mean and variance cost) plus the change point itself, unless `penalty` is given
+
+    Constant terms of the log-likelihood are left out, as they add the same n·(1 + ln 2π) to
+    every segmentation.
+
+    For more information, see the following papers:
+
+    - Killick, R., Fearnhead, P. and Eckley, I.A. (2012). "Optimal Detection of Changepoints
+    With a Linear Computational Cost." Journal of the American Statistical Association,
+    107(500), 1590-1598.
+    - Jackson, B. et al. (2005). "An Algorithm for Optimal Partitioning of Data on an
+    Interval." IEEE Signal Processing Letters, 12(2), 105-108.
+
+    Referenced against:
+    - ruptures, Pelt: https://github.com/deepcharles/ruptures/blob/v1.1.10/src/ruptures/detection/pelt.py#L11
+    - changepoint (R), penalty_decision: https://github.com/cran/changepoint/blob/2.3/R/penalty_decision.R#L1
+
+    Shares similar logic:
+    - RiskLabAI, pelt_change_points: https://github.com/RiskLabAI/RiskLabAI.py/blob/v3.2.0/src/RiskLabAI/features/structural_breaks/pelt_change_points.py#L34
+
+    Args:
+        series (pd.Series): The series.
+        cost (str, optional): The segment cost. Options are: "mean" (a change in the mean),
+            "variance" (a change in the variance), "mean_variance" (a change in either).
+            Defaults to "mean_variance".
+        penalty (float | None, optional): The penalty β per change point. Defaults to None,
+            the BIC (p + 1)·ln(n).
+        minimum_segment (int, optional): The fewest observations of a segment. A segment of
+            two nearly equal values has a variance close to zero, which the Gaussian
+            likelihood rewards without bound, so the variance costs need a few more.
+            Defaults to 5.
+
+    Returns:
+        pd.DataFrame: Per segment the Start, End, Observations, Mean and Standard Deviation
+        (ddof=1), with the Penalty.
+
+    Notes:
+        ruptures' Pelt with the L2 cost on the series divided by σ̂ and the normal cost finds
+        the same change points when it checks every observation, and the penalty follows the
+        convention of Killick's changepoint package. Unlike ruptures, which adds 1e-6 to every
+        segment's variance, a variance here is floored at 1e-6 times that of the whole series,
+        which keeps the cost independent of the units.
+    """
+    check_option("cost", cost, CHANGE_POINT_COST_PARAMETERS)
+    if minimum_segment < 1 or (cost != "mean" and minimum_segment < 2):  # noqa: PLR2004
+        raise ValueError(
+            "A segment needs at least 1 observation for a mean and 2 for a variance."
+        )
+
+    values = series.dropna()
+    data = values.to_numpy(dtype=float)
+    n = len(data)
+
+    if n < minimum_segment:
+        raise ValueError(
+            f"{n} observations are fewer than a segment of {minimum_segment}."
+        )
+    if np.ptp(data) == 0:
+        raise ValueError("The series is constant, so it has no change points to find.")
+
+    penalty = (
+        float(penalty)
+        if penalty is not None
+        else (CHANGE_POINT_COST_PARAMETERS[cost] + 1) * np.log(n)
+    )
+
+    if cost == "mean":
+        changes = np.diff(data)
+        scale = (
+            np.median(np.abs(changes - np.median(changes)))
+            / NORMAL_MEDIAN_ABSOLUTE_DEVIATION
+            / np.sqrt(2)
+        )
+        # A series whose changes are mostly 0 has no robust scale; the standard deviation
+        # of the changes takes over.
+        scale = scale if scale > 0 else np.std(changes, ddof=1) / np.sqrt(2)
+        data = data / scale
+    elif cost == "variance":
+        data = data - data.mean()
+
+    cumulative = np.concatenate([[0.0], np.cumsum(data)])
+    squares = np.concatenate([[0.0], np.cumsum(data**2)])
+    floor = VARIANCE_FLOOR * np.var(data)
+
+    def segment_costs(starts: np.ndarray, end: int) -> np.ndarray:
+        """The cost of the segments from every start up to (not including) end."""
+        lengths = end - starts
+        sums = cumulative[end] - cumulative[starts]
+        sum_of_squares = squares[end] - squares[starts]
+        if cost == "mean":
+            return sum_of_squares - sums**2 / lengths
+        if cost == "variance":
+            return lengths * np.log(np.maximum(sum_of_squares / lengths, floor))
+        variances = (sum_of_squares - sums**2 / lengths) / lengths
+        return lengths * np.log(np.maximum(variances, floor))
+
+    optimum = np.full(n + 1, np.inf)
+    optimum[0] = -penalty
+    last_change = np.zeros(n + 1, dtype=int)
+    # The end before which a pruned start still counts: with segments of at least m
+    # observations, a start beaten at t by a split at t is only beaten from t + m on, as
+    # the segment after t needs m observations (with m = 1 this is the pruning of Killick,
+    # Fearnhead and Eckley, 2012).
+    expires = np.full(n + 1, n + 1)
+    candidates = np.array([0])
+
+    for end in range(minimum_segment, n + 1):
+        candidates = candidates[expires[candidates] > end]
+        eligible = candidates[end - candidates >= minimum_segment]
+        costs = optimum[eligible] + segment_costs(eligible, end)
+        best = int(np.argmin(costs))
+        optimum[end] = costs[best] + penalty
+        last_change[end] = eligible[best]
+
+        beaten = eligible[costs > optimum[end]]
+        expires[beaten] = np.minimum(expires[beaten], end + minimum_segment)
+        if end <= n - minimum_segment:
+            candidates = np.append(candidates, end)
+
+    boundaries = [n]
+    while boundaries[-1] > 0:
+        boundaries.append(int(last_change[boundaries[-1]]))
+    boundaries = boundaries[::-1]
+
+    original = values.to_numpy(dtype=float)
+    rows = []
+    for start, end in zip(boundaries[:-1], boundaries[1:], strict=True):
+        segment = original[start:end]
+        rows.append(
+            {
+                "Start": str(values.index[start]),
+                "End": str(values.index[end - 1]),
+                "Observations": end - start,
+                "Mean": float(segment.mean()),
+                "Standard Deviation": (
+                    float(segment.std(ddof=1)) if len(segment) > 1 else np.nan
+                ),
+            }
+        )
+
+    result = pd.DataFrame(rows, index=pd.Index(range(1, len(rows) + 1), name="Segment"))
+    result["Penalty"] = penalty
     return result

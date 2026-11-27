@@ -62,6 +62,12 @@ def request_boj_series(
         timeout=120,
     ).json()
 
+    if not isinstance(response, dict):
+        raise ValueError(
+            f"The Bank of Japan API answered in an unexpected format for the {description} "
+            f"(a JSON {type(response).__name__} instead of an object), which means it changed."
+        )
+
     if response.get("STATUS") != SUCCESS_STATUS or not response.get("RESULTSET"):
         raise ValueError(
             f"The Bank of Japan API returned no data for the {description}: "
@@ -86,9 +92,9 @@ def collect_boj_series(
     database: str, series_code: str, description: str, start_date: str, end_date: str
 ) -> pd.DataFrame:
     """
-    Retrieves the days between two dates of a daily series from the Bank of Japan's
-    statistics API. The API takes whole months, so only the months that are not cached
-    yet are requested.
+    Retrieves the days between two dates of a daily series from the Bank of Japan's statistics API.
+
+    The API takes whole months, so only the months that are not cached yet are requested.
 
     Args:
         database (str): The database the series is in, e.g. "FM01".
@@ -161,14 +167,15 @@ def get_overnight_rate(start_date: str, end_date: str) -> pd.DataFrame:
 
 def collect_price_index(measure: str) -> pd.DataFrame:
     """
-    Retrieves the full monthly history of an index of the Corporate Goods Price Index,
-    not seasonally adjusted, with 2020 = 100. The series is short enough to request whole,
-    and is cached as a whole because the Bank of Japan revises the recent months.
+    Retrieves the full monthly history of an index of the Corporate Goods Price Index, not seasonally adjusted, with
+    2020 = 100.
+
+    The series is short enough to request whole, and is cached as a whole because the Bank of Japan revises the recent
+    months.
 
     Args:
-        measure (str): "producer" for the producer price index (the domestic CGPI),
-            "export" for the export price index or "import" for the import price index,
-            both in yen.
+        measure (str): The price index, in yen. Options are: "producer" (the producer price index, the domestic CGPI),
+            "export" (export price index), "import" (import price index).
 
     Returns:
         pd.DataFrame: A single "Japan" column indexed by month.

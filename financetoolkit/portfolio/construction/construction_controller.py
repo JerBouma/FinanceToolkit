@@ -18,7 +18,9 @@ from financetoolkit.portfolio.construction.optimization.optimization_controller 
     OptimizationConstruction,
 )
 from financetoolkit.portfolio.helpers import BENCHMARK_TICKER, PORTFOLIO_TICKER
+from financetoolkit.risk.helpers import trades_on_weekends
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
+from financetoolkit.utilities.error_model import check_period
 from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import PERIODS_PER_YEAR, apply_rounding
@@ -108,6 +110,7 @@ class PortfolioConstructionBase:
         self._start_date = start_date
         self._end_date = end_date
         self._profile: pd.DataFrame | None = None
+        self._factor_datasets: dict[str, pd.DataFrame] = {}
 
     def _get_assets(self, include_benchmark: bool = False) -> list[str]:
         """The assets to build the portfolio from, without the Portfolio pseudo-ticker."""
@@ -122,10 +125,7 @@ class PortfolioConstructionBase:
 
     def _get_loaded_assets(self, period: str, include_benchmark: bool) -> list[str]:
         """The assets with returns in the historical data of the period."""
-        if period not in PERIODS:
-            raise ValueError(
-                "Period must be daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(period, PERIODS)
         columns = self._historical_data[period]["Return"].columns
         return [
             asset for asset in self._get_assets(include_benchmark) if asset in columns
@@ -171,6 +171,49 @@ class PortfolioConstructionBase:
         )
         return resolved[resolved != 0]
 
+    def _get_weights_over_time(
+        self,
+        weights: dict[str, float] | pd.Series | None,
+        period: str,
+        assets: list[str],
+        index: pd.Index,
+    ) -> pd.DataFrame:
+        """
+        The weight of every asset at the start of each period: the weights as given,
+        rebalanced to them every period, or, without weights, those of the Portfolio the
+        Toolkit came from at the end of the period before (the weights held while the
+        period's return was earned), and otherwise equal weights.
+        """
+        portfolio_weights = (self._portfolio_weights or {}).get(period)
+        if (
+            weights is None
+            and portfolio_weights is not None
+            and not portfolio_weights.empty
+        ):
+            held = (
+                portfolio_weights.reindex(columns=assets)
+                .shift(1)
+                .reindex(index)
+                .astype(float)
+            )
+            return held.fillna(0)
+        resolved = self._resolve_weights(weights, assets)
+        return pd.DataFrame(
+            np.tile(resolved.to_numpy(), (len(index), 1)), index=index, columns=assets
+        )
+
+    @staticmethod
+    def _get_periods_per_year(period: str, index: pd.Index) -> int:
+        """
+        The number of periods in a year that annualizes returns of the period: 365 for
+        daily returns on calendar days, which have returns on Saturdays and Sundays (such
+        as those of cryptocurrencies, see trades_on_weekends), and otherwise that of
+        PERIODS_PER_YEAR, 252 trading days for daily returns, as the risk module counts.
+        """
+        if period == "daily" and trades_on_weekends(index):
+            return 365
+        return PERIODS_PER_YEAR[period]
+
     def _get_risk_free_rate(self, period: str, index: pd.Index) -> float:
         """The average annualized risk free rate over the periods, 0 when unknown."""
         risk_free = self._risk_free_rate_data.get(period)
@@ -185,6 +228,66 @@ class PortfolioConstructionBase:
         """The returns of the benchmark per period, None when there is no benchmark."""
         returns = self._historical_data[period]["Return"]
         return returns.get(BENCHMARK_TICKER)
+
+    def _get_factor_returns(
+        self,
+        period: str,
+        factors: pd.DataFrame | None = None,
+        region: str = "United States",
+    ) -> pd.DataFrame:
+        """
+        The factor returns per period: the given factors, or the Fama and French five
+        factors of the region (Ken French's daily file without the risk free rate),
+        compounded within each period, (Π (1 + f_d)) - 1, for the periods other than daily.
+        Given factors keep the periods they share with the returns: their dates are read
+        as the period they fall in.
+        """
+        check_period(period, PERIODS)
+        index = self._historical_data[period]["Return"].index
+        if factors is not None:
+            table = pd.DataFrame(factors).astype(float)
+            dates = (
+                table.index
+                if isinstance(table.index, pd.PeriodIndex)
+                else pd.PeriodIndex(pd.to_datetime(table.index), freq=index.freq)
+            )
+            table.index = dates.asfreq(index.freq)
+            return table[~table.index.duplicated(keep="last")].dropna(how="any")
+
+        # Lazily imported: the factor files are the Performance module's data source.
+        from financetoolkit.performance import performance_model  # noqa: PLC0415
+
+        if region not in self._factor_datasets:
+            self._factor_datasets[region] = (
+                performance_model.obtain_fama_and_french_dataset(region=region)
+            )
+        daily = self._factor_datasets[region].drop(columns="RF", errors="ignore")
+        if period == "daily":
+            return daily.dropna(how="any")
+        return (
+            (1 + daily)
+            .groupby(daily.index.asfreq(index.freq))
+            .prod(min_count=1)
+            .sub(1)
+            .dropna(how="any")
+        )
+
+    def _align_factors(
+        self, returns: pd.DataFrame, factors: pd.DataFrame
+    ) -> tuple[pd.DataFrame, pd.DataFrame]:
+        """
+        The returns and the factor returns on the periods both have. Ken French publishes
+        the factors about a month after the month ends, so the latest periods of the
+        returns have no factors yet and are left out.
+        """
+        periods = returns.index.intersection(factors.index)
+        if len(periods) <= factors.shape[1] + 2:  # noqa: PLR2004
+            raise ValueError(
+                f"The returns and the factors share only {len(periods)} periods, too few "
+                f"to estimate a model on {factors.shape[1]} factors; use a longer date "
+                "range or a higher frequency."
+            )
+        return returns.loc[periods], factors.loc[periods]
 
     def _get_inputs(
         self,
@@ -205,7 +308,7 @@ class PortfolioConstructionBase:
         expected, covariance_matrix = (
             optimization_model.get_expected_returns_and_covariance(
                 returns,
-                PERIODS_PER_YEAR[period],
+                self._get_periods_per_year(period, returns.index),
                 covariance,
                 covariance_span,
                 expected_returns,
@@ -217,6 +320,7 @@ class PortfolioConstructionBase:
                     else None
                 ),
                 risk_free_rate,
+                self._get_factor_returns(period) if covariance == "factor" else None,
             )
         )
         return returns, expected, covariance_matrix, risk_free_rate
@@ -247,7 +351,8 @@ class PortfolioConstructionBase:
                 )
             resolved = latest.reindex(assets).fillna(0).astype(float)
         else:
-            resolved = pd.Series(1.0, index=assets)
+            # Equal weights that already sum to one, so they are not reported as rescaled.
+            resolved = pd.Series(1 / max(len(assets), 1), index=assets)
 
         if resolved.sum() == 0:
             raise ValueError("The weights sum to zero.")
@@ -269,20 +374,33 @@ class PortfolioConstructionBase:
             table, rounding if rounding is not None else self._rounding
         )
 
-    def _get_profile(self) -> pd.DataFrame:
-        """The company profiles, retrieved once."""
+    def _get_profile(self, alternative: str = "") -> pd.DataFrame:
+        """
+        The company profiles, retrieved once. Without them (no API key, or none returned)
+        a ValueError names what needs them and, as the alternative, the argument that
+        supplies the same information; nothing is cached, so a later call tries again.
+        """
         if self._profile is None:
-            if self._profile_function is None:
-                raise ValueError("Company profiles are not available for this Toolkit.")
-            self._profile = self._profile_function()
+            profile = (
+                self._profile_function() if self._profile_function is not None else None
+            )
+            if profile is None or profile.empty:
+                raise ValueError(
+                    "Company profiles (market capitalizations, sectors and countries) are "
+                    "not available: they need a Financial Modeling Prep API key."
+                    + (f" Alternatively, {alternative}." if alternative else "")
+                )
+            self._profile = profile
         return self._profile
 
-    def _get_classification(self, assets: list[str], row: str) -> pd.Series:
+    def _get_classification(
+        self, assets: list[str], row: str, alternative: str = ""
+    ) -> pd.Series:
         """
         The sector or country of each asset from the company profiles, with countries
         named in full ("United States" rather than "US"); empty for an asset without one.
         """
-        profile = self._get_profile()
+        profile = self._get_profile(alternative)
         values = (
             profile.loc[row].reindex(assets)
             if row in profile.index
@@ -312,17 +430,23 @@ class PortfolioConstruction(
 ):
     """
     The Portfolio Construction module builds and examines portfolios from the assets of a
-    Toolkit: optimal weights (minimum variance, maximum Sharpe ratio, mean-variance,
-    risk parity, Hierarchical Risk Parity, Hierarchical Equal Risk Contribution, Nested
-    Clustered Optimization, Black-Litterman, minimum CVaR, minimum drawdown, maximum
-    Omega ratio, maximum CVaR ratio, maximum diversification, minimum tracking error,
-    growth optimal, resampled efficient), the efficient frontier, a walk-forward
-    backtest of the optimizers against equal weights, risk contributions to volatility,
-    expected shortfall, semideviation, mean absolute deviation and drawdowns, the risk
-    metrics of given weights, a whole-share allocation of the weights, diversification
-    metrics, historical stress tests,
-    look-through exposure and a Brinson-Fachler attribution against the benchmark. The
-    optimizers take weight bounds per asset, sector and country bounds from the company
-    profiles, for long-short portfolios a net and gross exposure and, from current
-    weights, a maximum turnover.
+    Toolkit.
+
+    Optimal weights (minimum variance, maximum Sharpe ratio, mean-variance, risk parity,
+    Hierarchical Risk Parity, Hierarchical Equal Risk Contribution, Nested Clustered
+    Optimization, Black-Litterman, minimum CVaR, minimum drawdown, maximum Omega ratio,
+    maximum CVaR ratio, maximum diversification, minimum tracking error, growth optimal,
+    resampled efficient), the efficient frontier, a walk-forward backtest of the optimizers
+    against equal weights, risk contributions to volatility, expected shortfall,
+    semideviation, mean absolute deviation, drawdowns and the other risk measures of the
+    Risk module, per asset and per factor, the risk metrics of given weights, a whole-share
+    allocation of the weights, diversification metrics, historical stress tests,
+    look-through exposure, a Brinson-Fachler attribution against the benchmark, a factor
+    attribution and the return contributions per period, and the estimates behind the
+    weights: expected returns, covariance and codependence matrices, factor loadings, asset
+    clusters, coskewness and cokurtosis, their bootstrapped uncertainty and Entropy Pooling
+    of views. Black-Litterman takes views on assets and, augmented or Bayesian, on factors.
+    The optimizers take weight bounds per asset, sector and country bounds from the company
+    profiles, for long-short portfolios a net and gross exposure and, from current weights,
+    a maximum turnover.
     """

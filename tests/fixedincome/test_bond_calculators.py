@@ -13,6 +13,7 @@ from financetoolkit.fixedincome.bonds import bond_model, bonds_controller
 from financetoolkit.fixedincome.curves import yieldcurve_model
 from financetoolkit.fixedincome.markets import bond_data_model
 from financetoolkit.fixedincome.sources import treasurydirect_model
+from financetoolkit.utilities.error_model import InvalidArgumentError
 
 PRICE_DATE = date(2026, 11, 5)
 
@@ -184,7 +185,7 @@ def test_bill_measures_follow_the_bond_equivalent_yield(fixedincome):
             "912797WN3", "Modified Duration"
         ]
     )
-    assert fixedincome.get_duration(bonds="912797WN3", duration_type="modified").loc[
+    assert fixedincome.get_duration(bonds="912797WN3", method="modified").loc[
         "912797WN3", "Modified Duration"
     ] == pytest.approx(bill["Modified Duration"])
 
@@ -228,7 +229,8 @@ def test_duration_types(fixedincome):
             function(100, bond["Coupon"], years, yield_to_maturity, 2), rel=1e-4
         )
 
-    assert fixedincome.get_duration("average").empty
+    with pytest.raises(InvalidArgumentError, match="method must be one of"):
+        fixedincome.get_duration("average")
 
 
 def test_key_rate_durations_add_up_to_the_curve_duration(fixedincome):
@@ -455,3 +457,90 @@ def test_taylor_price_change_from_an_earlier_day(fixedincome, monkeypatch):
     assert fixedincome.get_taylor_price_change(
         from_date="2026-11-05", date="2026-10-28"
     ).empty
+
+
+def test_bucketed_delta(fixedincome, recorder):
+    deltas = fixedincome.get_bucketed_delta()
+
+    assert deltas.index.tolist() == BENCHMARKS
+    assert deltas.columns[6:].tolist() == PAR_CURVE.index.tolist()
+    # A note close to a quoted maturity is hedged almost entirely with that maturity.
+    note = deltas.loc["91282CRT0"].iloc[6:].astype(float)
+    assert note.idxmin() == "5Y"
+    assert note["5Y"] / note.sum() > 0.98
+
+    # Summed, a parallel shift of the par curve, against the ladder's delta on the zero curve.
+    ladder = fixedincome.get_rate_shift_ladder(bonds="91282CRT0")
+    assert note.sum() == pytest.approx(
+        ladder.loc["91282CRT0", "Delta"] * 1e-4, rel=0.05
+    )
+
+    forward = fixedincome.get_bucketed_delta(method="forward", bonds="91282CRF0")
+    assert forward.loc["91282CRF0", "20Y":].abs().max() == 0
+    assert forward.loc["91282CRF0", "1M":"10Y"].lt(0).all()
+
+    tips = fixedincome.get_bucketed_delta(bonds="91282CLY5")
+    assert tips.loc["91282CLY5", "10Y"] != tips.loc["91282CLY5", "10Y"]
+
+    recorder.capture(deltas.iloc[:, 6:].astype(float).round(8))
+    recorder.capture(forward.iloc[:, 6:].astype(float).round(8))
+
+
+def test_rate_shift_ladder(fixedincome, recorder):
+    ladder = fixedincome.get_rate_shift_ladder()
+
+    assert ladder.index.tolist() == BENCHMARKS
+    assert ladder.columns[6:].tolist() == [
+        "-200bp",
+        "-100bp",
+        "-50bp",
+        "-25bp",
+        "+25bp",
+        "+50bp",
+        "+100bp",
+        "+200bp",
+        "Delta",
+        "Gamma",
+    ]
+    # Convexity: a fall in rates gains more than the same rise loses.
+    assert (ladder["-100bp"] > -ladder["+100bp"]).all()
+    assert (ladder["Gamma"] > 0).all()
+
+    chosen = fixedincome.get_rate_shift_ladder(shifts="-0.01, 0.005", bonds="91282CRF0")
+    assert chosen.columns[6:].tolist() == ["-100bp", "+50bp", "Delta", "Gamma"]
+    assert chosen.loc["91282CRF0", "-100bp"] == pytest.approx(
+        ladder.loc["91282CRF0", "-100bp"]
+    )
+
+    # The gamma is a second difference over 1 basis point, so it is recorded to 0.1.
+    recorded = ladder.iloc[:, 6:].astype(float).round(6)
+    recorded["Delta"] = recorded["Delta"].round(4)
+    recorded["Gamma"] = recorded["Gamma"].round(1)
+    recorder.capture(recorded)
+
+
+def test_yield_curve_butterfly(fixedincome):
+    butterflies = fixedincome.get_yield_curve_spread(middle_maturity="5Y")
+
+    assert butterflies.index.tolist() == ["5Y"]
+    assert butterflies.columns.tolist() == ["2Y/10Y"]
+    assert butterflies.loc["5Y", "2Y/10Y"] == pytest.approx(2 * 0.046 - 0.0445 - 0.0484)
+
+    several = fixedincome.get_yield_curve_spread(
+        long_maturity="10Y", short_maturity="3Y, 7Y", middle_maturity="5Y, 15"
+    )
+    assert several.loc["15Y", "3Y/10Y"] != several.loc["15Y", "3Y/10Y"]
+    assert several.loc["5Y", "7Y/10Y"] != several.loc["5Y", "7Y/10Y"]
+    assert several.loc["5Y", "3Y/10Y"] == pytest.approx(2 * 0.046 - 0.0452 - 0.0484)
+
+
+def test_rate_shift_ladder_leaves_out_a_zero_and_repeated_shifts(fixedincome):
+    # The ladder always prices today's curve (a shift of 0) for the delta and gamma, so a 0 or
+    # a repeated shift given here collided with it and emptied the result.
+    ladder = fixedincome.get_rate_shift_ladder(
+        shifts="-0.01,0,0.01,0.01", bonds="91282CRT0"
+    )
+    plain = fixedincome.get_rate_shift_ladder(shifts="-0.01,0.01", bonds="91282CRT0")
+
+    assert ladder.columns[6:].tolist() == ["-100bp", "+100bp", "Delta", "Gamma"]
+    pd.testing.assert_frame_equal(ladder, plain)

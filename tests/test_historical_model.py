@@ -408,3 +408,27 @@ def test_period_open_high_low_leave_out_the_dates_a_ticker_did_not_trade():
     # The cryptocurrency traded every day and is aggregated as it is.
     assert weekly.loc[second_week, ("Open", "BTC")] == crypto_close[7]
     assert weekly.loc[second_week, ("Low", "BTC")] == crypto_close[7]
+
+
+def test_the_portfolio_column_is_not_requested_for_statistics(monkeypatch):
+    requested = []
+
+    def yahoo(ticker):
+        requested.append(("yahoo", ticker))
+        return pd.Series({"Currency": "USD"})
+
+    def fmp(ticker, api_key):
+        requested.append(("fmp", ticker))
+        return pd.Series()
+
+    monkeypatch.setattr(
+        historical_model.yfinance_model, "get_historical_statistics", yahoo
+    )
+    monkeypatch.setattr(historical_model.fmp_model, "get_historical_statistics", fmp)
+
+    statistics, _ = historical_model.get_historical_statistics(
+        tickers=["AAPL", "Portfolio"], api_key="KEY"
+    )
+
+    assert requested == [("yahoo", "AAPL")]
+    assert statistics.loc["Currency", "AAPL"] == "USD"

@@ -1,7 +1,6 @@
 """Regression tests for the input validation the stress test added."""
 
 import asyncio
-import json
 import logging
 
 import pandas as pd
@@ -13,7 +12,9 @@ from financetoolkit.economics import helpers
 from financetoolkit.economics.sources import fmp_model as economics_fmp_model
 from financetoolkit.mcp_server import mcp_controller
 from financetoolkit.utilities import validation_model
+from financetoolkit.utilities.error_model import InvalidArgumentError
 from financetoolkit.utilities.statistics_model import finalize_dataset
+from tests.mcp_server.answers import read_answer
 
 # mcp_controller is imported while collecting, before a test may replace FastMCP with a
 # stub and reload the module, so the tool calls below always reach the real server.
@@ -49,11 +50,15 @@ def test_controllers_refuse_dates_that_do_not_exist():
         FixedIncome(end_date="2026-13-01")
 
 
-def test_a_period_of_the_wrong_type_is_a_clear_type_error():
-    with pytest.raises(TypeError, match="period must be text"):
+def test_a_period_of_the_wrong_type_is_an_invalid_argument():
+    from financetoolkit.utilities.error_model import InvalidArgumentError
+
+    with pytest.raises(InvalidArgumentError, match="period must be text"):
         helpers.validate_period(12, ["monthly"], "inflation rate")
-    with pytest.raises(TypeError, match="period must be text"):
+    with pytest.raises(InvalidArgumentError, match="period must be text"):
         Economics(gmdb_source=False).get_unemployment_rate(period=3)
+    with pytest.raises(InvalidArgumentError, match="period must be text"):
+        Economics(gmdb_source=False).get_long_term_interest_rate(period=["monthly"])
 
 
 def test_countries_of_the_wrong_type_are_a_clear_type_error():
@@ -150,7 +155,7 @@ def test_the_calendar_refuses_arguments_it_cannot_honour(arguments, message):
             "YYYY-MM-DD",
         ),
         ("get_sec_filings_8k", {"limit": 0}, ValueError, "one or more"),
-        ("get_sec_filings_8k", {"limit": "ten"}, TypeError, "whole number"),
+        ("get_sec_filings_8k", {"limit": "ten"}, InvalidArgumentError, "whole number"),
         ("get_insider_trading_latest", {"page": -1}, ValueError, "zero or more"),
         ("get_sector_performance", {"date": "2026/09/31"}, ValueError, "YYYY-MM-DD"),
         (
@@ -170,7 +175,7 @@ def test_discovery_refuses_arguments_the_endpoints_would_ignore(
 
 def _call_tool(tool, arguments):
     result = asyncio.run(mcp_controller.mcp.call_tool(tool, arguments))
-    content = result[0] if isinstance(result, tuple) else result.content
+    content = result[0] if isinstance(result, tuple) else result
     return "".join(getattr(item, "text", "") for item in content)
 
 
@@ -218,4 +223,31 @@ def test_mcp_accepts_countries_as_a_list(monkeypatch):
     )
 
     assert received["countries"] == ["Japan", "Germany"]
-    assert json.loads(text)[0]["Japan"] == 0.02
+    assert read_answer(text)[0]["Japan"] == 0.02
+
+
+def test_a_date_range_without_prices_explains_itself(caplog):
+    from financetoolkit import Toolkit
+
+    toolkit = Toolkit(
+        tickers=["AAPL", "MSFT"],
+        historical=pd.read_pickle("tests/datasets/historical_dataset.pickle"),
+        convert_currency=False,
+        start_date="2023-06-01",
+        end_date="2023-12-31",
+        sleep_timer=False,
+        progress_bar=False,
+    )
+    toolkit._daily_risk_free_rate = pd.read_pickle(
+        "tests/datasets/risk_free_rate.pickle"
+    )
+    toolkit._daily_treasury_data = pd.read_pickle("tests/datasets/treasury_data.pickle")
+
+    with caplog.at_level(logging.WARNING, logger="financetoolkit"):
+        result = toolkit.technicals.get_relative_strength_index()
+
+    assert result.empty
+    assert (
+        "There is no daily historical data between 2023-06-01 and 2023-12-31"
+        in caplog.text
+    )

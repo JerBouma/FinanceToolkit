@@ -6,8 +6,12 @@ import pandas as pd
 
 from financetoolkit.cache import policy_model
 from financetoolkit.economics.helpers import collect_cached_data
+from financetoolkit.utilities.error_model import check_option
 from financetoolkit.utilities.excel_model import read_excel
+from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.requests_model import get_request
+
+logger = get_logger()
 
 # Aswath Damodaran's synthetic rating workbook (NYU Stern), which maps a company's interest
 # coverage ratio to a bond rating and the default spread of that rating. He updates the
@@ -28,9 +32,10 @@ RATINGS_PER_TABLE = 15
 
 def get_synthetic_rating_table() -> pd.DataFrame:
     """
-    Retrieves Aswath Damodaran's synthetic rating tables: per firm type (large
-    non-financial, smaller and riskier, financial service firms), the interest coverage
-    range of every bond rating and the default spread of that rating.
+    Retrieves Aswath Damodaran's synthetic rating tables.
+
+    Per firm type (large non-financial, smaller and riskier, financial service firms), the
+    interest coverage range of every bond rating and the default spread of that rating.
 
     Returns:
         pd.DataFrame: One row per firm type and rating with the Lower and Upper bound of the
@@ -44,7 +49,10 @@ def get_synthetic_rating_table() -> pd.DataFrame:
 
     def fetch() -> pd.DataFrame:
         sheet = read_excel(
-            get_request(RATINGS_URL, timeout=60).content, sheet_name=0, header=None
+            get_request(RATINGS_URL, timeout=60).content,
+            description,
+            sheet_name=0,
+            header=None,
         )
         tables = []
 
@@ -127,14 +135,8 @@ def get_industry_file_name(dataset: str, region: str) -> str:
     Raises:
         ValueError: When the dataset or region is not available.
     """
-    if dataset not in INDUSTRY_DATASETS:
-        raise ValueError(
-            f"The dataset must be one of {', '.join(INDUSTRY_DATASETS)}, not '{dataset}'."
-        )
-    if region not in INDUSTRY_REGIONS:
-        raise ValueError(
-            f"The region must be one of {', '.join(INDUSTRY_REGIONS)}, not '{region}'."
-        )
+    check_option("dataset", dataset, INDUSTRY_DATASETS)
+    check_option("region", region, INDUSTRY_REGIONS)
 
     us_file, regional_prefix = INDUSTRY_DATASETS[dataset]
     suffix = INDUSTRY_REGIONS[region]
@@ -228,7 +230,9 @@ def get_industry_statistics(dataset: str, region: str) -> pd.DataFrame:
         region (str): The region, one of the keys of INDUSTRY_REGIONS.
 
     Returns:
-        pd.DataFrame: One row per industry (and the market totals), indexed by Industry.
+        pd.DataFrame: One row per industry (and the market totals), indexed by Industry, or
+            an empty DataFrame (logged) when the source cannot be reached or answers with
+            something other than the workbook, such as an error page.
 
     Raises:
         ValueError: When the dataset or region is not available, or the workbook's layout
@@ -237,19 +241,33 @@ def get_industry_statistics(dataset: str, region: str) -> pd.DataFrame:
     file_name = get_industry_file_name(dataset, region)
     description = f"Damodaran {dataset.replace('_', ' ')} dataset for {region}"
 
+    unreadable: list[str] = []
+
     def fetch() -> pd.DataFrame:
-        sheet = read_excel(
-            get_request(INDUSTRY_URL.format(file=file_name), timeout=60).content,
-            sheet_name="Industry Averages",
-            header=None,
-        )
+        content = get_request(INDUSTRY_URL.format(file=file_name), timeout=60).content
+
+        try:
+            sheet = read_excel(
+                content, description, sheet_name="Industry Averages", header=None
+            )
+        except ValueError as error:
+            # An error page instead of the workbook: the source was reached but sent no
+            # data, reported here rather than raised, as there is nothing to calculate.
+            unreadable.append(str(error))
+            return pd.DataFrame()
 
         return parse_industry_sheet(sheet)
 
-    return collect_cached_data(
+    statistics = collect_cached_data(
         source=policy_model.DAMODARAN,
         dataset="industry_statistics",
         entity=file_name,
         fetch=fetch,
         description=description,
+        expect_empty=True,
     )
+
+    if unreadable:
+        logger.error("%s No data is returned for it.", unreadable[0])
+
+    return statistics

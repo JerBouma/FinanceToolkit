@@ -8,7 +8,10 @@ import pandas as pd
 import pytest
 from scipy import stats
 
+from financetoolkit.performance import performance_model
 from financetoolkit.performance.performance_controller import Performance
+from financetoolkit.risk import risk_model
+from financetoolkit.utilities.error_model import InvalidArgumentError
 
 
 def test_collect_all_metrics(recorder, performance_module):
@@ -141,14 +144,17 @@ def test_get_alpha(recorder, performance_module):
     recorder.capture(performance_module.get_alpha(growth=True, lag=[1, 2, 3]))
     recorder.capture(performance_module.get_alpha(show_full_results=True))
     recorder.capture(performance_module.get_alpha(period="monthly", rolling=6))
-
-
-def test_get_jensens_alpha(recorder, performance_module):
-    recorder.capture(performance_module.get_jensens_alpha())
-    recorder.capture(performance_module.get_jensens_alpha(period="quarterly"))
-    recorder.capture(performance_module.get_jensens_alpha(growth=True))
-    recorder.capture(performance_module.get_jensens_alpha(growth=True, lag=[1, 2, 3]))
-    recorder.capture(performance_module.get_jensens_alpha(period="monthly", rolling=6))
+    recorder.capture(performance_module.get_alpha(method="jensen"))
+    recorder.capture(performance_module.get_alpha(method="jensen", period="quarterly"))
+    recorder.capture(performance_module.get_alpha(method="jensen", growth=True))
+    recorder.capture(
+        performance_module.get_alpha(method="jensen", growth=True, lag=[1, 2, 3])
+    )
+    recorder.capture(
+        performance_module.get_alpha(method="jensen", period="monthly", rolling=6)
+    )
+    with pytest.raises(InvalidArgumentError, match="'jensen'"):
+        performance_module.get_alpha(method="capm")
 
 
 def test_get_treynor_ratio(recorder, performance_module):
@@ -222,7 +228,8 @@ def test_get_sharpe_ratio_standard_error(recorder, performance_module):
             period="quarterly", method="gmm"
         )
     )
-    assert performance_module.get_sharpe_ratio_standard_error(method="other").empty
+    with pytest.raises(InvalidArgumentError, match="'non_normal'"):
+        performance_module.get_sharpe_ratio_standard_error(method="other")
 
 
 def test_get_minimum_track_record_length(recorder, performance_module):
@@ -270,12 +277,14 @@ def test_get_ulcer_performance_index(recorder, performance_module):
 
 def test_get_safety_first_ratio(recorder, performance_module):
     recorder.capture(performance_module.get_safety_first_ratio())
-    recorder.capture(performance_module.get_safety_first_ratio(threshold=0.02))
+    recorder.capture(
+        performance_module.get_safety_first_ratio(minimum_acceptable_return=0.02)
+    )
     recorder.capture(performance_module.get_safety_first_ratio(period="quarterly"))
     recorder.capture(performance_module.get_safety_first_ratio(growth=True))
     recorder.capture(
         performance_module.get_safety_first_ratio(
-            period="monthly", rolling=6, threshold=0.02
+            period="monthly", rolling=6, minimum_acceptable_return=0.02
         )
     )
 
@@ -348,7 +357,7 @@ def test_get_fama_decomposition(recorder, performance_module):
 
     # Selectivity + Diversification must reconstruct Jensen's Alpha for every ticker.
     fama_decomposition = performance_module.get_fama_decomposition()
-    jensens_alpha = performance_module.get_jensens_alpha()
+    jensens_alpha = performance_module.get_alpha(method="jensen")
     reconstructed = (
         fama_decomposition.xs("Selectivity", level=1, axis=1)
         + fama_decomposition.xs("Diversification", level=1, axis=1)
@@ -384,16 +393,23 @@ def test_get_rachev_ratio(recorder, performance_module):
     recorder.capture(performance_module.get_rachev_ratio(growth=True, lag=[1, 2, 3]))
 
 
-def test_get_treynor_mazuy_model(recorder, performance_module):
-    recorder.capture(performance_module.get_treynor_mazuy_model())
-    recorder.capture(performance_module.get_treynor_mazuy_model(period="quarterly"))
-    recorder.capture(performance_module.get_treynor_mazuy_model(growth=True))
-
-
-def test_get_henriksson_merton_model(recorder, performance_module):
-    recorder.capture(performance_module.get_henriksson_merton_model())
-    recorder.capture(performance_module.get_henriksson_merton_model(period="quarterly"))
-    recorder.capture(performance_module.get_henriksson_merton_model(growth=True))
+def test_get_market_timing_model(recorder, performance_module):
+    recorder.capture(performance_module.get_market_timing_model())
+    recorder.capture(performance_module.get_market_timing_model(period="quarterly"))
+    recorder.capture(performance_module.get_market_timing_model(growth=True))
+    recorder.capture(
+        performance_module.get_market_timing_model(method="henriksson_merton")
+    )
+    recorder.capture(
+        performance_module.get_market_timing_model(
+            method="henriksson_merton", period="quarterly"
+        )
+    )
+    recorder.capture(
+        performance_module.get_market_timing_model(
+            method="henriksson_merton", growth=True
+        )
+    )
 
 
 def test_get_returns_cumulative_keeps_the_first_period(performance_module):
@@ -756,20 +772,29 @@ def test_get_calmar_ratio_divides_the_year_by_its_maximum_drawdown(
     )
 
 
-def test_get_sterling_ratio_divides_the_year_by_its_adjusted_average_drawdown(
+def test_get_sterling_ratio_divides_the_year_by_its_average_largest_drawdown(
     performance_module,
 ):
-    drawdowns = _drawdowns(_daily_returns_in(performance_module, "MSFT", "2022"))
-    year_return = _year_return(performance_module, "MSFT", "2022")
+    daily = _daily_returns_in(performance_module, "AAPL", "2020")
+    year_return = _year_return(performance_module, "AAPL", "2020")
 
-    for adjustment in (0.1, 0.0):
+    for largest, adjustment in ((3, 0.1), (3, 0.0), (5, 0.1), (1, 0.1)):
         result = performance_module.get_sterling_ratio(
-            adjustment=adjustment, rounding=None
+            adjustment=adjustment, largest_drawdowns=largest, rounding=None
         )
-        assert result.loc["2022", "MSFT"] == pytest.approx(
-            year_return / (abs(drawdowns[drawdowns < 0].mean()) + adjustment),
-            abs=5e-5,
+        # Bacon's D_Lar: the mean depth of the deepest drawdowns from peak to trough.
+        table = risk_model.get_drawdown_table(daily.to_frame("AAPL"), top=largest)
+        assert result.loc["2020", "AAPL"] == pytest.approx(
+            year_return / (abs(table["Drawdown"].mean()) + adjustment), abs=5e-5
         )
+
+    # One drawdown is the deepest: the maximum drawdown of the year.
+    assert performance_module.get_sterling_ratio(
+        largest_drawdowns=1, adjustment=0.0, rounding=None
+    ).loc["2020", "AAPL"] == pytest.approx(
+        performance_module.get_calmar_ratio(rounding=None).loc["2020", "AAPL"],
+        abs=5e-5,
+    )
 
 
 def test_get_burke_ratio_has_the_sign_of_the_excess_return(performance_module):
@@ -1158,10 +1183,14 @@ def test_the_rolling_measures_of_a_stock_ignore_a_cryptocurrency_next_to_it(
             spy(mixed.get_sharpe_ratio(period=period, rolling=rolling, method=method)),
             spy(alone.get_sharpe_ratio(period=period, rolling=rolling, method=method)),
         )
+    pd.testing.assert_series_equal(
+        spy(mixed.get_alpha(period=period, rolling=rolling, method="jensen")),
+        spy(alone.get_alpha(period=period, rolling=rolling, method="jensen")),
+        rtol=1e-9,
+    )
     for name in (
         "get_sortino_ratio",
         "get_treynor_ratio",
-        "get_jensens_alpha",
         "get_capital_asset_pricing_model",
         "get_m2_ratio",
         "get_appraisal_ratio",
@@ -1243,8 +1272,8 @@ def test_the_rolling_appraisal_ratio_starts_after_one_window(performance_module)
     x = window["Benchmark"] - risk_free["Benchmark"].reindex(window.index)
     slope, intercept = np.polyfit(x, y, 1)
     residual_standard_deviation = np.sqrt(((y - slope * x - intercept) ** 2).sum() / 11)
-    alpha = performance_module.get_jensens_alpha(
-        period="monthly", rolling=12, rounding=10
+    alpha = performance_module.get_alpha(
+        method="jensen", period="monthly", rolling=12, rounding=10
     )
     assert ratio.loc[end, "AAPL"] == pytest.approx(
         alpha.loc[end, "AAPL"] / residual_standard_deviation, abs=1e-8
@@ -1306,7 +1335,9 @@ def test_the_rolling_measures_of_a_ticker_ignore_a_later_listing_before_it():
 
 
 def test_get_safety_first_ratio_compounds_the_threshold_per_return(performance_module):
-    result = performance_module.get_safety_first_ratio(threshold=0.02, rounding=10)
+    result = performance_module.get_safety_first_ratio(
+        minimum_acceptable_return=0.02, rounding=10
+    )
     returns = _daily_returns_in(performance_module, "AAPL", "2021").dropna()
 
     # Roy (1952) on the daily returns of the year, with the annual threshold compounded
@@ -1319,7 +1350,7 @@ def test_get_safety_first_ratio_compounds_the_threshold_per_return(performance_m
 
 def test_get_safety_first_ratio_compounds_the_threshold_per_calendar_day():
     performance = _weekend_performance()
-    result = performance.get_safety_first_ratio(threshold=0.05)
+    result = performance.get_safety_first_ratio(minimum_acceptable_return=0.05)
     returns = performance._get_column("yearly", "Return", True)["BTC"].loc["2022"]
     returns = returns.dropna()
 
@@ -1362,3 +1393,744 @@ def test_get_pain_ratio_divides_the_excess_return_by_the_mean_drawdown(
     assert result.loc["2021", "AAPL"] == pytest.approx(
         excess_return / drawdowns.abs().mean(), abs=1e-9
     )
+
+
+def test_get_sharpe_ratio_smart(recorder, performance_module):
+    smart = partial(performance_module.get_sharpe_ratio, method="smart")
+
+    recorder.capture(smart())
+    recorder.capture(smart(annualize=True))
+    recorder.capture(smart(period="monthly", rolling=12))
+
+    # The penalty is at least 1, so the smart ratio is never larger in size.
+    standard = performance_module.get_sharpe_ratio(rounding=10)
+    assert (smart(rounding=10).abs() <= standard.abs() + 1e-9).all().all()
+
+
+def test_probabilistic_and_deflated_sharpe_ratios_can_be_annualized(performance_module):
+    # A probability does not depend on the time scale of the Sharpe ratios.
+    for method in ("probabilistic", "deflated"):
+        annualized = performance_module.get_sharpe_ratio(method=method, annualize=True)
+        assert not annualized.empty
+        pd.testing.assert_frame_equal(
+            annualized, performance_module.get_sharpe_ratio(method=method)
+        )
+
+    # An annualized benchmark is compared with the annualized Sharpe ratio.
+    observations_per_year = 252
+    pd.testing.assert_frame_equal(
+        performance_module.get_sharpe_ratio(
+            method="probabilistic", annualize=True, benchmark_sharpe_ratio=1.0
+        ),
+        performance_module.get_sharpe_ratio(
+            method="probabilistic",
+            benchmark_sharpe_ratio=1.0 / np.sqrt(observations_per_year),
+        ),
+    )
+
+
+def test_get_sortino_ratio_variants(recorder, performance_module):
+    sortino_ratio = performance_module.get_sortino_ratio
+
+    recorder.capture(sortino_ratio(method="smart"))
+    recorder.capture(sortino_ratio(method="adjusted", annualize=True))
+    recorder.capture(sortino_ratio(method="probabilistic"))
+    recorder.capture(sortino_ratio(method="probabilistic_adjusted"))
+    recorder.capture(sortino_ratio(method="smart", period="monthly", rolling=12))
+
+    pd.testing.assert_frame_equal(
+        sortino_ratio(method="adjusted", rounding=10),
+        (sortino_ratio(rounding=12) / np.sqrt(2)).round(10),
+    )
+    with pytest.raises(InvalidArgumentError, match="'smart'"):
+        sortino_ratio(method="other")
+
+
+def test_get_calmar_and_sterling_ratio_annualized(recorder, performance_module):
+    calmar_ratio = performance_module.get_calmar_ratio(method="annualized")
+    recorder.capture(calmar_ratio)
+    recorder.capture(
+        performance_module.get_sterling_ratio(method="annualized", adjustment=0.05)
+    )
+    # With one drawdown, D_Lar is the maximum drawdown: PerformanceAnalytics' SterlingRatio,
+    # which is the Calmar ratio with the adjustment added to the drawdown.
+    pd.testing.assert_series_equal(
+        performance_module.get_sterling_ratio(
+            method="annualized", adjustment=0.0, largest_drawdowns=1, rounding=None
+        ),
+        performance_module.get_calmar_ratio(method="annualized", rounding=None),
+        check_names=False,
+    )
+
+    # The default per-period ratios are unchanged by the method parameter.
+    pd.testing.assert_frame_equal(
+        performance_module.get_calmar_ratio(),
+        performance_module.get_calmar_ratio(method="standard"),
+    )
+
+    returns = performance_module._historical_data["daily"]["Return"]["AAPL"]
+    wealth = (1 + returns).cumprod()
+    maximum_drawdown = (wealth / wealth.cummax() - 1).min()
+    annualized_return = np.prod(1 + returns) ** (252 / len(returns)) - 1
+    assert calmar_ratio["AAPL"] == pytest.approx(
+        annualized_return / abs(maximum_drawdown), abs=1e-4
+    )
+
+
+def test_get_alpha_annualized(recorder, performance_module):
+    recorder.capture(performance_module.get_alpha(method="annualized"))
+    recorder.capture(
+        performance_module.get_alpha(method="annualized", show_full_results=True)
+    )
+
+
+def test_get_burke_ratio_modified(recorder, performance_module):
+    recorder.capture(performance_module.get_burke_ratio(modified=True))
+    recorder.capture(
+        performance_module.get_burke_ratio(modified=True, within_period=False)
+    )
+
+
+def test_get_treynor_ratio_modified(recorder, performance_module):
+    recorder.capture(performance_module.get_treynor_ratio(modified=True))
+    recorder.capture(
+        performance_module.get_treynor_ratio(modified=True, period="monthly", rolling=6)
+    )
+
+
+def test_get_appraisal_ratio_methods(recorder, performance_module):
+    recorder.capture(performance_module.get_appraisal_ratio(method="modified"))
+    recorder.capture(performance_module.get_appraisal_ratio(method="alternative"))
+    recorder.capture(
+        performance_module.get_appraisal_ratio(
+            method="alternative", period="monthly", rolling=6
+        )
+    )
+
+
+def test_get_m2_ratio_sortino_and_excess(recorder, performance_module):
+    recorder.capture(performance_module.get_m2_ratio(method="sortino"))
+    recorder.capture(performance_module.get_m2_ratio(excess="geometric"))
+    recorder.capture(
+        performance_module.get_m2_ratio(method="sortino", excess="arithmetic")
+    )
+    # The M2 for Sortino has no rolling form.
+    assert performance_module.get_m2_ratio(method="sortino", rolling=6).empty
+
+
+def test_get_gain_to_pain_ratio_omega_sharpe(recorder, performance_module):
+    omega_sharpe_ratio = performance_module.get_gain_to_pain_ratio(
+        minimum_acceptable_return=0.001, rounding=10
+    )
+    recorder.capture(omega_sharpe_ratio)
+
+    # The Omega-Sharpe ratio is the Omega ratio minus 1.
+    omega_ratio = performance_module.get_omega_ratio(
+        minimum_acceptable_return=0.001, rounding=10
+    )
+    np.testing.assert_allclose(
+        omega_sharpe_ratio.to_numpy(), omega_ratio.to_numpy() - 1, atol=1e-9
+    )
+
+
+def test_get_d_ratio(recorder, performance_module):
+    recorder.capture(performance_module.get_d_ratio())
+    recorder.capture(performance_module.get_d_ratio(period="quarterly"))
+    recorder.capture(performance_module.get_d_ratio(within_period=False))
+
+
+def test_get_prospect_ratio(recorder, performance_module):
+    recorder.capture(performance_module.get_prospect_ratio())
+    recorder.capture(performance_module.get_prospect_ratio(period="quarterly"))
+    recorder.capture(
+        performance_module.get_prospect_ratio(
+            minimum_acceptable_return=0.001, loss_aversion=2
+        )
+    )
+
+
+def test_get_omega_excess_return(recorder, performance_module):
+    recorder.capture(performance_module.get_omega_excess_return())
+    recorder.capture(performance_module.get_omega_excess_return(period="quarterly"))
+    recorder.capture(
+        performance_module.get_omega_excess_return(minimum_acceptable_return=0.001)
+    )
+
+
+def test_get_return_statistics(recorder, performance_module):
+    recorder.capture(performance_module.get_return_statistics())
+    recorder.capture(performance_module.get_return_statistics(period="monthly"))
+    recorder.capture(
+        performance_module.get_return_statistics(
+            within_period=True, confidence_level=0.99
+        )
+    )
+
+
+def test_get_capture_ratio_methods(recorder, performance_module):
+    recorder.capture(performance_module.get_upside_capture_ratio(method="annualized"))
+    recorder.capture(performance_module.get_downside_capture_ratio(method="arithmetic"))
+    recorder.capture(
+        performance_module.get_upside_capture_ratio(period="monthly", rolling=12)
+    )
+    recorder.capture(
+        performance_module.get_downside_capture_ratio(
+            period="monthly", rolling=12, method="annualized"
+        )
+    )
+
+
+def test_get_capture_ratios(recorder, performance_module):
+    recorder.capture(performance_module.get_capture_ratios())
+    recorder.capture(performance_module.get_capture_ratios(method="annualized"))
+
+    # The table holds the single capture ratios and the up and down market win rates.
+    table = performance_module.get_capture_ratios()
+    pd.testing.assert_series_equal(
+        table[("AAPL", "Upside Capture Ratio")],
+        performance_module.get_upside_capture_ratio()["AAPL"].loc[table.index],
+        check_names=False,
+    )
+    pd.testing.assert_series_equal(
+        table[("MSFT", "Down Percent")],
+        performance_module.get_win_rate(market="down")["MSFT"].loc[table.index],
+        check_names=False,
+    )
+
+
+def test_get_win_rate_market(recorder, performance_module):
+    recorder.capture(performance_module.get_win_rate(market="up"))
+    recorder.capture(performance_module.get_win_rate(market="down"))
+
+
+def test_get_outperformance_probability(recorder, performance_module):
+    recorder.capture(performance_module.get_outperformance_probability())
+    recorder.capture(
+        performance_module.get_outperformance_probability(
+            period="quarterly", windows=[1, 4]
+        )
+    )
+    recorder.capture(
+        performance_module.get_outperformance_probability(relative=False, windows=[12])
+    )
+
+
+def test_get_bull_bear_beta(recorder, performance_module):
+    recorder.capture(performance_module.get_bull_bear_beta())
+    recorder.capture(performance_module.get_bull_bear_beta(market="return"))
+    recorder.capture(performance_module.get_bull_bear_beta(period="quarterly"))
+
+
+def test_get_beta_fragility(recorder, performance_module):
+    recorder.capture(performance_module.get_beta_fragility())
+    recorder.capture(performance_module.get_beta_fragility(period="quarterly"))
+
+
+def test_get_stability_of_returns(recorder, performance_module):
+    recorder.capture(performance_module.get_stability_of_returns())
+    recorder.capture(performance_module.get_stability_of_returns(within_period=False))
+
+
+def test_get_r_squared(recorder, performance_module):
+    recorder.capture(performance_module.get_r_squared())
+    recorder.capture(performance_module.get_r_squared(period="monthly", rolling=12))
+
+
+def test_get_risk_return_ratio(recorder, performance_module):
+    recorder.capture(performance_module.get_risk_return_ratio())
+    recorder.capture(performance_module.get_risk_return_ratio(annualize=True))
+    recorder.capture(
+        performance_module.get_risk_return_ratio(
+            period="monthly", rolling=12, annualize=True
+        )
+    )
+
+
+def test_get_risk_decomposition(recorder, performance_module):
+    risks = performance_module.get_risk_decomposition()
+    recorder.capture(risks)
+    recorder.capture(performance_module.get_risk_decomposition(period="quarterly"))
+
+    # The regression splits the variance exactly, so the total risk is the volatility.
+    total = risks.xs("Total Risk", level=1, axis=1)
+    systematic = risks.xs("Systematic Risk", level=1, axis=1)
+    specific = risks.xs("Specific Risk", level=1, axis=1)
+    np.testing.assert_allclose(total, np.sqrt(systematic**2 + specific**2), atol=2e-4)
+
+
+def test_get_capital_market_line(recorder, performance_module):
+    recorder.capture(performance_module.get_capital_market_line())
+    recorder.capture(performance_module.get_capital_market_line(period="quarterly"))
+
+
+def test_get_returns_log_and_unsmoothed(recorder, performance_module):
+    recorder.capture(performance_module.get_returns(logarithmic=True))
+    recorder.capture(
+        performance_module.get_returns(period="daily", logarithmic=True).iloc[:20]
+    )
+    recorder.capture(performance_module.get_returns(period="monthly", unsmoothed=True))
+
+    # The cumulative log return is the sum of the log returns.
+    log_returns = performance_module.get_returns(
+        period="monthly", logarithmic=True, rounding=12
+    )
+    cumulative = performance_module.get_returns(
+        period="monthly", logarithmic=True, cumulative=True, rounding=12
+    )
+    pd.testing.assert_frame_equal(
+        log_returns.cumsum().round(8), cumulative.round(8), check_freq=False
+    )
+
+
+def test_get_serenity_index(recorder, performance_module):
+    recorder.capture(performance_module.get_serenity_index())
+    recorder.capture(performance_module.get_serenity_index(period="quarterly"))
+    recorder.capture(performance_module.get_serenity_index(alpha=0.1))
+
+
+def test_get_risk_measure_ratio(recorder, performance_module):
+    recorder.capture(performance_module.get_risk_measure_ratio())
+    recorder.capture(performance_module.get_risk_measure_ratio(risk_measure="cdar"))
+    recorder.capture(
+        performance_module.get_risk_measure_ratio(
+            period="monthly", risk_measure="mad", within_period=False
+        )
+    )
+
+    for risk_measure in performance_model.RISK_MEASURES:
+        assert not performance_module.get_risk_measure_ratio(
+            risk_measure=risk_measure
+        ).empty
+
+    # An unknown risk measure raises, naming the risk measures.
+    with pytest.raises(InvalidArgumentError, match="risk_measure must be one of"):
+        performance_module.get_risk_measure_ratio(risk_measure="other")
+
+
+def test_get_probabilistic_momentum(recorder, performance_module):
+    recorder.capture(performance_module.get_probabilistic_momentum())
+    recorder.capture(performance_module.get_probabilistic_momentum(period="quarterly"))
+    recorder.capture(
+        performance_module.get_probabilistic_momentum(period="daily", rolling=60).iloc[
+            -20:
+        ]
+    )
+
+
+def test_get_trailing_returns(recorder, performance_module):
+    trailing_returns = performance_module.get_trailing_returns()
+    recorder.capture(trailing_returns)
+
+    # The year to date return runs from the last close of the previous year.
+    prices = performance_module._historical_data["daily"]["Adj Close"]["AAPL"]
+    assert trailing_returns.loc["Year to Date", "AAPL"] == pytest.approx(
+        prices.loc[:"2022-12-31"].iloc[-1] / prices.loc[:"2021-12-31"].iloc[-1] - 1,
+        abs=1e-4,
+    )
+
+
+def test_get_calendar_returns(recorder, performance_module):
+    calendar_returns = performance_module.get_calendar_returns(rounding=10)
+    recorder.capture(performance_module.get_calendar_returns())
+
+    # The months and the year equal the monthly and yearly returns.
+    monthly = performance_module.get_returns(period="monthly", rounding=10)
+    yearly = performance_module.get_returns(period="yearly", rounding=10)
+    assert calendar_returns.loc["2021", ("MSFT", "Mar")] == pytest.approx(
+        monthly.loc["2021-03", "MSFT"], abs=1e-9
+    )
+    assert calendar_returns.loc["2022", ("AAPL", "Year")] == pytest.approx(
+        yearly.loc["2022", "AAPL"], abs=1e-9
+    )
+
+
+def test_get_bootstrap_statistics(recorder, performance_module):
+    recorder.capture(performance_module.get_bootstrap_statistics(n_bootstrap=200))
+    shuffled = performance_module.get_bootstrap_statistics(
+        n_bootstrap=200, method="shuffle"
+    )
+    recorder.capture(shuffled)
+
+    # Shuffling keeps the returns, so only the drawdown varies across the simulations.
+    assert shuffled.loc["Cumulative Return", ("AAPL", "Std")] == 0
+    assert shuffled.loc["Maximum Drawdown", ("AAPL", "Std")] > 0
+
+    # The same seed gives the same result, another seed another one.
+    pd.testing.assert_frame_equal(
+        performance_module.get_bootstrap_statistics(n_bootstrap=50, seed=1),
+        performance_module.get_bootstrap_statistics(n_bootstrap=50, seed=1),
+    )
+    assert not performance_module.get_bootstrap_statistics(
+        n_bootstrap=50, seed=1
+    ).equals(performance_module.get_bootstrap_statistics(n_bootstrap=50, seed=2))
+
+
+def test_get_forecast_cone(recorder, performance_module):
+    recorder.capture(performance_module.get_forecast_cone(horizon=10, simulations=200))
+    recorder.capture(
+        performance_module.get_forecast_cone(
+            horizon=5, standard_deviations=[1.0], simulations=200
+        )
+    )
+
+
+def test_get_probability_of_backtest_overfitting(recorder, performance_module):
+    recorder.capture(performance_module.get_probability_of_backtest_overfitting())
+    recorder.capture(
+        performance_module.get_probability_of_backtest_overfitting(blocks=8)
+    )
+
+    # An odd number of blocks gives an empty result through handle_errors.
+    assert performance_module.get_probability_of_backtest_overfitting(blocks=7).empty
+
+
+def test_get_smoothing_index(recorder, performance_module):
+    recorder.capture(performance_module.get_smoothing_index())
+    recorder.capture(performance_module.get_smoothing_index(period="weekly", order=1))
+
+
+def test_rolling_factor_models(recorder, performance_module, monkeypatch):
+    # Synthetic daily factors on the Toolkit's dates, so the rolling regressions run offline.
+    dates = performance_module._historical_data["daily"].index
+    rng = np.random.default_rng(0)
+    factors = pd.DataFrame(
+        rng.normal(0, 0.01, (len(dates), 6)),
+        index=dates,
+        columns=["Mkt-RF", "SMB", "HML", "RMW", "CMA", "RF"],
+    )
+    factors["RF"] = 0.0001
+
+    performance = copy.copy(performance_module)
+    performance._fama_and_french_datasets = {"United States": factors}
+    monkeypatch.setattr(
+        performance_model,
+        "obtain_fama_and_french_three_factor_dataset",
+        lambda region: factors[["Mkt-RF", "SMB", "HML", "RF"]],
+    )
+    monkeypatch.setattr(
+        performance_model,
+        "obtain_carhart_momentum_dataset",
+        lambda region: factors[["RMW"]].rename(columns={"RMW": "Mom"}),
+    )
+
+    fama_and_french = performance.get_fama_and_french_model(rolling=126)
+    recorder.capture(fama_and_french.iloc[-10:])
+    recorder.capture(performance.get_carhart_four_factor_model(rolling=126).iloc[-10:])
+
+    # The last window equals a regression on the last 126 days.
+    returns = performance._historical_data["daily"]["Return"]["AAPL"].iloc[-126:]
+    regressors = np.column_stack(
+        [np.ones(126), factors[["Mkt-RF", "SMB", "HML", "RMW", "CMA"]].iloc[-126:]]
+    )
+    coefficients = np.linalg.lstsq(regressors, returns - 0.0001, rcond=None)[0]
+    np.testing.assert_allclose(
+        fama_and_french["AAPL"].iloc[-1][["Intercept", "Mkt-RF Slope"]].to_numpy(),
+        coefficients[:2],
+        atol=1e-4,
+    )
+
+    with pytest.raises(InvalidArgumentError, match="method='multi'"):
+        performance.get_fama_and_french_model(rolling=126, method="simple")
+
+
+def _hedged_performance(with_portfolio_returns=True, excess_return_block=False):
+    """
+    A stock, its inverse fund and the Portfolio of the two in equal weights, rebalanced daily: the
+    Portfolio's returns are nearly flat while each holding moves with the market.
+    """
+    rng = np.random.default_rng(7)
+    days = pd.bdate_range("2021-01-01", "2022-12-30").to_period("D")
+    market = rng.normal(0.0004, 0.012, len(days))
+    returns = pd.DataFrame(
+        {
+            "SPY": market + rng.normal(0, 0.001, len(days)),
+            "SH": -market + rng.normal(0, 0.001, len(days)),
+            "Benchmark": market,
+        },
+        index=days,
+    )
+    returns["Portfolio"] = 0.5 * returns["SPY"] + 0.5 * returns["SH"]
+    returns.iloc[0] = np.nan
+    if not with_portfolio_returns:
+        returns = returns.drop(columns="Portfolio")
+    prices = (1 + returns.fillna(0)).cumprod() * 100
+    daily = pd.concat({"Return": returns, "Adj Close": prices, "Close": prices}, axis=1)
+    if excess_return_block:
+        # Historical data supplied with an "Excess Return" block of its own, as older Portfolio data has.
+        daily = pd.concat(
+            [daily, pd.concat({"Excess Return": returns}, axis=1)], axis=1
+        )
+    historical_data = {"daily": daily, "intraday": pd.DataFrame()}
+    period_prices = prices.groupby(days.asfreq("Y")).last()
+    historical_data["yearly"] = pd.concat(
+        {
+            "Return": period_prices / period_prices.shift() - 1,
+            "Adj Close": period_prices,
+            "Close": period_prices,
+        },
+        axis=1,
+    )
+    performance = Performance(
+        tickers=["SPY", "SH", "Portfolio"],
+        historical_data=historical_data,
+        risk_free_rate_data={"daily": pd.Series(0.0, index=days)},
+        rounding=None,
+    )
+    weights = pd.DataFrame(
+        {"SPY": 0.5, "SH": 0.5}, index=pd.period_range("2021", "2022", freq="Y")
+    )
+    performance._portfolio_weights = {"yearly": weights}
+    return performance, returns
+
+
+@pytest.mark.parametrize("excess_return_block", [False, True])
+def test_the_performance_of_the_portfolio_comes_from_its_own_returns(
+    excess_return_block,
+):
+    performance, returns = _hedged_performance(excess_return_block=excess_return_block)
+    portfolio = returns["Portfolio"].loc["2022"]
+    benchmark = returns["Benchmark"].loc["2022"]
+
+    # With a risk free rate of 0 the excess returns are the returns themselves.
+    sharpe_ratio = performance.get_sharpe_ratio(period="yearly")
+    assert list(sharpe_ratio.columns) == ["SPY", "SH", "Portfolio"]
+    assert sharpe_ratio.loc["2022", "Portfolio"] == pytest.approx(
+        portfolio.mean() / portfolio.std()
+    )
+    beta = performance.get_beta(period="yearly")
+    assert beta.loc["2022", "Portfolio"] == pytest.approx(
+        np.cov(portfolio, benchmark)[0, 1] / benchmark.var()
+    )
+    active = portfolio - benchmark
+    assert performance.get_information_ratio(period="yearly").loc[
+        "2022", "Portfolio"
+    ] == pytest.approx(active.mean() / active.std())
+    assert performance.get_sortino_ratio(period="yearly").loc[
+        "2022", "Portfolio"
+    ] == pytest.approx(
+        portfolio.mean() / np.sqrt((portfolio.clip(upper=0) ** 2).mean())
+    )
+
+    # The holdings move with and against the market, the Portfolio of the two hardly at all,
+    # and its Sharpe ratio is not the average of theirs.
+    assert abs(beta.loc["2022", "Portfolio"]) < 0.01  # noqa: PLR2004
+    assert sharpe_ratio.loc["2022", "Portfolio"] != pytest.approx(
+        sharpe_ratio.loc["2022", ["SPY", "SH"]].mean(), abs=1e-3
+    )
+
+    # The methods without a weighted average measure the Portfolio as well, except the
+    # backtest overfitting, where the Portfolio of the tickers is no candidate of its own.
+    capture_ratios = performance.get_capture_ratios(period="yearly")
+    assert "Portfolio" in capture_ratios.columns.get_level_values(0)
+    without_portfolio, _ = _hedged_performance(with_portfolio_returns=False)
+    pd.testing.assert_series_equal(
+        performance.get_probability_of_backtest_overfitting(blocks=4),
+        without_portfolio.get_probability_of_backtest_overfitting(blocks=4),
+    )
+
+
+def test_a_portfolio_without_returns_gets_the_weighted_average():
+    performance, _ = _hedged_performance(with_portfolio_returns=False)
+
+    sharpe_ratio = performance.get_sharpe_ratio(period="yearly")
+    assert sharpe_ratio.loc["2022", "Portfolio"] == pytest.approx(
+        sharpe_ratio.loc["2022", ["SPY", "SH"]].mean()
+    )
+
+
+def test_get_variability_weighted_return(recorder, performance_module):
+    recorder.capture(performance_module.get_variability_weighted_return())
+    recorder.capture(
+        performance_module.get_variability_weighted_return(
+            period="monthly", within_period=False, tau=0.2, maximum_deviation=2.0
+        )
+    )
+
+
+def test_get_return_concentration(recorder, performance_module):
+    recorder.capture(performance_module.get_return_concentration())
+    recorder.capture(performance_module.get_return_concentration(within_period=True))
+
+
+def test_get_strategy_risk(recorder, performance_module):
+    recorder.capture(performance_module.get_strategy_risk())
+    recorder.capture(
+        performance_module.get_strategy_risk(period="monthly", target_sharpe_ratio=1.0)
+    )
+    recorder.capture(performance_module.get_strategy_risk(within_period=True))
+
+
+def test_get_sharpe_ratio_difference_test(recorder, performance_module):
+    recorder.capture(performance_module.get_sharpe_ratio_difference_test())
+    recorder.capture(
+        performance_module.get_sharpe_ratio_difference_test(
+            period="quarterly", method="ledoit_wolf"
+        )
+    )
+    recorder.capture(
+        performance_module.get_sharpe_ratio_difference_test(
+            method="ledoit_wolf", lags=0
+        )
+    )
+    with pytest.raises(InvalidArgumentError, match="'memmel' or 'ledoit_wolf'"):
+        performance_module.get_sharpe_ratio_difference_test(method="other")
+
+
+def _toolkit_between(start_date, end_date):
+    """The offline Toolkit over another date range."""
+    from financetoolkit import Toolkit
+
+    toolkit = Toolkit(
+        tickers=["AAPL", "MSFT"],
+        historical=pd.read_pickle("tests/datasets/historical_dataset.pickle"),
+        convert_currency=False,
+        start_date=start_date,
+        end_date=end_date,
+        sleep_timer=False,
+    )
+    toolkit._daily_risk_free_rate = pd.read_pickle(
+        "tests/datasets/risk_free_rate.pickle"
+    )
+    toolkit._daily_treasury_data = pd.read_pickle("tests/datasets/treasury_data.pickle")
+
+    return toolkit
+
+
+def test_return_statistics_of_a_range_without_data_are_empty(caplog):
+    # The test data ends in 2022, so a range in 2023 has no returns.
+    after_the_data = _toolkit_between("2023-06-01", "2023-12-31").performance
+
+    with caplog.at_level("WARNING"):
+        assert after_the_data.get_return_statistics().empty
+        assert after_the_data.get_strategy_risk().empty
+
+    assert "There are no daily returns between 2023-06-01" in caplog.text
+
+
+def test_bull_bear_beta_of_a_week_is_nan(performance_module):
+    weekly = performance_module.get_bull_bear_beta(period="weekly")
+
+    assert weekly.empty or weekly.isna().all().all()
+    assert performance_module.get_bull_bear_beta().notna().all().all()
+
+
+def test_a_matrix_of_too_few_returns_is_logged(performance_module, caplog):
+    short_range = _toolkit_between("2022-11-15", "2022-12-30").performance
+
+    with caplog.at_level("WARNING"):
+        performance_module.get_covariance_matrix()
+    assert "too few for a covariance" not in caplog.text
+
+    with caplog.at_level("WARNING"):
+        short_range.get_correlation_matrix()
+        short_range.get_covariance_matrix()
+    assert caplog.text.count("too few for a covariance") == 2  # noqa: PLR2004
+    assert short_range.get_covariance_matrix(period="daily").notna().all().all()
+
+
+@pytest.mark.parametrize(
+    "method",
+    ["get_sharpe_ratio", "get_beta", "get_covariance_matrix", "get_smoothing_index"],
+)
+def test_an_unknown_period_raises(performance_module, method):
+    with pytest.raises(InvalidArgumentError, match="period must be one of"):
+        getattr(performance_module, method)(period="hourly")
+
+
+def test_an_empty_minimum_track_record_length_is_logged(caplog):
+    # AAPL and MSFT fell from mid-November to the end of 2022: both Sharpe ratios are negative.
+    falling = _toolkit_between("2022-11-15", "2022-12-30").performance
+
+    with caplog.at_level("WARNING"):
+        assert falling.get_minimum_track_record_length().empty
+
+    assert "does not exceed the benchmark Sharpe ratio" in caplog.text
+
+
+@pytest.mark.parametrize(
+    "method",
+    [
+        "get_beta",
+        "get_sharpe_ratio",
+        "get_ulcer_performance_index",
+        "get_morningstar_risk",
+        "get_minimum_track_record_length",
+    ],
+)
+def test_a_rolling_window_needs_two_periods(performance_module, method):
+    for rolling in (1, 0, 2.5):
+        with pytest.raises(InvalidArgumentError, match="rolling is a number"):
+            getattr(performance_module, method)(rolling=rolling)
+
+
+def test_a_rolling_window_longer_than_the_data_is_logged_once(
+    performance_module, caplog
+):
+    with caplog.at_level("WARNING"):
+        sharpe_ratio = performance_module.get_sharpe_ratio(
+            period="monthly", rolling=1000
+        )
+
+    assert sharpe_ratio.empty or sharpe_ratio.isna().all().all()
+    assert caplog.text.count("is at least as long as the") == 1
+
+
+def test_an_unknown_metric_of_the_factor_analysis_raises(performance_module):
+    with pytest.raises(InvalidArgumentError, match="not a metric of the Performance"):
+        performance_module.get_factor_analysis(metrics="bogus")
+
+
+def test_collect_all_metrics_logs_a_repeated_message_once(caplog):
+    after_the_data = _toolkit_between("2023-06-01", "2023-12-31").performance
+
+    with caplog.at_level("WARNING"):
+        after_the_data.collect_all_metrics()
+
+    assert caplog.text.count("There are no observations between 2023-06-01") == 1
+
+
+def test_the_rolling_appraisal_ratio_needs_three_periods(performance_module):
+    # A regression on two returns leaves no residual to scale the alpha by.
+    with pytest.raises(InvalidArgumentError, match="at least 3"):
+        performance_module.get_appraisal_ratio(rolling=2)
+    assert performance_module.get_appraisal_ratio(rolling=3).notna().any().any()
+
+
+def test_the_growth_of_a_rolling_ratio_counts_the_periods_with_a_value(
+    performance_module,
+):
+    # Rolling over two of the three yearly returns leaves two ratios, whose growth exists.
+    growth = performance_module.get_sharpe_ratio(
+        period="yearly", rolling=2, growth=True
+    )
+
+    assert growth.notna().any().any()
+
+
+@pytest.mark.parametrize("period", ["weekly", "monthly"])
+def test_bull_bear_beta_on_short_periods_says_why_it_is_empty(
+    performance_module, period, caplog
+):
+    with caplog.at_level("WARNING", logger="financetoolkit"):
+        result = performance_module.get_bull_bear_beta(period=period)
+
+    assert result.empty
+    assert caplog.text.count("need at least 20 days with returns on each side") == 1
+    assert "Use quarterly or yearly periods." in caplog.text
+
+
+@pytest.mark.parametrize("period", ["quarterly", "yearly"])
+def test_bull_bear_beta_on_long_periods_advises_a_longer_date_range(
+    performance_module, period, caplog, monkeypatch
+):
+    # Raising the minimum leaves every quarter and year short of days, as a short date range does.  # noqa: E501
+    monkeypatch.setattr(
+        "financetoolkit.performance.performance_controller.MINIMUM_BULL_BEAR_OBSERVATIONS",
+        10_000,
+    )
+    with caplog.at_level("WARNING", logger="financetoolkit"):
+        result = performance_module.get_bull_bear_beta(period=period)
+
+    assert result.empty
+    assert "Use a longer date range." in caplog.text
+    assert "Use quarterly or yearly periods." not in caplog.text

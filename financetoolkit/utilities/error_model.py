@@ -5,7 +5,11 @@ __docformat__ = "google"
 import inspect
 import os
 import threading
+from collections.abc import Callable, Generator
+from contextlib import contextmanager
+from contextvars import ContextVar
 
+import numpy as np
 import pandas as pd
 
 from financetoolkit.utilities import logger_model
@@ -18,6 +22,106 @@ STRICT_ERRORS_ENVIRONMENT_VARIABLE = "FINANCETOOLKIT_STRICT_ERRORS"
 
 # AttributeError and TypeError cannot be produced by financial data that is merely incomplete; they mean the code asked an object for something it does not have, and there is no value that can be returned for them that is not a lie, so they always raise.  # noqa: E501
 ALWAYS_RAISED_ERRORS = (AttributeError, TypeError)
+
+
+# An argument outside its options or range (an unknown method, an alpha of 5) is a mistake in the call, not missing data: answering it with an empty result reads as "no data" and hides the typo, so it always raises, with the valid values in its message.  # noqa: E501
+class InvalidArgumentError(ValueError):
+    """An argument the method does not accept, raised with the values it does accept."""
+
+
+def join_options(options) -> str:
+    """Write the options as 'a', 'b' or 'c'."""
+    names = [repr(option) for option in options]
+    return names[0] if len(names) == 1 else ", ".join(names[:-1]) + " or " + names[-1]
+
+
+def check_option(name: str, value, options) -> None:
+    """
+    Check that an argument is one of the values a method accepts.
+
+    Args:
+        name (str): The name of the argument, such as "method".
+        value: The value it was given.
+        options: The values it accepts.
+
+    Raises:
+        InvalidArgumentError: If the value is not one of the options, naming them.
+    """
+    if value not in options:
+        raise InvalidArgumentError(
+            f"{name} must be one of {join_options(options)}, not {value!r}. "
+            f"Please pass one of these as {name}."
+        )
+
+
+def check_period(period: str, periods) -> None:
+    """
+    Check that a period is one of the periods a method accepts.
+
+    Args:
+        period (str): The period it was given.
+        periods: The periods it accepts, such as ("daily", "weekly", "monthly").
+
+    Raises:
+        InvalidArgumentError: If the period is not one of them (or not text, such as a list),
+            naming them.
+    """
+    if not isinstance(period, str) or period not in periods:
+        raise InvalidArgumentError(
+            f"period must be one of {join_options(periods)}, not {period!r}. "
+            f"Please pass one of these as period."
+        )
+
+
+def validate_alpha(alpha: float) -> None:
+    """
+    Check that a tail probability lies strictly between 0 and 1.
+
+    Args:
+        alpha (float): The tail probability.
+
+    Raises:
+        InvalidArgumentError: If alpha is not between 0 and 1 (a ValueError).
+    """
+    if not 0 < alpha < 1:
+        raise InvalidArgumentError(
+            f"alpha is a tail probability between 0 and 1, e.g. 0.05 for the 95% "
+            f"confidence level, not {alpha!r}. Please pass a value between 0 and 1 as alpha."
+        )
+
+
+def validate_window(name: str, value: int | None, minimum: int = 1) -> None:
+    """
+    Check that a window (window, rolling, lags and the like) is a whole number of at least
+    minimum observations. None, for the whole sample or the default, is always accepted.
+
+    Args:
+        name (str): The name of the parameter, used in the message.
+        value (int | None): The window.
+        minimum (int, optional): The smallest window the calculation can use. Defaults to 1.
+
+    Raises:
+        InvalidArgumentError: If the window is not a whole number of at least minimum (a ValueError).
+    """
+    if value is None:
+        return
+    # A float such as 10.0 is a count of observations in value, but not a whole number type.
+    if isinstance(value, float | np.floating):
+        raise InvalidArgumentError(
+            f"{name} is a number of observations of at least {minimum}, so a whole number, "
+            f"not the float {value!r}. "
+            f"Please pass a whole number of {minimum} or more as {name}, or None."
+        )
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, (int, np.integer))
+        or value < minimum
+    ):
+        raise InvalidArgumentError(
+            f"{name} is a number of observations of at least {minimum}, not {value!r}. "
+            f"Please pass a whole number of {minimum} or more as {name}, or None."
+        )
+
 
 # Errors that say the data is missing or unusable, reported as an empty result.
 REPORTED_ERRORS = (KeyError, IndexError, ZeroDivisionError, ValueError)
@@ -32,6 +136,13 @@ STATEMENT_MODULES = ("financetoolkit.ratios", "financetoolkit.models")
 # did not change, an empty answer is a genuine "no data" and can be cached like any other.
 _request_failures = 0
 _request_failures_lock = threading.Lock()
+
+# The counters of the count_request_failures blocks the current call is in. A ContextVar, so a
+# concurrent call (another MCP request) never adds to them, while the worker threads of
+# helpers.run_in_parallel, which run in a copy of the caller's context, share the same counters.
+_call_request_failures: ContextVar[tuple[list[int], ...]] = ContextVar(
+    "financetoolkit_call_request_failures", default=()
+)
 
 
 # The single column of the empty frame a source returns instead of an answer.
@@ -79,6 +190,8 @@ def report_request_failure() -> None:
 
     with _request_failures_lock:
         _request_failures += 1
+        for counter in _call_request_failures.get():
+            counter[0] += 1
 
 
 def get_request_failures() -> int:
@@ -89,6 +202,24 @@ def get_request_failures() -> int:
         int: The number of failed requests.
     """
     return _request_failures
+
+
+@contextmanager
+def count_request_failures() -> Generator[Callable[[], int]]:
+    """
+    Counts the requests of this call that failed within the block, for a caller that decides
+    from them whether to ask again (step back a day, request the next page). Unlike
+    get_request_failures, a request that failed for a concurrent call is not counted.
+
+    Yields:
+        Callable[[], int]: Returns the number of failed requests of this call so far in the block.
+    """
+    counter = [0]
+    token = _call_request_failures.set((*_call_request_failures.get(), counter))
+    try:
+        yield lambda: counter[0]
+    finally:
+        _call_request_failures.reset(token)
 
 
 def use_strict_errors() -> bool:
@@ -187,6 +318,10 @@ def handle_errors(func):
           the failing line is identifiable, and an empty Series is returned.
         - AttributeError and TypeError cannot be caused by incomplete financial data at
           all; they mean the code is wrong. These are always raised.
+        - InvalidArgumentError (a ValueError) means the call passed an argument outside
+          its options or range, such as an unknown method or an alpha of 5. It is always
+          raised, with the valid values in its message, so a typo is not mistaken for
+          missing data.
 
     Setting the FINANCETOOLKIT_STRICT_ERRORS environment variable to 1 raises every
     exception instead, which is the appropriate setting for a test suite or a scheduled
@@ -202,12 +337,15 @@ def handle_errors(func):
     Raises:
         AttributeError: If the calculation asks an object for an attribute it lacks.
         TypeError: If the calculation is performed on an unsupported type.
+        InvalidArgumentError: If an argument is outside its options or range.
         Exception: Any exception at all when strict error handling is enabled.
     """
 
     def wrapper(*args, **kwargs):
         try:
             return func(*args, **kwargs)
+        except InvalidArgumentError:
+            raise
         except (KeyError, ValueError) as error:
             # Metrics relative to a benchmark fail on its absence (a KeyError on the
             # Benchmark column or a ValueError naming it), which is a setting rather than
@@ -516,11 +654,20 @@ def check_for_error_messages(
         )
 
     if request_failed:
-        logger.error(
-            "The request to Financial Modeling Prep failed with an unrecognised error for the "
-            "following tickers: %s.\nNo data could be collected for them.",
-            ", ".join(request_failed),
-        )
+        # The reason (such as "HTTP 500") travels in the attrs of the error frame.
+        tickers_per_reason: dict[str, list[str]] = {}
+        for ticker in request_failed:
+            reason = dataset_dictionary[ticker].attrs.get(
+                "reason", "an unrecognised error"
+            )
+            tickers_per_reason.setdefault(reason, []).append(ticker)
+        for reason, tickers in tickers_per_reason.items():
+            logger.error(
+                "The request to Financial Modeling Prep failed (%s) for the following "
+                "tickers: %s.\nNo data could be collected for them.",
+                reason,
+                ", ".join(tickers),
+            )
 
     if no_errors:
         # These exhausted every connection retry, so this is a network failure rather than the absence of an error it is named after.  # noqa: E501

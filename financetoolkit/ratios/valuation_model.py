@@ -72,14 +72,13 @@ def get_cyclically_adjusted_price_to_earnings_ratio(
     periods_per_year: int = 1,
 ) -> pd.DataFrame:
     """
-    Calculate the cyclically adjusted price earnings ratio (CAPE, P/E10), the share price
-    divided by the average of the last `years` years of inflation-adjusted earnings per
-    share (Graham and Dodd, 1934; Campbell and Shiller, 1998).
+    Calculate the cyclically adjusted price earnings ratio (CAPE, P/E10) of Graham and Dodd (1934) and Campbell and
+    Shiller (1998): the share price against the average inflation-adjusted earnings per share of several years.
 
     Each year's earnings per share are expressed in the prices of the period the ratio is
     calculated for: EPS (s) x CPI (t) / CPI (s). The years are the earnings per share of
-    every `periods_per_year`-th period back from t, so with quarterly data and trailing
-    twelve month earnings per share (periods_per_year=4) every quarter enters the average
+    period a year apart back from t, so with quarterly data and trailing twelve month
+    earnings per share (four periods per year) every quarter enters the average
     once. Every year must be available; an average of fewer years, or one that is zero or
     negative, gives NaN.
 
@@ -177,11 +176,10 @@ def get_estimated_eps_growth_rate(
     years: float | pd.Series | pd.DataFrame = 1,
 ) -> float | pd.Series | pd.DataFrame:
     """
-    Calculate the estimated EPS growth rate, i.e. the annualized growth implied by the
-    analyst consensus (average) EPS estimate for a future period relative to the company's
-    most recently reported actual (trailing) EPS.
+    Calculate the estimated EPS growth rate, i.e. the annualized growth implied by the analyst consensus (average) EPS
+    estimate for a future period relative to the company's most recently reported actual (trailing) EPS.
 
-    Unlike the generic `growth=True` parameter available on every ratio and model
+    Unlike the generic growth option available on every ratio and model
     method — which compares two already-reported historical periods — this bridges an
     actual reported figure to a forward-looking analyst estimate, which is what a
     forward-looking metric such as the PEG ratio needs. The growth is annualized over
@@ -266,9 +264,8 @@ def get_interest_debt_per_share(
     shares_outstanding: pd.Series | pd.DataFrame,
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the interest debt per share, a valuation ratio that measures the
-    combined interest expense and debt burden of a company per outstanding share
-    of its stock.
+    Calculate the interest debt per share, a valuation ratio that measures the combined interest expense and debt
+    burden of a company per outstanding share of its stock.
 
     The formula is as follows:
 
@@ -419,7 +416,8 @@ def get_market_cap(
     total_shares_outstanding: pd.Series | pd.DataFrame,
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculates the market capitalization of the company.
+    Calculate the market capitalization: the market value of a company's shares, the share price times the number of
+    shares outstanding.
 
     Notes: All the inputs must be in the same currency and unit for accurate calculations.
 
@@ -437,8 +435,7 @@ def get_basket_market_cap(
     market_cap: pd.DataFrame, share: bool = False
 ) -> pd.DataFrame:
     """
-    Adds the total market capitalization of a basket of companies, or expresses each company
-    as its share of that total.
+    Calculate the total market capitalization of a basket of companies, or each company's share of that total.
 
     The total of a date is missing when a company of the basket has no market cap on that
     date, as the sum of the others would understate the basket.
@@ -467,8 +464,8 @@ def get_market_cap_to_gdp(
     gross_domestic_product: pd.DataFrame,
 ) -> pd.DataFrame:
     """
-    Calculates the market capitalization to Gross Domestic Product (GDP) ratio, the
-    Buffett indicator: a market value divided by the annual output of an economy.
+    Calculate the market capitalization to GDP ratio, the Buffett indicator: the market value of the companies against
+    the annual output of an economy.
 
     Each date (or period) is divided by the GDP of the calendar year before the year it
     falls in, the last complete year, so that no GDP is used before its year has ended.
@@ -501,11 +498,12 @@ def get_enterprise_value(
     cash_and_cash_equivalents: pd.Series | pd.DataFrame,
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculates the Enterprise Value (EV) of a company. The Enterprise Value (EV)
-    is a measure of a company's total value, often used as a more comprehensive
-    alternative to market capitalization. It is calculated as the sum of a company's
-    market capitalization, outstanding debt, minority interest, and
-    preferred equity, minus the cash and cash equivalents.
+    Calculate the enterprise value (EV): what it would cost to buy the whole company, its equity and its debt, net of
+    the cash it holds.
+
+    The Enterprise Value (EV) is a measure of a company's total value, often used as a more comprehensive alternative
+    to market capitalization. It is calculated as the sum of a company's market capitalization, outstanding debt,
+    minority interest, and preferred equity, minus the cash and cash equivalents.
 
     Notes: All the inputs must be in the same currency and unit for accurate calculations.
 
@@ -552,8 +550,7 @@ def get_ev_to_ebitda_ratio(
     depreciation_and_amortization: pd.Series | pd.DataFrame,
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculates the enterprise value over EBITDA ratio, which is a valuation ratio
-    that measures a company's total value (including debt and equity) relative to its
+    Calculate the enterprise value to EBITDA ratio: the value of a company's operations, debt and equity, against its
     EBITDA.
 
     A multiple of a negative or zero EBITDA does not measure value, so those periods are
@@ -579,9 +576,8 @@ def get_ev_to_operating_cashflow_ratio(
     operating_cashflow: pd.Series | pd.DataFrame,
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculates the enterprise value over operating cash flow ratio, which is a valuation ratio
-    that measures a company's total value (including debt and equity) relative to its
-    operating cash flow.
+    Calculate the enterprise value to operating cash flow ratio: the value of a company's operations, debt and equity,
+    against the cash its operations generate.
 
     Args:
         enterprise_value (float or pd.Series): The total value of a company (market capitalization
@@ -599,8 +595,8 @@ def get_earnings_yield(
     market_price_per_share: pd.Series | pd.DataFrame,
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculates the earnings yield ratio, which measures the earnings per share relative
-    to the market price per share.
+    Calculate the earnings yield: the earnings per share against the share price, the return the earnings give on the
+    price paid.
 
     Args:
         earnings_per_share (float or pd.Series): Earnings per share of the company.
@@ -616,8 +612,7 @@ def get_dividend_payout_ratio(
     dividends: pd.Series | pd.DataFrame, net_income: pd.Series | pd.DataFrame
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculates the dividend payout ratio, which measures the proportion of net income paid out as
-    dividends to shareholders.
+    Calculate the dividend payout ratio: the share of net income a company pays out to its shareholders as dividends.
 
     The formula is as follows:
 
@@ -634,18 +629,22 @@ def get_dividend_payout_ratio(
     return abs(dividends) / net_income
 
 
-def get_reinvestment_ratio(
+def get_retention_ratio(
     dividend_payout_ratio: pd.Series | pd.DataFrame,
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculates the reinvestment ratio, which measures the proportion of net income
-    retained by the company to reinvest in the business.
+    Calculate the retention ratio (plowback ratio): the share of net income a company keeps to reinvest in the
+    business.
+
+    The formula is as follows:
+
+        Retention Ratio = 1 - Dividend Payout Ratio
 
     Args:
         dividend_payout_ratio (float or pd.Series): The dividend payout ratio.
 
     Returns:
-        float | pd.Series: The reinvestment ratio.
+        float | pd.Series: The retention ratio.
     """
     return 1 - dividend_payout_ratio
 
@@ -656,8 +655,8 @@ def get_tangible_asset_value(
     goodwill_and_intangible_assets: pd.Series | pd.DataFrame,
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the tangible asset value, the book value of a company's equity after
-    deducting goodwill and other intangible assets.
+    Calculate the tangible asset value: the book value of a company's equity without goodwill and other intangible
+    assets.
 
     The formula is as follows:
 
@@ -680,8 +679,8 @@ def get_net_current_asset_value(
     total_liabilities: pd.Series | pd.DataFrame,
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the net current asset value (Benjamin Graham's NCAV), which is the total value
-    of a company's current assets minus its total liabilities (not just its current liabilities).
+    Calculate Benjamin Graham's net current asset value (NCAV): the current assets minus all liabilities, a
+    conservative estimate of what shareholders would get if the company were liquidated.
 
     Args:
         total_current_assets (float or pd.Series): The current assets of the company.
@@ -698,8 +697,8 @@ def get_ev_to_ebit(
     earnings_before_interest_and_taxes: pd.Series | pd.DataFrame,
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the enterprise value multiplier, a financial ratio that measures the total value of a
-    company's operations (including debt and equity) relative to its earnings before interest and taxes.
+    Calculate the enterprise value to EBIT ratio: the value of a company's operations, debt and equity, against its
+    earnings before interest and taxes.
 
     Args:
         enterprise_value (float or pd.Series): The total value of a company's operations.
@@ -734,9 +733,8 @@ def get_buyback_yield(
     market_capitalization: pd.Series | pd.DataFrame,
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the buyback yield, a valuation ratio that measures the net amount of
-    common stock repurchased (net of new shares issued) relative to the company's
-    market capitalization.
+    Calculate the buyback yield, a valuation ratio that measures the net amount of common stock repurchased (net of
+    new shares issued) relative to the company's market capitalization.
 
     Repurchases are typically reported as a cash outflow (negative) and issuances as a
     cash inflow (positive) on the cash flow statement, so netting and negating the two
@@ -762,9 +760,8 @@ def get_shareholder_yield(
     dividend_yield: pd.Series | pd.DataFrame, buyback_yield: pd.Series | pd.DataFrame
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the total shareholder yield, a valuation ratio that combines the dividend
-    yield and the buyback yield to measure the total cash returned to shareholders
-    relative to the company's market capitalization.
+    Calculate the total shareholder yield, a valuation ratio that combines the dividend yield and the buyback yield to
+    measure the total cash returned to shareholders relative to the company's market capitalization.
 
     Args:
         dividend_yield (float or pd.Series): Dividend yield of the company.
@@ -780,9 +777,10 @@ def get_net_share_issuance(
     shares: pd.Series | pd.DataFrame, beginning_shares: pd.Series | pd.DataFrame
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the net share issuance of Pontiff and Woodgate (2008): the log change in
-    the split-adjusted number of shares. It is positive for a net issuer of shares and
-    negative for a company that buys back more shares than it issues.
+    Calculate the net share issuance of Pontiff and Woodgate (2008): the log change in the split-adjusted number of
+    shares.
+
+    It is positive for a net issuer of shares and negative for a company that buys back more shares than it issues.
 
     The formula is as follows:
 
@@ -813,11 +811,11 @@ def get_composite_equity_issuance(
     beginning_total_return_price: pd.Series | pd.DataFrame,
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the composite equity issuance of Daniel and Titman (2006): the part of
-    the growth in market capitalization that the stock return does not explain. It
-    captures every way equity is issued or retired (seasoned offerings, employee
-    stock, stock-financed acquisitions, buybacks and dividends), and companies that
-    issue predict lower returns.
+    Calculate the composite equity issuance of Daniel and Titman (2006): the part of the growth in market
+    capitalization that the stock return does not explain.
+
+    It captures every way equity is issued or retired (seasoned offerings, employee stock, stock-financed
+    acquisitions, buybacks and dividends), and companies that issue predict lower returns.
 
     The formula is as follows:
 
@@ -857,10 +855,10 @@ def get_net_external_financing(
     average_total_assets: pd.Series | pd.DataFrame,
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the net external financing of Bradshaw, Richardson and Sloan (2006): the
-    cash a company raises from (or returns to) shareholders and lenders, relative to
-    its average total assets. Companies that raise the most external financing earn
-    the lowest returns afterwards.
+    Calculate the net external financing of Bradshaw, Richardson and Sloan (2006): the cash a company raises from (or
+    returns to) shareholders and lenders, relative to its average total assets.
+
+    Companies that raise the most external financing earn the lowest returns afterwards.
 
     The formula is as follows:
 
@@ -900,9 +898,8 @@ def get_sbc_adjusted_free_cash_flow(
     stock_based_compensation: pd.Series | pd.DataFrame,
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the stock-based compensation (SBC) adjusted free cash flow, which
-    deducts non-cash SBC expenses from free cash flow to give a more conservative
-    view of the cash actually available to shareholders.
+    Calculate the stock-based compensation (SBC) adjusted free cash flow, which deducts non-cash SBC expenses from
+    free cash flow to give a more conservative view of the cash actually available to shareholders.
 
     Free cash flow already excludes SBC as a cash expense (it is added back in the
     cash flow from operations), which can overstate the cash available to
@@ -1023,3 +1020,158 @@ def get_price_to_tangible_book_ratio(
     )
 
     return market_cap / tangible_book_value.where(tangible_book_value > 0)
+
+
+def get_operating_cash_flow_per_share(
+    cash_flow_from_operations: pd.Series | pd.DataFrame,
+    shares_outstanding: pd.Series | pd.DataFrame,
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the operating cash flow per share, the cash a company generates from its
+    operations per outstanding share.
+
+    The formula is as follows:
+
+        Operating Cash Flow per Share = Cash Flow from Operations / Weighted Average Shares
+
+    Also known as: cash flow per share, CFPS.
+
+    Args:
+        cash_flow_from_operations (float or pd.Series): Cash flow from operations of the company.
+        shares_outstanding (float or pd.Series): The (weighted average) number of shares.
+
+    Returns:
+        float | pd.Series: The operating cash flow per share.
+    """
+    return cash_flow_from_operations / shares_outstanding
+
+
+def get_free_cash_flow_per_share(
+    free_cash_flow: pd.Series | pd.DataFrame,
+    shares_outstanding: pd.Series | pd.DataFrame,
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the free cash flow per share, the cash a company generates after its capital
+    expenditure per outstanding share.
+
+    The formula is as follows:
+
+        Free Cash Flow per Share = Free Cash Flow / Weighted Average Shares
+
+    Also known as: FCF per share, FCFPS.
+
+    Args:
+        free_cash_flow (float or pd.Series): Free cash flow of the company (cash flow from
+            operations minus capital expenditure).
+        shares_outstanding (float or pd.Series): The (weighted average) number of shares.
+
+    Returns:
+        float | pd.Series: The free cash flow per share.
+    """
+    return free_cash_flow / shares_outstanding
+
+
+def get_cash_per_share(
+    cash_and_short_term_investments: pd.Series | pd.DataFrame,
+    shares_outstanding: pd.Series | pd.DataFrame,
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the cash per share, the cash and short-term investments (marketable
+    securities) a company holds per outstanding share.
+
+    The formula is as follows:
+
+        Cash per Share = Cash and Short Term Investments / Weighted Average Shares
+
+    Args:
+        cash_and_short_term_investments (float or pd.Series): Cash, cash equivalents and
+            short-term investments of the company.
+        shares_outstanding (float or pd.Series): The (weighted average) number of shares.
+
+    Returns:
+        float | pd.Series: The cash per share.
+    """
+    return cash_and_short_term_investments / shares_outstanding
+
+
+def get_tangible_book_value_per_share(
+    total_shareholder_equity: pd.Series | pd.DataFrame,
+    preferred_stock: pd.Series | pd.DataFrame,
+    goodwill_and_intangible_assets: pd.Series | pd.DataFrame,
+    shares_outstanding: pd.Series | pd.DataFrame,
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the tangible book value per share, the common equity without goodwill and
+    other intangible assets per outstanding share.
+
+    The formula is as follows:
+
+        Tangible Book Value per Share = (Total Shareholder Equity - Preferred Stock -
+            Goodwill and Intangible Assets) / Weighted Average Shares
+
+    The tangible book value is the one of the price to tangible book ratio; it can be
+    negative after large acquisitions or buybacks and is returned as it is.
+
+    Also known as: TBVPS, tangible equity per share.
+
+    Args:
+        total_shareholder_equity (float or pd.Series): Shareholders' equity, without
+            minority interest.
+        preferred_stock (float or pd.Series): Preferred stock of the company.
+        goodwill_and_intangible_assets (float or pd.Series): Goodwill and intangible assets.
+        shares_outstanding (float or pd.Series): The (weighted average) number of shares.
+
+    Returns:
+        float | pd.Series: The tangible book value per share.
+    """
+    return (
+        total_shareholder_equity - preferred_stock - goodwill_and_intangible_assets
+    ) / shares_outstanding
+
+
+def get_net_net_working_capital_per_share(
+    cash_and_short_term_investments: pd.Series | pd.DataFrame,
+    receivables: pd.Series | pd.DataFrame,
+    inventory: pd.Series | pd.DataFrame,
+    total_liabilities: pd.Series | pd.DataFrame,
+    shares_outstanding: pd.Series | pd.DataFrame,
+    receivables_weight: float = 0.75,
+    inventory_weight: float = 0.5,
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate Benjamin Graham's net-net working capital per share, the current assets
+    discounted to a rough liquidation value minus all liabilities, per share.
+
+    Graham and Dodd (1934) value cash at its full amount, receivables at about 75 to 90% and
+    inventories at about 50 to 75% in a liquidation; the defaults take the lower ends, as
+    FinancialModelingPrep's key metrics do.
+
+    The formula is as follows:
+
+        Net-Net Working Capital per Share = (Cash and Short Term Investments +
+            Receivables Weight x Receivables + Inventory Weight x Inventory -
+            Total Liabilities) / Weighted Average Shares
+
+    Also known as: Graham net-net, NNWC, net-net working capital.
+
+    Args:
+        cash_and_short_term_investments (float or pd.Series): Cash, cash equivalents and
+            short-term investments of the company.
+        receivables (float or pd.Series): Net receivables of the company.
+        inventory (float or pd.Series): Inventory of the company.
+        total_liabilities (float or pd.Series): Total liabilities of the company.
+        shares_outstanding (float or pd.Series): The (weighted average) number of shares.
+        receivables_weight (float, optional): The share of the receivables counted.
+            Defaults to 0.75.
+        inventory_weight (float, optional): The share of the inventory counted. Defaults
+            to 0.5.
+
+    Returns:
+        float | pd.Series: The net-net working capital per share.
+    """
+    return (
+        cash_and_short_term_investments
+        + receivables_weight * receivables
+        + inventory_weight * inventory
+        - total_liabilities
+    ) / shares_outstanding

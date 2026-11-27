@@ -452,23 +452,27 @@ def get_piotroski_score(
     - Piotroski, Joseph D. "Value Investing: The Use of Historical Financial Statement Information to
     Separate Winners from Losers." Journal of Accounting Research, Vol. 38, Supplement, 2000, pp. 1-41.
     """
-    return_on_assets_criteria = return_on_assets_criteria.astype(int)
+    # As floats, so that a criterion that cannot be evaluated (NaN) stays missing
+    # rather than failing the conversion.
+    return_on_assets_criteria = return_on_assets_criteria.astype(float)
 
-    operating_cashflow_criteria = operating_cashflow_criteria.astype(int)
+    operating_cashflow_criteria = operating_cashflow_criteria.astype(float)
 
-    change_in_return_on_asset_criteria = change_in_return_on_asset_criteria.astype(int)
+    change_in_return_on_asset_criteria = change_in_return_on_asset_criteria.astype(
+        float
+    )
 
-    accruals_criteria = accruals_criteria.astype(int)
+    accruals_criteria = accruals_criteria.astype(float)
 
-    change_in_leverage_criteria = change_in_leverage_criteria.astype(int)
+    change_in_leverage_criteria = change_in_leverage_criteria.astype(float)
 
-    change_in_current_ratio_criteria = change_in_current_ratio_criteria.astype(int)
+    change_in_current_ratio_criteria = change_in_current_ratio_criteria.astype(float)
 
-    number_of_shares_criteria = number_of_shares_criteria.astype(int)
+    number_of_shares_criteria = number_of_shares_criteria.astype(float)
 
-    gross_margin_criteria = gross_margin_criteria.astype(int)
+    gross_margin_criteria = gross_margin_criteria.astype(float)
 
-    asset_turnover_ratio_criteria = asset_turnover_ratio_criteria.astype(int)
+    asset_turnover_ratio_criteria = asset_turnover_ratio_criteria.astype(float)
 
     piotroski_score = (
         return_on_assets_criteria
@@ -483,3 +487,56 @@ def get_piotroski_score(
     )
 
     return piotroski_score
+
+
+def get_reported_mask(
+    reported: pd.DataFrame, comparison_lag: int, piotroski_results: pd.DataFrame
+) -> pd.DataFrame:
+    """
+    Which values of the Piotroski results rest on reported statements: a criterion needs
+    its period reported, and the five criteria that compare against the same period a year
+    earlier (and the score) need that period reported too, or NaN > x resolves False.
+
+    Args:
+        reported (pd.DataFrame): Per ticker and period, whether every field feeding the
+            criteria is reported.
+        comparison_lag (int): The number of periods in a year.
+        piotroski_results (pd.DataFrame): The criteria and the score with (ticker,
+            criterion) rows and a column per period.
+
+    Returns:
+        pd.DataFrame: True where a value of the results is reported, shaped like the
+        results.
+    """
+    change_based_criteria = {
+        "Change in Return on Assets Criteria",
+        "Change in Leverage Criteria",
+        "Change in Current Ratio Criteria",
+        "Gross Margin Criteria",
+        "Asset Turnover Criteria",
+        "Piotroski Score",
+    }
+
+    def broadcast(mask: pd.DataFrame) -> pd.DataFrame:
+        return (
+            mask.reindex(
+                index=piotroski_results.index.get_level_values(0),
+                columns=piotroski_results.columns,
+            )
+            .fillna(False)
+            .astype(bool)
+            .set_axis(piotroski_results.index)
+        )
+
+    reported_previous_period = broadcast(reported.shift(comparison_lag, axis=1))
+    reported = broadcast(reported)
+
+    needs_previous_period = piotroski_results.index.get_level_values(1).isin(
+        change_based_criteria
+    )
+    full_mask = reported.copy()
+    full_mask.loc[needs_previous_period] = (
+        reported.loc[needs_previous_period]
+        & reported_previous_period.loc[needs_previous_period]
+    )
+    return full_mask

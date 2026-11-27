@@ -2,6 +2,8 @@
 
 __docformat__ = "google"
 
+from typing import Literal
+
 import numpy as np
 import pandas as pd
 
@@ -11,7 +13,7 @@ from financetoolkit.econometrics.testing import (
     specification_tests_model,
 )
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
-from financetoolkit.utilities.error_model import handle_errors
+from financetoolkit.utilities.error_model import check_option, handle_errors
 from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import apply_rounding
 
@@ -32,6 +34,7 @@ class TestingEconometrics:
         period: str | None,
         column: str,
         add_constant: bool,
+        sample_tickers: list[str] | None = None,
     ) -> dict:
         """
         Shared helper for the hypothesis-testing methods below -- fits an OLS model
@@ -39,6 +42,11 @@ class TestingEconometrics:
         result dict, rather than the rounded coefficient table `get_ols` returns,
         since the F-test, Wald test and Likelihood Ratio test all operate directly
         on the result dict's residuals/coefficients/covariance matrix.
+
+        Nested models are compared on the same dates: `sample_tickers` (the tickers of
+        both models) sets the dates the fit uses to those every one of them has, so a
+        regressor with gaps in only the unrestricted model does not give the two fits
+        different rows.
         """
         period = period if period else "daily"
         independent_tickers = (
@@ -47,7 +55,9 @@ class TestingEconometrics:
             else independent_tickers
         )
         returns = self._get_series_column(
-            period, column, [dependent_ticker, *independent_tickers]
+            period,
+            column,
+            [dependent_ticker, *independent_tickers, *(sample_tickers or [])],
         )
 
         return regression_model.get_ols(
@@ -67,8 +77,8 @@ class TestingEconometrics:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculate a two-sample t-test for a difference in mean `column` between every
-        unordered pair of tickers in the Toolkit instance.
+        Calculate a two-sample t-test for every pair of tickers: whether their means (of the
+        returns by default) differ by more than chance explains.
 
         The test checks the null hypothesis that two samples come from distributions with
         the same mean, against the two-sided alternative that the means differ. Applied to
@@ -81,16 +91,15 @@ class TestingEconometrics:
         - Welch (the default): t = (mean_a - mean_b) / sqrt(s_a^2 / n_a + s_b^2 / n_b)
         - Welch-Satterthwaite: df = (s_a^2 / n_a + s_b^2 / n_b)^2 / ((s_a^2 / n_a)^2 / (n_a - 1) +
           (s_b^2 / n_b)^2 / (n_b - 1))
-        - Student (equal_variance=True): t = (mean_a - mean_b) / (s_p·sqrt(1 / n_a + 1 / n_b)), with
+        - Student (equal variances): t = (mean_a - mean_b) / (s_p·sqrt(1 / n_a + 1 / n_b)), with
           s_p^2 = ((n_a - 1)·s_a^2 + (n_b - 1)·s_b^2) / (n_a + n_b - 2) and df = n_a + n_b - 2
         - s_a^2 and s_b^2 are sample variances (ddof=1) of the two tickers' `column` (Return by
           default), with a two-sided p-value
 
-        Setting `equal_variance=True` pools the two variances instead (Student's t-test), which is
-        slightly more powerful but only valid when the variances are truly equal. Welch's
-        version is the safer default since assets rarely share the same volatility. A low
-        p-value (e.g. below 0.05) means the difference in means is statistically
-        significant.
+        Student's t-test pools the two variances instead, which is slightly more powerful but
+        only valid when the variances are truly equal. Welch's version is the safer default
+        since assets rarely share the same volatility. A low p-value (e.g. below 0.05) means the
+        difference in means is statistically significant.
 
         For more information about the method, see the following papers:
 
@@ -99,7 +108,11 @@ class TestingEconometrics:
         Different Population Variances are Involved." Biometrika, 34(1/2), 28-35.
 
         Also known as: independent samples t-test, Welch's t-test (default), Student's
-        t-test (`equal_variance=True`).
+        t-test (equal variances).
+
+        Referenced against:
+        - statsmodels, ttest_ind: https://www.statsmodels.org/stable/generated/statsmodels.stats.weightstats.ttest_ind.html
+        - scipy, ttest_ind: https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.ttest_ind.html
 
         Args:
             period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly). Defaults to
@@ -143,11 +156,11 @@ class TestingEconometrics:
 
         Which returns:
 
-        |                  |   T-Statistic |   Degrees of Freedom |   P-Value |   Mean A |   Mean B |
+        |                  |   t-Statistic |   Degrees of Freedom |   P-Value |   Mean A |   Mean B |
         |:-----------------|--------------:|---------------------:|----------:|---------:|---------:|
-        | ('MSFT', 'ORCL') |       -0.528  |              2176.24 |    0.5975 |   0.0008 |   0.0012 |
-        | ('MSFT', 'SAP')  |        0.1389 |              2504.05 |    0.8895 |   0.0008 |   0.0007 |
-        | ('ORCL', 'SAP')  |        0.6326 |              2210.92 |    0.5271 |   0.0012 |   0.0007 |
+        | ('MSFT', 'ORCL') |       -0.5252 |              2176.18 |    0.5995 |   0.0008 |   0.0012 |
+        | ('MSFT', 'SAP')  |        0.141  |              2504.08 |    0.8879 |   0.0008 |   0.0007 |
+        | ('ORCL', 'SAP')  |        0.6315 |              2210.58 |    0.5278 |   0.0012 |   0.0007 |
         """
         period = period if period else "daily"
         returns = self._get_series_column(period, column)
@@ -183,9 +196,8 @@ class TestingEconometrics:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series:
         """
-        Calculate a nested-model F-test for the joint significance of the regressors in
-        `unrestricted_independent_tickers` that are not already in
-        `restricted_independent_tickers`.
+        Calculate a nested-model F-test: whether extra tickers jointly improve the fit of a
+        regression of the dependent ticker on a smaller set of tickers.
 
         Two OLS regressions of `dependent_ticker` are fitted internally: a "restricted" one on
         `restricted_independent_tickers` and an "unrestricted" one that adds the extra
@@ -197,7 +209,7 @@ class TestingEconometrics:
 
         - F = ((RSS_restricted - RSS_unrestricted) / q) / (RSS_unrestricted / (n - k_unrestricted))
         - Both models are OLS regressions of the dependent ticker's `column` (Return by default),
-          with a constant when add_constant=True
+          with a constant when one is added
 
         Where `q = k_unrestricted - k_restricted` is the number of added regressors, `n` the
         number of observations and `k_unrestricted` the number of parameters of the larger
@@ -207,6 +219,9 @@ class TestingEconometrics:
         asymptotic Maximum Likelihood counterpart.
 
         Also known as: nested F-test, restricted vs. unrestricted F-test, partial F-test.
+
+        Referenced against:
+        - statsmodels, RegressionResults.compare_f_test: https://www.statsmodels.org/stable/generated/statsmodels.regression.linear_model.RegressionResults.compare_f_test.html
 
         Args:
             dependent_ticker (str): The dependent (predicted) asset.
@@ -257,12 +272,22 @@ class TestingEconometrics:
         | P-Value                  |   0     |
         | Reject Restrictions (5%) |   1     |
         """
+        # Both models are fitted on the dates every ticker of either model has.
+        sample_tickers = [
+            ticker
+            for tickers in (
+                restricted_independent_tickers,
+                unrestricted_independent_tickers,
+            )
+            for ticker in ([tickers] if isinstance(tickers, str) else tickers)
+        ]
         restricted_result = self._fit_ols_result(
             dependent_ticker,
             restricted_independent_tickers,
             period=period,
             column=column,
             add_constant=add_constant,
+            sample_tickers=sample_tickers,
         )
         unrestricted_result = self._fit_ols_result(
             dependent_ticker,
@@ -270,6 +295,7 @@ class TestingEconometrics:
             period=period,
             column=column,
             add_constant=add_constant,
+            sample_tickers=sample_tickers,
         )
 
         result = hypothesis_testing_model.get_f_test(
@@ -293,10 +319,10 @@ class TestingEconometrics:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series:
         """
-        Calculate a nested-model Likelihood Ratio (LR) test, the Maximum Likelihood analogue
-        of `get_f_test`, for the joint significance of the regressors in
-        `unrestricted_independent_tickers` that are not already in
-        `restricted_independent_tickers`.
+        Calculate a nested-model Likelihood Ratio (LR) test: whether extra tickers jointly raise
+        the likelihood of a regression of the dependent ticker on a smaller set of tickers.
+
+        The test is the Maximum Likelihood analogue of the F-test of `get_f_test`.
 
         As with `get_f_test`, a "restricted" and an "unrestricted" OLS regression of
         `dependent_ticker` are fitted internally and the null hypothesis is that the `q` extra
@@ -308,7 +334,7 @@ class TestingEconometrics:
 
         - LR = -2·(ln L_restricted - ln L_unrestricted) = n * ln(RSS_restricted / RSS_unrestricted)
         - Both models are OLS regressions of the dependent ticker's `column` (Return by default),
-          with a constant when add_constant=True
+          with a constant when one is added
 
         Under the null this is asymptotically chi-squared distributed with `q` degrees of
         freedom. Where the F-test is exact in small samples under the classical assumptions,
@@ -322,6 +348,9 @@ class TestingEconometrics:
         Testing Composite Hypotheses." Annals of Mathematical Statistics, 9(1), 60-62.
 
         Also known as: LR test, Wilks' likelihood ratio test.
+
+        Referenced against:
+        - statsmodels, RegressionResults.compare_lr_test: https://www.statsmodels.org/stable/generated/statsmodels.regression.linear_model.RegressionResults.compare_lr_test.html
 
         Args:
             dependent_ticker (str): The dependent (predicted) asset.
@@ -371,12 +400,22 @@ class TestingEconometrics:
         | P-Value                  |  0      |
         | Reject Restrictions (5%) |  1      |
         """
+        # Both models are fitted on the dates every ticker of either model has.
+        sample_tickers = [
+            ticker
+            for tickers in (
+                restricted_independent_tickers,
+                unrestricted_independent_tickers,
+            )
+            for ticker in ([tickers] if isinstance(tickers, str) else tickers)
+        ]
         restricted_result = self._fit_ols_result(
             dependent_ticker,
             restricted_independent_tickers,
             period=period,
             column=column,
             add_constant=add_constant,
+            sample_tickers=sample_tickers,
         )
         unrestricted_result = self._fit_ols_result(
             dependent_ticker,
@@ -384,6 +423,7 @@ class TestingEconometrics:
             period=period,
             column=column,
             add_constant=add_constant,
+            sample_tickers=sample_tickers,
         )
 
         result = hypothesis_testing_model.get_likelihood_ratio_test(
@@ -409,8 +449,8 @@ class TestingEconometrics:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series:
         """
-        Calculate a Wald test of `q` general linear restriction(s) on the coefficients of an
-        OLS regression of `dependent_ticker` on `independent_tickers`.
+        Calculate a Wald test: whether the coefficients of a regression of the dependent ticker
+        on the independent tickers satisfy a set of linear restrictions, such as a beta of 1.
 
         A single OLS regression is fitted internally and the test checks the null hypothesis
         `H0: R @ beta = r`, where `R` (`restriction_matrix`) encodes `q` linear restrictions
@@ -425,7 +465,7 @@ class TestingEconometrics:
         - W = (R @ beta_hat - r)' @ (R @ Cov(beta_hat) @ R')^-1 @ (R @ beta_hat - r)
         - F = W / q, F-distributed with (q, n - k) degrees of freedom
         - beta_hat and the classical Cov(beta_hat) = σ̂²·(X'X)⁻¹ come from the OLS regression of the
-          dependent ticker's `column` (Return by default), with a constant when add_constant=True
+          dependent ticker's `column` (Return by default), with a constant when one is added
 
         Which is asymptotically chi-squared distributed with `q` degrees of freedom. `W / q`
         is reported alongside it as an F-statistic for small samples; for a single
@@ -439,6 +479,9 @@ class TestingEconometrics:
         Society, 54(3), 426-482.
 
         Also known as: Wald chi-squared test.
+
+        Referenced against:
+        - statsmodels, RegressionResults.wald_test: https://www.statsmodels.org/stable/generated/statsmodels.regression.linear_model.RegressionResults.wald_test.html
 
         Args:
             restriction_matrix (pd.DataFrame | np.ndarray | list[list[float]]): The `(q, k)`
@@ -550,10 +593,9 @@ class TestingEconometrics:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series:
         """
-        Calculate a regression-based Hausman-Wu test for the endogeneity of `suspect_ticker`
-        in a regression of `dependent_ticker` on `suspect_ticker` (and, optionally,
-        `other_independent_tickers`), using `instrument_tickers` as instruments for
-        `suspect_ticker`.
+        Calculate a regression-based Hausman-Wu test: whether a ticker is endogenous in a
+        regression of the dependent ticker, correlated with its error term, so that OLS is biased
+        and an instrumental-variables fit is needed.
 
         OLS requires every regressor to be uncorrelated with the error term. When that fails,
         for example because of an omitted common driver, reverse causality or measurement
@@ -589,6 +631,9 @@ class TestingEconometrics:
 
         Also known as: Hausman test, Durbin-Wu-Hausman test, regression test for
         endogeneity.
+
+        Shares similar logic:
+        - linearmodels, IVResults.wu_hausman: https://bashtage.github.io/linearmodels/iv/iv/linearmodels.iv.results.IVResults.wu_hausman.html
 
         Args:
             dependent_ticker (str): The dependent (predicted) asset.
@@ -633,10 +678,9 @@ class TestingEconometrics:
 
         |                    |    Value |
         |:-------------------|---------:|
-        | V-Hat Coefficient  |  -0.4021 |
-        | T-Statistic        |  -2.3377 |
+        | V-Hat Coefficient  |  -0.4013 |
         | Degrees of Freedom | 246      |
-        | P-Value            |   0.0202 |
+        | P-Value            |   0.0204 |
         | Endogenous (5%)    |   1      |
         """
         period = period if period else "daily"
@@ -688,7 +732,7 @@ class TestingEconometrics:
         """
         Shared helper that fits the OLS regression of `dependent_ticker` on
         `independent_tickers` used internally by every post-estimation diagnostic
-        below (`get_breusch_pagan_test`, `get_white_test`, `get_durbin_watson_test`,
+        below (`get_heteroskedasticity_test`, `get_durbin_watson_test`,
         `get_ramsey_reset_test`, `get_chow_test`) -- each of these tests operates on
         an already-fitted regression result dict (see `specification_tests_model`),
         so the controller's job is simply to assemble that same fit `get_ols` itself
@@ -711,7 +755,7 @@ class TestingEconometrics:
         )
 
     @handle_errors
-    def get_breusch_pagan_test(
+    def get_heteroskedasticity_test(
         self,
         dependent_ticker: str | None = None,
         independent_tickers: str | list[str] | None = None,
@@ -719,43 +763,63 @@ class TestingEconometrics:
         period: str | None = None,
         column: str = "Return",
         add_constant: bool = True,
+        method: Literal["breusch_pagan", "white"] = "breusch_pagan",
         rounding: int | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.Series:
         """
-        Calculate the Breusch-Pagan test for heteroskedasticity of a regression of
-        `dependent_ticker` on `independent_tickers`.
+        Calculate a test for heteroskedasticity: whether the residual variance of a regression of
+        the dependent ticker on the independent tickers moves with them, with the Breusch-Pagan
+        test or White's test.
 
         OLS standard errors assume that the residual variance is constant
-        (homoskedasticity). The test regresses the squared residuals of the regression on the
-        original independent tickers and checks whether they explain any of the residual
+        (homoskedasticity). Both tests regress the squared residuals of the regression on
+        functions of the independent tickers and check whether they explain any of the residual
         variance, by testing whether the R-squared of that auxiliary regression is
-        significantly different from zero.
+        significantly different from zero. The Breusch-Pagan test uses only the original
+        independent tickers. White's test is the more general version: its auxiliary regression
+        uses each ticker, its square and every pairwise cross-product, so it also catches
+        non-linear forms of heteroskedasticity.
 
-        The formula is as follows:
+        The formula for the Breusch-Pagan test is as follows:
 
         - Auxiliary regression: e_t^2 = a_0 + a' * x_t + v_t, with e_t the OLS residuals and x_t the
           independent tickers' `column` (Return by default)
         - LM = n * R^2_auxiliary (Koenker's studentized form, the statsmodels default)
 
-        This is the studentized statistic of Koenker (1981), which does not assume normally
-        distributed errors. It is asymptotically chi-squared distributed with `k - 1` degrees
-        of freedom under the null hypothesis of homoskedasticity, where `k` is the number of parameters of the
-        auxiliary regression. A low p-value means the residual variance moves with the
-        independent tickers (for example, errors grow when the market moves more), so the
-        regression's standard errors, t-statistics and p-values are unreliable even though
-        the coefficients themselves remain unbiased. Remedies are a robust `cov_type` in
-        `get_ols` or `get_wls`. `get_white_test` is a more general alternative that also
-        catches non-linear forms of heteroskedasticity.
+        The formula for White's test is as follows:
 
-        For more information about the method, see the following paper:
+        - e_t^2 = a_0 + SUM_i(a_i * x_it) + SUM_i(b_i * x_it^2) + SUM_{i<j}(c_ij * x_it * x_jt) + v_t
+        - LM = n * R^2_auxiliary, chi-squared with as many degrees of freedom as the auxiliary
+          regression has terms besides a_0
+        - e_t are the OLS residuals and x_it the independent tickers' `column` (Return by default)
+
+        The Breusch-Pagan statistic is the studentized statistic of Koenker (1981), which does not
+        assume normally distributed errors. It is asymptotically chi-squared distributed with `k - 1`
+        degrees of freedom under the null hypothesis of homoskedasticity, where `k` is the number of
+        parameters of the auxiliary regression. For both tests a low p-value means the residual
+        variance moves with the independent tickers (for example, errors grow when the market moves
+        more), so the regression's standard errors, t-statistics and p-values are unreliable even
+        though the coefficients themselves remain unbiased. Remedies are a robust covariance in
+        `get_ols` or `get_wls`. Because it also detects non-linear patterns in the residual variance,
+        White's test makes fewer assumptions than Breusch-Pagan, at the cost of power when there are
+        many independent tickers, since the number of auxiliary terms grows quadratically.
+
+        For more information about the method, see the following papers:
 
         - Breusch, T.S., & Pagan, A.R. (1979). "A Simple Test for Heteroscedasticity and
         Random Coefficient Variation." Econometrica, 47(5), 1287-1294.
         - Koenker, R. (1981). "A Note on Studentizing a Test for Heteroscedasticity."
         Journal of Econometrics, 17(1), 107-112.
+        - White, H. (1980). "A Heteroskedasticity-Consistent Covariance Matrix Estimator and a
+        Direct Test for Heteroskedasticity." Econometrica, 48(4), 817-838.
 
-        Also known as: BP test, Breusch-Pagan-Godfrey test.
+        Also known as: BP test, Breusch-Pagan test, Breusch-Pagan-Godfrey test, White test, White's
+        general test, heteroscedasticity test.
+
+        Referenced against:
+        - statsmodels, het_breuschpagan (Breusch-Pagan test): https://www.statsmodels.org/stable/generated/statsmodels.stats.diagnostic.het_breuschpagan.html
+        - statsmodels, het_white (White's test): https://www.statsmodels.org/stable/generated/statsmodels.stats.diagnostic.het_white.html
 
         Args:
             dependent_ticker (str | None, optional): The dependent (predicted) asset.
@@ -771,6 +835,8 @@ class TestingEconometrics:
             column (str, optional): The historical data column to regress on. Defaults to "Return".
             add_constant (bool, optional): Whether to include an intercept in the underlying
             regression. Defaults to True.
+            method (str, optional): The test. Options are: "breusch_pagan" (Breusch-Pagan test, in
+            Koenker's studentized form), "white" (White's test). Defaults to "breusch_pagan".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to
             None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -779,8 +845,8 @@ class TestingEconometrics:
                 exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
-            pd.Series: The Breusch-Pagan LM statistic, its p-value, and whether homoskedasticity is
-            rejected at the 5% level.
+            pd.Series: The LM statistic ("Breusch-Pagan Statistic" or "White Statistic"), its p-value,
+            and whether homoskedasticity is rejected at the 5% level.
 
         As an example:
 
@@ -795,7 +861,7 @@ class TestingEconometrics:
         )
 
         # CAT (the first ticker) is dependent; DE is independent
-        toolkit.econometrics.get_breusch_pagan_test()
+        toolkit.econometrics.get_heteroskedasticity_test()
         ```
 
         Which returns:
@@ -806,6 +872,8 @@ class TestingEconometrics:
         | P-Value                      |  0.9096 |
         | Reject Homoskedasticity (5%) |  0      |
         """
+        check_option("method", method, ("breusch_pagan", "white"))
+
         dependent_ticker, independent_tickers = self._resolve_dependent_independent(
             dependent_ticker=dependent_ticker,
             independent_tickers=independent_tickers,
@@ -816,112 +884,11 @@ class TestingEconometrics:
             dependent_ticker, independent_tickers, period, column, add_constant
         )
 
-        test_result = specification_tests_model.get_breusch_pagan_test(result)
-
-        return apply_rounding(
-            test_result, rounding if rounding is not None else self._rounding
+        test_result = (
+            specification_tests_model.get_white_test(result)
+            if method == "white"
+            else specification_tests_model.get_breusch_pagan_test(result)
         )
-
-    @handle_errors
-    def get_white_test(
-        self,
-        dependent_ticker: str | None = None,
-        independent_tickers: str | list[str] | None = None,
-        include_benchmark: bool = False,
-        period: str | None = None,
-        column: str = "Return",
-        add_constant: bool = True,
-        rounding: int | None = None,
-        show_columns: str | list[str] | None = None,
-    ) -> pd.Series:
-        """
-        Calculate White's test for heteroskedasticity of a regression of `dependent_ticker` on
-        `independent_tickers`.
-
-        A more general version of `get_breusch_pagan_test`. Instead of regressing the squared
-        residuals on only the original independent tickers, the auxiliary regression uses
-        each ticker, its square and every pairwise cross-product.
-
-        The formula is as follows:
-
-        - e_t^2 = a_0 + SUM_i(a_i * x_it) + SUM_i(b_i * x_it^2) + SUM_{i<j}(c_ij * x_it * x_jt) + v_t
-        - LM = n * R^2_auxiliary, chi-squared with as many degrees of freedom as the auxiliary
-          regression has terms besides a_0
-        - e_t are the OLS residuals and x_it the independent tickers' `column` (Return by default)
-
-        The null hypothesis is homoskedasticity (constant residual variance). A low p-value means the
-        regression's standard errors are unreliable and a robust `cov_type` should be used.
-        Because it also detects non-linear patterns in the residual variance, White's test
-        makes fewer assumptions than Breusch-Pagan, at the cost of power when there are many
-        independent tickers, since the number of auxiliary terms grows quadratically.
-
-        For more information about the method, see the following paper:
-
-        - White, H. (1980). "A Heteroskedasticity-Consistent Covariance Matrix Estimator and a
-        Direct Test for Heteroskedasticity." Econometrica, 48(4), 817-838.
-
-        Also known as: White's general test.
-
-        Args:
-            dependent_ticker (str | None, optional): The dependent (predicted) asset.
-            Defaults to None, meaning the Toolkit instance's first ticker.
-            independent_tickers (str | list[str] | None, optional): The independent
-            (predictor) asset(s). Defaults to None, meaning every other ticker in
-            the Toolkit instance besides `dependent_ticker`.
-            include_benchmark (bool, optional): Whether to include "Benchmark" in the
-            default independent ticker(s) (has no effect when independent_tickers is given
-            explicitly). Defaults to False.
-            period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly).
-            Defaults to "daily".
-            column (str, optional): The historical data column to regress on. Defaults to "Return".
-            add_constant (bool, optional): Whether to include an intercept in the underlying
-            regression. Defaults to True.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to
-            None.
-            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
-                on every column level, or the rows when no column has those names (such as the line
-                items of a financial statement). Names that do not exist are logged, and when none
-                exist the result is returned in full. Defaults to None, which keeps every column.
-
-        Returns:
-            pd.Series: White's LM statistic, its p-value, and whether homoskedasticity is rejected at
-            the 5% level.
-
-        As an example:
-
-        ```python
-        from financetoolkit import Toolkit
-
-        toolkit = Toolkit(
-            ["GS", "MS"],
-            api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2025-01-01",
-            end_date="2025-12-31",
-        )
-
-        # GS (the first ticker) is dependent; MS is independent
-        toolkit.econometrics.get_white_test()
-        ```
-
-        Which returns:
-
-        |                              |   Value |
-        |:-----------------------------|--------:|
-        | White Statistic              | 11.5102 |
-        | P-Value                      |  0.0032 |
-        | Reject Homoskedasticity (5%) |  1      |
-        """
-        dependent_ticker, independent_tickers = self._resolve_dependent_independent(
-            dependent_ticker=dependent_ticker,
-            independent_tickers=independent_tickers,
-            include_benchmark=include_benchmark,
-        )
-
-        result = self._get_ols_result(
-            dependent_ticker, independent_tickers, period, column, add_constant
-        )
-
-        test_result = specification_tests_model.get_white_test(result)
 
         return apply_rounding(
             test_result, rounding if rounding is not None else self._rounding
@@ -940,8 +907,9 @@ class TestingEconometrics:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series:
         """
-        Calculate the Durbin-Watson statistic for first-order autocorrelation in the
-        residuals of a regression of `dependent_ticker` on `independent_tickers`.
+        Calculate the Durbin-Watson statistic: whether consecutive residuals of a regression of
+        the dependent ticker on the independent tickers are correlated (first-order
+        autocorrelation).
 
         OLS standard errors assume that the residuals of consecutive periods are
         uncorrelated. The Durbin-Watson statistic compares each residual with the one before
@@ -960,8 +928,8 @@ class TestingEconometrics:
         residuals tend to share the same sign, often a sign of an omitted trend or lagged
         effect) and values above 2 to negative autocorrelation (residuals tend to alternate in
         sign). Like heteroskedasticity, autocorrelation leaves the coefficients unbiased but
-        makes the standard errors unreliable; a "HAC" `cov_type` in `get_ols`, or `get_gls`
-        with an AR(1) `omega`, are common remedies. There is no exact p-value: the returned
+        makes the standard errors unreliable; a HAC covariance in `get_ols`, or `get_gls`
+        with an AR(1) error covariance, are common remedies. There is no exact p-value: the returned
         interpretation is a rule of thumb (below 1.5 is likely positive, above 2.5 likely
         negative autocorrelation).
 
@@ -971,6 +939,9 @@ class TestingEconometrics:
         Regression I." Biometrika, 37(3/4), 409-428.
 
         Also known as: DW statistic.
+
+        Referenced against:
+        - statsmodels, durbin_watson: https://www.statsmodels.org/stable/generated/statsmodels.stats.stattools.durbin_watson.html
 
         Args:
             dependent_ticker (str | None, optional): The dependent (predicted) asset.
@@ -1054,8 +1025,9 @@ class TestingEconometrics:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series:
         """
-        Calculate the Variance Inflation Factor (VIF) of every ticker in the Toolkit
-        instance, treated as regressors against one another.
+        Calculate the Variance Inflation Factor (VIF) of every ticker: how much its correlation
+        with the other tickers (multicollinearity) inflates the variance of its coefficient when
+        they are regressors together.
 
         Multicollinearity, where one regressor can (nearly) be predicted from the others, does
         not bias regression coefficients but inflates their standard errors. Individual
@@ -1078,6 +1050,9 @@ class TestingEconometrics:
         as independent tickers in `get_ols` or the other regression methods.
 
         Also known as: VIF.
+
+        Referenced against:
+        - statsmodels, variance_inflation_factor: https://www.statsmodels.org/stable/generated/statsmodels.stats.outliers_influence.variance_inflation_factor.html
 
         Args:
             period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly). Defaults to
@@ -1147,8 +1122,8 @@ class TestingEconometrics:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series:
         """
-        Calculate Ramsey's RESET test for functional form misspecification of a regression of
-        `dependent_ticker` on `independent_tickers`.
+        Calculate Ramsey's RESET test: whether a linear regression of the dependent ticker on the
+        independent tickers misses a non-linear term.
 
         If the true relationship is non-linear, or a relevant transformation or variable is
         missing, the fitted values of a linear regression still carry information about that
@@ -1178,6 +1153,9 @@ class TestingEconometrics:
         B, 31(2), 350-371.
 
         Also known as: RESET test, Ramsey RESET.
+
+        Referenced against:
+        - statsmodels, linear_reset: https://www.statsmodels.org/stable/generated/statsmodels.stats.diagnostic.linear_reset.html
 
         Args:
             dependent_ticker (str | None, optional): The dependent (predicted) asset.
@@ -1261,8 +1239,8 @@ class TestingEconometrics:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series:
         """
-        Calculate the Chow test for a structural break at `break_date` in a regression of
-        `dependent_ticker` on `independent_tickers`.
+        Calculate the Chow test: whether the coefficients of a regression of the dependent ticker
+        on the independent tickers changed at a given break date (a structural break).
 
         The sample is split at `break_date` into a "before" and "after" period, a regression
         is fitted on each part separately and on the full sample, and an F-test checks whether
@@ -1273,8 +1251,8 @@ class TestingEconometrics:
 
         - F = ((RSS_pooled - (RSS_1 + RSS_2)) / k) / ((RSS_1 + RSS_2) / (n - 2k))
         - The second sub-period starts at the first period that ends on or after `break_date` (the
-          date itself with daily data, the month that contains it with period="monthly"), and `k`
-          includes the constant when add_constant=True
+          date itself with daily data, the month that contains it with monthly data), and `k`
+          includes the constant when one is added
 
         Where `RSS_pooled` is the residual sum of squares of the full-sample regression,
         `RSS_1` and `RSS_2` those of the two sub-periods, `k` the number of parameters and `n`

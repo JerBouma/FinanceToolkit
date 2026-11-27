@@ -21,10 +21,12 @@ def get_cost_of_equity(
 ) -> pd.Series | pd.DataFrame:
     """
     The cost of equity represents the return required by investors (shareholders) for
-    holding shares of a company's common stock. It is a key component of the Weighted
-    Average Cost of Capital (WACC) and is used to discount future cash flows in financial analysis.
-    There are several methods to calculate the cost of equity, but one common approach is to
-    use the Capital Asset Pricing Model (CAPM).
+    holding shares of a company's common stock.
+
+    It is a key component of the Weighted Average Cost of Capital (WACC) and is used to
+    discount future cash flows in financial analysis. There are several methods to calculate
+    the cost of equity, but one common approach is to use the Capital Asset Pricing Model
+    (CAPM).
 
     The formula is as follows:
 
@@ -53,10 +55,11 @@ def get_cost_of_debt(
     total_debt: pd.Series,
 ) -> pd.DataFrame:
     """
-    The cost of debt represents the interest rate a company pays on its outstanding debt,
-    such as bonds, loans, or other forms of borrowed capital. It's a crucial component
-    of the Weighted Average Cost of Capital (WACC) and is used in various financial analyses.
-    Calculating the cost of debt is relatively straightforward.
+    The cost of debt shows the interest rate a company pays on its debt.
+
+    The debt includes bonds, loans, or other forms of borrowed capital. It's a crucial
+    component of the Weighted Average Cost of Capital (WACC) and is used in various
+    financial analyses. Calculating the cost of debt is relatively straightforward.
 
     The formula is as follows:
 
@@ -87,11 +90,13 @@ def get_corporate_tax_rate(
     income_before_tax: pd.Series | pd.DataFrame | float,
 ) -> pd.Series | pd.DataFrame | float:
     """
-    The Corporate Tax Rate is the effective tax rate (Income Tax Expense / Income Before Tax)
-    kept within 0 and 1, and set to 0 for a period without a pre-tax profit. It is the tax rate
-    the Weighted Average Cost of Capital applies to the tax shield on debt and the rate the Net
-    Operating Profit After Taxes (Economic Value Added, Free Cash Flow to Firm and the
-    Intrinsic Valuation built on it) taxes EBIT with, so that these models share one tax rate.
+    The Corporate Tax Rate is the effective tax rate (Income Tax Expense / Income Before
+    Tax) kept within 0 and 1, and set to 0 for a period without a pre-tax profit.
+
+    It is the tax rate the Weighted Average Cost of Capital applies to the tax shield on
+    debt and the rate the Net Operating Profit After Taxes (Economic Value Added, Free Cash
+    Flow to Firm and the Intrinsic Valuation built on it) taxes EBIT with, so that these
+    models share one tax rate.
 
     The formula is as follows:
 
@@ -145,10 +150,11 @@ def get_weighted_average_cost_of_capital(
 ) -> pd.DataFrame:
     """
     The Weighted Average Cost of Capital (WACC) is a financial metric used to estimate the
-    cost of capital for a company. It represents the average rate of return a company must
-    pay to its investors for using their capital. WACC takes into account the cost of both
-    equity and debt, weighted by their respective proportions in the company's capital
-    structure.
+    cost of capital for a company.
+
+    It represents the average rate of return a company must pay to its investors for using
+    their capital. WACC takes into account the cost of both equity and debt, weighted by
+    their respective proportions in the company's capital structure.
 
     The formula is as follows:
 
@@ -274,3 +280,69 @@ def get_weighted_average_cost_of_capital(
         )
 
     return pd.DataFrame.from_dict(components, orient="index")
+
+
+def get_unlevered_beta(
+    levered_beta: float | pd.Series | pd.DataFrame,
+    debt_to_equity: float | pd.Series | pd.DataFrame,
+    tax_rate: float | pd.Series | pd.DataFrame,
+) -> float | pd.Series | pd.DataFrame:
+    """
+    The unlevered (asset) beta of Hamada (1972): the beta the equity would have without debt,
+    the business risk of the company apart from its financial leverage.
+
+    The formula is as follows:
+
+        - Unlevered Beta = Levered Beta / (1 + (1 - Tax Rate) * Debt / Equity)
+
+    Args:
+        levered_beta (float | pd.Series | pd.DataFrame): The (regression) beta of the equity.
+        debt_to_equity (float | pd.Series | pd.DataFrame): The debt over the equity, both at
+            market values.
+        tax_rate (float | pd.Series | pd.DataFrame): The marginal (or effective) tax rate.
+
+    Returns:
+        float | pd.Series | pd.DataFrame: The unlevered beta.
+
+    Notes:
+    - The formula assumes the debt carries no market risk (a debt beta of zero), as Hamada and
+    Damodaran's bottom-up betas do.
+
+    References:
+    - Hamada, R. S. (1972). "The Effect of the Firm's Capital Structure on the Systematic Risk
+    of Common Stocks." The Journal of Finance, 27(2), 435-452.
+    - Damodaran, A. (2012). "Investment Valuation." Wiley, 3rd edition, chapter 8.
+    """
+    return levered_beta / (1 + (1 - tax_rate) * debt_to_equity)
+
+
+def get_relevered_beta(
+    unlevered_beta: float | pd.Series | pd.DataFrame,
+    debt_to_equity: float | pd.Series | pd.DataFrame,
+    tax_rate: float | pd.Series | pd.DataFrame,
+) -> float | pd.Series | pd.DataFrame:
+    """
+    Relevers an unlevered (asset) beta at a debt-to-equity ratio (Hamada, 1972).
+
+    An example is the unlevered beta of an industry at a company's own leverage, the
+    bottom-up beta of Damodaran.
+
+    The formula is as follows:
+
+        - Levered Beta = Unlevered Beta * (1 + (1 - Tax Rate) * Debt / Equity)
+
+    Args:
+        unlevered_beta (float | pd.Series | pd.DataFrame): The unlevered beta.
+        debt_to_equity (float | pd.Series | pd.DataFrame): The debt over the equity, both at
+            market values.
+        tax_rate (float | pd.Series | pd.DataFrame): The marginal (or effective) tax rate.
+
+    Returns:
+        float | pd.Series | pd.DataFrame: The levered beta.
+
+    References:
+    - Hamada, R. S. (1972). "The Effect of the Firm's Capital Structure on the Systematic Risk
+    of Common Stocks." The Journal of Finance, 27(2), 435-452.
+    - Damodaran, A. (2012). "Investment Valuation." Wiley, 3rd edition, chapter 8.
+    """
+    return unlevered_beta * (1 + (1 - tax_rate) * debt_to_equity)

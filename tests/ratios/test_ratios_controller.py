@@ -227,10 +227,6 @@ def test_get_return_on_capital_employed(recorder, ratios_module):
     recorder.capture(ratios_module.get_return_on_capital_employed())
 
 
-def test_get_net_income_per_ebt(recorder, ratios_module):
-    recorder.capture(ratios_module.get_net_income_per_ebt())
-
-
 def test_get_free_cash_flow_operating_cash_flow_ratio(recorder, ratios_module):
     recorder.capture(ratios_module.get_free_cash_flow_operating_cash_flow_ratio())
 
@@ -241,14 +237,6 @@ def test_get_tax_burden_ratio(recorder, ratios_module):
 
 def test_get_interest_coverage_ratio(recorder, ratios_module):
     recorder.capture(ratios_module.get_interest_coverage_ratio())
-
-
-def test_get_EBT_to_EBIT(recorder, ratios_module):
-    recorder.capture(ratios_module.get_EBT_to_EBIT())
-
-
-def test_get_EBIT_to_revenue(recorder, ratios_module):
-    recorder.capture(ratios_module.get_EBIT_to_revenue())
 
 
 def test_get_debt_to_assets_ratio(recorder, ratios_module):
@@ -395,8 +383,8 @@ def test_get_dividend_payout_ratio(recorder, ratios_module):
     recorder.capture(ratios_module.get_dividend_payout_ratio())
 
 
-def test_get_reinvestment_rate(recorder, ratios_module):
-    recorder.capture(ratios_module.get_reinvestment_rate())
+def test_get_retention_ratio(recorder, ratios_module):
+    recorder.capture(ratios_module.get_retention_ratio())
 
 
 def test_get_tangible_asset_value(recorder, ratios_module):
@@ -2423,3 +2411,412 @@ def test_trailing_windows_of_a_half_yearly_reporter_count_calendar_quarters():
 
     # A trailing twelve months needs all four quarters, which a half-yearly reporter lacks.
     assert reported.get_price_to_earnings_ratio().isna().all().all()
+
+
+def test_get_operating_cash_flow_per_share(recorder, ratios_module):
+    recorder.capture(ratios_module.get_operating_cash_flow_per_share())
+    recorder.capture(ratios_module.get_operating_cash_flow_per_share(diluted=False))
+    recorder.capture(ratios_module.get_operating_cash_flow_per_share(trailing=2))
+
+
+def test_get_free_cash_flow_per_share(recorder, ratios_module):
+    recorder.capture(ratios_module.get_free_cash_flow_per_share())
+    recorder.capture(ratios_module.get_free_cash_flow_per_share(growth=True))
+
+
+def test_get_cash_per_share(recorder, ratios_module):
+    recorder.capture(ratios_module.get_cash_per_share())
+    recorder.capture(ratios_module.get_cash_per_share(trailing=2))
+
+
+def test_get_tangible_book_value_per_share(recorder, ratios_module):
+    recorder.capture(ratios_module.get_tangible_book_value_per_share())
+    recorder.capture(ratios_module.get_tangible_book_value_per_share(diluted=False))
+
+
+def test_get_net_net_working_capital_per_share(recorder, ratios_module):
+    recorder.capture(ratios_module.get_net_net_working_capital_per_share())
+    recorder.capture(
+        ratios_module.get_net_net_working_capital_per_share(
+            receivables_weight=0.9, inventory_weight=0.75
+        )
+    )
+
+
+def test_get_long_term_debt_to_capitalization_ratio(recorder, ratios_module):
+    recorder.capture(ratios_module.get_long_term_debt_to_capitalization_ratio())
+    recorder.capture(
+        ratios_module.get_long_term_debt_to_capitalization_ratio(trailing=2)
+    )
+
+
+def test_get_debt_to_market_cap_ratio(recorder, ratios_module):
+    recorder.capture(ratios_module.get_debt_to_market_cap_ratio())
+    recorder.capture(ratios_module.get_debt_to_market_cap_ratio(show_daily=True))
+
+
+def test_get_solvency_ratio(recorder, ratios_module):
+    recorder.capture(ratios_module.get_solvency_ratio())
+    recorder.capture(ratios_module.get_solvency_ratio(trailing=2))
+
+
+def test_get_capex_to_operating_cash_flow_ratio(recorder, ratios_module):
+    recorder.capture(ratios_module.get_capex_to_operating_cash_flow_ratio())
+    recorder.capture(ratios_module.get_capex_to_operating_cash_flow_ratio(trailing=2))
+
+
+def test_get_intangibles_to_total_assets_ratio(recorder, ratios_module):
+    recorder.capture(ratios_module.get_intangibles_to_total_assets_ratio())
+    recorder.capture(ratios_module.get_intangibles_to_total_assets_ratio(trailing=2))
+
+
+def test_get_operating_return_on_assets(recorder, ratios_module):
+    recorder.capture(ratios_module.get_operating_return_on_assets())
+    recorder.capture(ratios_module.get_operating_return_on_assets(trailing=2))
+
+
+def test_get_continuing_operations_profit_margin(recorder, ratios_module):
+    recorder.capture(ratios_module.get_continuing_operations_profit_margin())
+    recorder.capture(ratios_module.get_continuing_operations_profit_margin(growth=True))
+
+
+def _with_employee_counts(ratios_module):
+    # The headcounts the annual filings of the test companies state, on the statement periods.
+    ratios = copy.copy(ratios_module)
+    periods = ratios._income_statement.columns
+    employee_count = pd.DataFrame(
+        [[147000, 154000, 164000, 161000], [163000, 181000, 221000, 221000]],
+        index=["AAPL", "MSFT"],
+        columns=periods,
+    )
+    ratios._employee_count_function = lambda: employee_count
+    return ratios
+
+
+def test_get_revenue_per_employee(recorder, ratios_module):
+    ratios = _with_employee_counts(ratios_module)
+    recorder.capture(ratios.get_revenue_per_employee())
+    recorder.capture(ratios.get_revenue_per_employee(growth=True))
+
+    # Revenue / employees: Apple's 2022 revenue of 394,328 million over 164,000 employees.
+    assert ratios.get_revenue_per_employee(rounding=None).loc[
+        "AAPL", ratios._income_statement.columns[2]
+    ] == pytest.approx(394328e6 / 164000)
+
+
+def test_get_net_income_per_employee(recorder, ratios_module):
+    ratios = _with_employee_counts(ratios_module)
+    recorder.capture(ratios.get_net_income_per_employee())
+
+
+def test_figures_per_employee_are_empty_without_employee_counts(ratios_module):
+    assert ratios_module.get_revenue_per_employee().empty
+    assert ratios_module.get_net_income_per_employee().empty
+
+
+def test_align_employee_count_matches_the_fiscal_year_ends():
+    from financetoolkit.ratios.helpers import align_employee_count
+
+    # The counts are labelled with the year of the fiscal year end: NVIDIA's fiscal year
+    # ending January 2023 is labelled 2023 but is the statement column 2022.
+    counts = pd.DataFrame(
+        {"AAPL": [154000, 164000, 161000], "NVDA": [22473, 26196, 29600]},
+        index=pd.PeriodIndex(["2021", "2022", "2023"], freq="Y"),
+    )
+    yearly = pd.DataFrame(
+        {
+            pd.Period("2021", "Y"): ["2021-09-25", "2022-01-30"],
+            pd.Period("2022", "Y"): ["2022-09-24", None],
+        },
+        index=["AAPL", "NVDA"],
+    )
+    aligned = align_employee_count(counts, yearly)
+    assert aligned.loc["AAPL"].tolist() == [154000, 164000]
+    assert aligned.loc["NVDA", pd.Period("2021", "Y")] == 26196
+    assert pd.isna(aligned.loc["NVDA", pd.Period("2022", "Y")])
+
+    # A quarter uses the latest count of a fiscal year that ended in an earlier calendar
+    # year, or in its own when the quarter ends in December (or the first days of January).
+    quarterly = pd.DataFrame(
+        {
+            pd.Period("2022Q3", "Q"): ["2022-09-24", "2022-10-30"],
+            pd.Period("2022Q4", "Q"): ["2022-12-31", "2023-01-01"],
+        },
+        index=["AAPL", "NVDA"],
+    )
+    aligned = align_employee_count(counts, quarterly, quarterly=True)
+    assert aligned.loc["AAPL"].tolist() == [154000, 164000]
+    assert aligned.loc["NVDA"].tolist() == [22473, 26196]
+
+    # A 52/53-week year ending on 25 December (Intel) is that December's count.
+    intel = pd.DataFrame(
+        [["2021-09-25", "2021-12-25", "2022-12-31"]],
+        index=["INTC"],
+        columns=[pd.Period(quarter, "Q") for quarter in ["2021Q3", "2021Q4", "2022Q4"]],
+    )
+    counts = pd.DataFrame(
+        {"INTC": [100, 110, 120]},
+        index=pd.PeriodIndex(["2020", "2021", "2022"], freq="Y"),
+    )
+    aligned = align_employee_count(counts, intel, quarterly=True)
+    assert aligned.loc["INTC"].tolist() == [100, 110, 120]
+
+
+def test_toolkit_passes_the_employee_counts_on_the_fiscal_year_ends(
+    test_toolkit, monkeypatch
+):
+    # The counts as the Toolkit collects them: per year of the fiscal year end.
+    counts = pd.DataFrame(
+        {
+            "AAPL": [147000, 154000, 164000, 161000],
+            "MSFT": [163000, 181000, 221000, 221000],
+        },
+        index=pd.PeriodIndex(["2020", "2021", "2022", "2023"], freq="Y", name="Period"),
+    )
+    monkeypatch.setattr(test_toolkit, "_collect_employee_count", lambda: counts)
+
+    revenue_per_employee = test_toolkit.ratios.get_revenue_per_employee(rounding=None)
+
+    revenue = test_toolkit.ratios._income_statement.loc[:, "Revenue", :]
+    expected = revenue / counts.T.set_axis(revenue.columns, axis=1)
+    pd.testing.assert_frame_equal(
+        revenue_per_employee,
+        expected.loc[:, revenue_per_employee.columns],
+        check_names=False,
+    )
+
+
+def test_align_employee_count_puts_a_year_ending_in_early_january_in_the_year_before():
+    from financetoolkit.ratios.helpers import align_employee_count
+
+    # A 52/53-week year ending 2 January 2021 is fiscal 2020, labelled as get_employee_count
+    # labels it; the yearly statement of that year gets its own count, not the next one.
+    counts = pd.DataFrame(
+        {"K": [100, 200, 300, 400]},
+        index=pd.PeriodIndex(["2019", "2020", "2021", "2022"], freq="Y"),
+    )
+    yearly = pd.DataFrame(
+        [["2019-12-28", "2021-01-02", "2022-01-01", "2022-12-31"]],
+        index=["K"],
+        columns=[pd.Period(year, "Y") for year in ["2019", "2020", "2021", "2022"]],
+    )
+    assert align_employee_count(counts, yearly).loc["K"].tolist() == [
+        100,
+        200,
+        300,
+        400,
+    ]
+
+    quarterly = pd.DataFrame(
+        [["2021-01-02", "2021-07-03", "2022-01-01", "2022-07-02"]],
+        index=["K"],
+        columns=[pd.Period(q, "Q") for q in ["2020Q4", "2021Q2", "2021Q4", "2022Q2"]],
+    )
+    aligned = align_employee_count(counts, quarterly, quarterly=True)
+    assert aligned.loc["K"].tolist() == [200, 200, 300, 300]
+
+
+def test_align_employee_count_puts_a_year_ending_on_7_january_in_the_year_before():
+    from financetoolkit.ratios.helpers import align_employee_count
+
+    counts = pd.DataFrame(
+        {"K": [100, 200]}, index=pd.PeriodIndex(["2017", "2018"], freq="Y")
+    )
+    yearly = pd.DataFrame(
+        [["2018-01-07", "2019-01-06"]],
+        index=["K"],
+        columns=[pd.Period("2017", "Y"), pd.Period("2018", "Y")],
+    )
+    assert align_employee_count(counts, yearly).loc["K"].tolist() == [100, 200]
+
+
+def _offline_toolkit(balance=None, income=None, cash=None, **settings):
+    """The offline Toolkit of the fixtures, with statements changed by the test."""
+    from financetoolkit import Toolkit  # noqa: PLC0415
+
+    def read(name):
+        return pd.read_pickle(f"tests/datasets/{name}_dataset.pickle")
+
+    toolkit = Toolkit(
+        tickers=["AAPL", "MSFT"],
+        historical=read("historical"),
+        balance=read("balance") if balance is None else balance,
+        income=read("income") if income is None else income,
+        cash=read("cash") if cash is None else cash,
+        convert_currency=False,
+        sleep_timer=False,
+        use_cached_data=False,
+        **{"start_date": "2019-12-31", "end_date": "2023-01-01", **settings},
+    )
+    toolkit._daily_risk_free_rate = pd.read_pickle(
+        "tests/datasets/risk_free_rate.pickle"
+    )
+    toolkit._daily_treasury_data = pd.read_pickle("tests/datasets/treasury_data.pickle")
+    return toolkit
+
+
+def test_a_ratio_built_on_a_missing_one_names_it_instead_of_failing(caplog):
+    # Without the dividends the payout ratio fails, and the ratios built on it report the
+    # missing input (an empty result) rather than an AttributeError on its empty Series.
+    cash = pd.read_pickle("tests/datasets/cash_dataset.pickle")
+    toolkit = _offline_toolkit(cash=cash.drop(index="Dividends Paid", level=1))
+
+    assert toolkit.ratios.get_retention_ratio().empty
+    assert "dividend payout ratio is not available" in caplog.text
+
+    # The collection leaves the ratio out and keeps the others.
+    valuation = toolkit.ratios.collect_valuation_ratios()
+    assert "Dividend Payout Ratio" not in valuation.index.get_level_values(1)
+    assert "Retention Ratio" not in valuation.index.get_level_values(1)
+    assert "Price-to-Earnings" in valuation.index.get_level_values(1)
+    assert not toolkit.ratios.collect_all_ratios().empty
+
+
+def test_the_price_to_earnings_growth_ratios_name_the_missing_earnings(caplog):
+    income = pd.read_pickle("tests/datasets/income_dataset.pickle")
+    cash = pd.read_pickle("tests/datasets/cash_dataset.pickle")
+    toolkit = _offline_toolkit(
+        income=income.drop(index="Net Income", level=1),
+        cash=cash.drop(index="Net Income", level=1),
+    )
+
+    assert toolkit.ratios.get_price_to_earnings_growth_ratio().empty
+    assert toolkit.ratios.get_dividend_adjusted_price_to_earnings_growth_ratio().empty
+    assert "earnings growth rate is not available" in caplog.text
+    assert "AttributeError" not in caplog.text
+
+
+def test_the_market_cap_to_gdp_without_the_gdp_is_empty(ratios_module, caplog):
+    ratios = copy.copy(ratios_module)
+    ratios._gross_domestic_product_function = pd.DataFrame
+    ratios._get_basket_currency = lambda: "USD"
+
+    assert ratios.get_market_cap_to_gdp().empty
+    assert "Gross Domestic Product is not available" in caplog.text
+
+
+def test_the_basic_shares_stand_in_for_missing_diluted_shares(caplog):
+    income = pd.read_pickle("tests/datasets/income_dataset.pickle")
+    toolkit = _offline_toolkit(
+        income=income.drop(index=[("MSFT", "Weighted Average Shares Diluted")])
+    )
+
+    earnings_per_share = toolkit.ratios.get_earnings_per_share(rounding=None)
+    basic = toolkit.ratios.get_earnings_per_share(diluted=False, rounding=None)
+
+    pd.testing.assert_series_equal(earnings_per_share.loc["MSFT"], basic.loc["MSFT"])
+    assert earnings_per_share.loc["AAPL"].notna().all()
+    assert not earnings_per_share.loc["AAPL"].equals(basic.loc["AAPL"])
+    assert "no Weighted Average Shares Diluted for MSFT" in caplog.text
+    # The statement is shown as it was supplied.
+    assert ("MSFT", "Weighted Average Shares Diluted") not in (
+        toolkit.get_income_statement().index
+    )
+
+
+def test_supplied_statements_keep_the_year_before_the_start_date():
+    toolkit = _offline_toolkit(start_date="2022-06-01")
+
+    # The return on assets averages the assets with those of the year before, which the
+    # statements keep, while only the periods from the start date on are shown.
+    return_on_assets = toolkit.ratios.get_return_on_assets()
+    assert return_on_assets.columns[0] == pd.Period("2022", "Y")
+    assert return_on_assets.loc[:, "2022"].notna().all()
+    assert toolkit.get_income_statement().columns[0] == pd.Period("2022", "Y")
+
+
+def test_a_lag_below_one_is_refused_and_one_too_long_is_reported(ratios_module, caplog):
+    from financetoolkit.utilities.error_model import (
+        InvalidArgumentError,
+    )  # noqa: PLC0415
+
+    for lag in (0, -1, [1, 0], []):
+        with pytest.raises(InvalidArgumentError):
+            ratios_module.get_current_ratio(growth=True, lag=lag)
+    with pytest.raises(InvalidArgumentError):
+        ratios_module.collect_liquidity_ratios(growth=True, lag=0)
+
+    assert ratios_module.get_current_ratio(growth=True, lag=100).isna().all().all()
+    assert caplog.text.count("The lag of 100 periods is at least as long") == 1
+
+
+def test_get_cyclically_adjusted_price_to_earnings_ratio_refuses_zero_years(
+    ratios_module,
+):
+    from financetoolkit.utilities.error_model import (
+        InvalidArgumentError,
+    )  # noqa: PLC0415
+
+    with pytest.raises(InvalidArgumentError, match="years"):
+        ratios_module.get_cyclically_adjusted_price_to_earnings_ratio(years=0)
+
+
+def test_ratios_without_values_say_why(ratios_module, caplog):
+    caplog.set_level("INFO", logger="financetoolkit")
+
+    assert ratios_module.get_preferred_dividend_coverage_ratio().isna().all().all()
+    assert "AAPL, MSFT paid no preferred dividends" in caplog.text
+
+    # Five years of market caps back, with four years of statements.
+    assert ratios_module.get_composite_equity_issuance().isna().all().all()
+    assert "with that of 5 periods earlier" in caplog.text
+
+
+def test_get_factor_analysis_refuses_an_unknown_metric(ratios_module):
+    from financetoolkit.utilities.error_model import (
+        InvalidArgumentError,
+    )  # noqa: PLC0415
+
+    with pytest.raises(InvalidArgumentError, match="bogus"):
+        ratios_module.get_factor_analysis(metrics="bogus")
+
+
+def test_a_ratio_built_on_another_reports_a_window_without_data_once(caplog):
+    # The statements end in 2023, so a window in 2024 holds none of their periods; the
+    # price-to-sales ratio reports it once, not again for the market cap it builds on.
+    toolkit = _offline_toolkit(start_date="2024-06-01", end_date="2024-12-31")
+
+    assert toolkit.ratios.get_price_to_sales_ratio().empty
+
+    assert caplog.text.count("There are no observations between") == 1
+    assert "market cap is not available" in caplog.text
+
+
+def test_a_trailing_window_below_one_is_refused_and_one_too_long_is_reported(
+    ratios_module, caplog
+):
+    from financetoolkit.utilities.error_model import (  # noqa: PLC0415
+        InvalidArgumentError,
+    )
+
+    for trailing in (0, -1, 2.5):
+        with pytest.raises(InvalidArgumentError, match="trailing"):
+            ratios_module.get_asset_growth(trailing=trailing)
+        with pytest.raises(InvalidArgumentError, match="trailing"):
+            ratios_module.collect_efficiency_ratios(trailing=trailing)
+
+    with caplog.at_level("WARNING", logger="financetoolkit"):
+        ratios_module.collect_efficiency_ratios(trailing=100)
+    # The collection calls every ratio with the window, the window is reported once.
+    assert caplog.text.count("The trailing window of 100 periods is longer") == 1
+
+
+def test_a_trailing_window_as_long_as_the_statements_is_reported_for_averaged_balances(
+    ratios_module, caplog
+):
+    periods = len(ratios_module._income_statement.columns)
+
+    # The averaged equity of a window of every period also needs the period end before it.
+    with caplog.at_level("WARNING", logger="financetoolkit"):
+        return_on_equity = ratios_module.get_return_on_equity(trailing=periods)
+    assert return_on_equity.isna().all().all()
+    assert (
+        caplog.text.count(f"The trailing window of {periods} periods is as long as")
+        == 1
+    )
+
+    caplog.clear()
+    with caplog.at_level("WARNING", logger="financetoolkit"):
+        return_on_equity = ratios_module.get_return_on_equity(trailing=periods - 1)
+    assert return_on_equity.notna().any().any()
+    assert "trailing window" not in caplog.text

@@ -4,6 +4,7 @@ import pandas as pd
 import pytest
 
 from financetoolkit import Toolkit
+from financetoolkit.utilities.error_model import InvalidArgumentError
 
 balance_dataset = pd.read_pickle("tests/datasets/balance_dataset.pickle")
 income_dataset = pd.read_pickle("tests/datasets/income_dataset.pickle")
@@ -1309,3 +1310,70 @@ def test_intraday_data_follows_the_return_column_and_rounding(monkeypatch):
     assert on_open_again["Close"].iloc[1] == pytest.approx(102.1)
     # The data the modules calculate on is unrounded.
     assert toolkit._intraday_historical_data[("Close", "AAPL")].iloc[1] == 102.123456
+
+
+def test_a_history_of_two_days_names_its_observations(caplog):
+    historical = pd.read_pickle("tests/datasets/historical_dataset.pickle")
+    historical = historical.drop(columns=["Return", "Cumulative Return"], level=0)
+    toolkit = Toolkit(
+        tickers=["AAPL", "MSFT"],
+        historical=historical.loc[historical.index >= pd.Period("2022-12-29", "D")],
+        convert_currency=False,
+        start_date="2022-12-28",
+        end_date="2023-01-01",
+        sleep_timer=False,
+    )
+    toolkit._daily_risk_free_rate = pd.read_pickle(
+        "tests/datasets/risk_free_rate.pickle"
+    )
+
+    for call in (
+        toolkit.risk.get_value_at_risk,
+        toolkit.risk.get_value_at_risk,
+        lambda: toolkit.performance.get_sharpe_ratio(period="daily", rolling=2),
+    ):
+        caplog.clear()
+        with caplog.at_level("WARNING", logger="financetoolkit"):
+            call()
+
+        # Every call reports it once, also a repeated one: the MCP server keeps a Toolkit
+        # for many requests, each of which needs the reason for its NaN values.
+        assert caplog.text.count("There are only 2 daily observations") == 1
+
+
+@pytest.mark.parametrize(
+    "statement", ["get_income_statement", "get_cash_flow_statement"]
+)
+@pytest.mark.parametrize("trailing", [0, -1, 2.5, True])
+def test_a_statement_rejects_a_trailing_window_that_is_no_count(statement, trailing):
+    toolkit = Toolkit(
+        tickers=["AAPL", "MSFT"],
+        income=pd.read_pickle("tests/datasets/income_dataset.pickle"),
+        cash=pd.read_pickle("tests/datasets/cash_dataset.pickle"),
+        convert_currency=False,
+        sleep_timer=False,
+    )
+
+    with pytest.raises(InvalidArgumentError, match="trailing"):
+        getattr(toolkit, statement)(trailing=trailing)
+
+
+@pytest.mark.parametrize(
+    "statement", ["get_income_statement", "get_cash_flow_statement"]
+)
+def test_a_trailing_window_longer_than_the_statements_is_reported(statement, caplog):
+    toolkit = Toolkit(
+        tickers=["AAPL", "MSFT"],
+        income=pd.read_pickle("tests/datasets/income_dataset.pickle"),
+        cash=pd.read_pickle("tests/datasets/cash_dataset.pickle"),
+        convert_currency=False,
+        sleep_timer=False,
+    )
+
+    with caplog.at_level("WARNING", logger="financetoolkit"):
+        getattr(toolkit, statement)(trailing=2)
+    assert "trailing window" not in caplog.text
+
+    with caplog.at_level("WARNING", logger="financetoolkit"):
+        getattr(toolkit, statement)(trailing=100)
+    assert caplog.text.count("The trailing window of 100 periods is longer than") == 1

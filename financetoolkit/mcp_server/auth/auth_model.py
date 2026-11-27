@@ -152,7 +152,7 @@ ROOT_PAGE = """<!DOCTYPE html>
 <main>
     <div class="head"><img src="/oauth/icon" alt=""><h1>Finance Toolkit <span>MCP</span></h1></div>
     <p>This address is an MCP server: it gives AI assistants such as Claude, Copilot and Cursor the
-    Finance Toolkit's 500+ transparent financial metrics. It is meant to be added to an MCP client
+    Finance Toolkit's 1100+ transparent financial metrics. It is meant to be added to an MCP client
     rather than opened in a browser.</p>
     <ol>
         <li><strong>Add the server</strong> to your MCP client as a remote (HTTP) server, with this URL:
@@ -1301,6 +1301,27 @@ def _is_browser(request: Request) -> bool:
     return "text/html" in accept and "text/event-stream" not in accept
 
 
+ANONYMOUS_ACCESS_ENVIRONMENT_VARIABLE = "FT_MCP_ALLOW_ANONYMOUS"
+
+
+def allows_anonymous_access() -> bool:
+    """
+    Whether the MCP endpoints accept callers without credentials, who then use the server's
+    own FINANCIAL_MODELING_PREP_API_KEY.
+
+    That takes both the server key and FT_MCP_ALLOW_ANONYMOUS set to 1 (or true, yes): an
+    explicit choice for a single-user or deliberately public server. With only the key,
+    callers still sign in or pass their own key.
+
+    Returns:
+        bool: True when callers without credentials are let through.
+    """
+    chosen = os.environ.get(ANONYMOUS_ACCESS_ENVIRONMENT_VARIABLE, "").strip().lower()
+    return chosen in {"1", "true", "yes"} and bool(
+        os.environ.get("FINANCIAL_MODELING_PREP_API_KEY")
+    )
+
+
 class MCPAuthMiddleware(BaseHTTPMiddleware):
     """Starlette middleware to protect MCP endpoints in hosted deployments."""
 
@@ -1326,8 +1347,9 @@ class MCPAuthMiddleware(BaseHTTPMiddleware):
 
         # Protect the MCP endpoints: SSE (/sse, /messages) and streamable-HTTP (/mcp).
         if path == "/sse" or path.startswith("/messages") or path == "/mcp":
-            # If the server has a global default API key, allow access
-            if os.environ.get("FINANCIAL_MODELING_PREP_API_KEY"):
+            # Anonymous callers only when the operator chose that: a server key alone doesn't
+            # switch off authentication, or anyone who reaches the server would spend that key.
+            if allows_anonymous_access():
                 return await call_next(request)
 
             base_url = str(request.base_url).rstrip("/")

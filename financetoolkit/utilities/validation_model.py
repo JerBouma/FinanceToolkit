@@ -7,8 +7,8 @@ import re
 from collections import Counter
 from datetime import datetime
 
+from financetoolkit import yfinance_model
 from financetoolkit.utilities import logger_model
-from financetoolkit.utilities.requests_model import convert_isin_to_ticker
 
 logger = logger_model.get_logger()
 
@@ -170,7 +170,7 @@ def validate_toolkit_parameters(
         raise ValueError("Please input a ticker or a list of tickers.")
 
     # Check whether the ticker is in ISIN format and if so convert it to a ticker
-    ticker_list = [convert_isin_to_ticker(ticker) for ticker in tickers]
+    ticker_list = [yfinance_model.convert_isin_to_ticker(ticker) for ticker in tickers]
 
     # Take out duplicate tickers if applicable; deduplicating through a set would make the ticker order, and therefore the column order of every single output, depend on the hash seed and change between runs.  # noqa: E501
     deduplicated_tickers = list(dict.fromkeys(ticker_list))

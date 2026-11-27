@@ -52,9 +52,11 @@ from financetoolkit.economics.stability.stability_controller import StabilityEco
 from financetoolkit.fixedincome.sources import fed_model
 from financetoolkit.utilities import validation_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
+from financetoolkit.utilities.error_model import InvalidArgumentError
 from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.sources_model import (
     collect_sources,
+    fetch_with_sources,
     record_source,
     track_sources,
 )
@@ -156,15 +158,15 @@ class EconomicsBase:
         | 2025 |        135.831  |      134.486  | 113.98   |
         """
         if start_date and not validation_model.is_valid_date(start_date):
-            raise ValueError(
+            raise InvalidArgumentError(
                 f"Please input a valid start date (%Y-%m-%d) like '2010-01-01', not '{start_date}'"
             )
         if end_date and not validation_model.is_valid_date(end_date):
-            raise ValueError(
+            raise InvalidArgumentError(
                 f"Please input a valid end date (%Y-%m-%d) like '2020-01-01', not '{end_date}'"
             )
         if start_date and end_date and start_date > end_date:
-            raise ValueError(
+            raise InvalidArgumentError(
                 f"Please ensure the start date {start_date} is before the end date {end_date}"
             )
 
@@ -268,14 +270,7 @@ class EconomicsBase:
             if only_country is None or requested is None or only_country in requested
         ]
 
-        def fetch_with_sources(
-            fetch: Callable[[], pd.DataFrame],
-        ) -> tuple[pd.DataFrame, set[str]]:
-            # Held back until it is known which source each country is taken from.
-            with collect_sources() as fetched:
-                frame = fetch()
-            return frame, fetched
-
+        # The sources are held back until it is known which source each country is taken from.
         retrieved = helpers.run_in_parallel(
             fetch_with_sources, [(fetch,) for fetch in needed]
         )
@@ -436,8 +431,6 @@ class EconomicsBase:
         if component != "all" and self._fred_api_key:
             index = fred_model.get_price_index(
                 f"consumer_{component}",
-                # Two years before the start, for the annual rate of change of the first
-                # months and room for growth and rolling.
                 buffered_start_date(self._start_date, "monthly"),
                 self._end_date,
                 self._fred_api_key,
@@ -524,15 +517,6 @@ class EconomicsBase:
         start_date = buffered_start_date(self._start_date, period)
         end_date = self._end_date
 
-        def secured_overnight_financing_rate() -> pd.DataFrame:
-            # The New York Fed publishes the full history of SOFR in one file.
-            rate = fed_model.get_secured_overnight_financing_rate()
-            return (
-                rate[["Rate"]].rename(columns={"Rate": "United States"})
-                if not rate.empty
-                else rate
-            )
-
         return self._combine_sources_for(
             [
                 (
@@ -547,7 +531,7 @@ class EconomicsBase:
                     lambda: boj_model.get_overnight_rate(start_date, end_date),
                     "Japan",
                 ),
-                (secured_overnight_financing_rate, "United States"),
+                (fed_model.get_overnight_rate, "United States"),
             ],
             countries,
         )

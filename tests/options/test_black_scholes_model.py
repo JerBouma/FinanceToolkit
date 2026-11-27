@@ -223,3 +223,261 @@ def test_greeks_without_uncertainty_are_their_limits_off_the_strike():
     assert gamma[1] == pytest.approx(
         float(greeks_model.get_gamma(110.0, 100.0, 0.5, rate, volatility, dividend))
     )
+
+
+def test_black_76_matches_quantlib():
+    # QuantLib 1.44 blackFormula with the standard deviation σ√t and discount e^(-rt).
+    assert black_scholes_model.get_black_76(
+        70.0, 75.0, 0.04, 0.3, 0.5, put_option=True
+    ) == pytest.approx(8.766689044573, abs=1e-11)
+    assert black_scholes_model.get_black_76(
+        2000.0, 2100.0, 0.03, 0.18, 0.25
+    ) == pytest.approx(33.870178357681, abs=1e-9)
+
+
+def test_black_76_is_black_scholes_on_the_forward_and_handles_arrays():
+    forward = 100 * np.exp((0.05 - 0.02) * 1.5)
+    for put in (False, True):
+        assert black_scholes_model.get_black_76(
+            forward, 105.0, 0.05, 0.25, 1.5, put
+        ) == pytest.approx(
+            black_scholes_model.get_black_scholes(
+                100.0, 105.0, 0.05, 0.25, 1.5, 0.02, put
+            ),
+            abs=1e-12,
+        )
+
+    strikes = np.array([90.0, 100.0, 110.0])
+    values = black_scholes_model.get_black_76(100.0, strikes, 0.03, 0.2, 0.0)
+    np.testing.assert_allclose(values, [10.0, 0.0, 0.0])
+
+
+def test_the_black_76_implied_volatility_reprices_the_option():
+    for put in (False, True):
+        price = black_scholes_model.get_black_76(70.0, 75.0, 0.04, 0.3, 0.5, put)
+        assert black_scholes_model.get_black_76_implied_volatility(
+            price, 70.0, 75.0, 0.04, 0.5, put
+        ) == pytest.approx(0.3, abs=1e-8)
+
+    # Above the discounted futures price no volatility can give a call's price.
+    assert np.isnan(
+        black_scholes_model.get_black_76_implied_volatility(70.0, 70.0, 75.0, 0.04, 0.5)
+    )
+
+
+def test_black_76_at_a_zero_strike_is_the_discounted_forward():
+    call = black_scholes_model.get_black_76(100.0, 0.0, 0.04, 0.2, 0.5)
+    put = black_scholes_model.get_black_76(100.0, 0.0, 0.04, 0.2, 0.5, put_option=True)
+    assert call == pytest.approx(100 * np.exp(-0.02), rel=1e-14)
+    assert put == 0
+
+
+# A grid of strikes and expirations around a price of 100, with the expiration day itself.
+GRID_STRIKES, GRID_TIMES = np.meshgrid(
+    np.arange(50.0, 155.0, 5.0),
+    np.array([0, 1, 7, 30, 91, 182, 365, 730]) / 365,
+    indexing="ij",
+)
+
+
+def _per_option(function, **inputs):
+    """The formula evaluated once per strike and expiration of the grid."""
+    return np.array(
+        [
+            [
+                function(strike_price=strike, time_to_expiration=time, **inputs)
+                for strike, time in zip(row_k, row_t, strict=True)
+            ]
+            for row_k, row_t in zip(GRID_STRIKES, GRID_TIMES, strict=True)
+        ]
+    )
+
+
+@pytest.mark.parametrize("method", ["2002", "1993"])
+@pytest.mark.parametrize("put_option", [False, True])
+@pytest.mark.parametrize(
+    ("risk_free_rate", "dividend_yield", "volatility"),
+    [(0.05, 0.03, 0.25), (0.05, 0.0, 0.02), (-0.01, 0.02, 0.4), (0.03, 0.08, 0.8)],
+)
+def test_bjerksund_stensland_on_a_grid_equals_the_price_per_option(
+    method, put_option, risk_free_rate, dividend_yield, volatility
+):
+    inputs = {
+        "stock_price": 100.0,
+        "risk_free_rate": risk_free_rate,
+        "volatility": volatility,
+        "dividend_yield": dividend_yield,
+        "put_option": put_option,
+        "method": method,
+    }
+
+    grid = black_scholes_model.get_bjerksund_stensland(
+        strike_price=GRID_STRIKES, time_to_expiration=GRID_TIMES, **inputs
+    )
+
+    assert grid.shape == GRID_STRIKES.shape
+    np.testing.assert_allclose(
+        grid,
+        _per_option(black_scholes_model.get_bjerksund_stensland, **inputs),
+        rtol=0,
+        atol=1e-10,
+    )
+    assert isinstance(
+        black_scholes_model.get_bjerksund_stensland(
+            strike_price=100.0, time_to_expiration=1.0, **inputs
+        ),
+        float,
+    )
+
+
+def test_bjerksund_stensland_keeps_its_reference_prices():
+    """Haug (2007): the 2002 put of S = K = 100, r = 5%, q = 3%, σ = 25%, T = 1 is 8.8439."""
+    assert black_scholes_model.get_bjerksund_stensland(
+        100.0, 100.0, 0.05, 0.25, 1.0, 0.03, put_option=True
+    ) == pytest.approx(8.8439, abs=1e-4)
+    assert black_scholes_model.get_bjerksund_stensland(
+        100.0, 100.0, 0.05, 0.25, 1.0, 0.03, put_option=True, method="1993"
+    ) == pytest.approx(8.8152, abs=1e-4)
+
+
+def test_the_bivariate_normal_distribution_on_arrays_matches_scipy():
+    from scipy.stats import multivariate_normal
+
+    rng = np.random.default_rng(3)
+    first, second = rng.normal(0, 2, 60), rng.normal(0, 2, 60)
+    # Every branch: the 3, 6 and 10 point rules and the transformed integral near ±1.
+    correlation = np.tile([0.0, 0.2, -0.5, 0.8, 0.93, -0.97, 0.9999], 9)[:60]
+
+    values = black_scholes_model._bivariate_normal_cdf(first, second, correlation)
+
+    for x, y, rho, value in zip(first, second, correlation, values, strict=True):
+        expected = multivariate_normal(
+            mean=[0, 0], cov=[[1, rho], [rho, 1]], allow_singular=True
+        ).cdf([x, y])
+        assert value == pytest.approx(expected, abs=1e-8)
+        assert value == black_scholes_model._bivariate_normal_cdf(x, y, rho)
+
+
+@pytest.mark.parametrize("put_option", [False, True])
+def test_parity_garman_kohlhagen_and_binary_options_on_a_grid(put_option):
+    common = {"stock_price": 100.0, "risk_free_rate": 0.04, "volatility": 0.3}
+
+    for function, inputs in (
+        (
+            black_scholes_model.get_garman_kohlhagen,
+            {**common, "foreign_risk_free_rate": 0.02, "put_option": put_option},
+        ),
+        (
+            black_scholes_model.get_binary_option,
+            {**common, "dividend_yield": 0.01, "put_option": put_option},
+        ),
+        (
+            black_scholes_model.get_binary_option,
+            {
+                **common,
+                "dividend_yield": 0.01,
+                "put_option": put_option,
+                "option_type": "asset-or-nothing",
+            },
+        ),
+        (
+            black_scholes_model.get_put_call_parity,
+            {"stock_price": 100.0, "risk_free_rate": 0.04, "dividend_yield": 0.01},
+        ),
+    ):
+        np.testing.assert_allclose(
+            function(
+                strike_price=GRID_STRIKES, time_to_expiration=GRID_TIMES, **inputs
+            ),
+            _per_option(function, **inputs),
+            rtol=0,
+            atol=1e-12,
+        )
+
+
+@pytest.mark.parametrize(
+    ("function", "arguments"),
+    [
+        (black_scholes_model.get_black_scholes, {"volatility": -0.2}),
+        (black_scholes_model.get_black_scholes, {"stock_price": -1.0}),
+        (black_scholes_model.get_black_scholes, {"strike_price": -5.0}),
+        (black_scholes_model.get_black_scholes, {"time_to_expiration": -0.1}),
+        (black_scholes_model.get_garman_kohlhagen, {"volatility": -0.2}),
+        (black_scholes_model.get_black_76, {"volatility": -0.2}),
+        (black_scholes_model.get_black_76, {"forward_price": -70.0}),
+    ],
+)
+def test_the_black_scholes_family_refuses_negative_inputs(function, arguments):
+    # A negative volatility gave a negative option value instead of an error.
+    import inspect
+
+    base = {
+        "stock_price": 100.0,
+        "forward_price": 100.0,
+        "strike_price": 100.0,
+        "risk_free_rate": 0.05,
+        "foreign_risk_free_rate": 0.02,
+        "volatility": 0.2,
+        "time_to_expiration": 1.0,
+    }
+    parameters = inspect.signature(function).parameters
+    call = {name: value for name, value in base.items() if name in parameters}
+    with pytest.raises(ValueError, match="must be 0 or above"):
+        function(**{**call, **arguments})
+
+
+def test_the_lambda_of_a_worthless_option_is_nan():
+    from financetoolkit.options.greeks import greeks_model
+
+    # Far out of the money the call is worth 0.0, which gave a lambda of inf.
+    assert black_scholes_model.get_black_scholes(100, 1e6, 0.05, 0.2, 1) == 0
+    assert np.isnan(greeks_model.get_lambda(100, 1e6, 1, 0.05, 0.2))
+    values = greeks_model.get_lambda(100, np.array([100.0, 1e6]), 1, 0.05, 0.2)
+    assert np.isfinite(values[0])
+    assert np.isnan(values[1])
+
+
+def test_bjerksund_stensland_falls_to_the_european_value_with_a_negative_rate():
+    # The limitation the documentation and the controller's warning describe.
+    arguments = (100.0, 100.0, -0.02, 0.01, 1.0, -0.03, True)
+    european = black_scholes_model.get_black_scholes(
+        100.0, 100.0, -0.02, 0.01, 1.0, -0.03, put_option=True
+    )
+    assert black_scholes_model.get_bjerksund_stensland(*arguments) == pytest.approx(
+        european
+    )
+    from financetoolkit.options.pricing.american_model import get_qd_plus
+
+    assert get_qd_plus(*arguments) == pytest.approx(0.1669, abs=1e-3)
+
+
+def test_the_strike_density_refuses_prices_of_zero():
+    from financetoolkit.options.greeks import greeks_model
+
+    for stock_price, strike_price in ((0.0, 100.0), (100.0, 0.0)):
+        with pytest.raises(ValueError, match="must be above 0"):
+            greeks_model.get_second_order_partial_derivative(
+                stock_price, strike_price, 1.0, 0.05, 0.2, 0.0
+            )
+
+
+def test_lambda_is_nan_when_the_option_price_underflows(monkeypatch):
+    from financetoolkit.options.greeks import greeks_model
+
+    # Near expiry and far out of the money the price can underflow to a subnormal number
+    # (about 1e-320) while the delta does not, which made delta * S / price infinite.
+    monkeypatch.setattr(
+        greeks_model.black_scholes_model,
+        "get_black_scholes",
+        lambda **kwargs: np.array([10.0, 5e-324]),  # noqa: ARG005
+    )
+    monkeypatch.setattr(
+        greeks_model,
+        "get_delta",
+        lambda **kwargs: np.array([0.5, 1e-10]),  # noqa: ARG005
+    )
+
+    values = greeks_model.get_lambda(400, np.array([400.0, 480.0]), 1 / 365, 0.05, 0.2)
+
+    assert values[0] == pytest.approx(20.0)
+    assert np.isnan(values[1])

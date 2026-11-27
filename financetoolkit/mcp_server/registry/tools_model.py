@@ -20,7 +20,9 @@ are independent of any single controller module.
 from __future__ import annotations
 
 import difflib
+import json
 import re
+from collections import Counter
 from typing import TYPE_CHECKING, Annotated
 
 from mcp.server.fastmcp import FastMCP
@@ -46,6 +48,93 @@ logger = get_logger()
 MAX_QUERY_CHARACTERS = 200
 
 
+# A search result lists at most this many indicators, each with its call line: the
+# parameters beyond the tool's common ones (up to this many characters), and at most this
+# many values of each: the default, then the options the query names, then the others.
+MAXIMUM_SEARCH_RESULTS = 10
+MAXIMUM_CALL_CHARACTERS = 150
+MAXIMUM_CALL_OPTIONS = 3
+# The aliases a search result shows, in characters.
+MAXIMUM_ALIAS_CHARACTERS = 100
+
+
+def _call_value(value: object) -> str:
+    """A default or option as written in a call line: 'historic', 0.05, True or None."""
+    if value is None or isinstance(value, bool):
+        return str(value)
+    if isinstance(value, str):
+        return f"'{value}'"
+    text = (
+        json.dumps(value) if isinstance(value, (int, float, list, dict)) else str(value)
+    )
+
+    return text if len(text) <= 30 else text[:27] + "..."  # noqa: PLR2004
+
+
+def call_line(entry: dict, query_tokens: list[str]) -> str:
+    """An indicator as a call: its tool, name and the parameters it takes beyond the tool's
+    common ones, with their defaults and options, e.g. ``risk get_value_at_risk(alpha=0.05,
+    method='historic'|'gaussian'|...)``.
+
+    Required parameters come first and always show; the parameters that only apply with
+    another setting ("Only used with the GARCH method") come last. A longer list ends
+    with "...", as do options beyond the first few; the default leads the options, followed
+    by those the query names.
+
+    Args:
+        entry (dict): The indicator index entry.
+        query_tokens (list[str]): The search words, to show the options they name.
+
+    Returns:
+        str: The call line.
+    """
+    common = set(entry.get("common_parameters", ()))
+    parameters = sorted(
+        (
+            parameter
+            for parameter in entry.get("call_parameters", ())
+            if parameter["required"] or parameter["name"] not in common
+        ),
+        key=lambda parameter: (not parameter["required"], parameter["conditional"]),
+    )
+    parts: list[str] = []
+    length = 0
+    for parameter in parameters:
+        if parameter["required"]:
+            part = f"{parameter['name']} (required)"
+        else:
+            default = parameter["default"]
+            options = [
+                option
+                for option in parameter["options"]
+                if option != default and option is not None
+            ]
+            named = [
+                option
+                for option in options
+                if str(option).lower().replace("-", " ").replace("_", " ")
+                in query_tokens
+            ]
+            shown = [default] + named + [o for o in options if o not in named]
+            values = "|".join(
+                _call_value(value) for value in shown[:MAXIMUM_CALL_OPTIONS]
+            )
+            if len(shown) > MAXIMUM_CALL_OPTIONS:
+                values += "|..."
+            part = f"{parameter['name']}={values}"
+        if (
+            not parameter["required"]
+            and parts
+            and length + len(part) > MAXIMUM_CALL_CHARACTERS
+        ):
+            parts.append("...")
+            break
+        parts.append(part)
+        length += len(part) + 2
+
+    return f"{entry['tool']} {entry['indicator']}({', '.join(parts)})"
+
+
 def describe_indicators(entries: list[dict]) -> str:
     """What each indicator of that name calculates, its tool and its parameters.
 
@@ -61,11 +150,29 @@ def describe_indicators(entries: list[dict]) -> str:
         parameters = "\n".join(
             f"- `{name}`: {text}" for name, text in entry["parameters"].items()
         )
+        # The tool's own parameters (dates, growth, rolling) apply to all its indicators;
+        # those its schema describes are only named.
+        tool_parameters = entry.get("tool_parameters", {})
+        explained = "\n".join(
+            f"- `{name}`: {text}" for name, text in tool_parameters.items() if text
+        )
+        named = ", ".join(name for name, text in tool_parameters.items() if not text)
         sections.append(
             f"### `{entry['indicator']}` (tool `{entry['tool']}`)\n\n"
             f"{entry['description']}\n\n"
             + (f"Parameters:\n{parameters}\n\n" if parameters else "")
-            + f"Call `{entry['tool']}` with `indicator='{entry['indicator']}'`."
+            + (
+                f"Parameters of the `{entry['tool']}` tool:\n{explained}\n\n"
+                if explained
+                else ""
+            )
+            + (
+                f"The tool also takes {named} (see its schema), and "
+                if named
+                else "Every tool takes "
+            )
+            + "limit, rank, rebase_to, sample and show_columns (see the server instructions).\n\n"
+            f"Call `{entry['tool']}` with `indicator='{entry['indicator']}'`."
         )
 
     return "\n\n".join(sections)
@@ -263,6 +370,7 @@ class UtilityToolRegistry:
                         exclude={"title"}, exclude_none=True
                     ),
                 ),
+                structured_output=False,
             )
             # A misspelt or foreign argument is named in the answer rather than dropped.
             keep_unknown_arguments(self._mcp, tool_name)
@@ -272,28 +380,70 @@ class UtilityToolRegistry:
     # ── Tool methods ──────────────────────────────────────────────────────────
     def list_categories(self) -> str:
         """Finance Toolkit: list the categories of what this server calculates (prices,
-        financial statements, ratios, models, risk, economics) and how many tools each has.
+        financial statements, ratios, models, risk, economics) and how many tools, indicators
+        and metrics each has.
+
+        An indicator counts as one metric per formula variant it offers through its
+        ``method`` parameter (``get_sharpe_ratio`` with method="smart" or "deflated"), so the
+        metrics are what the server calculates and the indicators what it can be asked for.
+        Each category counts the indicators of its tools; the total counts a method that
+        several tools list once.
 
         Use this first to understand what is available, then call
         ``search_by_category`` with a specific category name.
 
         Returns:
-            str: Markdown table of categories, tool counts, and descriptions.
+            str: Markdown table of categories, tool, indicator and metric counts, and
+                descriptions, with the totals.
         """
         index = self._registry.get_tool_index()
-        lines = ["| Category | Tools | Description |", "| --- | --- | --- |"]
+        indicators_per_tool, metrics_per_tool, unique_metrics = self._count_metrics()
+        lines = [
+            "| Category | Tools | Indicators | Metrics | Description |",
+            "| --- | --- | --- | --- | --- |",
+        ]
         for cat in sorted(index.keys()):
-            n = len(index.get(cat, []))
+            tools = index.get(cat, [])
+            indicators = sum(indicators_per_tool[tool["tool"]] for tool in tools)
+            metrics = sum(metrics_per_tool[tool["tool"]] for tool in tools)
             desc = self._category_descriptions.get(cat, "N/A")
-            lines.append(f"| `{cat}` | {n} | {desc} |")
-        total = sum(len(v) for v in index.values())
-        lines.append(f"\n**Total tools: {total}**")
+            lines.append(
+                f"| `{cat}` | {len(tools)} | {indicators} | {metrics} | {desc} |"
+            )
+        total_tools = sum(len(v) for v in index.values())
+        # A method several tools list counts once in the total, while two methods that
+        # share a name (an ETF's and a company's get_profile) count as two.
         lines.append(
-            "\n**Tip:** Use `search_metrics('what you want to measure')` to find the "
-            "indicator and its tool."
+            f"\n**Total: {sum(unique_metrics.values())} metrics "
+            f"({len(unique_metrics)} indicators) in {total_tools} tools**"
+        )
+        lines.append(
+            "\n**Tip:** Use `search_metrics('what you want to measure')` to find the indicator and its tool."
         )
         result = "\n".join(lines)
         return result
+
+    def _count_metrics(self) -> tuple[Counter[str], Counter[str], dict[str, int]]:
+        """
+        Counts the indicators and metrics: an indicator is one metric per formula variant
+        the server offers through its ``method`` parameter.
+
+        Returns:
+            tuple[Counter[str], Counter[str], dict[str, int]]: The indicators and the
+                metrics per tool, and the metrics per indicator method, each method once
+                however many tools list it.
+        """
+        indicators_per_tool: Counter[str] = Counter()
+        metrics_per_tool: Counter[str] = Counter()
+        unique_metrics: dict[str, int] = {}
+        for entry in self._registry.get_indicator_index():
+            metrics = max(1, len(entry.get("variants", ())))
+            indicators_per_tool[entry["tool"]] += 1
+            metrics_per_tool[entry["tool"]] += metrics
+            key = entry.get("key") or entry["indicator"]
+            unique_metrics[key] = max(metrics, unique_metrics.get(key, 0))
+
+        return indicators_per_tool, metrics_per_tool, unique_metrics
 
     def list_metrics_by_category(
         self,
@@ -305,16 +455,18 @@ class UtilityToolRegistry:
             ),
         ],  # noqa: E501
     ) -> str:
-        """Finance Toolkit: list every metric/tool within a category of prices, financial
-        statements, ratios and other calculations.
+        """Finance Toolkit: list the tools within a category of prices, financial
+        statements, ratios and other calculations, with how many indicators and metrics
+        each has.
 
         Args:
             category: One of the category names returned by ``search_metric_categories``,
                 e.g. ``ratios``, ``technicals``, ``economics``, ``discovery``.
 
         Returns:
-            str: Markdown table of tool names and their descriptions for the
-                requested category, or an error message if the category is unknown.
+            str: Markdown table of the tools of the requested category with their
+                indicator and metric counts and descriptions, or an error message if the
+                category is unknown.
         """
         index = self._registry.get_tool_index()
         cat = category.lower().strip()
@@ -326,13 +478,19 @@ class UtilityToolRegistry:
         if not tools:
             return f"No tools registered for `{cat}`."
 
+        indicators_per_tool, metrics_per_tool, _ = self._count_metrics()
         lines = [
-            f"### {cat} — {len(tools)} metrics\n",
-            "| Tool | Description |",
-            "| --- | --- |",
+            f"### {cat} — {len(tools)} {'tool' if len(tools) == 1 else 'tools'}, "
+            f"{sum(indicators_per_tool[t['tool']] for t in tools)} indicators, "
+            f"{sum(metrics_per_tool[t['tool']] for t in tools)} metrics\n",
+            "| Tool | Indicators | Metrics | Description |",
+            "| --- | --- | --- | --- |",
         ]
         for t in tools:
-            lines.append(f"| `{t['tool']}` | {t['description']} |")
+            lines.append(
+                f"| `{t['tool']}` | {indicators_per_tool[t['tool']]} | "
+                f"{metrics_per_tool[t['tool']]} | {t['description']} |"
+            )
         result = "\n".join(lines)
         return result
 
@@ -350,14 +508,16 @@ class UtilityToolRegistry:
             query_tokens (list[str]): The lowercase search words, without stop words.
 
         Returns:
-            list[dict[str, str]]: At most 15 indicators, the best match first.
+            list[dict[str, str]]: At most MAXIMUM_SEARCH_RESULTS indicators, the best match
+                first.
         """
 
+        # Single letters are no search words ("Jensen's alpha" is jensen and alpha).
         def words(text: str) -> list[str]:
             return [
                 word
                 for word in re.findall(r"[a-z0-9]+", join_initials(text).lower())
-                if word not in self._search_stop_words
+                if len(word) > 1 and word not in self._search_stop_words
             ]
 
         entries = []
@@ -426,7 +586,7 @@ class UtilityToolRegistry:
 
         scored.sort(key=lambda item: (-item[0], item[1]))
 
-        return [entry for _, _, entry in scored[:15]]
+        return [entry for _, _, entry in scored[:MAXIMUM_SEARCH_RESULTS]]
 
     def search_metrics(
         self,
@@ -473,15 +633,16 @@ class UtilityToolRegistry:
         query_tokens = [
             w.lower()
             # An indicator's name reads as its words (get_return_on_equity).
+            # Words of two characters or more with a letter, so "2s10s" and "13f" count.
             for w in re.findall(
-                r"\b[a-zA-Z]{2,}\b", join_initials(query.replace("_", " "))
+                r"\b[a-zA-Z0-9]*[a-zA-Z][a-zA-Z0-9]*\b",
+                join_initials(query.replace("_", " ")),
             )
-            if w.lower() not in self._search_stop_words
+            if len(w) > 1 and w.lower() not in self._search_stop_words
         ][:MAX_QUERY_TERMS]
         if not query_tokens:
             return (
-                f"No meaningful search terms in '{query}'. "
-                "Try a more specific keyword."
+                f"No meaningful search terms in '{query}'. Try a more specific keyword."
             )
 
         # Indicators first: an agent asking for "free cash flow yield" needs the indicator
@@ -490,22 +651,33 @@ class UtilityToolRegistry:
 
         if indicator_hits:
             lines = [
-                f"### Search results for '{query}' — {len(indicator_hits)} indicators\n",
-                "| Tool | Indicator | Description |",
-                "| --- | --- | --- |",
+                f"### Search results for '{query}' — {len(indicator_hits)} indicators\n"
             ]
             for entry in indicator_hits:
-                aliases = (
-                    f" Also known as: {entry['aliases']}." if entry["aliases"] else ""
-                )
+                aliases = entry["aliases"]
+                if len(aliases) > MAXIMUM_ALIAS_CHARACTERS:
+                    aliases = (
+                        aliases[:MAXIMUM_ALIAS_CHARACTERS].rsplit(",", 1)[0] + ", ..."
+                    )
                 lines.append(
-                    f"| `{entry['tool']}` | `{entry['indicator']}` | {entry['summary']}.{aliases} |"
+                    f"- `{call_line(entry, query_tokens)}`: {entry['summary']}."
+                    + (f" Also known as: {aliases}." if aliases else "")
                 )
-            first = indicator_hits[0]
+            # The parameters most indicators of a tool take, once per tool in the results.
+            common = {
+                entry["tool"]: entry.get("common_parameters", [])
+                for entry in indicator_hits
+            }
+            shared = "; ".join(
+                f"{', '.join(names)} ({tool})"
+                for tool, names in common.items()
+                if names
+            )
             lines.append(
-                f"\nCall the tool with the indicator, e.g. `{first['tool']}` with "
-                f"`indicator='{first['indicator']}'`; searching for the indicator's name lists its "
-                "parameters."
+                "\nCall the tool with indicator='<name>' and any of these arguments (the "
+                "first value is the default, '...' marks more)."
+                + (f" Most indicators also take {shared}." if shared else "")
+                + " search_metrics with an indicator's name explains each parameter."
             )
             return "\n".join(lines)
 
@@ -531,10 +703,7 @@ class UtilityToolRegistry:
         hits = [(s, t) for s, t in results if s >= 0.3][:30]  # noqa
 
         if not hits:
-            return (
-                f"No strong matches for '{query}'. "
-                "Try `search_metric_categories` to browse all modules."
-            )
+            return f"No strong matches for '{query}'. Try `search_metric_categories` to browse all modules."
 
         lines = [
             f"### Search results for '{query}' — {len(hits)} matches\n",

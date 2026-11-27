@@ -12,6 +12,7 @@ from financetoolkit.fixedincome import fixedincome_controller
 from financetoolkit.fixedincome.bonds import bond_model
 from financetoolkit.fixedincome.markets import bond_data_model
 from financetoolkit.fixedincome.sources import treasurydirect_model
+from financetoolkit.utilities.error_model import InvalidArgumentError
 
 
 @pytest.fixture(autouse=True)
@@ -103,21 +104,6 @@ def test_exclusion_reason(name, maturity, reason):
     assert bond_data_model.exclusion_reason(name, maturity) == reason
 
 
-@pytest.mark.parametrize(
-    ("cusip", "isin"),
-    [
-        ("037833100", "US0378331005"),  # Apple shares
-        ("594918104", "US5949181045"),  # Microsoft shares
-        ("84615QAA1", "US84615QAA13"),  # a 144A bond, as LQD lists it
-        ("03522AAJ9", "US03522AAJ97"),
-        ("", ""),
-        ("12345", ""),
-    ],
-)
-def test_cusip_to_isin(cusip, isin):
-    assert bond_data_model.cusip_to_isin(cusip) == isin
-
-
 def test_get_years_to_maturity_counts_actual_coupon_periods():
     # On a coupon date the years are whole half-years.
     assert (
@@ -133,9 +119,8 @@ def test_get_years_to_maturity_counts_actual_coupon_periods():
         bond_data_model.get_years_to_maturity(date(2027, 2, 28), date(2030, 8, 31))
         == 3.5
     )
-    assert np.isnan(
+    with pytest.raises(ValueError, match="on or after the maturity date"):
         bond_data_model.get_years_to_maturity(date(2030, 1, 1), date(2030, 1, 1))
-    )
 
 
 @pytest.mark.parametrize(
@@ -196,7 +181,7 @@ def test_get_years_to_maturity_30_360_against_quantlib(
 
 
 def test_get_years_to_maturity_rejects_unknown_day_count():
-    with pytest.raises(ValueError, match="day count"):
+    with pytest.raises(InvalidArgumentError, match="day_count must be one of"):
         bond_data_model.get_years_to_maturity(
             date(2026, 11, 5), date(2030, 5, 31), day_count="act/360"
         )
@@ -383,6 +368,33 @@ def test_get_treasury_prices_without_any_prices(monkeypatch):
         treasurydirect_model.get_treasury_prices("2026-11-05")
 
 
+def frn_auctions(security_type, security_term=None):
+    """The terms of the floating rate note of PRICE_PAGE and the 13-week bills before it."""
+    if security_type == "FRN":
+        return pd.DataFrame(
+            {
+                "CUSIP": ["91282CMH1"],
+                "Reopening": [False],
+                "Spread": [0.00205],
+                "Dated Date": [date(2025, 1, 31)],
+            }
+        )
+    auctions = [
+        (date(2026, 10, 13), 0.04085),
+        (date(2026, 10, 19), 0.04095),
+        (date(2026, 10, 26), 0.04050),
+        (date(2026, 11, 2), 0.04040),
+    ]
+    return pd.DataFrame(
+        {
+            "Auction Date": [day for day, _ in auctions],
+            "High Rate": [rate for _, rate in auctions],
+            "Days to Maturity": [91.0] * len(auctions),
+            "Cash Management Bill": [False] * len(auctions),
+        }
+    )
+
+
 def test_get_treasury_securities(monkeypatch):
     monkeypatch.setattr(
         treasurydirect_model,
@@ -393,6 +405,11 @@ def test_get_treasury_securities(monkeypatch):
             .drop(columns=["Buy", "Sell", "End of Day"]),
             date(2026, 11, 5),
         ),
+    )
+    monkeypatch.setattr(
+        treasurydirect_model,
+        "get_auctioned_securities",
+        frn_auctions,
     )
     fixedincome = fixedincome_controller.FixedIncome(rounding=None)
 
@@ -414,8 +431,22 @@ def test_get_treasury_securities(monkeypatch):
     assert securities.loc["912797VW4", "Yield to Maturity"] == pytest.approx(
         bond_data_model.get_bill_analytics(5, 99.957556)[0]
     )
-    # A floating rate note has no yield to maturity from its price alone.
+    # A floating rate note yields its index rate plus its discount margin, and its duration
+    # is that to the index rate, close to zero (see test_treasury_markets_controller).
+    assert securities.loc["91282CMH1", "Yield to Maturity"] == pytest.approx(
+        0.0412, abs=0.0005
+    )
+    assert 0 <= securities.loc["91282CMH1", "Modified Duration"] < 0.01
+
+    # Without the terms of the notes they keep a price but no yield or duration.
+    monkeypatch.setattr(
+        treasurydirect_model,
+        "get_auctioned_securities",
+        lambda security_type, security_term=None: pd.DataFrame(),
+    )
+    securities = fixedincome.get_treasury_securities(date="2026-11-05")
     assert np.isnan(securities.loc["91282CMH1", "Yield to Maturity"])
+    assert securities.loc["91282CMH1", "Price"] == pytest.approx(100.03125)
 
     notes = fixedincome.get_treasury_securities(security_type="note,Bond")
     assert notes["Security Type"].tolist() == ["Bond", "Note"]
@@ -424,7 +455,9 @@ def test_get_treasury_securities(monkeypatch):
     assert fixedincome.get_treasury_securities(security_type="Strip").empty
 
 
-def holding(fund, name, isin, cusip, shares, market_value):
+def holding(
+    fund, name, isin, cusip, shares, market_value, updated="2026-11-06 14:32:06"
+):
     return {
         "Fund": fund,
         "Asset": "",
@@ -434,7 +467,7 @@ def holding(fund, name, isin, cusip, shares, market_value):
         "Shares": shares,
         "Weight": 0.01,
         "Market Value": market_value,
-        "Updated At": "2026-11-06 14:32:06",
+        "Updated At": updated,
     }
 
 
@@ -450,7 +483,12 @@ HOLDINGS = pd.DataFrame(
             98000,
         ),
         holding(
-            "LQD", "ORACLE CORP 144A 5.50% 11/15/2045", "", "68389XCE3", 2000, 180000
+            "LQD",
+            "ORACLE CORP 144A 5.50% 11/15/2045",
+            "US68389XCE31",
+            "68389XCE3",
+            2000,
+            180000,
         ),
         holding(
             "LQD",
@@ -469,31 +507,79 @@ HOLDINGS = pd.DataFrame(
             1000,
         ),
         holding("LQD", "SIEMENS AG 3.00% 03/01/2035", "DE000A3E5MG8", "", 100, 9000),
-        # Schwab counts par in dollars: market value / amount is the price per 1.
+        # A sterling note of a US company: a US CUSIP, but no ISIN to show its currency.
+        holding("LQD", "APPLE INC 3.60% 07/31/2042", "", "037833BK5", 100, 12000),
+        holding(
+            "IGSB",
+            "APPLE INC 4.00% 05/10/2033",
+            "US037833ET32",
+            "037833ET3",
+            1000,
+            99000,
+        ),
+        holding(
+            "IGSB",
+            "MICROSOFT CORP 2.00% 08/08/2026",
+            "US594918BS21",
+            "594918BS2",
+            1000,
+            99000,
+        ),
+        holding(
+            "IGSB",
+            "MICROSOFT CORP 3.00% 02/12/2045",
+            "US594918BY98",
+            "594918BY9",
+            1000,
+            450000,
+        ),
+        # A feed of a day earlier: valued at the close of 4 November.
+        holding(
+            "IGIB",
+            "APPLE INC 4.00% 05/10/2033",
+            "US037833ET32",
+            "037833ET3",
+            1000,
+            90000,
+            "2026-11-05 14:32:06",
+        ),
+        holding(
+            "IGIB",
+            "MICROSOFT CORP 3.50% 02/12/2035",
+            "US594918BJ27",
+            "594918BJ2",
+            1000,
+            95000,
+            "2026-11-05 14:32:06",
+        ),
+        # Schwab gives no ISINs (and counts par in dollars), so its bonds are left out.
         holding("SCHZ", "APPLE INC 4.00% 05/10/2033", "", "037833ET3", 100000, 98000),
         holding("SCHZ", "MICROSOFT CORP 3.50% 02/12/2035", "", "", 100000, 95000),
-        holding("SCHZ", "MICROSOFT CORP 2.00% 08/08/2026", "", "", 100000, 99000),
-        holding("SCHZ", "MICROSOFT CORP 3.00% 02/12/2045", "", "", 100000, 450000),
     ]
 ).set_index(["Fund", "Asset"])
+
+# The Treasury par curve of each price date.
+CURVES = {
+    "2026-11-05": pd.Series({"1Y": 0.04, "10Y": 0.045, "30Y": 0.05}),
+    "2026-11-04": pd.Series({"1Y": 0.03, "10Y": 0.035, "30Y": 0.04}),
+}
 
 
 @pytest.fixture
 def bond_universe(monkeypatch):
+    funds = HOLDINGS.index.get_level_values(0)
     monkeypatch.setattr(
         toolkit_fmp_model,
         "get_etf_holdings",
-        lambda funds, api_key: (
-            HOLDINGS.loc[[fund for fund in funds if fund in ("LQD", "SCHZ")]],
+        lambda requested, api_key: (
+            HOLDINGS.loc[[fund for fund in requested if fund in funds]],
             [],
         ),
     )
     monkeypatch.setattr(
         fixedincome_controller.FixedIncome,
         "_latest_yield_curve",
-        lambda self, country, date=None: pd.Series(
-            {"1Y": 0.04, "10Y": 0.045, "30Y": 0.05}
-        ),
+        lambda self, country, date=None: CURVES[date],
     )
     return fixedincome_controller.FixedIncome(api_key="test", rounding=None)
 
@@ -501,16 +587,11 @@ def bond_universe(monkeypatch):
 def test_get_bond_universe(bond_universe):
     bonds = bond_universe.get_bond_universe(etfs="LQD,SCHZ")
 
-    # The cash line, the fixed-to-floating note, the euro bond, the matured bond and the
-    # bond priced at 450 are left out; Apple, held by both funds, is one row.
-    assert bonds.index.tolist() == [
-        "US037833ET32",
-        "MICROSOFT CORP 3.50% 02/12/2035",
-        "US68389XCE31",
-    ]
-    assert bonds.loc["US037833ET32", "Funds"] == "LQD, SCHZ"
+    # The cash line, the fixed-to-floating note, the euro bond, the sterling note without an
+    # ISIN and the Schwab bonds are left out.
+    assert bonds.index.tolist() == ["US037833ET32", "US68389XCE31"]
+    assert bonds.loc["US037833ET32", "Funds"] == "LQD"
     assert bonds.loc["US037833ET32", "Price"] == pytest.approx(98)
-    assert bonds.loc["MICROSOFT CORP 3.50% 02/12/2035", "Price"] == pytest.approx(95)
     assert bonds.loc["US68389XCE31", "Issuer"] == "ORACLE CORP"
     assert bool(bonds.loc["US68389XCE31", "Rule 144A"])
     # The holdings of 6 November are valued at the close of 5 November.
@@ -525,8 +606,9 @@ def test_get_bond_universe(bond_universe):
     assert [yield_to_maturity, duration] == pytest.approx(
         [0.04355857, 5.556143], abs=1e-6
     )
-    curve = pd.Series({"1Y": 0.04, "10Y": 0.045, "30Y": 0.05})
-    treasury = bond_data_model.interpolate_curve(curve, pd.Series([years])).iloc[0]
+    treasury = bond_data_model.interpolate_curve(
+        CURVES["2026-11-05"], pd.Series([years])
+    ).iloc[0]
     assert bonds.loc[
         "US037833ET32", ["Yield to Maturity", "Modified Duration", "G-Spread"]
     ].tolist() == pytest.approx(
@@ -534,14 +616,61 @@ def test_get_bond_universe(bond_universe):
     )
 
 
+def test_get_bond_universe_needs_isins(bond_universe, caplog):
+    # A fund without ISINs gives no bonds: its currency and valuation date are unknown.
+    assert bond_universe.get_bond_universe(etfs="SCHZ").empty
+    assert "SCHZ give no ISINs" in caplog.text
+
+
+def test_get_bond_universe_takes_the_median_price_whatever_the_order(bond_universe):
+    one = bond_universe.get_bond_universe(etfs="LQD,IGSB")
+    other = bond_universe.get_bond_universe(etfs="IGSB,LQD")
+
+    # The matured bond and the bond priced at 450 are left out; Apple, held by both funds,
+    # is one row at the median of their prices (98 and 99).
+    assert one.index.tolist() == ["US037833ET32", "US68389XCE31"]
+    assert one.loc["US037833ET32", "Funds"] == "LQD, IGSB"
+    assert other.loc["US037833ET32", "Funds"] == "IGSB, LQD"
+    assert one.loc["US037833ET32", "Price"] == pytest.approx(98.5)
+    pd.testing.assert_frame_equal(
+        one.drop(columns="Funds"), other.drop(columns="Funds").loc[one.index]
+    )
+
+
+def test_get_bond_universe_values_each_bond_on_its_own_price_date(bond_universe):
+    bonds = bond_universe.get_bond_universe(etfs="LQD,IGIB")
+
+    # Apple is priced by LQD, whose feed is the latest; IGIB's older price is not used.
+    assert bonds.loc["US037833ET32", "Price"] == pytest.approx(98)
+    assert bonds.loc["US037833ET32", "Price Date"] == "2026-11-05"
+    assert bonds.loc["US037833ET32", "Funds"] == "LQD, IGIB"
+
+    # Microsoft, held only by IGIB, counts its years from 4 November and takes the G-Spread
+    # over the curve of that day, whatever the other funds add.
+    microsoft = bonds.loc["US594918BJ27"]
+    assert microsoft["Price Date"] == "2026-11-04"
+    years = bond_data_model.get_years_to_maturity(
+        date(2026, 11, 4), date(2035, 2, 12), day_count="30/360"
+    )
+    yield_to_maturity = bond_data_model.get_bond_analytics(0.035, years, 95)[0]
+    treasury = bond_data_model.interpolate_curve(
+        CURVES["2026-11-04"], pd.Series([years])
+    ).iloc[0]
+    assert [microsoft["Yield to Maturity"], microsoft["G-Spread"]] == pytest.approx(
+        [yield_to_maturity, yield_to_maturity - treasury]
+    )
+    alone = bond_universe.get_bond_universe(etfs="IGIB", bonds="US594918BJ27")
+    assert alone.loc["US594918BJ27", "G-Spread"] == pytest.approx(microsoft["G-Spread"])
+
+
 def test_get_bond_universe_filters(bond_universe):
     microsoft = bond_universe.get_bond_universe(
-        etfs="LQD,SCHZ", issuer="microsoft,oracle"
+        etfs="LQD,IGIB", issuer="microsoft,oracle"
     )
     assert microsoft["Issuer"].tolist() == ["MICROSOFT CORP", "ORACLE CORP"]
 
     short = bond_universe.get_bond_universe(
-        etfs="LQD,SCHZ", maturity_start="2030-01-01", maturity_end="2040-12-31"
+        etfs="LQD,IGIB", maturity_start="2030-01-01", maturity_end="2040-12-31"
     )
     assert short["Maturity"].tolist() == ["2033-05-10", "2035-02-12"]
 
@@ -584,3 +713,17 @@ def test_programme_markers_are_not_part_of_the_issuer():
             bond_data_model.parse_bond_name(name)["Issuer"]
             == "FORD MOTOR CREDIT COMPANY LLC"
         )
+
+
+def test_a_matured_bond_or_impossible_frequency_is_refused():
+    with pytest.raises(ValueError, match="on or after the maturity date"):
+        bond_data_model.get_years_to_maturity(date(2031, 1, 1), date(2030, 1, 1))
+    with pytest.raises(ValueError, match="on or after the maturity date"):
+        bond_data_model.get_treasury_accrued_interest(
+            0.04, date(2030, 1, 1), date(2030, 1, 1)
+        )
+    for frequency in (0, -1, 5):
+        with pytest.raises(ValueError, match="frequency"):
+            bond_data_model.get_years_to_maturity(
+                date(2026, 1, 1), date(2030, 1, 1), frequency=frequency
+            )

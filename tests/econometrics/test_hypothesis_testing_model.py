@@ -17,7 +17,7 @@ def test_get_two_sample_t_test_detects_known_large_difference(recorder):
     result = hypothesis_testing_model.get_two_sample_t_test(sample_a, sample_b)
     expected = stats.ttest_ind(sample_a, sample_b, equal_var=False)
 
-    assert np.isclose(result["T-Statistic"], expected.statistic)
+    assert np.isclose(result["t-Statistic"], expected.statistic)
     assert np.isclose(result["P-Value"], expected.pvalue)
     assert np.isclose(result["Degrees of Freedom"], expected.df)
     assert result["P-Value"] < 0.001
@@ -46,7 +46,7 @@ def test_get_two_sample_t_test_equal_variance_matches_scipy_pooled():
     )
     expected = stats.ttest_ind(sample_a, sample_b, equal_var=True)
 
-    assert np.isclose(result["T-Statistic"], expected.statistic)
+    assert np.isclose(result["t-Statistic"], expected.statistic)
     assert np.isclose(result["P-Value"], expected.pvalue)
     # Pooled (Student's) degrees of freedom is exactly n_a + n_b - 2.
     assert result["Degrees of Freedom"] == len(sample_a) + len(sample_b) - 2
@@ -395,7 +395,7 @@ def test_get_hausman_wu_test_matches_manual_two_step_ols():
     stage_two = regression_model.get_ols(y, pd.DataFrame({"X": x, "Residual": v_hat}))
     residual_index = stage_two["feature_names"].index("Residual")
 
-    assert np.isclose(result["T-Statistic"], stage_two["t_statistics"][residual_index])
+    assert np.isclose(result["t-Statistic"], stage_two["t_statistics"][residual_index])
     assert np.isclose(result["P-Value"], stage_two["p_values"][residual_index])
 
 
@@ -416,3 +416,15 @@ def test_get_hausman_wu_test_with_additional_exogenous_regressor():
     )
 
     assert result["Endogenous (5%)"]
+
+
+def test_get_wald_test_reports_the_independent_restrictions():
+    # The second restriction is twice the first, so the test has one degree of freedom.
+    rng = np.random.default_rng(5)
+    x = pd.DataFrame({"x1": rng.normal(size=80), "x2": rng.normal(size=80)})
+    y = 0.5 * x["x1"] + rng.normal(size=80)
+    result = regression_model.get_ols(y, x)
+    outcome = hypothesis_testing_model.get_wald_test(
+        result, np.array([[0, 1, 0], [0, 2, 0]])
+    )
+    assert outcome["Restrictions (q)"] == 1

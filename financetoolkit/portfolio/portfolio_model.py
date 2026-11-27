@@ -15,6 +15,10 @@ logger = logger_model.get_logger()
 # Matches currency codes (EUR, USD) in Yahoo Finance notation, e.g. EURUSD=X.
 CURRENCY_CODE_LENGTH = 3
 
+# A transaction price further than this factor from the close of its day is checked against
+# the stock splits after it: a trade fills within the day's range, a split moves the share basis.
+SPLIT_PRICE_FACTOR = 1.2
+
 
 def read_portfolio_dataset(
     excel_location: list,
@@ -70,7 +74,7 @@ def read_portfolio_dataset(
         ValueError: If no price columns are found in the dataset.
         ValueError: If no volume columns are found in the dataset.
     """
-    combined_portfolio_dataset = pd.DataFrame()
+    file_datasets: list[pd.DataFrame] = []
     additional_files = []
     spreadsheet_files = []
 
@@ -118,48 +122,57 @@ def read_portfolio_dataset(
             lambda ticker: ticker.strip().upper() if isinstance(ticker, str) else ticker
         )
 
-        duplicate_mask = portfolio_dataset.duplicated(keep=False)
-
-        if duplicate_mask.any() and adjust_duplicates:
+        if adjust_duplicates and portfolio_dataset.duplicated().any():
             logger.info(
                 "The same transaction was bought and/or sold on the same day in %s. "
                 "These entries will be merged together.",
                 file,
             )
 
-            number_columns = list(portfolio_dataset.select_dtypes(np.number).columns)
+        file_datasets.append(portfolio_dataset)
 
-            # Summing prices would falsely indicate a higher investment than made.
-            number_columns.remove(selected_price_column)
+    if not file_datasets:
+        raise ValueError("No Excel or CSV files were found to read the portfolio from.")
 
-            # Each group of identical rows collapses onto its first occurrence with the summable columns multiplied by how often the row appears.  # noqa: E501
-            row_identity = portfolio_dataset.astype(str).agg("|".join, axis=1)
-            occurrences = row_identity.map(row_identity.value_counts())
+    combined_portfolio_dataset = pd.concat(file_datasets)
 
-            merged_rows = portfolio_dataset[
-                duplicate_mask & ~portfolio_dataset.duplicated(keep="first")
-            ].copy()
-            merged_rows[number_columns] = merged_rows[number_columns].mul(
-                occurrences.loc[merged_rows.index], axis=0
+    if adjust_duplicates:
+        # A row is identified by all of its values. Every file holds a count of each row, and the files overlap where they
+        # cover the same period, so a row counts as often as the file that holds it most often: one fill in a file and the
+        # same fill twice in a later file are two fills, not three.
+        row_identity = combined_portfolio_dataset.astype(str).agg("|".join, axis=1)
+        file_number = np.repeat(
+            np.arange(len(file_datasets)), [len(dataset) for dataset in file_datasets]
+        )
+        counts_per_file = row_identity.groupby(
+            [row_identity.to_numpy(), file_number]
+        ).size()
+        occurrences = counts_per_file.groupby(level=0).max()
+
+        if (counts_per_file.groupby(level=0).sum() > occurrences).any():
+            logger.warning(
+                "Found duplicates in the combination of datasets. This is usually due to overlapping periods. "
+                "The duplicates will be removed from the datasets to prevent counting the same transaction twice."
             )
 
-            portfolio_dataset = pd.concat(
-                [portfolio_dataset[~duplicate_mask], merged_rows]
-            )
-
-        combined_portfolio_dataset = pd.concat(
-            [combined_portfolio_dataset, portfolio_dataset]
-        )
-
-    if combined_portfolio_dataset.duplicated().any() and adjust_duplicates:
-        logger.warning(
-            "Found duplicates in the combination of datasets. This is usually due to overlapping periods. "
-            "The duplicates will be removed from the datasets to prevent counting the same transaction twice."
-        )
-        combined_portfolio_dataset = combined_portfolio_dataset.drop_duplicates()
+        # Each group of identical rows collapses onto its first occurrence with the summable columns multiplied by how
+        # often the row appears. Summing prices would falsely indicate a higher investment than made.
+        first_occurrence = ~row_identity.duplicated(keep="first").to_numpy()
+        combined_portfolio_dataset = combined_portfolio_dataset[first_occurrence].copy()
+        number_columns = [
+            column
+            for column in combined_portfolio_dataset.select_dtypes(np.number).columns
+            if column != selected_price_column
+        ]
+        combined_portfolio_dataset[number_columns] = combined_portfolio_dataset[
+            number_columns
+        ].mul(row_identity[first_occurrence].map(occurrences).to_numpy(), axis=0)
 
     combined_portfolio_dataset = combined_portfolio_dataset.sort_values(
         by=selected_date_column, ascending=False, kind="stable"
+    )
+    combined_portfolio_dataset.attrs["ordered_by_time"] = any(
+        dataset.attrs.get("ordered_by_time", False) for dataset in file_datasets
     )
 
     return (
@@ -247,7 +260,9 @@ def format_portfolio_dataset(
     Returns:
         tuple[pd.DataFrame, str, str, str, str, str, str | None]:
             A tuple containing:
-            - A DataFrame with the formatted portfolio dataset.
+            - A DataFrame with the formatted portfolio dataset. The dates keep their day only; when
+              they include a time of day, the rows are sorted by it and `attrs["ordered_by_time"]`
+              is True, so the order of the rows within a day is the order the trades were made in.
             - The name of the selected date column.
             - The name of the selected transaction description column.
             - The name of the selected ticker column.
@@ -280,9 +295,14 @@ def format_portfolio_dataset(
             f"there is a column named one of the following: {date_columns}"
         )
 
-    dataset[date_column_first] = parse_dates(
-        dataset[date_column_first], date_format_options
-    ).to_period(freq="D")
+    timestamps = parse_dates(dataset[date_column_first], date_format_options)
+    dataset[date_column_first] = timestamps.to_period(freq="D")
+
+    # The positions and returns are daily, so a date keeps its day only; a time of day orders the transactions within
+    # their day instead, so a sale in the morning comes before a purchase in the afternoon.
+    ordered_by_time = bool((timestamps != timestamps.normalize()).any())
+    if ordered_by_time:
+        dataset = dataset.iloc[np.argsort(timestamps.to_numpy(), kind="stable")]
 
     tickers_columns = [column.lower() for column in tickers_columns]
     tickers_column_first = _first_column(dataset, tickers_columns)
@@ -433,7 +453,8 @@ def format_portfolio_dataset(
     )
 
     # Drop the other columns, so any file type can be added and still work.
-    dataset = dataset[column_mapping.values()]
+    dataset = dataset[list(column_mapping.values())]
+    dataset.attrs["ordered_by_time"] = ordered_by_time
 
     return (
         dataset,
@@ -479,8 +500,10 @@ def normalize_currency(currency: str) -> str:
 def get_price_unit(currency: str) -> tuple[str, int]:
     """
     The major currency a price quoted in a currency belongs to and how many of the quoted
-    units make up one of it: ("GBP", 100) for a price in pence (GBp or GBX), ("ZAR", 100)
-    for South African cents, ("ILS", 100) for agorot and (currency, 1) otherwise.
+    units make up one of it.
+
+    ("GBP", 100) for a price in pence (GBp or GBX), ("ZAR", 100) for South African cents,
+    ("ILS", 100) for agorot and (currency, 1) otherwise.
 
     Args:
         currency (str): The currency the price is quoted in, e.g. "USD" or "GBp".
@@ -496,9 +519,11 @@ def get_price_unit(currency: str) -> tuple[str, int]:
 
 def get_exchange_rate_ticker(base_currency: str, currency: str) -> str | None:
     """
-    The exchange rate that converts a price quoted in a currency into the base currency,
-    as the Yahoo Finance symbol BASE + QUOTE + "=X" between the major currencies: USDGBP=X,
-    the pounds per dollar, for a price in pounds or pence that is converted to dollars.
+    The exchange rate that converts a price quoted in a currency into the base currency, as
+    the Yahoo Finance symbol BASE + QUOTE + "=X" between the major currencies.
+
+    USDGBP=X, the pounds per dollar, for a price in pounds or pence that is converted to
+    dollars.
 
     Args:
         base_currency (str): The currency to convert to, e.g. "USD".
@@ -560,14 +585,17 @@ def get_base_currency(currencies: dict[str, str], weights: dict[str, float]) -> 
 
 def align_exchange_rate(rate: pd.Series, index: pd.Index) -> pd.Series:
     """
-    A daily exchange rate on the dates of a price series: the rate of the same day, or the
-    last one before it when the rate has no quote that day (exchanges and the currency
-    market close on different holidays). For weekly to yearly prices, which hold the last
-    price of each period, it is the last rate of each period.
+    A daily exchange rate on the dates of a price series.
+
+    It is the rate of the same day, or the last one before it when the rate has no quote
+    that day (exchanges and the currency market close on different holidays). For weekly to
+    yearly prices, which hold the last price of each period, it is the last rate of each
+    period. A date can occur more than once, such as two transactions on one day, and each
+    occurrence gets the rate of its day.
 
     Args:
         rate (pd.Series): The daily exchange rate.
-        index (pd.Index): The dates of the price series.
+        index (pd.Index): The dates of the price series, or of transactions.
 
     Returns:
         pd.Series: The exchange rate on each date of the index.
@@ -579,7 +607,13 @@ def align_exchange_rate(rate: pd.Series, index: pd.Index) -> pd.Series:
         and rate.index.freq != index.freq
     ):
         rate = rate.groupby(rate.index.asfreq(index.freq)).last()
-    return rate.reindex(rate.index.union(index)).sort_index().ffill().reindex(index)
+    # The union keeps a date that occurs twice in the index, on which reindex cannot select.
+    return (
+        rate.reindex(rate.index.union(index.unique()))
+        .sort_index()
+        .ffill()
+        .reindex(index)
+    )
 
 
 def convert_prices(
@@ -589,11 +623,12 @@ def convert_prices(
     exchange_rates: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """
-    Prices in the currency each ticker is quoted in, converted to one base currency. A price
-    is divided by the number of quoted units in its major currency (100 for pence) and by
-    the exchange rate BASE/QUOTE of the same day (e.g. USDGBP=X, the pounds per dollar),
-    and multiplied by the units of the base currency. Values in money, such as dividends,
-    convert the same way.
+    Prices in the currency each ticker is quoted in, converted to one base currency.
+
+    A price is divided by the number of quoted units in its major currency (100 for pence)
+    and by the exchange rate BASE/QUOTE of the same day (e.g. USDGBP=X, the pounds per
+    dollar), and multiplied by the units of the base currency. Values in money, such as
+    dividends, convert the same way.
 
     Args:
         prices (pd.DataFrame): The prices, one column per ticker, on a daily (or weekly to
@@ -638,6 +673,130 @@ def convert_prices(
     return converted
 
 
+def get_first_close(closes: pd.DataFrame, symbol: str, day: pd.Timestamp) -> float:
+    """
+    The price of a transaction: the first close of the ticker's own trading days on or
+    after its date, as the positions, the benchmark and the dividends use. The previous
+    close would price a weekend purchase on Friday while its position starts on Monday.
+
+    Args:
+        closes (pd.DataFrame): The daily closes per ticker, with a DatetimeIndex and NaN on
+            the days a ticker did not trade.
+        symbol (str): The ticker of the transaction.
+        day (pd.Timestamp): The date of the transaction.
+
+    Returns:
+        float: The close, the latest one for a trade after the latest close, or NaN when
+        the ticker has no closes.
+    """
+    if symbol not in closes.columns or pd.isna(day):
+        return float("nan")
+    available = closes[symbol].dropna()
+    following = available.loc[day.normalize() :]
+    if not following.empty:
+        return float(following.iloc[0])
+    # A trade after the latest close (the weekend after it, or today before the provider has today's bar) takes the latest close, the day its position, benchmark and dividends start on as well.  # noqa: E501
+    if available.empty:
+        return float("nan")
+    logger.warning(
+        "The %s transaction of %s has no close on or after that date and is priced at the last close of %s.",
+        symbol,
+        day.strftime("%Y-%m-%d"),
+        available.index[-1].strftime("%Y-%m-%d"),
+    )
+    return float(available.iloc[-1])
+
+
+def get_conversion_factors(
+    currencies: pd.Series,
+    dates: pd.PeriodIndex,
+    reporting_currency: str,
+    exchange_rates: pd.DataFrame,
+) -> pd.Series:
+    """
+    The factor that turns the price of each transaction into the reporting currency at the
+    exchange rate of its day, or the last one before it. A transaction without a known
+    currency is taken to be in the reporting currency.
+
+    Args:
+        currencies (pd.Series): The currency of each transaction, NaN when unknown.
+        dates (pd.PeriodIndex): The date of each transaction.
+        reporting_currency (str): The currency to express the transactions in.
+        exchange_rates (pd.DataFrame): The daily exchange rates, one column per rate such as
+            USDGBP=X (see `get_exchange_rate_ticker`).
+
+    Returns:
+        pd.Series: The conversion factor of each transaction.
+
+    Raises:
+        ValueError: When a transaction has no exchange rate on or before its date.
+    """
+    _, reporting_units = get_price_unit(reporting_currency)
+    factors = pd.Series(1.0, index=currencies.index)
+    for currency in set(currencies.dropna().astype(str)):
+        rate_ticker = get_exchange_rate_ticker(reporting_currency, currency)
+        rows = (currencies == currency).to_numpy()
+        _, units = get_price_unit(currency)
+        rate: np.ndarray | float = 1.0
+        if rate_ticker is not None:
+            # The rate of each transaction's day, or the last one before it.
+            rate = (
+                align_exchange_rate(exchange_rates[rate_ticker], dates[rows]).to_numpy(
+                    dtype=float
+                )
+                if rate_ticker in exchange_rates.columns
+                else np.full(rows.sum(), np.nan)
+            )
+            if np.isnan(rate).any():
+                missing = dates[rows][np.isnan(rate)].min()
+                raise ValueError(
+                    f"Transactions in {currency} cannot be converted to the reporting "
+                    f"currency {reporting_currency} without the exchange rate "
+                    f"{rate_ticker} on or before {missing}."
+                )
+        factors[rows] = reporting_units / units / rate
+    return factors
+
+
+def convert_benchmark_data(
+    data: pd.DataFrame,
+    currency: str | None,
+    conversions: set[str],
+    benchmark_name: str,
+    benchmark_currency: str,
+    exchange_rates: pd.DataFrame,
+    columns: list[str],
+) -> pd.DataFrame:
+    """
+    The historical data of the benchmark expressed in the currency of a transaction, so a
+    transaction in euros buys benchmark units priced in euros.
+
+    Args:
+        data (pd.DataFrame): The historical data of the benchmark, one column per field.
+        currency (str | None): The currency to express the data in.
+        conversions (set[str]): The currencies that differ from the benchmark's (in unit).
+        benchmark_name (str): The ticker of the benchmark.
+        benchmark_currency (str): The currency the benchmark is quoted in.
+        exchange_rates (pd.DataFrame): The daily exchange rates, see `convert_prices`.
+        columns (list[str]): The columns to convert, see `convert_historical_data`.
+
+    Returns:
+        pd.DataFrame: The converted historical data, or the data as it is when the currency
+        needs no conversion.
+    """
+    if data.empty or currency not in conversions:
+        return data
+    data = data.copy()
+    data.columns = pd.MultiIndex.from_product([data.columns, [benchmark_name]])
+    data = convert_historical_data(
+        data,
+        {benchmark_name: (str(benchmark_currency), str(currency))},
+        exchange_rates,
+        columns,
+    )
+    return data.droplevel(1, axis=1)
+
+
 def convert_historical_data(
     historical_data: pd.DataFrame,
     conversions: dict[str, tuple[str, str]],
@@ -645,10 +804,15 @@ def convert_historical_data(
     columns: list[str],
 ) -> pd.DataFrame:
     """
-    Historical data (columns such as Open and Adj Close, each with one column per ticker)
-    with the money columns of some tickers converted to another currency, after which
-    their Return and Cumulative Return are calculated again from the converted Adj Close,
-    so they are the returns in that currency.
+    Historical data with the money columns of some tickers converted to another currency.
+
+    The columns, such as Open and Adj Close, each hold one column per ticker, and their
+    Return and Cumulative Return are calculated again from the converted Adj Close, so they
+    are the returns in that currency. A date without a price after a ticker's first price,
+    such as the last date when its exchange is closed while another is open, gets the last
+    price in the ticker's own currency (Open, High and Low at that close, a flat bar), which
+    is then converted at the exchange rate of that date. Carrying the converted price
+    forward instead would value the holding at the exchange rate of its last trading day.
 
     Args:
         historical_data (pd.DataFrame): The historical data, with the column names on the
@@ -669,6 +833,19 @@ def convert_historical_data(
     for ticker, (currency, target) in conversions.items():
         if ("Adj Close", ticker) not in historical_data.columns:
             continue
+        # Prices are carried forward in their own currency before the conversion; flows (Dividends, Volume) are not.
+        if ("Close", ticker) in historical_data.columns:
+            close = historical_data[("Close", ticker)]
+            unpriced = close.isna() & close.ffill().notna()
+            for column in ("Open", "High", "Low", "Close", "Adj Close"):
+                if column in columns and (column, ticker) in historical_data.columns:
+                    historical_data[(column, ticker)] = (
+                        historical_data[(column, ticker)].ffill()
+                        if column in ("Close", "Adj Close")
+                        else historical_data[(column, ticker)].mask(
+                            unpriced, close.ffill()
+                        )
+                    )
         for column in columns:
             if (column, ticker) in historical_data.columns:
                 historical_data[(column, ticker)] = convert_prices(
@@ -763,3 +940,65 @@ def align_benchmark_data(benchmark_data: pd.DataFrame, dates: pd.Index) -> pd.Da
             aligned["Cumulative Return"] = adjusted_close / adjusted_close.loc[first]
 
     return aligned.reindex(columns=benchmark_data.columns)
+
+
+def get_split_factors(
+    prices: pd.Series,
+    closes: pd.Series,
+    dates: pd.Index,
+    tickers: pd.Index,
+    splits: dict[str, pd.Series],
+) -> pd.Series:
+    """
+    The factor that restates each transaction to the share basis of the historical data,
+    which is adjusted for stock splits.
+
+    10 for a purchase of one share at 830.40 before a ten for one split, which is ten shares
+    at 83.04 on today's basis, and 1 for a transaction that is on that basis already.
+
+    A transaction from before a split can be given as the broker confirmed it at the time or
+    restated by the broker since, for the splits up to the moment the ledger was exported. The
+    candidates are therefore 1 and the products of the latest splits after the transaction (the
+    last one, the last two, and so on), and the factor is the candidate closest to the price of
+    the transaction divided by the split-adjusted close of its day, compared on a log scale.
+    A trade fills within the day's range, so its price is close to the close on the basis it is
+    given in. It follows the split adjustment of price histories (CRSP's cumulative
+    factor to adjust shares, CFACSHR), applied to the transactions.
+
+    Args:
+        prices (pd.Series): The price of every transaction.
+        closes (pd.Series): The split-adjusted close of every transaction's day, in the same
+            currency as its price.
+        dates (pd.Index): The date of every transaction (timestamps or daily periods).
+        tickers (pd.Index): The ticker of every transaction.
+        splits (dict[str, pd.Series]): Per ticker the ratio of every split (numerator over
+            denominator, 10 for a ten for one split, 0.1 for a one for ten reverse split),
+            indexed by the date the shares first trade on the new basis.
+
+    Returns:
+        pd.Series: The factor of every transaction, aligned with `prices`: the volume is
+        multiplied and the price divided by it.
+    """
+    dates = pd.Index(dates)
+    timestamps = pd.DatetimeIndex(
+        dates.to_timestamp() if isinstance(dates, pd.PeriodIndex) else dates
+    )
+    ratios = (prices.to_numpy(dtype=float) / closes.to_numpy(dtype=float)).tolist()
+    factors = np.ones(len(prices))
+
+    for position, (ratio, date, ticker) in enumerate(
+        zip(ratios, timestamps, tickers, strict=True)
+    ):
+        ticker_splits = splits.get(str(ticker))
+        if ticker_splits is None or not np.isfinite(ratio) or ratio <= 0:
+            continue
+        later = ticker_splits[pd.DatetimeIndex(ticker_splits.index) > date].sort_index()
+        if later.empty:
+            continue
+        # The latest split, the latest two, ..., every split after the transaction, and none.
+        candidates = np.append(np.cumprod(later.to_numpy(dtype=float)[::-1]), 1.0)
+        factors[position] = candidates[
+            np.argmin(np.abs(np.log(ratio) - np.log(candidates)))
+        ]
+
+    return pd.Series(factors, index=prices.index)

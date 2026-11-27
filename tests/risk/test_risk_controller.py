@@ -7,11 +7,13 @@ import pandas as pd
 import pytest
 
 from financetoolkit.risk import risk_model
+from financetoolkit.risk.distribution import fractal_model
 from financetoolkit.risk.helpers import (
     align_annualized_rate,
     compound_into_shared_dates,
 )
 from financetoolkit.risk.value_at_risk import var_model
+from financetoolkit.utilities.error_model import InvalidArgumentError
 
 # AAPL's EGARCH fit sits on a near-flat ridge a different libm/BLAS can tip either way; see garch_model.py.
 EGARCH_PLATFORM_DRIFT = pytest.mark.xfail(
@@ -41,12 +43,12 @@ def test_get_value_at_risk(recorder, risk_module):
     )
     recorder.capture(
         risk_module.get_value_at_risk(
-            period="monthly", within_period=False, distribution="evt"
+            period="monthly", within_period=False, method="evt"
         )
     )
     recorder.capture(
         risk_module.get_value_at_risk(
-            period="monthly", within_period=False, distribution="cornish-fisher"
+            period="monthly", within_period=False, method="cornish-fisher"
         )
     )
     recorder.capture(
@@ -75,17 +77,17 @@ def test_get_conditional_value_at_risk(recorder, risk_module):
     )
     recorder.capture(
         risk_module.get_conditional_value_at_risk(
-            period="monthly", within_period=False, distribution="cornish-fisher"
+            period="monthly", within_period=False, method="cornish-fisher"
         )
     )
     recorder.capture(
         risk_module.get_conditional_value_at_risk(
-            period="monthly", within_period=False, distribution="evt"
+            period="monthly", within_period=False, method="evt"
         )
     )
     recorder.capture(
         risk_module.get_conditional_value_at_risk(
-            period="monthly", within_period=False, distribution="studentt"
+            period="monthly", within_period=False, method="studentt"
         )
     )
 
@@ -93,10 +95,10 @@ def test_get_conditional_value_at_risk(recorder, risk_module):
 def test_get_conditional_value_at_risk_studentt_differs_from_var(recorder, risk_module):
     # Regression test: studentt used to dispatch to VaR, so CVaR must be as extreme.
     var = risk_module.get_value_at_risk(
-        period="monthly", within_period=False, distribution="studentt"
+        period="monthly", within_period=False, method="studentt"
     )
     cvar = risk_module.get_conditional_value_at_risk(
-        period="monthly", within_period=False, distribution="studentt"
+        period="monthly", within_period=False, method="studentt"
     )
     assert (cvar <= var).all().all()
 
@@ -156,6 +158,15 @@ def test_get_garch(recorder, risk_module):
     recorder.capture(risk_module.get_garch(period="monthly"))
     recorder.capture(risk_module.get_garch(period="yearly", growth=True))
     recorder.capture(risk_module.get_garch(period="yearly", growth=True, lag=[1, 2, 3]))
+    recorder.capture(risk_module.get_garch(method="gjr"))
+    recorder.capture(risk_module.get_garch(method="gjr", period="monthly"))
+    # Two yearly returns barely pin down a GJR fit: the optimum lies on a flat ridge whose
+    # third decimal moves with the platform's floating point, so it is recorded to two.
+    recorder.capture(
+        risk_module.get_garch(method="gjr", period="yearly", growth=True).round(2)
+    )
+    with pytest.raises(InvalidArgumentError, match="method must be one of 'garch'"):
+        risk_module.get_garch(method="harch")
 
 
 def test_get_garch_forecast(recorder, risk_module):
@@ -165,30 +176,23 @@ def test_get_garch_forecast(recorder, risk_module):
     recorder.capture(
         risk_module.get_garch_forecast(period="yearly", growth=True, lag=[1, 2, 3])
     )
+    recorder.capture(risk_module.get_garch_forecast(method="gjr"))
+
+    # A GJR-GARCH fit on three years of months lands differently per platform's libraries (in
+    # the third digit), so the monthly forecast is checked rather than recorded.
+    monthly = risk_module.get_garch_forecast(method="gjr", period="monthly")
+    assert monthly.shape == (10, 3)
+    assert (monthly > 0).all().all()
 
 
 def test_get_garch_parameters(recorder, risk_module):
     recorder.capture(risk_module.get_garch_parameters())
     recorder.capture(risk_module.get_garch_parameters(period="monthly"))
+    recorder.capture(risk_module.get_garch_parameters(method="gjr"))
+    recorder.capture(risk_module.get_garch_parameters(method="gjr", period="monthly"))
 
 
-def test_get_gjr_garch(recorder, risk_module):
-    recorder.capture(risk_module.get_gjr_garch())
-    recorder.capture(risk_module.get_gjr_garch(period="monthly"))
-    recorder.capture(risk_module.get_gjr_garch(period="yearly", growth=True))
-
-
-def test_get_gjr_garch_forecast(recorder, risk_module):
-    recorder.capture(risk_module.get_gjr_garch_forecast())
-
-    # A fit on three years of months lands differently per platform's libraries (in the third
-    # digit), so the monthly forecast is checked rather than recorded.
-    monthly = risk_module.get_gjr_garch_forecast(period="monthly")
-    assert monthly.shape == (10, 3)
-    assert (monthly > 0).all().all()
-
-
-def test_get_gjr_garch_forecast_monthly_matches_the_arch_package(
+def test_get_garch_forecast_gjr_monthly_matches_the_arch_package(
     risk_module, monkeypatch
 ):
     arch = pytest.importorskip("arch")
@@ -208,7 +212,9 @@ def test_get_gjr_garch_forecast_monthly_matches_the_arch_package(
     # The memoized monthly returns are replaced for this test only.
     monkeypatch.setitem(risk_module._data_cache, ("monthly", False), returns)
 
-    forecast = risk_module.get_gjr_garch_forecast(period="monthly", rounding=12)
+    forecast = risk_module.get_garch_forecast(
+        method="gjr", period="monthly", rounding=12
+    )
 
     assert forecast.index.tolist() == list(
         pd.period_range("2025-01", periods=10, freq="M")
@@ -233,39 +239,38 @@ def test_get_gjr_garch_forecast_monthly_matches_the_arch_package(
         np.testing.assert_allclose(forecast[ticker], reference, rtol=1e-3)
 
 
-def test_get_gjr_garch_parameters(recorder, risk_module):
-    recorder.capture(risk_module.get_gjr_garch_parameters())
-    recorder.capture(risk_module.get_gjr_garch_parameters(period="monthly"))
+# The EGARCH variants have tests of their own, as only they carry the platform drift mark.
+# The first one fits EGARCH three times (daily, monthly, yearly), which takes minutes on a
+# loaded machine; without the longer timeout the xfail mark would hide that timeout as a pass.
+@pytest.mark.timeout(600)
+@EGARCH_PLATFORM_DRIFT
+def test_get_garch_egarch(recorder, risk_module):
+    recorder.capture(risk_module.get_garch(method="egarch"))
+    recorder.capture(risk_module.get_garch(method="egarch", period="monthly"))
+    recorder.capture(
+        risk_module.get_garch(method="egarch", period="yearly", growth=True)
+    )
 
 
 @EGARCH_PLATFORM_DRIFT
-def test_get_egarch(recorder, risk_module):
-    recorder.capture(risk_module.get_egarch())
-    recorder.capture(risk_module.get_egarch(period="monthly"))
-    recorder.capture(risk_module.get_egarch(period="yearly", growth=True))
+def test_get_garch_forecast_egarch(recorder, risk_module):
+    recorder.capture(risk_module.get_garch_forecast(method="egarch"))
+    recorder.capture(risk_module.get_garch_forecast(method="egarch", period="monthly"))
 
 
 @EGARCH_PLATFORM_DRIFT
-def test_get_egarch_forecast(recorder, risk_module):
-    recorder.capture(risk_module.get_egarch_forecast())
-    recorder.capture(risk_module.get_egarch_forecast(period="monthly"))
-
-
-@EGARCH_PLATFORM_DRIFT
-def test_get_egarch_parameters(recorder, risk_module):
-    recorder.capture(risk_module.get_egarch_parameters())
-    recorder.capture(risk_module.get_egarch_parameters(period="monthly"))
+def test_get_garch_parameters_egarch(recorder, risk_module):
+    recorder.capture(risk_module.get_garch_parameters(method="egarch"))
+    recorder.capture(
+        risk_module.get_garch_parameters(method="egarch", period="monthly")
+    )
 
 
 def test_get_var_backtest(recorder, risk_module):
-    recorder.capture(risk_module.get_var_backtest(window_size=100))
-    recorder.capture(
-        risk_module.get_var_backtest(window_size=100, distribution="gaussian")
-    )
-    recorder.capture(risk_module.get_var_backtest(window_size=100, test="kupiec"))
-    recorder.capture(
-        risk_module.get_var_backtest(window_size=100, test="christoffersen")
-    )
+    recorder.capture(risk_module.get_var_backtest(window=100))
+    recorder.capture(risk_module.get_var_backtest(window=100, method="gaussian"))
+    recorder.capture(risk_module.get_var_backtest(window=100, test="kupiec"))
+    recorder.capture(risk_module.get_var_backtest(window=100, test="christoffersen"))
 
 
 def test_get_maximum_drawdown(recorder, risk_module):
@@ -339,7 +344,7 @@ def test_get_maximum_drawdown_recovery_time(recorder, risk_module):
 
 def test_get_ulcer_index(recorder, risk_module):
     recorder.capture(risk_module.get_ulcer_index())
-    recorder.capture(risk_module.get_ulcer_index(rolling=5))
+    recorder.capture(risk_module.get_ulcer_index(window=5))
     recorder.capture(risk_module.get_ulcer_index(period="monthly"))
     recorder.capture(risk_module.get_ulcer_index(growth=True))
     recorder.capture(risk_module.get_ulcer_index(growth=True, lag=[1, 2, 3]))
@@ -383,7 +388,7 @@ def test_get_pain_index_is_the_pain_index_of_the_pain_ratio(
         abs=1e-10,
     )
     assert (
-        (pain_index <= risk_module.get_ulcer_index(rolling=None, rounding=10))
+        (pain_index <= risk_module.get_ulcer_index(window=None, rounding=10))
         .all()
         .all()
     )
@@ -526,9 +531,9 @@ def test_get_har_rv_forecast(recorder, risk_module):
 
 
 def test_get_har_rv_forecast_invalid_estimator(risk_module):
-    # @handle_errors returns an empty Series rather than propagating the ValueError.
-    result = risk_module.get_har_rv_forecast(estimator="bad")
-    assert result.empty
+    # An unknown option raises, naming the valid ones, rather than returning empty.
+    with pytest.raises(InvalidArgumentError, match="estimator must be one of"):
+        risk_module.get_har_rv_forecast(estimator="bad")
 
 
 def test_get_tail_dependence_coefficient(recorder, risk_module):
@@ -554,7 +559,7 @@ def test_get_marginal_value_at_risk(recorder, risk_module):
         )
     )
     recorder.capture(
-        risk_module.get_marginal_value_at_risk(period="yearly", distribution="gaussian")
+        risk_module.get_marginal_value_at_risk(period="yearly", method="gaussian")
     )
 
 
@@ -566,17 +571,13 @@ def test_get_component_value_at_risk(recorder, risk_module):
         )
     )
     recorder.capture(
-        risk_module.get_component_value_at_risk(
-            period="yearly", distribution="gaussian"
-        )
+        risk_module.get_component_value_at_risk(period="yearly", method="gaussian")
     )
 
 
 def test_get_acerbi_szekely_test(recorder, risk_module):
-    recorder.capture(risk_module.get_acerbi_szekely_test(window_size=100))
-    recorder.capture(
-        risk_module.get_acerbi_szekely_test(window_size=100, distribution="gaussian")
-    )
+    recorder.capture(risk_module.get_acerbi_szekely_test(window=100))
+    recorder.capture(risk_module.get_acerbi_szekely_test(window=100, method="gaussian"))
 
 
 def _risk_with_late_listing(risk_module, listing_date="2021-01-01"):
@@ -633,8 +634,8 @@ def test_within_period_without_data_is_nan(risk_module):
 def test_var_backtest_rolls_each_ticker_over_its_own_history(risk_module):
     late_listing = _risk_with_late_listing(risk_module)
 
-    full = risk_module.get_var_backtest(window_size=100, rounding=10)
-    shortened = late_listing.get_var_backtest(window_size=100, rounding=10)
+    full = risk_module.get_var_backtest(window=100, rounding=10)
+    shortened = late_listing.get_var_backtest(window=100, rounding=10)
 
     assert full["AAPL"].equals(shortened["AAPL"])
     assert shortened["MSFT"].notna().all()
@@ -648,9 +649,8 @@ def test_get_ulcer_index_weekly_has_values(risk_module):
 
 def test_get_value_at_risk_cf_is_not_a_distribution(risk_module):
     # "cornish-fisher" is the one name of the Cornish-Fisher VaR.
-    result = risk_module.get_value_at_risk(distribution="cf")
-
-    assert result.empty
+    with pytest.raises(InvalidArgumentError, match="'cornish-fisher'"):
+        risk_module.get_value_at_risk(method="cf")
 
 
 def test_get_hurst_exponent_uses_log_prices(risk_module):
@@ -659,7 +659,7 @@ def test_get_hurst_exponent_uses_log_prices(risk_module):
 
     for ticker in hurst_exponent.index:
         assert hurst_exponent[ticker] == pytest.approx(
-            risk_model.get_hurst_exponent(log_prices[ticker]), abs=1e-9
+            fractal_model.get_generalized_hurst_exponent(log_prices[ticker]), abs=1e-9
         )
 
 
@@ -683,43 +683,6 @@ def test_garch_parameters_fit_each_ticker_on_its_own_history(risk_module):
     garch = risk.get_garch(rounding=10)
     assert garch[tickers[0]].iloc[:99].isna().all()
     assert garch[tickers[1]].notna().all()
-
-
-def test_move_significance_keeps_each_measure_per_ticker(risk_module):
-    significance = risk_module.get_move_significance(window=20)
-
-    measures = significance.columns.get_level_values(0).unique().tolist()
-    assert measures == [
-        "Return",
-        "Volatility Multiple",
-        "VaR Multiple",
-        "Percentile",
-        "Largest Since",
-    ]
-
-    returns = risk_module._historical_data["daily"]["Return"]
-    ticker = returns.columns[0]
-    expected = risk_model.get_move_significance(returns[ticker], 20)
-    expected = expected.loc[significance.index]
-
-    pd.testing.assert_series_equal(
-        significance[("Volatility Multiple", ticker)],
-        expected["Volatility Multiple"],
-        check_names=False,
-        check_dtype=False,
-        atol=1e-4,
-    )
-    assert (significance[("Largest Since", ticker)].dropna() < "9999").all()
-
-
-def test_move_significance_needs_a_window_of_two_returns(risk_module, caplog):
-    assert risk_module.get_move_significance(window=1).empty
-    assert "at least 2 returns" in caplog.text
-
-
-def test_move_significance_needs_an_alpha_between_zero_and_one(risk_module, caplog):
-    assert risk_module.get_move_significance(alpha=1.5).empty
-    assert "alpha must be between 0 and 1" in caplog.text
 
 
 def test_the_recovery_needed_is_the_gain_back_to_the_running_peak(risk_module):
@@ -859,7 +822,8 @@ def test_get_mean_absolute_deviation_per_month(risk_module):
 
 
 def test_get_mean_absolute_deviation_refuses_a_daily_period(risk_module):
-    assert risk_module.get_mean_absolute_deviation(period="daily").empty
+    with pytest.raises(InvalidArgumentError, match="period must be one of"):
+        risk_module.get_mean_absolute_deviation(period="daily")
 
 
 def test_get_coefficient_of_variation_per_year(risk_module):
@@ -902,9 +866,10 @@ def test_get_copula_parameters_of_one_pair(risk_module):
 
 
 def test_get_copula_parameters_refuses_an_unknown_family(risk_module):
-    assert risk_module.get_copula_parameters(
-        ticker_a="AAPL", ticker_b="MSFT", copula="normal"
-    ).empty
+    with pytest.raises(InvalidArgumentError, match="copula must be one of"):
+        risk_module.get_copula_parameters(
+            ticker_a="AAPL", ticker_b="MSFT", copula="normal"
+        )
 
 
 def test_get_best_fitting_copula_ranks_the_families_by_aic(risk_module):
@@ -927,24 +892,23 @@ def test_get_best_fitting_copula_ranks_the_families_by_aic(risk_module):
     assert result.loc["Gaussian", "AIC"] == pytest.approx(gaussian["AIC"])
 
 
-def test_get_corwin_schultz_spread(recorder, risk_module):
-    recorder.capture(risk_module.get_corwin_schultz_spread())
-    recorder.capture(risk_module.get_corwin_schultz_spread(period="quarterly"))
-    recorder.capture(
-        risk_module.get_corwin_schultz_spread(period="quarterly", rolling=2)
+def test_get_bid_ask_spread(recorder, risk_module):
+    recorder.capture(risk_module.get_bid_ask_spread())
+    recorder.capture(risk_module.get_bid_ask_spread(period="quarterly"))
+    recorder.capture(risk_module.get_bid_ask_spread(period="quarterly", rolling=2))
+    for method in ("corwin_schultz", "abdi_ranaldo"):
+        recorder.capture(risk_module.get_bid_ask_spread(method=method))
+        recorder.capture(
+            risk_module.get_bid_ask_spread(method=method, period="quarterly")
+        )
+        recorder.capture(
+            risk_module.get_bid_ask_spread(method=method, period="quarterly", rolling=2)
+        )
+    pd.testing.assert_frame_equal(
+        risk_module.get_bid_ask_spread(), risk_module.get_bid_ask_spread(method="edge")
     )
-
-
-def test_get_abdi_ranaldo_spread(recorder, risk_module):
-    recorder.capture(risk_module.get_abdi_ranaldo_spread())
-    recorder.capture(risk_module.get_abdi_ranaldo_spread(period="quarterly"))
-    recorder.capture(risk_module.get_abdi_ranaldo_spread(period="quarterly", rolling=2))
-
-
-def test_get_edge_spread(recorder, risk_module):
-    recorder.capture(risk_module.get_edge_spread())
-    recorder.capture(risk_module.get_edge_spread(period="quarterly"))
-    recorder.capture(risk_module.get_edge_spread(period="quarterly", rolling=2))
+    with pytest.raises(InvalidArgumentError, match="'corwin_schultz'"):
+        risk_module.get_bid_ask_spread(method="roll")
 
 
 def test_get_share_turnover(recorder, risk_module):
@@ -992,11 +956,11 @@ def test_var_backtest_window_defaults_to_a_year_of_each_period(risk_module):
     # Daily keeps 252 returns, the other periods a year of them with a minimum of 20.
     pd.testing.assert_frame_equal(
         risk_module.get_var_backtest(rounding=10),
-        risk_module.get_var_backtest(window_size=252, rounding=10),
+        risk_module.get_var_backtest(window=252, rounding=10),
     )
     pd.testing.assert_frame_equal(
         risk_module.get_var_backtest(period="weekly", rounding=10),
-        risk_module.get_var_backtest(period="weekly", window_size=52, rounding=10),
+        risk_module.get_var_backtest(period="weekly", window=52, rounding=10),
     )
     assert risk_module.get_var_backtest(period="weekly").notna().all().all()
     assert (
@@ -1010,7 +974,7 @@ def test_var_backtest_window_defaults_to_a_year_of_each_period(risk_module):
 def test_var_backtest_with_evt_and_a_short_window_is_nan(risk_module, caplog):
     with caplog.at_level("WARNING"):
         result = risk_module.get_var_backtest(
-            period="weekly", distribution="evt", test="kupiec"
+            period="weekly", method="evt", test="kupiec"
         )
 
     # 52 weekly returns hold 3 losses above the 95th percentile, too few to fit.
@@ -1193,22 +1157,23 @@ def _weekend_ohlc_risk(tickers=("BTC", "SPY")):
     )
 
 
-@pytest.mark.parametrize(
-    "method",
-    ["get_corwin_schultz_spread", "get_abdi_ranaldo_spread", "get_edge_spread"],
-)
+@pytest.mark.parametrize("method", ["corwin_schultz", "abdi_ranaldo", "edge"])
 def test_the_spread_of_a_stock_ignores_a_cryptocurrency_next_to_it(method):
     mixed = _weekend_ohlc_risk()
     alone = _weekend_ohlc_risk(tickers=("SPY",))
 
     for period, rolling in (("monthly", None), ("quarterly", 2), ("weekly", None)):
-        mixed_spread = getattr(mixed, method)(period=period, rolling=rolling)
+        mixed_spread = mixed.get_bid_ask_spread(
+            period=period, rolling=rolling, method=method
+        )
         # The rows of the cryptocurrency's own periods (a first week holding a single
         # trading day of the stock) are NaN for the stock.
         for column in ("SPY", "Benchmark"):
             pd.testing.assert_series_equal(
                 mixed_spread[column].dropna(),
-                getattr(alone, method)(period=period, rolling=rolling)[column].dropna(),
+                alone.get_bid_ask_spread(period=period, rolling=rolling, method=method)[
+                    column
+                ].dropna(),
             )
         assert mixed_spread["SPY"].notna().sum() > 0
 
@@ -1256,6 +1221,36 @@ def test_get_srisk(recorder, risk_module):
     )
 
 
+def test_get_srisk_takes_the_market_by_its_ticker(risk_module, monkeypatch):
+    # The benchmark named as it trades (SPY) is the "Benchmark" column.
+    pd.testing.assert_frame_equal(
+        risk_module.get_srisk(market_ticker="SPY"), risk_module.get_srisk()
+    )
+    pd.testing.assert_frame_equal(
+        risk_module.get_marginal_expected_shortfall(market_ticker="spy"),
+        risk_module.get_marginal_expected_shortfall(),
+    )
+
+    # A market outside the Toolkit is retrieved for the same dates; here it has the returns of
+    # the benchmark, which is then left out of the firms as a market index.
+    requested = []
+
+    def other_returns(tickers, period):
+        requested.append((tickers, period))
+        returns = risk_module._historical_data[period]["Return"]
+        return returns[["Benchmark"]].set_axis(tickers, axis=1)
+
+    monkeypatch.setattr(risk_module, "_other_returns_function", other_returns)
+    pd.testing.assert_frame_equal(
+        risk_module.get_srisk(market_ticker="^GSPC"), risk_module.get_srisk()
+    )
+    assert requested == [(["^GSPC"], "daily")]
+
+    # Without a way to retrieve it, the missing market is reported.
+    monkeypatch.setattr(risk_module, "_other_returns_function", None)
+    assert risk_module.get_srisk(market_ticker="^GSPC").empty
+
+
 def test_get_srisk_takes_a_fiscal_period_that_ends_on_a_weekend(risk_module):
     # A fiscal quarter that ends on Saturday 31 December 2022, after the last trading day of
     # the year, still belongs to 2022.
@@ -1296,3 +1291,785 @@ def test_the_marginal_expected_shortfall_of_a_stock_ignores_a_cryptocurrency_nex
     )
     # The cryptocurrency's weekend returns are compounded into the Monday of the market.
     assert mixed.get_marginal_expected_shortfall(rounding=None)["BTC"].notna().all()
+
+
+def test_get_downside_deviation_semi_deviation(recorder, risk_module):
+    recorder.capture(
+        risk_module.get_downside_deviation(minimum_acceptable_return="mean")
+    )
+    recorder.capture(
+        risk_module.get_downside_deviation(
+            period="monthly", rolling=6, minimum_acceptable_return="mean"
+        )
+    )
+
+
+def test_get_upside_deviation(recorder, risk_module):
+    recorder.capture(risk_module.get_upside_deviation())
+    recorder.capture(
+        risk_module.get_upside_deviation(period="yearly", within_period=True)
+    )
+    recorder.capture(
+        risk_module.get_upside_deviation(minimum_acceptable_return=0.001, rolling=20)
+    )
+
+
+def test_get_volatility_skewness(recorder, risk_module):
+    recorder.capture(risk_module.get_volatility_skewness())
+    recorder.capture(
+        risk_module.get_volatility_skewness(
+            period="yearly", within_period=True, method="variability"
+        )
+    )
+    recorder.capture(risk_module.get_volatility_skewness(period="weekly", rolling=26))
+
+
+def test_get_partial_moment(recorder, risk_module):
+    recorder.capture(risk_module.get_partial_moment())
+    recorder.capture(
+        risk_module.get_partial_moment(period="yearly", within_period=True, order=0)
+    )
+    recorder.capture(
+        risk_module.get_partial_moment(
+            order=2, minimum_acceptable_return="mean", side="upper", root=True
+        )
+    )
+    recorder.capture(
+        risk_module.get_partial_moment(
+            period="yearly", within_period=True, growth=True, order=3
+        )
+    )
+    recorder.capture(risk_module.get_partial_moment(period="weekly", rolling=13))
+
+
+def test_get_central_moment(recorder, risk_module):
+    recorder.capture(risk_module.get_central_moment(rounding=12))
+    recorder.capture(
+        risk_module.get_central_moment(
+            period="yearly", within_period=True, order=4, rounding=12
+        )
+    )
+    recorder.capture(
+        risk_module.get_central_moment(period="monthly", rolling=12, rounding=10)
+    )
+
+
+def test_get_worst_realization(recorder, risk_module):
+    recorder.capture(risk_module.get_worst_realization())
+    recorder.capture(
+        risk_module.get_worst_realization(period="yearly", within_period=True)
+    )
+    recorder.capture(risk_module.get_worst_realization(period="weekly", rolling=4))
+
+
+def test_get_gini_mean_difference(recorder, risk_module):
+    recorder.capture(risk_module.get_gini_mean_difference())
+    recorder.capture(
+        risk_module.get_gini_mean_difference(
+            period="yearly", within_period=True, growth=True
+        )
+    )
+    recorder.capture(risk_module.get_gini_mean_difference(period="monthly", rolling=6))
+
+
+def test_get_tail_gini(recorder, risk_module):
+    recorder.capture(risk_module.get_tail_gini())
+    recorder.capture(
+        risk_module.get_tail_gini(period="yearly", within_period=True, alpha=0.1)
+    )
+    recorder.capture(risk_module.get_tail_gini(rolling=60, points=50))
+
+
+def test_get_risk_range(recorder, risk_module):
+    recorder.capture(risk_module.get_risk_range())
+    recorder.capture(risk_module.get_risk_range(measure="var", alpha=0.25))
+    recorder.capture(
+        risk_module.get_risk_range(
+            period="yearly", within_period=True, measure="cvar", beta=0.1
+        )
+    )
+    recorder.capture(risk_module.get_risk_range(measure="tail_gini", rolling=60))
+
+
+def test_get_l_moment(recorder, risk_module):
+    recorder.capture(risk_module.get_l_moment())
+    recorder.capture(
+        risk_module.get_l_moment(
+            period="yearly", within_period=True, order=4, ratio=True
+        )
+    )
+    recorder.capture(
+        risk_module.get_l_moment(period="monthly", rolling=12, order=3, ratio=True)
+    )
+
+
+def test_get_l_moment_risk_measure(recorder, risk_module):
+    recorder.capture(risk_module.get_l_moment_risk_measure())
+    recorder.capture(
+        risk_module.get_l_moment_risk_measure(
+            period="yearly", within_period=True, method="crra"
+        )
+    )
+    recorder.capture(
+        risk_module.get_l_moment_risk_measure(order=6, method="mss", rolling=120)
+    )
+
+
+def test_get_skewness_kurtosis_ratio(recorder, risk_module):
+    recorder.capture(risk_module.get_skewness_kurtosis_ratio())
+    recorder.capture(
+        risk_module.get_skewness_kurtosis_ratio(period="yearly", within_period=True)
+    )
+    recorder.capture(
+        risk_module.get_skewness_kurtosis_ratio(period="monthly", rolling=12)
+    )
+
+
+def test_get_value_at_risk_kernel(recorder, risk_module):
+    recorder.capture(risk_module.get_value_at_risk(method="kernel"))
+    recorder.capture(
+        risk_module.get_value_at_risk(
+            period="yearly", within_period=True, method="kernel", alpha=0.01
+        )
+    )
+
+
+def test_get_conditional_value_at_risk_weighted(recorder, risk_module):
+    recorder.capture(risk_module.get_conditional_value_at_risk(method="kernel"))
+    recorder.capture(
+        risk_module.get_conditional_value_at_risk(
+            alpha=[0.05, 0.01], alpha_weights=[0.5, 0.5]
+        )
+    )
+    recorder.capture(
+        risk_module.get_conditional_value_at_risk(
+            period="weekly", rolling=20, alpha=[0.1, 0.05, 0.025]
+        )
+    )
+    recorder.capture(
+        risk_module.get_conditional_value_at_risk(
+            period="yearly",
+            within_period=True,
+            method="gaussian",
+            alpha=[0.05, 0.01],
+            alpha_weights=[0.75, 0.25],
+        )
+    )
+
+
+def test_get_entropic_value_at_risk_historic(recorder, risk_module):
+    recorder.capture(risk_module.get_entropic_value_at_risk(method="historic"))
+    recorder.capture(
+        risk_module.get_entropic_value_at_risk(
+            period="yearly", within_period=True, method="historic", growth=True
+        )
+    )
+    recorder.capture(
+        risk_module.get_entropic_value_at_risk(period="weekly", rolling=26)
+    )
+    recorder.capture(
+        risk_module.get_entropic_value_at_risk(rolling=60, method="historic", alpha=0.1)
+    )
+
+
+def test_get_entropic_risk_measure(recorder, risk_module):
+    recorder.capture(risk_module.get_entropic_risk_measure())
+    recorder.capture(
+        risk_module.get_entropic_risk_measure(
+            period="yearly", within_period=True, risk_aversion=0.01
+        )
+    )
+    recorder.capture(
+        risk_module.get_entropic_risk_measure(
+            period="weekly", rolling=26, risk_aversion=0.05
+        )
+    )
+
+
+def test_get_drawdown_at_risk(recorder, risk_module):
+    recorder.capture(risk_module.get_drawdown_at_risk())
+    recorder.capture(
+        risk_module.get_drawdown_at_risk(
+            period="yearly", within_period=True, alpha=0.1, compound_returns=False
+        )
+    )
+    recorder.capture(risk_module.get_drawdown_at_risk(rolling=60))
+
+
+def test_get_entropic_drawdown_at_risk(recorder, risk_module):
+    recorder.capture(risk_module.get_entropic_drawdown_at_risk())
+    recorder.capture(
+        risk_module.get_entropic_drawdown_at_risk(
+            period="yearly", within_period=True, growth=True
+        )
+    )
+    recorder.capture(
+        risk_module.get_entropic_drawdown_at_risk(
+            period="weekly", rolling=26, compound_returns=False
+        )
+    )
+
+
+def test_get_average_drawdown(recorder, risk_module):
+    recorder.capture(risk_module.get_average_drawdown())
+    recorder.capture(risk_module.get_average_drawdown(method="observation"))
+    recorder.capture(
+        risk_module.get_average_drawdown(
+            period="yearly", within_period=True, compound_returns=False
+        )
+    )
+    recorder.capture(risk_module.get_average_drawdown(rolling=60))
+
+
+def test_get_drawdown_statistics(recorder, risk_module):
+    recorder.capture(risk_module.get_drawdown_statistics())
+    recorder.capture(risk_module.get_drawdown_statistics(period="weekly"))
+
+
+def test_get_maximum_drawdown_rolling_and_uncompounded(recorder, risk_module):
+    recorder.capture(risk_module.get_maximum_drawdown(rolling=60))
+    recorder.capture(risk_module.get_maximum_drawdown(compound_returns=False))
+    recorder.capture(
+        risk_module.get_maximum_drawdown(
+            period="yearly", within_period=True, compound_returns=False
+        )
+    )
+
+
+def test_drawdown_measures_uncompounded(recorder, risk_module):
+    recorder.capture(
+        risk_module.get_conditional_drawdown_at_risk(compound_returns=False)
+    )
+    recorder.capture(
+        risk_module.get_conditional_drawdown_at_risk(rolling=60, compound_returns=False)
+    )
+    recorder.capture(risk_module.get_ulcer_index(window=None, compound_returns=False))
+
+
+def test_get_risk_range_evar(recorder, risk_module):
+    recorder.capture(risk_module.get_risk_range(measure="evar"))
+    recorder.capture(
+        risk_module.get_risk_range(
+            period="yearly", within_period=True, measure="evar", beta=0.1
+        )
+    )
+
+
+def test_get_srisk_with_a_window_longer_than_the_data_is_empty(risk_module):
+    # Thirteen quarters of returns can't fill a window of twenty: the result is empty (the
+    # error is logged), not an AttributeError on an index without periods.
+    assert risk_module.get_srisk(period="quarterly", rolling=20).empty
+    assert not risk_module.get_srisk(period="yearly", rolling=2).empty
+
+
+def test_get_garch_family_variants(recorder, risk_module):
+    recorder.capture(risk_module.get_garch(method="aparch", distribution="t"))
+    recorder.capture(risk_module.get_garch(method="component", period="weekly"))
+    recorder.capture(
+        risk_module.get_garch(
+            method="component", period="weekly", output="long_run_variance"
+        )
+    )
+    recorder.capture(
+        risk_module.get_garch(mean="arma", output="standardized_residuals")
+    )
+    with pytest.raises(InvalidArgumentError, match="distribution must be one of"):
+        risk_module.get_garch(distribution="cauchy")
+    with pytest.raises(InvalidArgumentError):
+        risk_module.get_garch(method="gjr", output="long_run_variance")
+
+
+def test_get_garch_forecast_family_variants(recorder, risk_module):
+    recorder.capture(risk_module.get_garch_forecast(method="igarch"))
+    recorder.capture(risk_module.get_garch_forecast(method="gjr", distribution="skewt"))
+
+
+def test_get_garch_parameters_family_variants(recorder, risk_module):
+    recorder.capture(
+        risk_module.get_garch_parameters(method="tgarch", distribution="ged")
+    )
+    recorder.capture(risk_module.get_garch_parameters(method="igarch"))
+    recorder.capture(
+        risk_module.get_garch_parameters(
+            distribution="johnson_su", mean="constant", diagnostics=True
+        )
+    )
+
+
+def test_get_news_impact_curve(recorder, risk_module):
+    recorder.capture(risk_module.get_news_impact_curve())
+    recorder.capture(risk_module.get_news_impact_curve(method="gjr"))
+
+
+def test_get_garch_simulation(recorder, risk_module):
+    recorder.capture(risk_module.get_garch_simulation(simulations=1000))
+    recorder.capture(
+        risk_module.get_garch_simulation(
+            simulations=1000, output="cumulative_returns", distribution="t"
+        )
+    )
+
+
+def test_get_garch_figarch(recorder, risk_module):
+    recorder.capture(risk_module.get_garch(method="figarch"))
+    recorder.capture(risk_module.get_garch_forecast(method="figarch"))
+    # The standard errors move by about 1e-6 when the prices move by 1e-12 (the fit stops
+    # within its tolerance), so the parameters are recorded at three decimals.
+    recorder.capture(
+        risk_module.get_garch_parameters(method="figarch", diagnostics=True, rounding=3)
+    )
+
+
+def test_get_garch_arfima_mean(recorder, risk_module):
+    recorder.capture(risk_module.get_garch(mean="arfima"))
+
+
+def test_get_garch_simulation_bootstrap(recorder, risk_module):
+    # Each bootstrap fit runs on resampled returns whose likelihood can be flat, so its fourth
+    # decimal moves with the platform's floating point: recorded to three.
+    recorder.capture(
+        risk_module.get_garch_simulation(simulations=500, bootstrap_fits=2).round(3)
+    )
+    recorder.capture(
+        risk_module.get_garch_simulation(
+            simulations=500, bootstrap_fits=0, output="volatility"
+        )
+    )
+
+
+def test_realized_garch_takes_the_daily_parkinson_variance(risk_module):
+    # The realized GARCH fit itself (about 30 seconds for the three series) is tested on
+    # simulated data in test_garch_fit.py; here its realized measure.
+    measure = risk_module._get_realized_measure("realized", "daily")
+    high = risk_module._get_prices("High")
+    low = risk_module._get_prices("Low")
+    expected = np.log(high / low) ** 2 / (4 * np.log(2))
+
+    pd.testing.assert_frame_equal(measure, expected)
+    assert risk_module._get_realized_measure("garch", "daily") is None
+    with pytest.raises(InvalidArgumentError):
+        risk_module.get_garch(method="realized", period="monthly")
+
+
+def test_get_volatility_garman_klass_yang_zhang(recorder, risk_module):
+    recorder.capture(
+        risk_module.get_volatility(method="garman_klass_yang_zhang", period="monthly")
+    )
+
+
+def test_get_hurst_exponent(recorder, risk_module):
+    recorder.capture(risk_module.get_hurst_exponent())
+    recorder.capture(risk_module.get_hurst_exponent(q=[1, 2]))
+    recorder.capture(risk_module.get_hurst_exponent(method="rescaled_range"))
+    recorder.capture(
+        risk_module.get_hurst_exponent(method="rescaled_range", corrected=False)
+    )
+    recorder.capture(risk_module.get_hurst_exponent(method="detrended_fluctuation"))
+    recorder.capture(
+        risk_module.get_hurst_exponent(method="detrended_fluctuation", rolling=252)
+    )
+
+
+def test_get_fractal_dimension(recorder, risk_module):
+    recorder.capture(risk_module.get_fractal_dimension())
+    recorder.capture(risk_module.get_fractal_dimension(method="katz"))
+    recorder.capture(risk_module.get_fractal_dimension(method="petrosian"))
+    recorder.capture(risk_module.get_fractal_dimension(rolling=100, period="weekly"))
+
+
+def test_get_correlation_dimension(recorder, risk_module):
+    recorder.capture(risk_module.get_correlation_dimension())
+    recorder.capture(risk_module.get_correlation_dimension(embedding=2))
+
+
+def test_get_lyapunov_exponent(recorder, risk_module):
+    recorder.capture(risk_module.get_lyapunov_exponent())
+    recorder.capture(risk_module.get_lyapunov_exponent(method="eckmann"))
+
+
+def test_fractal_measures_use_log_returns_per_ticker(risk_module):
+    alpha = risk_module.get_hurst_exponent(method="detrended_fluctuation", rounding=10)
+    log_returns = np.log(risk_module._historical_data["daily"]["Adj Close"]).diff()
+
+    for ticker in alpha.index:
+        assert alpha[ticker] == pytest.approx(
+            fractal_model.get_detrended_fluctuation(log_returns[ticker].dropna()),
+            abs=1e-9,
+        )
+
+
+def test_get_var_backtest_all_tests(recorder, risk_module):
+    result = risk_module.get_var_backtest(window=100, test="all")
+    assert "Kupiec P-Value" in result.index
+    assert "Tick Loss" in result.index
+    recorder.capture(result)
+    recorder.capture(
+        risk_module.get_var_backtest(
+            window=100, test=["duration", "mcneil_frey"], method="gaussian"
+        )
+    )
+
+
+def test_get_var_backtest_garch(recorder, risk_module):
+    recorder.capture(
+        risk_module.get_var_backtest(
+            method="garch", test="all", refit_every=63, window=504
+        )
+    )
+
+
+def test_get_var_backtest_invalid_test(risk_module):
+    with pytest.raises(InvalidArgumentError, match="'kupiec'"):
+        risk_module.get_var_backtest(test="bad")
+
+
+def test_get_value_at_risk_garch(recorder, risk_module):
+    recorder.capture(risk_module.get_value_at_risk(method="garch"))
+    recorder.capture(
+        risk_module.get_value_at_risk(
+            method="garch", garch_distribution="t", rolling=504, refit_every=63
+        ).iloc[::21]
+    )
+
+
+def test_get_conditional_value_at_risk_garch(recorder, risk_module):
+    recorder.capture(
+        risk_module.get_conditional_value_at_risk(method="garch", garch_method="gjr")
+    )
+
+
+def test_get_acerbi_szekely_test_garch(recorder, risk_module):
+    recorder.capture(
+        risk_module.get_acerbi_szekely_test(method="garch", refit_every=63)
+    )
+
+
+def test_get_price_impact(recorder, risk_module):
+    recorder.capture(risk_module.get_price_impact())
+    for method in ("amihud", "hasbrouck", "roll"):
+        recorder.capture(risk_module.get_price_impact(method=method))
+    recorder.capture(risk_module.get_price_impact(period="quarterly", rolling=2))
+    recorder.capture(risk_module.get_price_impact(method="amihud", scale=1e12))
+
+    pd.testing.assert_frame_equal(
+        risk_module.get_price_impact(), risk_module.get_price_impact(method="kyle")
+    )
+    with pytest.raises(InvalidArgumentError, match="'amihud'"):
+        risk_module.get_price_impact(method="lambda")
+
+
+def test_get_bekker_parkinson_volatility(recorder, risk_module):
+    recorder.capture(risk_module.get_bekker_parkinson_volatility())
+    recorder.capture(
+        risk_module.get_bekker_parkinson_volatility(period="quarterly", rolling=2)
+    )
+
+    # Taking the spread out leaves at most the range-based (Parkinson) volatility on average.
+    volatility = risk_module.get_bekker_parkinson_volatility(
+        period="yearly", rounding=10
+    )
+    parkinson = risk_module.get_volatility(
+        period="yearly", method="parkinson", rounding=10
+    )
+    assert (volatility.mean() <= parkinson.reindex(volatility.index).mean()).all()
+
+
+def test_get_vpin(recorder, risk_module):
+    result = risk_module.get_vpin()
+    recorder.capture(result.dropna(how="all").iloc[::20])
+    recorder.capture(
+        risk_module.get_vpin(buckets=20, degrees_of_freedom=0.25)
+        .dropna(how="all")
+        .iloc[::20]
+    )
+
+    assert result.stack().dropna().between(0, 1).all()
+
+
+def test_get_volatility_compounded(recorder, risk_module):
+    compounded = risk_module.get_volatility(method="compounded")
+    recorder.capture(compounded)
+    recorder.capture(risk_module.get_volatility(method="compounded", period="monthly"))
+
+
+def test_get_higher_moment_coherent_risk(recorder, risk_module):
+    recorder.capture(risk_module.get_higher_moment_coherent_risk())
+    recorder.capture(risk_module.get_higher_moment_coherent_risk(order=3, alpha=0.1))
+    recorder.capture(
+        risk_module.get_higher_moment_coherent_risk(period="weekly", rolling=52)
+    )
+    # Order 1 is the exact tail average of the returns, next to the interpolated historic CVaR.
+    assert np.allclose(
+        risk_module.get_higher_moment_coherent_risk(order=1, rounding=10),
+        risk_module.get_conditional_value_at_risk(rounding=10),
+        atol=2e-4,
+    )
+
+
+def test_get_expected_quadratic_shortfall(recorder, risk_module):
+    recorder.capture(risk_module.get_expected_quadratic_shortfall(rounding=8))
+    recorder.capture(
+        risk_module.get_expected_quadratic_shortfall(
+            period="monthly", within_period=True, rounding=8
+        )
+    )
+    recorder.capture(
+        risk_module.get_expected_quadratic_shortfall(rolling=60, alpha=0.1, rounding=8)
+    )
+
+
+def test_get_conditional_expected_drawdown(recorder, risk_module):
+    recorder.capture(risk_module.get_conditional_expected_drawdown())
+    recorder.capture(
+        risk_module.get_conditional_expected_drawdown(
+            period="yearly", within_period=True, window=10
+        )
+    )
+    recorder.capture(risk_module.get_conditional_expected_drawdown(rolling=126))
+    recorder.capture(
+        risk_module.get_conditional_expected_drawdown(
+            period="weekly", compound_returns=False
+        )
+    )
+    # Every path lies within the history, so no path is deeper than the Maximum Drawdown.
+    assert (
+        risk_module.get_conditional_expected_drawdown(rounding=10)
+        >= risk_module.get_maximum_drawdown(rounding=10) - 1e-12
+    ).all()
+
+
+def test_get_drawdown_table(recorder, risk_module):
+    recorder.capture(risk_module.get_drawdown_table(top=3))
+    recorder.capture(risk_module.get_drawdown_table(top=2, period="weekly"))
+
+
+@pytest.mark.parametrize(
+    "method",
+    [
+        "get_value_at_risk",
+        "get_conditional_value_at_risk",
+        "get_var_backtest",
+        "get_acerbi_szekely_test",
+    ],
+)
+def test_the_garch_options_are_checked_for_every_method(risk_module, method):
+    for option in ("garch_method", "garch_distribution"):
+        with pytest.raises(InvalidArgumentError, match=option):
+            getattr(risk_module, method)(method="historic", **{option: "bogus"})
+
+
+@pytest.mark.parametrize(
+    "method",
+    [
+        "get_volatility",
+        "get_value_at_risk",
+        "get_maximum_drawdown",
+        "get_skewness",
+        "get_bid_ask_spread",
+        "get_srisk",
+    ],
+)
+def test_a_rolling_window_needs_two_periods(risk_module, method):
+    for rolling in (1, 0, -3, 2.5):
+        with pytest.raises(InvalidArgumentError, match="rolling is a number"):
+            getattr(risk_module, method)(rolling=rolling)
+
+
+def test_a_rolling_window_longer_than_the_data_is_logged_once(risk_module, caplog):
+    with caplog.at_level("WARNING"):
+        volatility = risk_module.get_volatility(period="monthly", rolling=1000)
+
+    assert volatility.isna().all().all()
+    assert caplog.text.count("is at least as long as the") == 1
+
+
+def test_srisk_of_a_range_without_data_says_so(caplog):
+    historical = pd.read_pickle("tests/datasets/historical_dataset.pickle")
+    from financetoolkit import Toolkit
+
+    after_the_data = Toolkit(
+        tickers=["AAPL", "MSFT"],
+        historical=historical,
+        balance=pd.read_pickle("tests/datasets/balance_dataset.pickle"),
+        income=pd.read_pickle("tests/datasets/income_dataset.pickle"),
+        cash=pd.read_pickle("tests/datasets/cash_dataset.pickle"),
+        convert_currency=False,
+        start_date="2023-06-01",
+        end_date="2023-12-31",
+        sleep_timer=False,
+    )
+    after_the_data._daily_risk_free_rate = pd.read_pickle(
+        "tests/datasets/risk_free_rate.pickle"
+    )
+
+    with caplog.at_level("ERROR"):
+        assert after_the_data.risk.get_srisk().empty
+
+    assert "The data holds no yearly period with daily returns" in caplog.text
+    assert "None" not in caplog.text
+
+
+# Robustness round 2: backtest windows, rolling minimums and constituents without data.
+
+
+@pytest.mark.parametrize("method", ["get_var_backtest", "get_acerbi_szekely_test"])
+def test_a_backtest_window_below_two_raises(risk_module, method):
+    for window in (0, 1, 2.5):
+        with pytest.raises(InvalidArgumentError, match="window is a number"):
+            getattr(risk_module, method)(window=window)
+
+
+def test_a_backtest_window_without_a_tail_observation_is_logged(risk_module, caplog):
+    with caplog.at_level("WARNING", logger="financetoolkit"):
+        result = risk_module.get_acerbi_szekely_test(window=2)
+
+    assert caplog.text.count("holds no observation in the 0.05 tail") == 1
+    # A CVaR of 0 in a two-return window gives NaN rather than an infinite statistic.
+    assert not np.isinf(result.loc["Acerbi-Szekely Statistic"]).any()
+
+
+def test_a_backtest_window_as_long_as_the_returns_is_logged(risk_module, caplog):
+    with caplog.at_level("WARNING", logger="financetoolkit"):
+        result = risk_module.get_var_backtest(window=2000)
+
+    assert result.isna().all().all()
+    assert caplog.text.count("no out-of-sample estimate is left") == 1
+
+
+def test_the_rolling_window_counts_the_periods_with_a_return(risk_module, caplog):
+    # The data starts on 2019-12-31: four years and three yearly returns.
+    with caplog.at_level("WARNING", logger="financetoolkit"):
+        volatility = risk_module.get_volatility(period="yearly", rolling=4)
+
+    assert volatility.isna().all().all()
+    assert "the 3 yearly returns in the data" in caplog.text
+
+
+@pytest.mark.parametrize(
+    ("method", "arguments", "minimum"),
+    [
+        ("get_skewness", {"rolling": 2}, 3),
+        ("get_kurtosis", {"rolling": 3}, 4),
+        ("get_skewness_kurtosis_ratio", {"rolling": 3}, 4),
+        ("get_hurst_exponent", {"rolling": 4}, 5),
+        ("get_hurst_exponent", {"rolling": 100, "method": "rescaled_range"}, 120),
+        ("get_fractal_dimension", {"rolling": 11}, 12),
+        ("get_fractal_dimension", {"rolling": 2, "method": "katz"}, 3),
+        ("get_conditional_expected_drawdown", {"rolling": 20}, 21),
+    ],
+)
+def test_a_rolling_window_below_the_measure_minimum_raises(
+    risk_module, method, arguments, minimum
+):
+    with pytest.raises(InvalidArgumentError, match=f"at least {minimum}"):
+        getattr(risk_module, method)(**arguments)
+
+
+def test_the_rolling_minimums_give_values(risk_module):
+    assert risk_module.get_skewness(rolling=3).notna().any().any()
+    assert risk_module.get_kurtosis(rolling=4).notna().any().any()
+    assert risk_module.get_hurst_exponent(rolling=5).notna().any().any()
+    assert risk_module.get_fractal_dimension(rolling=12).notna().any().any()
+
+
+def test_a_portfolio_constituent_without_returns_is_named(caplog):
+    from financetoolkit import Toolkit
+
+    historical = pd.read_pickle("tests/datasets/historical_dataset.pickle")
+    historical = historical.drop(columns=["Return", "Cumulative Return"], level=0)
+    for column in historical.columns.get_level_values(0).unique():
+        historical[(column, "MSFT")] = np.nan
+    toolkit = Toolkit(
+        tickers=["AAPL", "MSFT"],
+        historical=historical,
+        convert_currency=False,
+        start_date="2019-12-31",
+        end_date="2023-01-01",
+        sleep_timer=False,
+    )
+    toolkit._daily_risk_free_rate = pd.read_pickle(
+        "tests/datasets/risk_free_rate.pickle"
+    )
+
+    with caplog.at_level("WARNING", logger="financetoolkit"):
+        marginal = toolkit.risk.get_marginal_value_at_risk()
+
+    assert marginal.isna().all()
+    assert "MSFT has no Return values" in caplog.text
+
+
+# Robustness round 3: default backtest windows and per-ticker rolling windows.
+
+
+@pytest.mark.parametrize("method", ["get_var_backtest", "get_acerbi_szekely_test"])
+def test_a_default_backtest_window_as_long_as_the_returns_is_logged(
+    risk_module, method, caplog
+):
+    # The default window is 20 yearly returns, while the data holds three.
+    with caplog.at_level("WARNING", logger="financetoolkit"):
+        result = getattr(risk_module, method)(period="yearly")
+
+    assert result.isna().all().all()
+    assert caplog.text.count("A window of 20 yearly returns") == 1
+
+
+def test_a_default_backtest_window_without_a_tail_observation_is_logged(
+    risk_module, caplog
+):
+    # The default window of 20 monthly returns holds no observation in a 1% tail.
+    with caplog.at_level("WARNING", logger="financetoolkit"):
+        risk_module.get_var_backtest(period="monthly", alpha=0.01)
+
+    assert caplog.text.count("holds no observation in the 0.01 tail") == 1
+
+
+def test_a_rolling_window_names_the_tickers_with_fewer_returns(caplog):
+    from financetoolkit import Toolkit
+
+    historical = pd.read_pickle("tests/datasets/historical_dataset.pickle").drop(
+        columns=["Return", "Cumulative Return"], level=0
+    )
+    # MSFT starts in June 2021, while AAPL and the Benchmark have the full range.
+    before = historical.index < pd.Period("2021-06-01", "D")
+    for column in historical.columns.get_level_values(0).unique():
+        historical.loc[before, (column, "MSFT")] = np.nan
+    toolkit = Toolkit(
+        tickers=["AAPL", "MSFT"],
+        historical=historical,
+        convert_currency=False,
+        start_date="2019-12-31",
+        end_date="2023-01-01",
+        sleep_timer=False,
+    )
+    toolkit._daily_risk_free_rate = pd.read_pickle(
+        "tests/datasets/risk_free_rate.pickle"
+    )
+    toolkit._daily_treasury_data = pd.read_pickle("tests/datasets/treasury_data.pickle")
+
+    with caplog.at_level("WARNING", logger="financetoolkit"):
+        volatility = toolkit.risk.get_volatility(period="quarterly", rolling=8)
+
+    assert volatility["MSFT"].isna().all()
+    assert volatility["AAPL"].notna().any()
+    assert caplog.text.count("the quarterly returns of MSFT (") == 1
+    assert "AAPL (" not in caplog.text
+
+
+def test_a_benchmark_shorter_than_the_rolling_window_is_named(caplog):
+    from financetoolkit.risk.helpers import check_rolling
+
+    years = pd.period_range("2019", "2023", freq="Y")
+    returns = pd.DataFrame(
+        {
+            "AAPL": [np.nan, 0.1, 0.2, 0.3, 0.4],
+            "MSFT": [np.nan, 0.1, 0.2, 0.3, 0.4],
+            "Benchmark": np.nan,
+        },
+        index=years,
+    )
+
+    with caplog.at_level("WARNING", logger="financetoolkit"):
+        check_rolling(2, {"yearly": pd.concat({"Return": returns}, axis=1)}, "yearly")
+
+    assert "the yearly returns of Benchmark (0)" in caplog.text
+    assert "AAPL (" not in caplog.text

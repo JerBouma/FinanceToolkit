@@ -109,15 +109,6 @@ def test_get_return_on_capital_employed(recorder):
     )
 
 
-def test_get_net_income_per_ebt(recorder):
-    recorder.capture(
-        profitability_model.get_net_income_per_ebt(
-            net_income=pd.Series([80, 40, 40, 30, 20]),
-            income_tax_expense=pd.Series([5, 10, 20, 10, 5]),
-        )
-    )
-
-
 def test_get_free_cash_flow_operating_cash_flow_ratio(recorder):
     recorder.capture(
         profitability_model.get_free_cash_flow_operating_cash_flow_ratio(
@@ -132,15 +123,6 @@ def test_get_tax_burden_ratio(recorder):
         profitability_model.get_tax_burden_ratio(
             net_income=pd.Series([80, 40, 40, 30, 20]),
             income_before_tax=pd.Series([200, 100, 50, 150, 50]),
-        )
-    )
-
-
-def test_get_EBIT_to_revenue(recorder):
-    recorder.capture(
-        profitability_model.get_EBIT_to_revenue(
-            earnings_before_interest_and_taxes=pd.Series([80, 50, 40, 30, 20]),
-            revenue=pd.Series([230, 150, 50, 150, 50]),
         )
     )
 
@@ -308,3 +290,13 @@ def test_nissim_penman_components():
     assert profitability_model.get_financial_leverage(
         pd.Series([80.0]), pd.Series([120.0])
     ).iloc[0] == pytest.approx(80 / 120)
+
+
+def test_operating_return_on_assets_and_continuing_operations_margin():
+    # Apple 2022: 119,437 / ((351,002 + 352,755) / 2).
+    assert profitability_model.get_operating_return_on_assets(
+        119437.0, (351002.0 + 352755.0) / 2
+    ) == pytest.approx(0.339427, abs=1e-6)
+    assert profitability_model.get_continuing_operations_profit_margin(
+        99803.0, 394328.0
+    ) == pytest.approx(0.253096, abs=1e-6)

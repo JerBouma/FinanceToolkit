@@ -33,9 +33,10 @@ INDEX_COMMODITIES = ["Natural gas index"]
 
 def clean_commodity_name(name: object) -> str:
     """
-    Returns the name of a commodity as the Finance Toolkit gives it: the World Bank's name
-    without its commas and footnote marks, so that names can be listed comma-separated,
-    e.g. "Crude oil, Brent" becomes "Crude oil Brent" and "Beef **" becomes "Beef".
+    Return the name of a commodity as the Finance Toolkit gives it: the World Bank's name without its commas and
+    footnote marks, so names can be listed comma-separated.
+
+    For example, "Crude oil, Brent" becomes "Crude oil Brent" and "Beef **" becomes "Beef".
 
     Args:
         name (object): The name as the World Bank publishes it.
@@ -48,10 +49,11 @@ def clean_commodity_name(name: object) -> str:
 
 def get_commodity_prices() -> pd.DataFrame:
     """
-    Retrieves the World Bank's monthly commodity prices (The Pink Sheet) from 1960: the
-    average price of each month in nominal US dollars of around seventy commodities,
-    among which crude oil (Brent, WTI, Dubai), natural gas, coal, metals (gold, silver,
-    platinum, copper, aluminum, iron ore, nickel, zinc), grains, softs and fertilizers.
+    Retrieve the World Bank's monthly commodity prices (The Pink Sheet) from 1960: the average price of each month in
+    nominal US dollars of around seventy commodities.
+
+    Among them are crude oil (Brent, WTI, Dubai), natural gas, coal, metals (gold, silver, platinum, copper, aluminum,
+    iron ore, nickel, zinc), grains, softs and fertilizers.
 
     Returns:
         pd.DataFrame: One column per commodity, named as in clean_commodity_name, indexed
@@ -74,6 +76,7 @@ def get_commodity_prices() -> pd.DataFrame:
 
         sheet = read_excel(
             get_request(link.group(1), timeout=120).content,
+            description,
             sheet_name=SHEET_NAME,
             header=None,
         )
@@ -177,12 +180,12 @@ def _read_pages(url: str, description: str) -> list[dict]:
 
 def get_economy_names() -> pd.DataFrame:
     """
-    Lists the economies of the World Development Indicators, named as elsewhere in the
-    Finance Toolkit where it knows the country (by the three or two letter ISO 3166 code,
-    or as the Global Macro Database names it, see WORLD_BANK_TO_COUNTRY_NAMES), otherwise
-    as the World Bank names it without a qualifier after a comma ("Bahamas, The" becomes
-    "Bahamas"). Of the aggregates, the euro area, the European Union and the world are
-    kept.
+    List the economies of the World Development Indicators, named as elsewhere in the Finance Toolkit where it knows
+    the country, otherwise as the World Bank names it.
+
+    A country is known by its three or two letter ISO 3166 code or as the Global Macro Database names it (see
+    WORLD_BANK_TO_COUNTRY_NAMES); other names lose the qualifier after a comma ("Bahamas, The" becomes "Bahamas"). Of
+    the aggregates, the euro area, the European Union and the world are kept.
 
     Returns:
         pd.DataFrame: The name ("Country") per three letter code.

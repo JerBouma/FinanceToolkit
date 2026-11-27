@@ -3,7 +3,7 @@
 __docformat__ = "google"
 
 import re
-from urllib.parse import quote
+from urllib.parse import parse_qs, quote, urlparse
 
 import numpy as np
 import pandas as pd
@@ -62,7 +62,8 @@ def get_cached_financial_data(
         sleep_timer (bool): Whether to wait and retry when the rate limit is reached.
 
     Returns:
-        pd.DataFrame: The endpoint's response, either freshly retrieved or cached.
+        pd.DataFrame: The endpoint's response, either freshly retrieved or cached, and an
+        empty DataFrame (with the reason logged) when the request failed.
     """
     cache = get_active_cache()
     # Identified by the URL as it is requested, with its symbols encoded, so a symbol such as
@@ -104,7 +105,71 @@ def get_cached_financial_data(
             data=response,
         )
 
+    if error_model.is_error_response(response):
+        # The error frame names why there is no answer; it is logged here and an empty
+        # frame returned, so the error's name never reaches a result as a column. A failed
+        # request (a server error, an answer other than JSON, a timeout) was logged where it
+        # failed, so it is not logged twice.
+        reason = str(response.columns[0])
+        if reason != "REQUEST FAILED":
+            # No data for a query is an answer, not a failure.
+            log = logger.warning if reason == "NO DATA" else logger.error
+            log(
+                ERROR_RESPONSE_MESSAGES.get(
+                    reason, "Could not reach Financial Modeling Prep for %s."
+                ),
+                _describe_request(url),
+            )
+        return pd.DataFrame()
+
     return response
+
+
+def _describe_request(url: str) -> str:
+    """
+    Names a request for a log message by its endpoint and, where it asks for some, its
+    symbols, such as "historical-price-eod/light (^MOVE)" rather than the last part of the
+    path ("light"), which does not say what was asked for.
+
+    Args:
+        url (str): The request URL.
+
+    Returns:
+        str: The endpoint path after /stable/, with the symbols asked for in brackets.
+    """
+    parsed = urlparse(url)
+    endpoint = parsed.path.split("/stable/", 1)[-1].strip("/")
+    parameters = parse_qs(parsed.query)
+    symbols = parameters.get("symbol") or parameters.get("symbols")
+
+    return f"{endpoint} ({symbols[0]})" if symbols else endpoint
+
+
+# Why a discovery endpoint has no answer, per error frame of get_financial_data; any
+# other (a failed connection) is reported as the source being unreachable.
+_UPGRADE = (
+    "Consider upgrading your plan; you can get 15%% off with "
+    "https://www.jeroenbouma.com/fmp, which also supports the project."
+)
+ERROR_RESPONSE_MESSAGES = {
+    "LIMIT REACH": "The rate limit of Financial Modeling Prep was reached for %s. "
+    "Please try again later. " + _UPGRADE,
+    "BANDWIDTH LIMIT REACH": "The bandwidth limit of Financial Modeling Prep was reached "
+    "for %s. " + _UPGRADE,
+    "PREMIUM QUERY PARAMETER": "%s uses a query parameter that is not available in your "
+    "plan of Financial Modeling Prep. " + _UPGRADE,
+    "EXCLUSIVE ENDPOINT": "%s is an endpoint of Financial Modeling Prep that is not "
+    "available in your plan. " + _UPGRADE,
+    "SPECIAL ENDPOINT": "%s is an endpoint of Financial Modeling Prep that is not "
+    "available in your plan. " + _UPGRADE,
+    "NOT AVAILABLE": "%s is an endpoint of Financial Modeling Prep that is not available "
+    "in your plan. " + _UPGRADE,
+    "US STOCKS ONLY": "%s covers US stocks only in your plan of Financial Modeling Prep. "
+    + _UPGRADE,
+    "INVALID API KEY": "Financial Modeling Prep did not accept the API key for %s. Please "
+    "check it, or obtain one at https://www.jeroenbouma.com/fmp.",
+    "NO DATA": "Financial Modeling Prep has no data for %s with these arguments.",
+}
 
 
 # The parameter each search of Financial Modeling Prep takes the query as.
@@ -129,18 +194,14 @@ def get_instruments(
     Args:
         api_key (str): the API key from Financial Modeling Prep.
         query (str): The query to search for.
-        search_method (str, optional): What the query is: "name", "symbol", "cik", "cusip" or
-            "isin". Defaults to "name".
+        search_method (str, optional): What the query is. Options are: "name" (the name), "symbol" (the
+            ticker symbol), "cik" (the SEC CIK number), "cusip" (the CUSIP), "isin" (the ISIN). Defaults to "name".
         user_subscription (str, optional): The user subscription level. Defaults to "Free".
 
     Returns:
         pd.DataFrame: DataFrame of instruments.
     """
-    if search_method not in SEARCH_PARAMETERS:
-        raise ValueError(
-            f"The search method {search_method!r} is not valid. Choose from "
-            f"{', '.join(SEARCH_PARAMETERS)}."
-        )
+    error_model.check_option("search_method", search_method, tuple(SEARCH_PARAMETERS))
 
     # The identifier searches take the identifier as their own parameter: given `query`,
     # FinancialModelingPrep ignores it and answers with Apple for every ISIN or CUSIP.
@@ -394,8 +455,9 @@ def get_stock_screener(
     truncation_advice: str = "Narrow the criteria or raise the limit to see the remainder.",
 ) -> pd.DataFrame:
     """
-    Get a list of instruments based on the screening criteria provided. It defaults
-    to all stocks.
+    Get a list of instruments based on the screening criteria provided.
+
+    It defaults to all stocks.
 
     The market capitalisations of the listings are in their own currency, so they are
     converted to US dollars, which the market cap bounds and the ranking use: a listing
@@ -828,8 +890,9 @@ def get_stock_shares_float(
     api_key: str, user_subscription: str = "Free"
 ) -> pd.DataFrame:
     """
-    Get the shares float for all stocks. A free float, float or number of outstanding
-    shares the source reports as zero is missing and returned as NaN.
+    Get the shares float for all stocks.
+
+    A free float, float or number of outstanding shares the source reports as zero is missing and returned as NaN.
 
     Args:
         api_key (str): the API key from Financial Modeling Prep.
@@ -918,8 +981,8 @@ def get_sectors_performance(
         end_date (str, optional): The end date to filter data with, e.g. "2024-12-31".
             Defaults to None, which uses today.
         user_subscription (str, optional): The user subscription level. Defaults to "Free".
-        exchange (str, optional): The exchange whose companies are averaged, "NASDAQ", "NYSE"
-            or "AMEX". Defaults to "NASDAQ".
+        exchange (str, optional): The exchange whose companies are averaged. Options are: "NASDAQ" (Nasdaq),
+            "NYSE" (New York Stock Exchange), "AMEX" (NYSE American). Defaults to "NASDAQ".
 
     Returns:
         pd.DataFrame: DataFrame of sector performance indexed by date, with one column per sector
@@ -937,9 +1000,18 @@ def get_sectors_performance(
             f"&apikey={api_key}"
         )
 
+        failures_before = error_model.get_request_failures()
         sector_performance = get_cached_financial_data(
             url=url, user_subscription=user_subscription
         )
+
+        # A failed request (logged by get_cached_financial_data) would fail alike for
+        # the other sectors, each after its own retries.
+        if (
+            sector_performance.empty
+            and error_model.get_request_failures() != failures_before
+        ):
+            return pd.DataFrame()
 
         if sector_performance.empty:
             continue
@@ -1155,7 +1227,7 @@ def get_delisted_stocks(
 
     Returns:
         pd.DataFrame: DataFrame of delisted companies, one page at a time. The endpoint returns
-            at most 100 rows per call, so a full list requires walking `page` upwards until an
+            at most 100 rows per call, so a full list requires walking the pages upwards until an
             empty frame comes back.
     """
     url = (
@@ -1301,13 +1373,15 @@ def get_index_constituents(
     user_subscription: str = "Free",
 ) -> pd.DataFrame:
     """
-    Get the constituents of an index, today's or those on a past date. Past figures computed
-    from today's members leave out the companies removed from the index since (survivorship
+    Get the constituents of an index, today's or those on a past date.
+
+    Past figures computed from today's members leave out the companies removed from the index since (survivorship
     bias); the members on a date are today's members with every later change undone.
 
     Args:
         api_key (str): the API key from Financial Modeling Prep.
-        index (str, optional): "S&P 500", "NASDAQ 100" or "Dow Jones". Defaults to "S&P 500".
+        index (str, optional): The index. Options are: "S&P 500" (the S&P 500), "NASDAQ 100" (the NASDAQ 100),
+            "Dow Jones" (the Dow Jones Industrial Average). Defaults to "S&P 500".
         date (str | None, optional): The date (YYYY-MM-DD) to list the members of. Defaults to
             None, today's members.
         user_subscription (str, optional): The user subscription level. Defaults to "Free".
@@ -1317,11 +1391,7 @@ def get_index_constituents(
         headquarters, the date they were added, CIK and founding year. On a past date, also
         the date each member left the index (empty while it is still a member).
     """
-    if index not in INDEX_CONSTITUENTS:
-        raise ValueError(
-            f"The constituents of {index!r} are not available. Choose from "
-            f"{', '.join(INDEX_CONSTITUENTS)}."
-        )
+    error_model.check_option("index", index, tuple(INDEX_CONSTITUENTS))
 
     url = (
         f"https://financialmodelingprep.com/stable/{INDEX_CONSTITUENTS[index]}"
@@ -1362,10 +1432,11 @@ def reconstruct_index_constituents(
     constituents: pd.DataFrame, changes: pd.DataFrame, date: str
 ) -> pd.DataFrame:
     """
-    Reconstruct the members of an index on a date by undoing, from the newest back, every
-    change after it: a company added since is taken out and a company removed since is put
-    back. A change takes effect on its own date, so the members on a change's date include
-    it.
+    Reconstruct the members of an index on a past date from today's members and its changes since.
+
+    Reconstruct the members of an index on a date by undoing, from the newest back, every change after it: a company
+    added since is taken out and a company removed since is put back. A change takes effect on its own date, so the
+    members on a change's date include it.
 
     Args:
         constituents (pd.DataFrame): Today's constituents, indexed by symbol.
@@ -1447,7 +1518,8 @@ def get_index_constituent_changes(
 
     Args:
         api_key (str): the API key from Financial Modeling Prep.
-        index (str, optional): "S&P 500", "NASDAQ 100" or "Dow Jones". Defaults to "S&P 500".
+        index (str, optional): The index. Options are: "S&P 500" (the S&P 500), "NASDAQ 100" (the NASDAQ 100),
+            "Dow Jones" (the Dow Jones Industrial Average). Defaults to "S&P 500".
         start_date (str | None, optional): The first date (YYYY-MM-DD) to include. Defaults to
             None, the first change recorded.
         end_date (str | None, optional): The last date (YYYY-MM-DD) to include. Defaults to
@@ -1458,11 +1530,7 @@ def get_index_constituent_changes(
         pd.DataFrame: The changes in date order, indexed by date, with the added and removed
         ticker and company, the kind of change and its reason.
     """
-    if index not in INDEX_CONSTITUENTS:
-        raise ValueError(
-            f"The constituent changes of {index!r} are not available. Choose from "
-            f"{', '.join(INDEX_CONSTITUENTS)}."
-        )
+    error_model.check_option("index", index, tuple(INDEX_CONSTITUENTS))
 
     # The endpoint answers with the full history whatever the range; from and to are passed
     # all the same, as other endpoints fall back to old data without them.
@@ -1603,16 +1671,21 @@ def _get_news_pages(
         user_subscription (str, optional): The user subscription level. Defaults to "Free".
 
     Returns:
-        pd.DataFrame: the concatenated, unformatted news DataFrame across all pages.
+        pd.DataFrame: the concatenated, unformatted news DataFrame across all pages, up to
+            the first page whose request failed (logged where it failed): the next pages
+            would fail alike, each after its own retries.
     """
     page_frames = []
 
-    for page in range(pages):
-        page_data = get_cached_financial_data(
-            url=f"{base_url}&page={page}", user_subscription=user_subscription
-        )
-        if not page_data.empty:
-            page_frames.append(page_data)
+    with error_model.count_request_failures() as failed_requests:
+        for page in range(pages):
+            page_data = get_cached_financial_data(
+                url=f"{base_url}&page={page}", user_subscription=user_subscription
+            )
+            if failed_requests():
+                break
+            if not page_data.empty:
+                page_frames.append(page_data)
 
     if not page_frames:
         return pd.DataFrame()
@@ -2228,8 +2301,10 @@ def get_sector_performance(
     exchange: str = "NASDAQ",
 ) -> pd.DataFrame:
     """
-    Get sector performance. Provide exactly one of `date` (a snapshot across all
-    sectors on that date) or `sector` (the historical time series for one sector).
+    Get the average daily price change of the companies in each sector of an exchange.
+
+    Provide exactly one of a date (a snapshot across all sectors on that date) or a sector (the historical time series
+    for one sector).
 
     Args:
         api_key (str): the API key from Financial Modeling Prep.
@@ -2240,15 +2315,17 @@ def get_sector_performance(
             which uses the date a year ago.
         end_date (str, optional): The end of the history of one sector. Defaults to None, which uses
             today.
-        exchange (str, optional): The exchange whose companies are averaged, "NASDAQ", "NYSE"
-            or "AMEX". Defaults to "NASDAQ".
+        exchange (str, optional): The exchange whose companies are averaged. Options are: "NASDAQ" (Nasdaq),
+            "NYSE" (New York Stock Exchange), "AMEX" (NYSE American). Defaults to "NASDAQ".
 
     Returns:
         pd.DataFrame: DataFrame of sector performance, indexed by Sector (snapshot)
             or Date (historical).
     """
     if bool(date) == bool(sector):
-        raise ValueError("Please provide exactly one of `date` or `sector`.")
+        raise error_model.InvalidArgumentError(
+            "Please pass either a date (a snapshot of every sector) or a sector (its history)."
+        )
 
     if date:
         url = (
@@ -2302,9 +2379,10 @@ def get_industry_performance(
     exchange: str = "NASDAQ",
 ) -> pd.DataFrame:
     """
-    Get industry performance. Provide exactly one of `date` (a snapshot across all
-    industries on that date) or `industry` (the historical time series for one
-    industry).
+    Get the average daily price change of the companies in each industry of an exchange.
+
+    Provide exactly one of a date (a snapshot across all industries on that date) or an industry (the historical time
+    series for one industry).
 
     Args:
         api_key (str): the API key from Financial Modeling Prep.
@@ -2315,15 +2393,17 @@ def get_industry_performance(
             which uses the date a year ago.
         end_date (str, optional): The end of the history of one industry. Defaults to None, which uses
             today.
-        exchange (str, optional): The exchange whose companies are averaged, "NASDAQ", "NYSE"
-            or "AMEX". Defaults to "NASDAQ".
+        exchange (str, optional): The exchange whose companies are averaged. Options are: "NASDAQ" (Nasdaq),
+            "NYSE" (New York Stock Exchange), "AMEX" (NYSE American). Defaults to "NASDAQ".
 
     Returns:
         pd.DataFrame: DataFrame of industry performance, indexed by Industry (snapshot)
             or Date (historical).
     """
     if bool(date) == bool(industry):
-        raise ValueError("Please provide exactly one of `date` or `industry`.")
+        raise error_model.InvalidArgumentError(
+            "Please pass either a date (a snapshot of every industry) or a industry (its history)."
+        )
 
     if date:
         url = (
@@ -2377,9 +2457,10 @@ def get_sector_pe(
     exchange: str = "NASDAQ",
 ) -> pd.DataFrame:
     """
-    Get sector price-to-earnings (P/E) ratios. Provide exactly one of `date` (a
-    snapshot across all sectors on that date) or `sector` (the historical time
-    series for one sector).
+    Get the price-to-earnings (P/E) ratio of the companies in each sector of an exchange.
+
+    Provide exactly one of a date (a snapshot across all sectors on that date) or a sector (the historical time series
+    for one sector).
 
     Args:
         api_key (str): the API key from Financial Modeling Prep.
@@ -2390,15 +2471,17 @@ def get_sector_pe(
             which uses the date a year ago.
         end_date (str, optional): The end of the history of one sector. Defaults to None, which uses
             today.
-        exchange (str, optional): The exchange whose companies are averaged, "NASDAQ", "NYSE"
-            or "AMEX". Defaults to "NASDAQ".
+        exchange (str, optional): The exchange whose companies are averaged. Options are: "NASDAQ" (Nasdaq),
+            "NYSE" (New York Stock Exchange), "AMEX" (NYSE American). Defaults to "NASDAQ".
 
     Returns:
         pd.DataFrame: DataFrame of sector P/E ratios, indexed by Sector (snapshot)
             or Date (historical).
     """
     if bool(date) == bool(sector):
-        raise ValueError("Please provide exactly one of `date` or `sector`.")
+        raise error_model.InvalidArgumentError(
+            "Please pass either a date (a snapshot of every sector) or a sector (its history)."
+        )
 
     if date:
         url = (
@@ -2446,8 +2529,9 @@ def get_industry_pe(
     exchange: str = "NASDAQ",
 ) -> pd.DataFrame:
     """
-    Get industry price-to-earnings (P/E) ratios. Provide exactly one of `date` (a
-    snapshot across all industries on that date) or `industry` (the historical time
+    Get the price-to-earnings (P/E) ratio of the companies in each industry of an exchange.
+
+    Provide exactly one of a date (a snapshot across all industries on that date) or an industry (the historical time
     series for one industry).
 
     Args:
@@ -2459,15 +2543,17 @@ def get_industry_pe(
             which uses the date a year ago.
         end_date (str, optional): The end of the history of one industry. Defaults to None, which uses
             today.
-        exchange (str, optional): The exchange whose companies are averaged, "NASDAQ", "NYSE"
-            or "AMEX". Defaults to "NASDAQ".
+        exchange (str, optional): The exchange whose companies are averaged. Options are: "NASDAQ" (Nasdaq),
+            "NYSE" (New York Stock Exchange), "AMEX" (NYSE American). Defaults to "NASDAQ".
 
     Returns:
         pd.DataFrame: DataFrame of industry P/E ratios, indexed by Industry (snapshot)
             or Date (historical).
     """
     if bool(date) == bool(industry):
-        raise ValueError("Please provide exactly one of `date` or `industry`.")
+        raise error_model.InvalidArgumentError(
+            "Please pass either a date (a snapshot of every industry) or a industry (its history)."
+        )
 
     if date:
         url = (
@@ -2611,9 +2697,10 @@ def get_earnings_calendar(
     user_subscription: str = "Free",
 ) -> pd.DataFrame:
     """
-    Get the earnings releases of all companies in a date range, with the reported and
-    estimated earnings per share and revenue, the company name, the exchange of each
-    listing and the company's market capitalisation in US dollars.
+    Get the earnings releases of all companies in a date range, reported and expected.
+
+    Get the earnings releases of all companies in a date range, with the reported and estimated earnings per share and
+    revenue, the company name, the exchange of each listing and the company's market capitalisation in US dollars.
 
     The calendar holds every listing of a company (Cisco in New York, Frankfurt and Hong
     Kong). A company's primary listing is its most traded one (price times volume in US
@@ -2641,15 +2728,14 @@ def get_earnings_calendar(
             "XETRA". Defaults to None.
         primary_only (bool, optional): Whether to keep only the primary listing of each
             company. Defaults to False.
-        sort_by (str, optional): "date" to sort by date and symbol, or "market_cap" to put
-            the largest companies first. Defaults to "date".
+        sort_by (str, optional): The order of the releases. Options are: "date" (by date and symbol),
+            "market_cap" (the largest companies first). Defaults to "date".
         user_subscription (str, optional): The user subscription level. Defaults to "Free".
 
     Returns:
         pd.DataFrame: DataFrame of the earnings releases, indexed by symbol.
     """
-    if sort_by not in {"date", "market_cap"}:
-        raise ValueError(f"sort_by must be 'date' or 'market_cap', not '{sort_by}'.")
+    error_model.check_option("sort_by", sort_by, ("date", "market_cap"))
 
     # The endpoint answers without a range with the past weeks, so a range is always sent.
     week = pd.Timedelta(days=7)
@@ -2680,6 +2766,7 @@ def get_earnings_calendar(
     ]
     while ranges:
         start, end = ranges.pop()
+        failures_before = error_model.get_request_failures()
         response = get_cached_financial_data(
             url=(
                 "https://financialmodelingprep.com/stable/earnings-calendar"
@@ -2687,6 +2774,10 @@ def get_earnings_calendar(
             ),
             user_subscription=user_subscription,
         )
+        # A failed request (logged by get_cached_financial_data) leaves the calendar
+        # incomplete, and the other ranges would fail alike after their own retries.
+        if response.empty and error_model.get_request_failures() != failures_before:
+            return pd.DataFrame()
         if len(response) >= EARNINGS_CALENDAR_LIMIT and start < end:
             middle = (start + (end - start) / 2).normalize()
             ranges += [(start, middle), (middle + pd.Timedelta(days=1), end)]
@@ -2837,8 +2928,6 @@ def get_earnings_calendar(
             country=country,
             limit=MAXIMUM_SCREENER_LIMIT,
             user_subscription=user_subscription,
-            # The limit is already the screener's maximum, so the advice is about the
-            # calendar's own parameters.
             truncation_advice=(
                 "The releases of the companies beyond them are left out of the earnings "
                 "calendar: set a (higher) min_market_cap to look up fewer companies."

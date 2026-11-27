@@ -12,7 +12,11 @@ from financetoolkit.economics.sources import (
     world_bank_model,
 )
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
-from financetoolkit.utilities.error_model import handle_errors
+from financetoolkit.utilities.error_model import (
+    InvalidArgumentError,
+    check_option,
+    handle_errors,
+)
 from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import finalize_dataset
@@ -41,14 +45,11 @@ class OutputEconomics:
             str: The variable, e.g. "hcons".
 
         Raises:
-            ValueError: When the component is not one of the three.
+            InvalidArgumentError: When the component is not one of the three.
         """
         variables = {"total": "cons", "household": "hcons", "government": "gcons"}
 
-        if component not in variables:
-            raise ValueError(
-                f"The component must be one of {', '.join(map(repr, variables))}, not {component!r}."
-            )
+        check_option("component", component, tuple(variables))
 
         return variables[component]
 
@@ -69,11 +70,10 @@ class OutputEconomics:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Get the Gross Domestic Product for a variety of countries over
-        time. The Gross Domestic Product is the total value of goods produced
-        and services provided in a country during one year. By default the data
-        comes from the Global Macro Database (GMDB); set gmdb_source=False to
-        retrieve it from the OECD instead.
+        Get the Gross Domestic Product (GDP) of a variety of countries: the total value of the goods and services an
+        economy produces in a year.
+
+        By default the data comes from the Global Macro Database (GMDB); the OECD can be chosen as the source instead.
 
         Note that the OECD source reports GDP on a per capita basis, i.e. the total
         Gross Domestic Product divided by the population of the country, whereas the
@@ -84,7 +84,7 @@ class OutputEconomics:
         national currency. Both are annual.
 
         The data is returned as levels. To obtain period-on-period changes (e.g. year
-        on year or quarter on quarter growth), set `growth=True` and use `lag` to
+        on year or quarter on quarter growth), request the growth and use the lag to
         control how many periods back the comparison is made.
 
         See definition: https://data.oecd.org/gdp/gross-domestic-product-gdp.htm
@@ -199,15 +199,17 @@ class OutputEconomics:
         show_columns: str | list[str] | None = None,
     ):
         """
-        The quarterly growth of real Gross Domestic Product (GDP) is the headline measure
-        of how fast an economy grows: the change in the volume of everything produced,
-        adjusted for inflation, seasonal patterns and the number of working days. Two
-        consecutive quarters of negative growth is the common rule of thumb for a
+        Get the quarterly growth of real Gross Domestic Product (GDP) of a variety of countries: how fast each economy
+        grows.
+
+        The quarterly growth of real Gross Domestic Product (GDP) is the headline measure of how fast an economy
+        grows: the change in the volume of everything produced, adjusted for inflation, seasonal patterns and the
+        number of working days. Two consecutive quarters of negative growth is the common rule of thumb for a
         technical recession.
 
         By default the growth is measured on the previous quarter (quarter on quarter), as
-        Eurostat and the Office for National Statistics report it. Set year_over_year=True
-        for the change on the same quarter a year earlier. The growth is not annualized,
+        Eurostat and the Office for National Statistics report it, or on request against
+        the same quarter a year earlier. The growth is not annualized,
         so a US figure is about a quarter of the annualized rate the Bureau of Economic
         Analysis headlines.
 
@@ -335,10 +337,8 @@ class OutputEconomics:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Get the Gross Domestic Product Deflator for a variety of countries over
-        time from the Global Macro Database (GMDB). The GDP deflator is a measure of
-        the price of all domestically produced final goods and services in an economy
-        relative to the price level in a base year.
+        Get the GDP deflator of a variety of countries from the Global Macro Database (GMDB): the price level of
+        everything an economy produces, against a base year.
 
         The deflator is an annual index with 2015 = 100 for every country.
 
@@ -443,10 +443,8 @@ class OutputEconomics:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Get the Real Gross Domestic Product per Capita for a variety of countries over time from
-        the Global Macro Database (GMDB). This is the inflation-adjusted Gross Domestic Product
-        (GDP) divided by the total population of a country, which gives an indication of the
-        average economic output (and by extension, living standard) per person.
+        Get the real GDP per capita of a variety of countries from the Global Macro Database (GMDB): the
+        inflation-adjusted output per person, a measure of living standards.
 
         This uses the Global Macro Database's own precomputed per-capita series (the source's figure)
         rather than dividing GDP by population manually, which avoids subtle mismatches that can arise
@@ -455,7 +453,7 @@ class OutputEconomics:
         The formula is as follows:
 
         - Real GDP per Capita = Real Gross Domestic Product / Population, in national currency at constant
-          prices, or in US dollars as converted by the Global Macro Database when usd=True
+          prices, or in US dollars as converted by the Global Macro Database
 
         Data comes from the Global Macro Database (GMDB), further information about the
         variable can be found within https://www.globalmacrodata.com/documentation.html
@@ -547,12 +545,12 @@ class OutputEconomics:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Get the Output Gap for a variety of countries over time from the OECD Economic Outlook.
-        The output gap is the difference between actual Gross Domestic Product (GDP) and
-        estimated potential GDP, expressed as a percentage of potential GDP. Potential GDP is the
-        level of output an economy can sustain over the long term without generating excess
-        inflationary or disinflationary pressure, based on the full, non-inflationary use of its
-        productive resources (labour, capital and technology).
+        Get the output gap of a variety of countries from the OECD Economic Outlook: how far actual GDP lies above or
+        below its potential, as a percentage of potential GDP.
+
+        Potential GDP is the level of output an economy can sustain over the long term without generating excess
+        inflationary or disinflationary pressure, based on the full, non-inflationary use of its productive resources
+        (labour, capital and technology).
 
         A positive output gap indicates the economy is running above its long-run potential
         (an economic "boom", typically associated with rising inflationary pressure), while a
@@ -573,7 +571,7 @@ class OutputEconomics:
         The result is a decimal fraction of potential GDP (-0.0422), where the OECD publishes
         a percentage (-4.2231), like every other rate and ratio in this class. Multiply by 100
         to recover the published figure. A small gap loses resolution at the default rounding
-        of 4 decimals, so pass a larger `rounding` when the sub-basis-point detail matters.
+        of 4 decimals, so round to more decimals when the sub-basis-point detail matters.
 
         Potential output cannot be observed, so the gap is an estimate, and the estimate for a
         given year is often revised substantially as later data comes in: the gap estimated
@@ -663,15 +661,14 @@ class OutputEconomics:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Get the Total Consumption for a variety of countries over time from the
-        Global Macro Database (GMDB). Total Consumption is final consumption expenditure:
-        the goods and services bought by households and the non-profit institutions serving
-        them (household consumption) and by the government (government consumption).
+        Get the total consumption of a variety of countries from the Global Macro Database (GMDB): what households,
+        the non-profit institutions serving them and the government spend on goods and services.
+
         Select either part with the component parameter.
 
         The level is annual and expressed in millions of national currency, so levels are not
-        comparable across countries with different currencies, but growth rates are; with
-        usd=True the levels are in millions of US dollars. With inflation_adjusted=True the
+        comparable across countries with different currencies, but growth rates are; in
+        US dollars the levels are in millions of US dollars. Adjusted for inflation the
         level is in 2015 prices: the nominal level divided by the GDP deflator.
 
         Data comes from the Global Macro Database (GMDB), further information about the
@@ -683,7 +680,9 @@ class OutputEconomics:
         Args:
             countries (list[str] | str | None, optional): A list of countries or a single country to include in the results. Defaults to None.
             inflation_adjusted (bool, optional): Whether to return the inflation adjusted data. Defaults to False.
-            component (str, optional): The part of final consumption expenditure: "total", "household" (households and the non-profit institutions serving them) or "government". Defaults to "total".
+            component (str, optional): The part of final consumption expenditure. Options are: "total" (all
+                final consumption expenditure), "household" (households and the non-profit institutions serving
+                them), "government" (the government). Defaults to "total".
             usd (bool, optional): Whether to return the values in millions of US dollars, converted by the Global Macro Database, instead of millions of national currency. Cannot be combined with inflation_adjusted. Defaults to False.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
@@ -734,7 +733,7 @@ class OutputEconomics:
         variable = self._consumption_variable(component)
 
         if inflation_adjusted and usd:
-            raise ValueError(
+            raise InvalidArgumentError(
                 "The Global Macro Database has no consumption in constant US dollars, so "
                 "inflation_adjusted and usd cannot be combined."
             )
@@ -788,11 +787,10 @@ class OutputEconomics:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Get the Total Consumption to GDP Ratio for a variety of countries over time from the
-        Global Macro Database (GMDB). The Total Consumption to GDP Ratio is final consumption
-        expenditure (households, the non-profit institutions serving them and the government)
-        as a share of the Gross Domestic Product (GDP). Select the household or government
-        part with the component parameter.
+        Get the total consumption to GDP ratio of a variety of countries from the Global Macro Database (GMDB): the
+        share of the economy that is consumed.
+
+        Select the household or government part with the component parameter.
 
         Data comes from the Global Macro Database (GMDB), further information about the
         variable can be found within https://www.globalmacrodata.com/documentation.html
@@ -804,14 +802,16 @@ class OutputEconomics:
         The formula is as follows:
 
         - Consumption to GDP Ratio = Final Consumption Expenditure / Nominal GDP, with the total (households, the
-          non-profit institutions serving them and the government), household or government part selected with
-          `component` ("total" by default)
+          non-profit institutions serving them and the government), household or government part selected
+          (the total by default)
 
         Also known as: consumption share of GDP.
 
         Args:
             countries (list[str] | str | None, optional): A list of countries or a single country to include in the results. Defaults to None.
-            component (str, optional): The part of final consumption expenditure: "total", "household" (households and the non-profit institutions serving them) or "government". Defaults to "total".
+            component (str, optional): The part of final consumption expenditure. Options are: "total" (all
+                final consumption expenditure), "household" (households and the non-profit institutions serving
+                them), "government" (the government). Defaults to "total".
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
@@ -897,9 +897,8 @@ class OutputEconomics:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Get the Investment for a variety of countries over time from the Global Macro Database (GMDB).
-        Investment is gross capital formation: what businesses, households and the government spend on
-        fixed assets such as machinery, equipment, buildings and dwellings, plus the change in inventories.
+        Get the investment of a variety of countries from the Global Macro Database (GMDB): gross capital formation,
+        what is spent on fixed assets plus the change in inventories.
 
         The level is annual and expressed in millions of national currency, so levels are not
         comparable across countries with different currencies, but growth rates are.
@@ -998,10 +997,8 @@ class OutputEconomics:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Get the Investment to GDP Ratio for a variety of countries over time from the Global Macro Database (GMDB).
-        The Investment to GDP Ratio is gross capital formation (what businesses, households and the government
-        spend on fixed assets such as machinery, equipment, buildings and dwellings, plus the change in
-        inventories) as a share of the Gross Domestic Product (GDP).
+        Get the investment to GDP ratio of a variety of countries from the Global Macro Database (GMDB): the share of
+        the economy that is invested in fixed assets and inventories.
 
         Data comes from the Global Macro Database (GMDB), further information about the
         variable can be found within https://www.globalmacrodata.com/documentation.html
@@ -1101,10 +1098,8 @@ class OutputEconomics:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Get the Fixed Investment for a variety of countries over time from the Global Macro Database (GMDB).
-        Fixed Investment is gross fixed capital formation: what businesses, households and the government
-        spend on fixed assets such as machinery, equipment, buildings and dwellings, without the change in
-        inventories.
+        Get the fixed investment of a variety of countries from the Global Macro Database (GMDB): gross fixed capital
+        formation, what is spent on machinery, equipment, buildings and dwellings.
 
         The level is annual and expressed in millions of national currency, so levels are not
         comparable across countries with different currencies, but growth rates are.
@@ -1197,10 +1192,8 @@ class OutputEconomics:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Get the Fixed Investment to GDP Ratio for a variety of countries over time from the Global Macro Database (GMDB).
-        The Fixed Investment to GDP Ratio is gross fixed capital formation (what businesses, households and the
-        government spend on fixed assets such as machinery, equipment, buildings and dwellings, without the change
-        in inventories) as a share of the Gross Domestic Product (GDP).
+        Get the fixed investment to GDP ratio of a variety of countries from the Global Macro Database (GMDB): the
+        share of the economy that is invested in fixed assets.
 
         Data comes from the Global Macro Database (GMDB), further information about the
         variable can be found within https://www.globalmacrodata.com/documentation.html
@@ -1302,9 +1295,8 @@ class OutputEconomics:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Get the Exports for a variety of countries over time from the Global Macro Database (GMDB).
-        Exports are the total amount of goods and services produced in a country that are sold to
-        other countries.
+        Get the exports of a variety of countries from the Global Macro Database (GMDB): the goods and services a
+        country sells to other countries.
 
         The level is annual and expressed in millions of national currency, so levels are not
         comparable across countries with different currencies, but growth rates are.
@@ -1400,9 +1392,8 @@ class OutputEconomics:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Get the Exports to GDP Ratio for a variety of countries over time from the Global Macro Database (GMDB).
-        The Exports to GDP Ratio is the ratio of the total amount of goods and services produced in a country
-        that are sold to other countries to the Gross Domestic Product (GDP).
+        Get the exports to GDP ratio of a variety of countries from the Global Macro Database (GMDB): how much of an
+        economy's output is sold abroad.
 
         Data comes from the Global Macro Database (GMDB), further information about the
         variable can be found within https://www.globalmacrodata.com/documentation.html
@@ -1503,9 +1494,8 @@ class OutputEconomics:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Get the Imports for a variety of countries over time from the Global Macro Database (GMDB).
-        Imports are the total amount of goods and services produced in other countries that are
-        bought by a country.
+        Get the imports of a variety of countries from the Global Macro Database (GMDB): the goods and services a
+        country buys from other countries.
 
         The level is annual and expressed in millions of national currency, so levels are not
         comparable across countries with different currencies, but growth rates are.
@@ -1607,9 +1597,8 @@ class OutputEconomics:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Get the Imports to GDP Ratio for a variety of countries over time from the Global Macro Database (GMDB).
-        The Imports to GDP Ratio is the ratio of the total amount of goods and services produced in other countries
-        that are bought by a country to the Gross Domestic Product (GDP).
+        Get the imports to GDP ratio of a variety of countries from the Global Macro Database (GMDB): how much a
+        country buys from abroad against the size of its economy.
 
         Data comes from the Global Macro Database (GMDB), further information about the
         variable can be found within https://www.globalmacrodata.com/documentation.html
@@ -1715,17 +1704,16 @@ class OutputEconomics:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Get the Trade Balance for a variety of countries over time from the Global Macro
-        Database (GMDB). The Trade Balance is the difference between the total value of goods
-        and services a country exports and the total value of goods and services it imports. A
-        positive trade balance (a "trade surplus") means a country exports more than it imports,
-        while a negative trade balance (a "trade deficit") means a country imports more than it
-        exports.
+        Get the trade balance of a variety of countries from the Global Macro Database (GMDB): the exports of goods
+        and services minus the imports, a surplus when positive and a deficit when negative.
+
+        A positive trade balance (a "trade surplus") means a country exports more than it imports, while a negative
+        trade balance (a "trade deficit") means a country imports more than it exports.
 
         The formula is as follows:
 
         - Trade Balance = Exports of Goods and Services - Imports of Goods and Services, both the Global Macro
-          Database's figures in millions of national currency (or of US dollars when usd=True)
+          Database's figures in millions of national currency (or of US dollars)
 
         The balance is annual and expressed in millions of national currency, with a negative
         value marking a trade deficit and a positive value a surplus.
@@ -1820,9 +1808,8 @@ class OutputEconomics:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Get the Current Account Balance for a variety of countries over time from the Global Macro Database (GMDB).
-        The Current Account Balance is the sum of the balance of trade (exports minus imports of goods and services),
-        net factor income (such as interest and dividends) and net transfer payments (such as foreign aid).
+        Get the current account balance of a variety of countries from the Global Macro Database (GMDB): the trade
+        balance plus net income and transfers from abroad.
 
         The balance is annual and expressed in millions of national currency, with a negative
         value marking a current account deficit and a positive value a surplus.
@@ -1918,10 +1905,8 @@ class OutputEconomics:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Get the Current Account Balance to GDP Ratio for a variety of countries over time from the Global Macro Database (GMDB).
-        The Current Account Balance to GDP Ratio is the ratio of the sum of the balance of trade (exports minus imports of goods
-        and services), net factor income (such as interest and dividends) and net transfer payments (such as foreign aid) to the
-        Gross Domestic Product (GDP).
+        Get the current account balance to GDP ratio of a variety of countries from the Global Macro Database (GMDB):
+        the trade balance plus net income and transfers from abroad, as a share of the economy.
 
         The ratio shows whether a country saves more than it invests (a surplus) or relies on foreign financing (a
         deficit). Persistent deficits are not a problem in themselves, but they leave a country exposed when capital
@@ -2031,9 +2016,11 @@ class OutputEconomics:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Get the Net International Investment Position (NIIP) for a variety of countries over time from the International
-        Monetary Fund (IMF). The Net International Investment Position is the value of the external financial assets of a
-        country's residents (direct investment, portfolio investment, financial derivatives, other investment and reserve
+        Get the Net International Investment Position (NIIP) of a variety of countries from the IMF: what a country
+        owns abroad minus what it owes to the rest of the world.
+
+        The Net International Investment Position is the value of the external financial assets of a country's
+        residents (direct investment, portfolio investment, financial derivatives, other investment and reserve
         assets) less the value of their external liabilities, at the end of each period.
 
         Where the current account is the flow, the international investment position is the stock it builds up: a country
@@ -2055,15 +2042,15 @@ class OutputEconomics:
         The formula is as follows:
 
         - Net International Investment Position = External Financial Assets - External Liabilities, at the end of the
-          quarter (period="quarterly") or the year (period="yearly")
+          quarter (quarterly data) or the year (yearly data)
 
         Also known as: NIIP, net foreign assets, net external position, net external assets.
 
         Args:
             countries (list[str] | str | None, optional): A list of countries or a single country to include in the results. Defaults to None.
-            period (str | None, optional): "quarterly" (the position at the end of each quarter)
-                or "yearly" (at the end of each year). Defaults to None, which is quarterly, the
-                highest frequency published.
+            period (str | None, optional): The frequency of the data. Options are: "quarterly" (the position at the
+                end of each quarter), "yearly" (the position at the end of each year). Defaults to None, which is
+                quarterly, the highest frequency published.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
@@ -2152,10 +2139,12 @@ class OutputEconomics:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Get the Net International Investment Position (NIIP) to GDP Ratio for a variety of countries over time from the
-        International Monetary Fund (IMF). The ratio is the value of the external financial assets of a country's residents
-        less the value of their external liabilities, at the end of each period, relative to the country's nominal Gross
-        Domestic Product (GDP).
+        Get the Net International Investment Position (NIIP) to GDP ratio of a variety of countries from the IMF: a
+        country's net foreign assets against the size of its economy.
+
+        The ratio is the value of the external financial assets of a country's residents less the value of their
+        external liabilities, at the end of each period, relative to the country's nominal Gross Domestic Product
+        (GDP).
 
         The ratio shows how much a country owes to (negative) or is owed by (positive) the rest of the world compared to the
         size of its economy. A large negative position leaves a country dependent on foreign financing and exposed to a
@@ -2186,16 +2175,16 @@ class OutputEconomics:
         - Net International Investment Position to GDP Ratio = (External Financial Assets - External Liabilities) in US
           Dollars x National Currency per US Dollar at the End of the Period / Nominal GDP in National Currency
         - The position is the stock at the end of the quarter or year; the GDP is summed over the four quarters up to and
-          including that quarter (not seasonally adjusted) for period="quarterly" or over the calendar year for
-          period="yearly"
+          including that quarter (not seasonally adjusted) for quarterly data or over the calendar year for
+          yearly data
 
         Also known as: NIIP to GDP, net foreign assets to GDP, net external position.
 
         Args:
             countries (list[str] | str | None, optional): A list of countries or a single country to include in the results. Defaults to None.
-            period (str | None, optional): "quarterly" (the position at the end of each quarter)
-                or "yearly" (at the end of each year). Defaults to None, which is quarterly, the
-                highest frequency published.
+            period (str | None, optional): The frequency of the data. Options are: "quarterly" (the position at the
+                end of each quarter), "yearly" (the position at the end of each year). Defaults to None, which is
+                quarterly, the highest frequency published.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
@@ -2283,15 +2272,14 @@ class OutputEconomics:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Get the total reserves, including gold, of a variety of countries over time from the
-        World Bank's World Development Indicators (FI.RES.TOTL.CD), which takes them from
-        the IMF's International Financial Statistics. Reserve assets are the external assets that a central bank or other monetary
-        authority controls and can use at once to finance a balance of payments need, to
-        intervene in the currency market or to keep confidence in the currency: foreign
-        currency deposits and securities, monetary gold, special drawing rights (SDRs) and
-        the reserve position in the IMF (IMF Balance of Payments and International
-        Investment Position Manual, sixth edition; IMF (2013), International Reserves and
-        Foreign Currency Liquidity: Guidelines for a Data Template).
+        Get the total reserves, including gold, of a variety of countries from the World Bank (FI.RES.TOTL.CD, from
+        the IMF's International Financial Statistics): the external assets a central bank can use at once.
+
+        Reserve assets are the external assets that a central bank or other monetary authority controls and can use at
+        once to finance a balance of payments need, to intervene in the currency market or to keep confidence in the
+        currency: foreign currency deposits and securities, monetary gold, special drawing rights (SDRs) and the
+        reserve position in the IMF (IMF Balance of Payments and International Investment Position Manual, sixth
+        edition; IMF (2013), International Reserves and Foreign Currency Liquidity: Guidelines for a Data Template).
 
         Reserves are a country's buffer against a sudden stop of capital inflows: they
         let a central bank pay for imports and service foreign debt, and defend its
@@ -2389,17 +2377,14 @@ class OutputEconomics:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Get the total reserves, including gold, in months of imports for a variety of
-        countries over time from the World Bank's World Development Indicators
-        (FI.RES.TOTL.MO), which takes them from the IMF's International Financial
-        Statistics: the number of months of imports of goods and services the reserves
-        could pay for. Reserve assets are the external assets that a central bank or other monetary
-        authority controls and can use at once to finance a balance of payments need, to
-        intervene in the currency market or to keep confidence in the currency: foreign
-        currency deposits and securities, monetary gold, special drawing rights (SDRs) and
-        the reserve position in the IMF (IMF Balance of Payments and International
-        Investment Position Manual, sixth edition; IMF (2013), International Reserves and
-        Foreign Currency Liquidity: Guidelines for a Data Template).
+        Get the total reserves in months of imports of a variety of countries from the World Bank (FI.RES.TOTL.MO,
+        from the IMF's International Financial Statistics): how many months of imports the reserves could pay for.
+
+        Reserve assets are the external assets that a central bank or other monetary authority controls and can use at
+        once to finance a balance of payments need, to intervene in the currency market or to keep confidence in the
+        currency: foreign currency deposits and securities, monetary gold, special drawing rights (SDRs) and the
+        reserve position in the IMF (IMF Balance of Payments and International Investment Position Manual, sixth
+        edition; IMF (2013), International Reserves and Foreign Currency Liquidity: Guidelines for a Data Template).
 
         Import cover is the classic measure of reserve adequacy for countries whose main
         external risk runs through the current account rather than the capital account:

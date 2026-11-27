@@ -14,6 +14,7 @@ from financetoolkit.utilities.statistics_model import apply_rounding
 logger = logger_model.get_logger()
 
 
+@fmp_model.log_server_errors_once()
 def collect_financial_statements(
     tickers: str | list[str],
     statement: str = "",
@@ -257,7 +258,10 @@ def collect_financial_statements(
     elif isinstance(tickers, list):
         ticker_list = tickers
     else:
-        raise ValueError(f"Type for the tickers ({type(tickers)}) variable is invalid.")
+        raise error_model.InvalidArgumentError(
+            "tickers must be a str or a list of str, such as 'AAPL' or ['AAPL', 'MSFT'], "
+            f"not {type(tickers).__name__}. Please pass the tickers in one of these forms."
+        )
 
     if statement not in ["balance", "income", "cashflow"]:
         raise ValueError(
@@ -301,7 +305,9 @@ def collect_financial_statements(
                 date_axis=1,
             )
 
-    results = helpers.run_in_parallel(worker, [(ticker,) for ticker in ticker_list])
+    # A fault every ticker meets, such as a broken yfinance cache database, is reported once for the call rather than per ticker.  # noqa: E501
+    with logger_model.log_each_message_once():
+        results = helpers.run_in_parallel(worker, [(ticker,) for ticker in ticker_list])
 
     for ticker, statements, provider, adjustments, has_data in results:
         for source, statement_data in statements.items():

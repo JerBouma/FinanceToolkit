@@ -6,6 +6,7 @@ import pandas as pd
 
 from financetoolkit.options import helpers
 from financetoolkit.options.greeks import greeks_model
+from financetoolkit.utilities import logger_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
 from financetoolkit.utilities.error_model import handle_errors
 from financetoolkit.utilities.sources_model import track_sources
@@ -16,6 +17,8 @@ from financetoolkit.utilities.statistics_model import (
 
 # ruff: noqa: E501
 
+logger = logger_model.get_logger()
+
 
 @filter_shown_columns
 @track_sources
@@ -25,6 +28,7 @@ class GreeksOptions:
     """
 
     @handle_errors
+    @logger_model.log_each_message_once()
     def collect_all_greeks(
         self,
         start_date: str | None = None,
@@ -40,8 +44,11 @@ class GreeksOptions:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate all Greeks of an option based on the Black Scholes Model. This will return the following Greeks
-        per Strike Price and Expiration Date:
+        Calculate all Greeks of an option based on the Black Scholes Model: how the option value responds to the
+        price of the underlying asset, the strike price, the volatility, time, the risk free rate and the dividend
+        yield.
+
+        This will return the following Greeks per Strike Price and Expiration Date:
 
         **First Order Greeks:**
 
@@ -102,12 +109,12 @@ class GreeksOptions:
             start from; a date without prices (a weekend or a holiday) uses the last trading day before it, and a
             ticker without a price on that day is left out with a warning. Defaults to None, which uses the
             last date of the historical data.
-            strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
+            strike_price_range (float): The percentage range to use for the strike prices, between 0 and 1. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
-            strike_step_size (float): The step size to use for the strike prices. Defaults to 5 which means that the
+            strike_step_size (float): The step size to use for the strike prices, above 0. Defaults to 5 which means that the
             strike prices will be 75, 80, 85, ..., 120 and 125 if the current stock price is 100.
             expiration_time_range (int): The number of days to use for the time to expiration: the columns are the
-            expirations 1 up to expiration_time_range - 1 days after the start date. Defaults to 30, which gives
+            expirations 1 up to expiration_time_range - 1 days after the start date, so at least 2. Defaults to 30, which gives
             expirations of 1 to 29 days.
             risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None, which
             uses the Toolkit's risk-free rate on the pricing date: the 10-year Treasury yield unless the Toolkit's
@@ -191,6 +198,10 @@ class GreeksOptions:
             standardize=standardize,
         )
 
+        if first_order_greeks.empty:
+            # The first order greeks have logged why none could be calculated; the others share the reason.
+            return first_order_greeks
+
         second_order_greeks = self.collect_second_order_greeks(
             start_date=start_date,
             strike_price_range=strike_price_range,
@@ -223,6 +234,7 @@ class GreeksOptions:
         return all_greeks
 
     @handle_errors
+    @logger_model.log_each_message_once()
     def collect_first_order_greeks(
         self,
         start_date: str | None = None,
@@ -238,8 +250,11 @@ class GreeksOptions:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the first order Greeks of an option based on the Black Scholes Model. This will return the following Greeks
-        per Strike Price and Expiration Date:
+        Calculate the first order Greeks of an option based on the Black Scholes Model: how the option value
+        responds to the price of the underlying asset, the strike price, the volatility, time, the risk free rate
+        and the dividend yield.
+
+        This will return the following Greeks per Strike Price and Expiration Date:
 
         - Delta: measures the rate of change of the theoretical option value with respect to changes in the underlying
         asset's price.
@@ -271,12 +286,12 @@ class GreeksOptions:
             start from; a date without prices (a weekend or a holiday) uses the last trading day before it, and a
             ticker without a price on that day is left out with a warning. Defaults to None, which uses the
             last date of the historical data.
-            strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
+            strike_price_range (float): The percentage range to use for the strike prices, between 0 and 1. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
-            strike_step_size (float): The step size to use for the strike prices. Defaults to 5 which means that the
+            strike_step_size (float): The step size to use for the strike prices, above 0. Defaults to 5 which means that the
             strike prices will be 75, 80, 85, ..., 120 and 125 if the current stock price is 100.
             expiration_time_range (int): The number of days to use for the time to expiration: the columns are the
-            expirations 1 up to expiration_time_range - 1 days after the start date. Defaults to 30, which gives
+            expirations 1 up to expiration_time_range - 1 days after the start date, so at least 2. Defaults to 30, which gives
             expirations of 1 to 29 days.
             risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None, which
             uses the Toolkit's risk-free rate on the pricing date: the 10-year Treasury yield unless the Toolkit's
@@ -423,6 +438,11 @@ class GreeksOptions:
             standardize=standardize,
         )
 
+        if all(greek.empty for greek in greeks.values()):
+            # Each greek has logged why it is empty, which is the same reason for all of them.
+            logger.warning("None of the greeks could be calculated.")
+            return pd.DataFrame()
+
         greeks_df = (
             pd.concat(greeks, axis=1)
             .swaplevel(axis=1)
@@ -447,9 +467,11 @@ class GreeksOptions:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the delta of an option based on the Black Scholes Model. The Black Scholes Model
-        is a mathematical model used to estimate the price of European—style options. The delta is
-        the rate of change of the option price with respect to the price of the underlying asset.
+        Calculate the delta of an option based on the Black Scholes Model: how much the option value changes for a
+        1.00 change in the price of the underlying asset.
+
+        The Black Scholes Model is a mathematical model used to estimate the price of European—style options. The
+        delta is the rate of change of the option price with respect to the price of the underlying asset.
 
         The delta calculation is the theoretical value of the delta. The actual delta can differ from this
         value due to several factors such as the volatility of the underlying asset, the time to expiration,
@@ -490,12 +512,12 @@ class GreeksOptions:
             start from; a date without prices (a weekend or a holiday) uses the last trading day before it, and a
             ticker without a price on that day is left out with a warning. Defaults to None, which uses the
             last date of the historical data.
-            strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
+            strike_price_range (float): The percentage range to use for the strike prices, between 0 and 1. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
-            strike_step_size (float): The step size to use for the strike prices. Defaults to 5 which means that the
+            strike_step_size (float): The step size to use for the strike prices, above 0. Defaults to 5 which means that the
             strike prices will be 75, 80, 85, ..., 120 and 125 if the current stock price is 100.
             expiration_time_range (int): The number of days to use for the time to expiration: the columns are the
-            expirations 1 up to expiration_time_range - 1 days after the start date. Defaults to 30, which gives
+            expirations 1 up to expiration_time_range - 1 days after the start date, so at least 2. Defaults to 30, which gives
             expirations of 1 to 29 days.
             risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None, which
             uses the Toolkit's risk-free rate on the pricing date: the 10-year Treasury yield unless the Toolkit's
@@ -571,12 +593,12 @@ class GreeksOptions:
             stock_price=stock_price,
             strike_step_size=strike_step_size,
             strike_price_range=strike_price_range,
+            values_per_strike=expiration_time_range,
         )
 
-        # This creates a list of time to expiration values from 0 to time_range, with a step size of 1
-        time_to_expiration_list = [
-            time / 365 for time in range(0, expiration_time_range)
-        ]
+        time_to_expiration_list = helpers.define_times_to_expiration(
+            expiration_time_range
+        )
 
         delta: dict[str, dict[float, dict[float, float]]] = {}
         dividend_yield_value: dict[str, float] = {}
@@ -648,9 +670,11 @@ class GreeksOptions:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the dual delta of an option based on the Black Scholes Model. The Black Scholes Model
-        is a mathematical model used to estimate the price of European—style options. The dual delta is
-        the first derivative of the option price with respect to the strike price; up to the discount
+        Calculate the dual delta of an option based on the Black Scholes Model: how much the option value changes
+        for a 1.00 change in the strike price.
+
+        The Black Scholes Model is a mathematical model used to estimate the price of European—style options. The
+        dual delta is the first derivative of the option price with respect to the strike price; up to the discount
         factor and its sign it is the risk-neutral probability of the option finishing in the money.
 
         The dual delta calculation is the theoretical value of the dual delta. The actual dual delta can differ from this
@@ -680,12 +704,12 @@ class GreeksOptions:
             start from; a date without prices (a weekend or a holiday) uses the last trading day before it, and a
             ticker without a price on that day is left out with a warning. Defaults to None, which uses the
             last date of the historical data.
-            strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
+            strike_price_range (float): The percentage range to use for the strike prices, between 0 and 1. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
-            strike_step_size (float): The step size to use for the strike prices. Defaults to 5 which means that the
+            strike_step_size (float): The step size to use for the strike prices, above 0. Defaults to 5 which means that the
             strike prices will be 75, 80, 85, ..., 120 and 125 if the current stock price is 100.
             expiration_time_range (int): The number of days to use for the time to expiration: the columns are the
-            expirations 1 up to expiration_time_range - 1 days after the start date. Defaults to 30, which gives
+            expirations 1 up to expiration_time_range - 1 days after the start date, so at least 2. Defaults to 30, which gives
             expirations of 1 to 29 days.
             risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None, which
             uses the Toolkit's risk-free rate on the pricing date: the 10-year Treasury yield unless the Toolkit's
@@ -766,12 +790,12 @@ class GreeksOptions:
             stock_price=stock_price,
             strike_step_size=strike_step_size,
             strike_price_range=strike_price_range,
+            values_per_strike=expiration_time_range,
         )
 
-        # This creates a list of time to expiration values from 0 to time_range, with a step size of 1
-        time_to_expiration_list = [
-            time / 365 for time in range(0, expiration_time_range)
-        ]
+        time_to_expiration_list = helpers.define_times_to_expiration(
+            expiration_time_range
+        )
 
         dual_delta: dict[str, dict[float, dict[float, float]]] = {}
         dividend_yield_value: dict[str, float] = {}
@@ -842,9 +866,11 @@ class GreeksOptions:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the vega of an option based on the Black Scholes Model. The Black Scholes Model
-        is a mathematical model used to estimate the price of European—style options. The vega is
-        the rate of change of the option price with respect to the volatility of the underlying asset.
+        Calculate the vega of an option based on the Black Scholes Model: how much the option value changes for a
+        1.00 change in the volatility of the underlying asset.
+
+        The Black Scholes Model is a mathematical model used to estimate the price of European—style options. The
+        vega is the rate of change of the option price with respect to the volatility of the underlying asset.
 
         The vega calculation is the theoretical value of the vega. The actual vega can differ from this
         value due to several factors such as the volatility of the underlying asset, the time to expiration,
@@ -885,12 +911,12 @@ class GreeksOptions:
             start from; a date without prices (a weekend or a holiday) uses the last trading day before it, and a
             ticker without a price on that day is left out with a warning. Defaults to None, which uses the
             last date of the historical data.
-            strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
+            strike_price_range (float): The percentage range to use for the strike prices, between 0 and 1. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
-            strike_step_size (float): The step size to use for the strike prices. Defaults to 5 which means that the
+            strike_step_size (float): The step size to use for the strike prices, above 0. Defaults to 5 which means that the
             strike prices will be 75, 80, 85, ..., 120 and 125 if the current stock price is 100.
             expiration_time_range (int): The number of days to use for the time to expiration: the columns are the
-            expirations 1 up to expiration_time_range - 1 days after the start date. Defaults to 30, which gives
+            expirations 1 up to expiration_time_range - 1 days after the start date, so at least 2. Defaults to 30, which gives
             expirations of 1 to 29 days.
             risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None, which
             uses the Toolkit's risk-free rate on the pricing date: the 10-year Treasury yield unless the Toolkit's
@@ -964,12 +990,12 @@ class GreeksOptions:
             stock_price=stock_price,
             strike_step_size=strike_step_size,
             strike_price_range=strike_price_range,
+            values_per_strike=expiration_time_range,
         )
 
-        # This creates a list of time to expiration values from 0 to time_range, with a step size of 1
-        time_to_expiration_list = [
-            time / 365 for time in range(0, expiration_time_range)
-        ]
+        time_to_expiration_list = helpers.define_times_to_expiration(
+            expiration_time_range
+        )
 
         vega: dict[str, dict[float, dict[float, float]]] = {}
         dividend_yield_value: dict[str, float] = {}
@@ -1040,9 +1066,11 @@ class GreeksOptions:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the theta of an option based on the Black Scholes Model. The Black Scholes Model
-        is a mathematical model used to estimate the price of European—style options. The theta is
-        the rate of change of the option price with respect to the passage of time.
+        Calculate the theta of an option based on the Black Scholes Model: how much the option value changes as time
+        passes, its time decay.
+
+        The Black Scholes Model is a mathematical model used to estimate the price of European—style options. The
+        theta is the rate of change of the option price with respect to the passage of time.
 
         The theta calculation is the theoretical value of the theta. The actual theta can differ from this
         value due to several factors such as the volatility of the underlying asset, the time to expiration,
@@ -1084,12 +1112,12 @@ class GreeksOptions:
             start from; a date without prices (a weekend or a holiday) uses the last trading day before it, and a
             ticker without a price on that day is left out with a warning. Defaults to None, which uses the
             last date of the historical data.
-            strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
+            strike_price_range (float): The percentage range to use for the strike prices, between 0 and 1. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
-            strike_step_size (float): The step size to use for the strike prices. Defaults to 5 which means that the
+            strike_step_size (float): The step size to use for the strike prices, above 0. Defaults to 5 which means that the
             strike prices will be 75, 80, 85, ..., 120 and 125 if the current stock price is 100.
             expiration_time_range (int): The number of days to use for the time to expiration: the columns are the
-            expirations 1 up to expiration_time_range - 1 days after the start date. Defaults to 30, which gives
+            expirations 1 up to expiration_time_range - 1 days after the start date, so at least 2. Defaults to 30, which gives
             expirations of 1 to 29 days.
             risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None, which
             uses the Toolkit's risk-free rate on the pricing date: the 10-year Treasury yield unless the Toolkit's
@@ -1162,12 +1190,12 @@ class GreeksOptions:
             stock_price=stock_price,
             strike_step_size=strike_step_size,
             strike_price_range=strike_price_range,
+            values_per_strike=expiration_time_range,
         )
 
-        # This creates a list of time to expiration values from 0 to time_range, with a step size of 1
-        time_to_expiration_list = [
-            time / 365 for time in range(0, expiration_time_range)
-        ]
+        time_to_expiration_list = helpers.define_times_to_expiration(
+            expiration_time_range
+        )
 
         theta: dict[str, dict[float, dict[float, float]]] = {}
         dividend_yield_value: dict[str, float] = {}
@@ -1239,9 +1267,11 @@ class GreeksOptions:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the rho of an option based on the Black Scholes Model. The Black Scholes Model
-        is a mathematical model used to estimate the price of European—style options. The rho is
-        the rate of change of the option price with respect to the risk free interest rate.
+        Calculate the rho of an option based on the Black Scholes Model: how much the option value changes for a
+        1.00 change in the risk free rate.
+
+        The Black Scholes Model is a mathematical model used to estimate the price of European—style options. The
+        rho is the rate of change of the option price with respect to the risk free interest rate.
 
         The rho calculation is the theoretical value of the rho. The actual rho can differ from this
         value due to several factors such as the volatility of the underlying asset, the time to expiration,
@@ -1277,12 +1307,12 @@ class GreeksOptions:
             start from; a date without prices (a weekend or a holiday) uses the last trading day before it, and a
             ticker without a price on that day is left out with a warning. Defaults to None, which uses the
             last date of the historical data.
-            strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
+            strike_price_range (float): The percentage range to use for the strike prices, between 0 and 1. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
-            strike_step_size (float): The step size to use for the strike prices. Defaults to 5 which means that the
+            strike_step_size (float): The step size to use for the strike prices, above 0. Defaults to 5 which means that the
             strike prices will be 75, 80, 85, ..., 120 and 125 if the current stock price is 100.
             expiration_time_range (int): The number of days to use for the time to expiration: the columns are the
-            expirations 1 up to expiration_time_range - 1 days after the start date. Defaults to 30, which gives
+            expirations 1 up to expiration_time_range - 1 days after the start date, so at least 2. Defaults to 30, which gives
             expirations of 1 to 29 days.
             risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None, which
             uses the Toolkit's risk-free rate on the pricing date: the 10-year Treasury yield unless the Toolkit's
@@ -1353,12 +1383,12 @@ class GreeksOptions:
             stock_price=stock_price,
             strike_step_size=strike_step_size,
             strike_price_range=strike_price_range,
+            values_per_strike=expiration_time_range,
         )
 
-        # This creates a list of time to expiration values from 0 to time_range, with a step size of 1
-        time_to_expiration_list = [
-            time / 365 for time in range(0, expiration_time_range)
-        ]
+        time_to_expiration_list = helpers.define_times_to_expiration(
+            expiration_time_range
+        )
 
         rho: dict[str, dict[float, dict[float, float]]] = {}
         dividend_yield_value: dict[str, float] = {}
@@ -1430,9 +1460,11 @@ class GreeksOptions:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the epsilon of an option based on the Black Scholes Model. The Black Scholes Model
-        is a mathematical model used to estimate the price of European—style options. The epsilon is
-        the rate of change of the option price with respect to the dividend yield.
+        Calculate the epsilon of an option based on the Black Scholes Model: how much the option value changes for a
+        1.00 change in the dividend yield.
+
+        The Black Scholes Model is a mathematical model used to estimate the price of European—style options. The
+        epsilon is the rate of change of the option price with respect to the dividend yield.
 
         The epsilon calculation is the theoretical value of the epsilon. The actual epsilon can differ from this
         value due to several factors such as the volatility of the underlying asset, the time to expiration,
@@ -1464,12 +1496,12 @@ class GreeksOptions:
             start from; a date without prices (a weekend or a holiday) uses the last trading day before it, and a
             ticker without a price on that day is left out with a warning. Defaults to None, which uses the
             last date of the historical data.
-            strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
+            strike_price_range (float): The percentage range to use for the strike prices, between 0 and 1. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
-            strike_step_size (float): The step size to use for the strike prices. Defaults to 5 which means that the
+            strike_step_size (float): The step size to use for the strike prices, above 0. Defaults to 5 which means that the
             strike prices will be 75, 80, 85, ..., 120 and 125 if the current stock price is 100.
             expiration_time_range (int): The number of days to use for the time to expiration: the columns are the
-            expirations 1 up to expiration_time_range - 1 days after the start date. Defaults to 30, which gives
+            expirations 1 up to expiration_time_range - 1 days after the start date, so at least 2. Defaults to 30, which gives
             expirations of 1 to 29 days.
             risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None, which
             uses the Toolkit's risk-free rate on the pricing date: the 10-year Treasury yield unless the Toolkit's
@@ -1541,12 +1573,12 @@ class GreeksOptions:
             stock_price=stock_price,
             strike_step_size=strike_step_size,
             strike_price_range=strike_price_range,
+            values_per_strike=expiration_time_range,
         )
 
-        # This creates a list of time to expiration values from 0 to time_range, with a step size of 1
-        time_to_expiration_list = [
-            time / 365 for time in range(0, expiration_time_range)
-        ]
+        time_to_expiration_list = helpers.define_times_to_expiration(
+            expiration_time_range
+        )
 
         epsilon: dict[str, dict[float, dict[float, float]]] = {}
         dividend_yield_value: dict[str, float] = {}
@@ -1618,9 +1650,11 @@ class GreeksOptions:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the lambda of an option based on the Black Scholes Model. The Black Scholes Model
-        is a mathematical model used to estimate the price of European—style options. The lambda, or
-        elasticity, is the percentage change in the option price for a 1% change in the price of the
+        Calculate the lambda of an option based on the Black Scholes Model: the percentage change in the option
+        value per percentage change in the price of the underlying asset, the leverage the option gives.
+
+        The Black Scholes Model is a mathematical model used to estimate the price of European—style options. The
+        lambda, or elasticity, is the percentage change in the option price for a 1% change in the price of the
         underlying asset, i.e. the leverage the option gives.
 
         The lambda calculation is the theoretical value of the lambda. The actual lambda can differ from this
@@ -1654,12 +1688,12 @@ class GreeksOptions:
             start from; a date without prices (a weekend or a holiday) uses the last trading day before it, and a
             ticker without a price on that day is left out with a warning. Defaults to None, which uses the
             last date of the historical data.
-            strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
+            strike_price_range (float): The percentage range to use for the strike prices, between 0 and 1. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
-            strike_step_size (float): The step size to use for the strike prices. Defaults to 5 which means that the
+            strike_step_size (float): The step size to use for the strike prices, above 0. Defaults to 5 which means that the
             strike prices will be 75, 80, 85, ..., 120 and 125 if the current stock price is 100.
             expiration_time_range (int): The number of days to use for the time to expiration: the columns are the
-            expirations 1 up to expiration_time_range - 1 days after the start date. Defaults to 30, which gives
+            expirations 1 up to expiration_time_range - 1 days after the start date, so at least 2. Defaults to 30, which gives
             expirations of 1 to 29 days.
             risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None, which
             uses the Toolkit's risk-free rate on the pricing date: the 10-year Treasury yield unless the Toolkit's
@@ -1735,12 +1769,12 @@ class GreeksOptions:
             stock_price=stock_price,
             strike_step_size=strike_step_size,
             strike_price_range=strike_price_range,
+            values_per_strike=expiration_time_range,
         )
 
-        # This creates a list of time to expiration values from 0 to time_range, with a step size of 1
-        time_to_expiration_list = [
-            time / 365 for time in range(0, expiration_time_range)
-        ]
+        time_to_expiration_list = helpers.define_times_to_expiration(
+            expiration_time_range
+        )
 
         lambda_greek: dict[str, dict[float, dict[float, float]]] = {}
         dividend_yield_value: dict[str, float] = {}
@@ -1797,6 +1831,7 @@ class GreeksOptions:
         return lambda_df
 
     @handle_errors
+    @logger_model.log_each_message_once()
     def collect_second_order_greeks(
         self,
         start_date: str | None = None,
@@ -1812,8 +1847,10 @@ class GreeksOptions:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the second order Greeks of an option based on the Black Scholes Model. This will return the following Greeks
-        per Strike Price and Expiration Date:
+        Calculate the second order Greeks of an option based on the Black Scholes Model: how the first order Greeks
+        themselves respond to the price of the underlying asset, the strike price, the volatility and time.
+
+        This will return the following Greeks per Strike Price and Expiration Date:
 
         - Gamma: measures the rate of change in the delta with respect to changes in the underlying price. Gamma is
         the second derivative of the value function with respect to the underlying price.
@@ -1847,12 +1884,12 @@ class GreeksOptions:
             start from; a date without prices (a weekend or a holiday) uses the last trading day before it, and a
             ticker without a price on that day is left out with a warning. Defaults to None, which uses the
             last date of the historical data.
-            strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
+            strike_price_range (float): The percentage range to use for the strike prices, between 0 and 1. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
-            strike_step_size (float): The step size to use for the strike prices. Defaults to 5 which means that the
+            strike_step_size (float): The step size to use for the strike prices, above 0. Defaults to 5 which means that the
             strike prices will be 75, 80, 85, ..., 120 and 125 if the current stock price is 100.
             expiration_time_range (int): The number of days to use for the time to expiration: the columns are the
-            expirations 1 up to expiration_time_range - 1 days after the start date. Defaults to 30, which gives
+            expirations 1 up to expiration_time_range - 1 days after the start date, so at least 2. Defaults to 30, which gives
             expirations of 1 to 29 days.
             risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None, which
             uses the Toolkit's risk-free rate on the pricing date: the 10-year Treasury yield unless the Toolkit's
@@ -2005,6 +2042,11 @@ class GreeksOptions:
             standardize=standardize,
         )
 
+        if all(greek.empty for greek in greeks.values()):
+            # Each greek has logged why it is empty, which is the same reason for all of them.
+            logger.warning("None of the greeks could be calculated.")
+            return pd.DataFrame()
+
         greeks_df = (
             pd.concat(greeks, axis=1)
             .swaplevel(axis=1)
@@ -2028,9 +2070,11 @@ class GreeksOptions:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the gamma of an option based on the Black Scholes Model. The Black Scholes Model
-        is a mathematical model used to estimate the price of European—style options. The gamma is
-        the rate of change of the delta with respect to the price of the underlying asset.
+        Calculate the gamma of an option based on the Black Scholes Model: how much the delta changes for a 1.00
+        change in the price of the underlying asset.
+
+        The Black Scholes Model is a mathematical model used to estimate the price of European—style options. The
+        gamma is the rate of change of the delta with respect to the price of the underlying asset.
 
         The gamma calculation is the theoretical value of the gamma. The actual gamma can differ from this
         value due to several factors such as the volatility of the underlying asset, the time to expiration,
@@ -2067,12 +2111,12 @@ class GreeksOptions:
             start from; a date without prices (a weekend or a holiday) uses the last trading day before it, and a
             ticker without a price on that day is left out with a warning. Defaults to None, which uses the
             last date of the historical data.
-            strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
+            strike_price_range (float): The percentage range to use for the strike prices, between 0 and 1. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
-            strike_step_size (float): The step size to use for the strike prices. Defaults to 5 which means that the
+            strike_step_size (float): The step size to use for the strike prices, above 0. Defaults to 5 which means that the
             strike prices will be 75, 80, 85, ..., 120 and 125 if the current stock price is 100.
             expiration_time_range (int): The number of days to use for the time to expiration: the columns are the
-            expirations 1 up to expiration_time_range - 1 days after the start date. Defaults to 30, which gives
+            expirations 1 up to expiration_time_range - 1 days after the start date, so at least 2. Defaults to 30, which gives
             expirations of 1 to 29 days.
             risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None, which
             uses the Toolkit's risk-free rate on the pricing date: the 10-year Treasury yield unless the Toolkit's
@@ -2141,12 +2185,12 @@ class GreeksOptions:
             stock_price=stock_price,
             strike_step_size=strike_step_size,
             strike_price_range=strike_price_range,
+            values_per_strike=expiration_time_range,
         )
 
-        # This creates a list of time to expiration values from 0 to time_range, with a step size of 1
-        time_to_expiration_list = [
-            time / 365 for time in range(0, expiration_time_range)
-        ]
+        time_to_expiration_list = helpers.define_times_to_expiration(
+            expiration_time_range
+        )
 
         gamma: dict[str, dict[float, dict[float, float]]] = {}
         dividend_yield_value: dict[str, float] = {}
@@ -2216,10 +2260,12 @@ class GreeksOptions:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the dual gamma of an option based on the Black Scholes Model. The Black Scholes Model
-        is a mathematical model used to estimate the price of European—style options. The dual gamma is
-        the second derivative of the option price with respect to the strike price, i.e. the rate of change
-        of the dual delta as the strike price changes. It is the strike-space counterpart of gamma and
+        Calculate the dual gamma of an option based on the Black Scholes Model: how much the dual delta changes for
+        a 1.00 change in the strike price.
+
+        The Black Scholes Model is a mathematical model used to estimate the price of European—style options. The
+        dual gamma is the second derivative of the option price with respect to the strike price, i.e. the rate of
+        change of the dual delta as the strike price changes. It is the strike-space counterpart of gamma and
         describes the (discounted) risk-neutral probability density of the underlying finishing at the strike.
 
         The dual gamma calculation is the theoretical value of the dual gamma. The actual dual gamma can differ
@@ -2246,12 +2292,12 @@ class GreeksOptions:
             start from; a date without prices (a weekend or a holiday) uses the last trading day before it, and a
             ticker without a price on that day is left out with a warning. Defaults to None, which uses the
             last date of the historical data.
-            strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
+            strike_price_range (float): The percentage range to use for the strike prices, between 0 and 1. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
-            strike_step_size (float): The step size to use for the strike prices. Defaults to 5 which means that the
+            strike_step_size (float): The step size to use for the strike prices, above 0. Defaults to 5 which means that the
             strike prices will be 75, 80, 85, ..., 120 and 125 if the current stock price is 100.
             expiration_time_range (int): The number of days to use for the time to expiration: the columns are the
-            expirations 1 up to expiration_time_range - 1 days after the start date. Defaults to 30, which gives
+            expirations 1 up to expiration_time_range - 1 days after the start date, so at least 2. Defaults to 30, which gives
             expirations of 1 to 29 days.
             risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None, which
             uses the Toolkit's risk-free rate on the pricing date: the 10-year Treasury yield unless the Toolkit's
@@ -2320,12 +2366,12 @@ class GreeksOptions:
             stock_price=stock_price,
             strike_step_size=strike_step_size,
             strike_price_range=strike_price_range,
+            values_per_strike=expiration_time_range,
         )
 
-        # This creates a list of time to expiration values from 0 to time_range, with a step size of 1
-        time_to_expiration_list = [
-            time / 365 for time in range(0, expiration_time_range)
-        ]
+        time_to_expiration_list = helpers.define_times_to_expiration(
+            expiration_time_range
+        )
 
         dual_gamma: dict[str, dict[float, dict[float, float]]] = {}
         dividend_yield_value: dict[str, float] = {}
@@ -2395,9 +2441,11 @@ class GreeksOptions:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the vanna of an option based on the Black Scholes Model. The Black Scholes Model
-        is a mathematical model used to estimate the price of European—style options. The vanna is
-        the rate of change of the vega with respect to the price of the underlying asset.
+        Calculate the vanna of an option based on the Black Scholes Model: how much the delta changes for a 1.00
+        change in the volatility, or equally the vega for a 1.00 change in the price of the underlying asset.
+
+        The Black Scholes Model is a mathematical model used to estimate the price of European—style options. The
+        vanna is the rate of change of the vega with respect to the price of the underlying asset.
 
         The vanna calculation is the theoretical value of the vanna. The actual vanna can differ from this
         value due to several factors such as the volatility of the underlying asset, the time to expiration,
@@ -2429,12 +2477,12 @@ class GreeksOptions:
             start from; a date without prices (a weekend or a holiday) uses the last trading day before it, and a
             ticker without a price on that day is left out with a warning. Defaults to None, which uses the
             last date of the historical data.
-            strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
+            strike_price_range (float): The percentage range to use for the strike prices, between 0 and 1. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
-            strike_step_size (float): The step size to use for the strike prices. Defaults to 5 which means that the
+            strike_step_size (float): The step size to use for the strike prices, above 0. Defaults to 5 which means that the
             strike prices will be 75, 80, 85, ..., 120 and 125 if the current stock price is 100.
             expiration_time_range (int): The number of days to use for the time to expiration: the columns are the
-            expirations 1 up to expiration_time_range - 1 days after the start date. Defaults to 30, which gives
+            expirations 1 up to expiration_time_range - 1 days after the start date, so at least 2. Defaults to 30, which gives
             expirations of 1 to 29 days.
             risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None, which
             uses the Toolkit's risk-free rate on the pricing date: the 10-year Treasury yield unless the Toolkit's
@@ -2510,12 +2558,12 @@ class GreeksOptions:
             stock_price=stock_price,
             strike_step_size=strike_step_size,
             strike_price_range=strike_price_range,
+            values_per_strike=expiration_time_range,
         )
 
-        # This creates a list of time to expiration values from 0 to time_range, with a step size of 1
-        time_to_expiration_list = [
-            time / 365 for time in range(0, expiration_time_range)
-        ]
+        time_to_expiration_list = helpers.define_times_to_expiration(
+            expiration_time_range
+        )
 
         vanna: dict[str, dict[float, dict[float, float]]] = {}
         dividend_yield_value: dict[str, float] = {}
@@ -2586,9 +2634,11 @@ class GreeksOptions:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the charm of an option based on the Black Scholes Model. The Black Scholes Model
-        is a mathematical model used to estimate the price of European—style options. The charm is
-        the rate of change of the delta with respect to the time to expiration.
+        Calculate the charm of an option based on the Black Scholes Model: how much the delta changes as time
+        passes, the delta decay.
+
+        The Black Scholes Model is a mathematical model used to estimate the price of European—style options. The
+        charm is the rate of change of the delta with respect to the time to expiration.
 
         The charm calculation is the theoretical value of the charm. The actual charm can differ from this
         value due to several factors such as the volatility of the underlying asset, the time to expiration,
@@ -2623,12 +2673,12 @@ class GreeksOptions:
             start from; a date without prices (a weekend or a holiday) uses the last trading day before it, and a
             ticker without a price on that day is left out with a warning. Defaults to None, which uses the
             last date of the historical data.
-            strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
+            strike_price_range (float): The percentage range to use for the strike prices, between 0 and 1. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
-            strike_step_size (float): The step size to use for the strike prices. Defaults to 5 which means that the
+            strike_step_size (float): The step size to use for the strike prices, above 0. Defaults to 5 which means that the
             strike prices will be 75, 80, 85, ..., 120 and 125 if the current stock price is 100.
             expiration_time_range (int): The number of days to use for the time to expiration: the columns are the
-            expirations 1 up to expiration_time_range - 1 days after the start date. Defaults to 30, which gives
+            expirations 1 up to expiration_time_range - 1 days after the start date, so at least 2. Defaults to 30, which gives
             expirations of 1 to 29 days.
             risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None, which
             uses the Toolkit's risk-free rate on the pricing date: the 10-year Treasury yield unless the Toolkit's
@@ -2710,12 +2760,12 @@ class GreeksOptions:
             stock_price=stock_price,
             strike_step_size=strike_step_size,
             strike_price_range=strike_price_range,
+            values_per_strike=expiration_time_range,
         )
 
-        # This creates a list of time to expiration values from 0 to time_range, with a step size of 1
-        time_to_expiration_list = [
-            time / 365 for time in range(0, expiration_time_range)
-        ]
+        time_to_expiration_list = helpers.define_times_to_expiration(
+            expiration_time_range
+        )
 
         charm: dict[str, dict[float, dict[float, float]]] = {}
         dividend_yield_value: dict[str, float] = {}
@@ -2786,9 +2836,11 @@ class GreeksOptions:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the vomma of an option based on the Black Scholes Model. The Black Scholes Model
-        is a mathematical model used to estimate the price of European—style options. The vomma is
-        the rate of change of the vega with respect to the volatility of the underlying asset.
+        Calculate the vomma of an option based on the Black Scholes Model: how much the vega changes for a 1.00
+        change in the volatility, the convexity of the option value in the volatility.
+
+        The Black Scholes Model is a mathematical model used to estimate the price of European—style options. The
+        vomma is the rate of change of the vega with respect to the volatility of the underlying asset.
 
         The vomma calculation is the theoretical value of the vomma. The actual vomma can differ from this
         value due to several factors such as the volatility of the underlying asset, the time to expiration,
@@ -2819,12 +2871,12 @@ class GreeksOptions:
             start from; a date without prices (a weekend or a holiday) uses the last trading day before it, and a
             ticker without a price on that day is left out with a warning. Defaults to None, which uses the
             last date of the historical data.
-            strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
+            strike_price_range (float): The percentage range to use for the strike prices, between 0 and 1. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
-            strike_step_size (float): The step size to use for the strike prices. Defaults to 5 which means that the
+            strike_step_size (float): The step size to use for the strike prices, above 0. Defaults to 5 which means that the
             strike prices will be 75, 80, 85, ..., 120 and 125 if the current stock price is 100.
             expiration_time_range (int): The number of days to use for the time to expiration: the columns are the
-            expirations 1 up to expiration_time_range - 1 days after the start date. Defaults to 30, which gives
+            expirations 1 up to expiration_time_range - 1 days after the start date, so at least 2. Defaults to 30, which gives
             expirations of 1 to 29 days.
             risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None, which
             uses the Toolkit's risk-free rate on the pricing date: the 10-year Treasury yield unless the Toolkit's
@@ -2903,12 +2955,12 @@ class GreeksOptions:
             stock_price=stock_price,
             strike_step_size=strike_step_size,
             strike_price_range=strike_price_range,
+            values_per_strike=expiration_time_range,
         )
 
-        # This creates a list of time to expiration values from 0 to time_range, with a step size of 1
-        time_to_expiration_list = [
-            time / 365 for time in range(0, expiration_time_range)
-        ]
+        time_to_expiration_list = helpers.define_times_to_expiration(
+            expiration_time_range
+        )
 
         vomma: dict[str, dict[float, dict[float, float]]] = {}
         dividend_yield_value: dict[str, float] = {}
@@ -2978,9 +3030,11 @@ class GreeksOptions:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the vera of an option based on the Black Scholes Model. The Black Scholes Model
-        is a mathematical model used to estimate the price of European—style options. The vera is
-        the rate of change of the rho with respect to volatility.
+        Calculate the vera of an option based on the Black Scholes Model: how much the rho changes for a 1.00 change
+        in the volatility.
+
+        The Black Scholes Model is a mathematical model used to estimate the price of European—style options. The
+        vera is the rate of change of the rho with respect to volatility.
 
         The vera calculation is the theoretical value of the vera. The actual vera can differ from this
         value due to several factors such as the volatility of the underlying asset, the time to expiration,
@@ -3014,12 +3068,12 @@ class GreeksOptions:
             start from; a date without prices (a weekend or a holiday) uses the last trading day before it, and a
             ticker without a price on that day is left out with a warning. Defaults to None, which uses the
             last date of the historical data.
-            strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
+            strike_price_range (float): The percentage range to use for the strike prices, between 0 and 1. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
-            strike_step_size (float): The step size to use for the strike prices. Defaults to 5 which means that the
+            strike_step_size (float): The step size to use for the strike prices, above 0. Defaults to 5 which means that the
             strike prices will be 75, 80, 85, ..., 120 and 125 if the current stock price is 100.
             expiration_time_range (int): The number of days to use for the time to expiration: the columns are the
-            expirations 1 up to expiration_time_range - 1 days after the start date. Defaults to 30, which gives
+            expirations 1 up to expiration_time_range - 1 days after the start date, so at least 2. Defaults to 30, which gives
             expirations of 1 to 29 days.
             risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None, which
             uses the Toolkit's risk-free rate on the pricing date: the 10-year Treasury yield unless the Toolkit's
@@ -3094,12 +3148,12 @@ class GreeksOptions:
             stock_price=stock_price,
             strike_step_size=strike_step_size,
             strike_price_range=strike_price_range,
+            values_per_strike=expiration_time_range,
         )
 
-        # This creates a list of time to expiration values from 0 to time_range, with a step size of 1
-        time_to_expiration_list = [
-            time / 365 for time in range(0, expiration_time_range)
-        ]
+        time_to_expiration_list = helpers.define_times_to_expiration(
+            expiration_time_range
+        )
 
         vera: dict[str, dict[float, dict[float, float]]] = {}
         dividend_yield_value: dict[str, float] = {}
@@ -3169,9 +3223,10 @@ class GreeksOptions:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the veta of an option based on the Black Scholes Model. The Black Scholes Model
-        is a mathematical model used to estimate the price of European—style options. The veta is
-        the rate of change of the vega with respect to the time to expiration.
+        Calculate the veta of an option based on the Black Scholes Model: how much the vega changes as time passes.
+
+        The Black Scholes Model is a mathematical model used to estimate the price of European—style options. The
+        veta is the rate of change of the vega with respect to the time to expiration.
 
         The veta calculation is the theoretical value of the veta. The actual veta can differ from this
         value due to several factors such as the volatility of the underlying asset, the time to expiration,
@@ -3209,12 +3264,12 @@ class GreeksOptions:
             start from; a date without prices (a weekend or a holiday) uses the last trading day before it, and a
             ticker without a price on that day is left out with a warning. Defaults to None, which uses the
             last date of the historical data.
-            strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
+            strike_price_range (float): The percentage range to use for the strike prices, between 0 and 1. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
-            strike_step_size (float): The step size to use for the strike prices. Defaults to 5 which means that the
+            strike_step_size (float): The step size to use for the strike prices, above 0. Defaults to 5 which means that the
             strike prices will be 75, 80, 85, ..., 120 and 125 if the current stock price is 100.
             expiration_time_range (int): The number of days to use for the time to expiration: the columns are the
-            expirations 1 up to expiration_time_range - 1 days after the start date. Defaults to 30, which gives
+            expirations 1 up to expiration_time_range - 1 days after the start date, so at least 2. Defaults to 30, which gives
             expirations of 1 to 29 days.
             risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None, which
             uses the Toolkit's risk-free rate on the pricing date: the 10-year Treasury yield unless the Toolkit's
@@ -3287,12 +3342,12 @@ class GreeksOptions:
             stock_price=stock_price,
             strike_step_size=strike_step_size,
             strike_price_range=strike_price_range,
+            values_per_strike=expiration_time_range,
         )
 
-        # This creates a list of time to expiration values from 0 to time_range, with a step size of 1
-        time_to_expiration_list = [
-            time / 365 for time in range(0, expiration_time_range)
-        ]
+        time_to_expiration_list = helpers.define_times_to_expiration(
+            expiration_time_range
+        )
 
         veta: dict[str, dict[float, dict[float, float]]] = {}
         dividend_yield_value: dict[str, float] = {}
@@ -3362,10 +3417,12 @@ class GreeksOptions:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the partial derivative of an option based on the Black Scholes Model. The Black Scholes Model
-        is a mathematical model used to estimate the price of European—style options. The partial derivative is
-        the second derivative of the option price with respect to the strike price, the rate at which the dual
-        delta changes with the strike.
+        Calculate the partial derivative of an option based on the Black Scholes Model: how fast the dual delta
+        changes with the strike price, the second derivative of the option value with respect to the strike price.
+
+        The Black Scholes Model is a mathematical model used to estimate the price of European—style options. The
+        partial derivative is the second derivative of the option price with respect to the strike price, the rate
+        at which the dual delta changes with the strike.
 
         Note that this uses a single, flat assumed volatility (the same value at every strike price) rather than
         the market's actual implied volatility smile. This means it is NOT the Breeden-Litzenberger risk-neutral
@@ -3392,12 +3449,12 @@ class GreeksOptions:
             start from; a date without prices (a weekend or a holiday) uses the last trading day before it, and a
             ticker without a price on that day is left out with a warning. Defaults to None, which uses the
             last date of the historical data.
-            strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
+            strike_price_range (float): The percentage range to use for the strike prices, between 0 and 1. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
-            strike_step_size (float): The step size to use for the strike prices. Defaults to 5 which means that the
+            strike_step_size (float): The step size to use for the strike prices, above 0. Defaults to 5 which means that the
             strike prices will be 75, 80, 85, ..., 120 and 125 if the current stock price is 100.
             expiration_time_range (int): The number of days to use for the time to expiration: the columns are the
-            expirations 1 up to expiration_time_range - 1 days after the start date. Defaults to 30, which gives
+            expirations 1 up to expiration_time_range - 1 days after the start date, so at least 2. Defaults to 30, which gives
             expirations of 1 to 29 days.
             risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None, which
             uses the Toolkit's risk-free rate on the pricing date: the 10-year Treasury yield unless the Toolkit's
@@ -3478,12 +3535,12 @@ class GreeksOptions:
             stock_price=stock_price,
             strike_step_size=strike_step_size,
             strike_price_range=strike_price_range,
+            values_per_strike=expiration_time_range,
         )
 
-        # This creates a list of time to expiration values from 0 to time_range, with a step size of 1
-        time_to_expiration_list = [
-            time / 365 for time in range(0, expiration_time_range)
-        ]
+        time_to_expiration_list = helpers.define_times_to_expiration(
+            expiration_time_range
+        )
 
         partial_derivative: dict[str, dict[float, dict[float, float]]] = {}
         dividend_yield_value: dict[str, float] = {}
@@ -3539,6 +3596,7 @@ class GreeksOptions:
         return partial_derivative_df
 
     @handle_errors
+    @logger_model.log_each_message_once()
     def collect_third_order_greeks(
         self,
         start_date: str | None = None,
@@ -3553,8 +3611,10 @@ class GreeksOptions:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the third order Greeks of an option based on the Black Scholes Model. This will return the following Greeks
-        per Strike Price and Expiration Date:
+        Calculate the third order Greeks of an option based on the Black Scholes Model: how the second order Greeks
+        themselves respond to the price of the underlying asset, the volatility and time.
+
+        This will return the following Greeks per Strike Price and Expiration Date:
 
         - Speed: measures the rate of change in Gamma with respect to changes in the underlying price.
         - Zomma: measures the rate of change of gamma with respect to changes in volatility.
@@ -3577,12 +3637,12 @@ class GreeksOptions:
             start from; a date without prices (a weekend or a holiday) uses the last trading day before it, and a
             ticker without a price on that day is left out with a warning. Defaults to None, which uses the
             last date of the historical data.
-            strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
+            strike_price_range (float): The percentage range to use for the strike prices, between 0 and 1. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
-            strike_step_size (float): The step size to use for the strike prices. Defaults to 5 which means that the
+            strike_step_size (float): The step size to use for the strike prices, above 0. Defaults to 5 which means that the
             strike prices will be 75, 80, 85, ..., 120 and 125 if the current stock price is 100.
             expiration_time_range (int): The number of days to use for the time to expiration: the columns are the
-            expirations 1 up to expiration_time_range - 1 days after the start date. Defaults to 30, which gives
+            expirations 1 up to expiration_time_range - 1 days after the start date, so at least 2. Defaults to 30, which gives
             expirations of 1 to 29 days.
             risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None, which
             uses the Toolkit's risk-free rate on the pricing date: the 10-year Treasury yield unless the Toolkit's
@@ -3702,6 +3762,11 @@ class GreeksOptions:
             standardize=standardize,
         )
 
+        if all(greek.empty for greek in greeks.values()):
+            # Each greek has logged why it is empty, which is the same reason for all of them.
+            logger.warning("None of the greeks could be calculated.")
+            return pd.DataFrame()
+
         greeks_df = (
             pd.concat(greeks, axis=1)
             .swaplevel(axis=1)
@@ -3725,9 +3790,11 @@ class GreeksOptions:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the speed of an option based on the Black Scholes Model. The Black Scholes Model
-        is a mathematical model used to estimate the price of European—style options. The speed is
-        the rate of change of the gamma with respect to the price of the underlying asset.
+        Calculate the speed of an option based on the Black Scholes Model: how much the gamma changes for a 1.00
+        change in the price of the underlying asset.
+
+        The Black Scholes Model is a mathematical model used to estimate the price of European—style options. The
+        speed is the rate of change of the gamma with respect to the price of the underlying asset.
 
         The speed calculation is the theoretical value of the speed. The actual speed can differ from this
         value due to several factors such as the volatility of the underlying asset, the time to expiration,
@@ -3757,12 +3824,12 @@ class GreeksOptions:
             start from; a date without prices (a weekend or a holiday) uses the last trading day before it, and a
             ticker without a price on that day is left out with a warning. Defaults to None, which uses the
             last date of the historical data.
-            strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
+            strike_price_range (float): The percentage range to use for the strike prices, between 0 and 1. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
-            strike_step_size (float): The step size to use for the strike prices. Defaults to 5 which means that the
+            strike_step_size (float): The step size to use for the strike prices, above 0. Defaults to 5 which means that the
             strike prices will be 75, 80, 85, ..., 120 and 125 if the current stock price is 100.
             expiration_time_range (int): The number of days to use for the time to expiration: the columns are the
-            expirations 1 up to expiration_time_range - 1 days after the start date. Defaults to 30, which gives
+            expirations 1 up to expiration_time_range - 1 days after the start date, so at least 2. Defaults to 30, which gives
             expirations of 1 to 29 days.
             risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None, which
             uses the Toolkit's risk-free rate on the pricing date: the 10-year Treasury yield unless the Toolkit's
@@ -3828,12 +3895,12 @@ class GreeksOptions:
             stock_price=stock_price,
             strike_step_size=strike_step_size,
             strike_price_range=strike_price_range,
+            values_per_strike=expiration_time_range,
         )
 
-        # This creates a list of time to expiration values from 0 to time_range, with a step size of 1
-        time_to_expiration_list = [
-            time / 365 for time in range(0, expiration_time_range)
-        ]
+        time_to_expiration_list = helpers.define_times_to_expiration(
+            expiration_time_range
+        )
 
         speed: dict[str, dict[float, dict[float, float]]] = {}
         dividend_yield_value: dict[str, float] = {}
@@ -3903,9 +3970,11 @@ class GreeksOptions:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the zomma of an option based on the Black Scholes Model. The Black Scholes Model
-        is a mathematical model used to estimate the price of European—style options. The zomma is
-        the rate of change of the gamma with respect to volatility.
+        Calculate the zomma of an option based on the Black Scholes Model: how much the gamma changes for a 1.00
+        change in the volatility.
+
+        The Black Scholes Model is a mathematical model used to estimate the price of European—style options. The
+        zomma is the rate of change of the gamma with respect to volatility.
 
         The zomma calculation is the theoretical value of the zomma. The actual zomma can differ from this
         value due to several factors such as the volatility of the underlying asset, the time to expiration,
@@ -3937,12 +4006,12 @@ class GreeksOptions:
             start from; a date without prices (a weekend or a holiday) uses the last trading day before it, and a
             ticker without a price on that day is left out with a warning. Defaults to None, which uses the
             last date of the historical data.
-            strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
+            strike_price_range (float): The percentage range to use for the strike prices, between 0 and 1. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
-            strike_step_size (float): The step size to use for the strike prices. Defaults to 5 which means that the
+            strike_step_size (float): The step size to use for the strike prices, above 0. Defaults to 5 which means that the
             strike prices will be 75, 80, 85, ..., 120 and 125 if the current stock price is 100.
             expiration_time_range (int): The number of days to use for the time to expiration: the columns are the
-            expirations 1 up to expiration_time_range - 1 days after the start date. Defaults to 30, which gives
+            expirations 1 up to expiration_time_range - 1 days after the start date, so at least 2. Defaults to 30, which gives
             expirations of 1 to 29 days.
             risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None, which
             uses the Toolkit's risk-free rate on the pricing date: the 10-year Treasury yield unless the Toolkit's
@@ -4013,12 +4082,12 @@ class GreeksOptions:
             stock_price=stock_price,
             strike_step_size=strike_step_size,
             strike_price_range=strike_price_range,
+            values_per_strike=expiration_time_range,
         )
 
-        # This creates a list of time to expiration values from 0 to time_range, with a step size of 1
-        time_to_expiration_list = [
-            time / 365 for time in range(0, expiration_time_range)
-        ]
+        time_to_expiration_list = helpers.define_times_to_expiration(
+            expiration_time_range
+        )
 
         zomma: dict[str, dict[float, dict[float, float]]] = {}
         dividend_yield_value: dict[str, float] = {}
@@ -4088,9 +4157,11 @@ class GreeksOptions:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the color of an option based on the Black Scholes Model. The Black Scholes Model
-        is a mathematical model used to estimate the price of European—style options. The color is
-        the rate of change of the gamma with respect to time to expiration.
+        Calculate the color of an option based on the Black Scholes Model: how much the gamma changes as time
+        passes.
+
+        The Black Scholes Model is a mathematical model used to estimate the price of European—style options. The
+        color is the rate of change of the gamma with respect to time to expiration.
 
         The color calculation is the theoretical value of the color. The actual color can differ from this
         value due to several factors such as the volatility of the underlying asset, the time to expiration,
@@ -4127,12 +4198,12 @@ class GreeksOptions:
             start from; a date without prices (a weekend or a holiday) uses the last trading day before it, and a
             ticker without a price on that day is left out with a warning. Defaults to None, which uses the
             last date of the historical data.
-            strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
+            strike_price_range (float): The percentage range to use for the strike prices, between 0 and 1. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
-            strike_step_size (float): The step size to use for the strike prices. Defaults to 5 which means that the
+            strike_step_size (float): The step size to use for the strike prices, above 0. Defaults to 5 which means that the
             strike prices will be 75, 80, 85, ..., 120 and 125 if the current stock price is 100.
             expiration_time_range (int): The number of days to use for the time to expiration: the columns are the
-            expirations 1 up to expiration_time_range - 1 days after the start date. Defaults to 30, which gives
+            expirations 1 up to expiration_time_range - 1 days after the start date, so at least 2. Defaults to 30, which gives
             expirations of 1 to 29 days.
             risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None, which
             uses the Toolkit's risk-free rate on the pricing date: the 10-year Treasury yield unless the Toolkit's
@@ -4200,12 +4271,12 @@ class GreeksOptions:
             stock_price=stock_price,
             strike_step_size=strike_step_size,
             strike_price_range=strike_price_range,
+            values_per_strike=expiration_time_range,
         )
 
-        # This creates a list of time to expiration values from 0 to time_range, with a step size of 1
-        time_to_expiration_list = [
-            time / 365 for time in range(0, expiration_time_range)
-        ]
+        time_to_expiration_list = helpers.define_times_to_expiration(
+            expiration_time_range
+        )
 
         color: dict[str, dict[float, dict[float, float]]] = {}
         dividend_yield_value: dict[str, float] = {}
@@ -4275,9 +4346,11 @@ class GreeksOptions:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the ultima of an option based on the Black Scholes Model. The Black Scholes Model
-        is a mathematical model used to estimate the price of European—style options. The ultima is
-        the rate of change of the vomma with respect to volatility.
+        Calculate the ultima of an option based on the Black Scholes Model: how much the vomma changes for a 1.00
+        change in the volatility.
+
+        The Black Scholes Model is a mathematical model used to estimate the price of European—style options. The
+        ultima is the rate of change of the vomma with respect to volatility.
 
         The ultima calculation is the theoretical value of the ultima. The actual gamma can differ from this
         value due to several factors such as the volatility of the underlying asset, the time to expiration,
@@ -4310,12 +4383,12 @@ class GreeksOptions:
             start from; a date without prices (a weekend or a holiday) uses the last trading day before it, and a
             ticker without a price on that day is left out with a warning. Defaults to None, which uses the
             last date of the historical data.
-            strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
+            strike_price_range (float): The percentage range to use for the strike prices, between 0 and 1. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
-            strike_step_size (float): The step size to use for the strike prices. Defaults to 5 which means that the
+            strike_step_size (float): The step size to use for the strike prices, above 0. Defaults to 5 which means that the
             strike prices will be 75, 80, 85, ..., 120 and 125 if the current stock price is 100.
             expiration_time_range (int): The number of days to use for the time to expiration: the columns are the
-            expirations 1 up to expiration_time_range - 1 days after the start date. Defaults to 30, which gives
+            expirations 1 up to expiration_time_range - 1 days after the start date, so at least 2. Defaults to 30, which gives
             expirations of 1 to 29 days.
             risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None, which
             uses the Toolkit's risk-free rate on the pricing date: the 10-year Treasury yield unless the Toolkit's
@@ -4383,12 +4456,12 @@ class GreeksOptions:
             stock_price=stock_price,
             strike_step_size=strike_step_size,
             strike_price_range=strike_price_range,
+            values_per_strike=expiration_time_range,
         )
 
-        # This creates a list of time to expiration values from 0 to time_range, with a step size of 1
-        time_to_expiration_list = [
-            time / 365 for time in range(0, expiration_time_range)
-        ]
+        time_to_expiration_list = helpers.define_times_to_expiration(
+            expiration_time_range
+        )
 
         ultima: dict[str, dict[float, dict[float, float]]] = {}
         dividend_yield_value: dict[str, float] = {}

@@ -3,17 +3,20 @@
 import os
 import tempfile
 
+import numpy as np
 import pandas as pd
 import pytest
 
 from financetoolkit.portfolio.helpers import get_trading_day_locations
 from financetoolkit.portfolio.portfolio_model import (
+    align_exchange_rate,
     convert_historical_data,
     convert_prices,
     format_portfolio_dataset,
     get_base_currency,
     get_exchange_rate_ticker,
     get_price_unit,
+    get_split_factors,
     read_portfolio_dataset,
 )
 
@@ -555,3 +558,148 @@ def test_a_transaction_is_located_on_its_own_tickers_next_trading_day():
         "2021-01-31",
         "2021-02-02",
     ]
+
+
+def test_transactions_on_the_same_day_take_the_rate_of_that_day():
+    rate = pd.Series(
+        [1.04, 1.05, 1.06],
+        index=pd.PeriodIndex(["2025-02-28", "2025-03-03", "2025-03-04"], freq="D"),
+    )
+    # Two trades on a Monday and two on the Saturday before it.
+    dates = pd.PeriodIndex(
+        ["2025-03-03", "2025-03-03", "2025-03-01", "2025-03-01"], freq="D"
+    )
+
+    assert align_exchange_rate(rate, dates).tolist() == [1.05, 1.05, 1.04, 1.04]
+
+
+def test_a_holding_whose_exchange_is_closed_takes_the_rate_of_the_day():
+    dates = pd.PeriodIndex(["2025-01-16", "2025-01-17", "2025-01-20"], freq="D")
+    columns = pd.MultiIndex.from_product(
+        [["Open", "High", "Low", "Close", "Adj Close", "Return"], ["AAPL"]]
+    )
+    data = pd.DataFrame(
+        [
+            [228.0, 229.0, 227.0, 228.26, 228.26, np.nan],
+            [229.0, 230.0, 228.0, 229.98, 229.98, 0.0075],
+            # New York is closed on the last date, which another ticker traded.
+            [np.nan] * 6,
+        ],
+        index=dates,
+        columns=columns,
+    )
+    # USD per euro on each day.
+    rates = pd.DataFrame({"EURUSD=X": [1.03, 1.02669, 1.04159]}, index=dates)
+
+    converted = convert_historical_data(
+        data,
+        {"AAPL": ("USD", "EUR")},
+        rates,
+        ["Open", "High", "Low", "Close", "Adj Close", "Dividends"],
+    )
+
+    # The last close in dollars at the rate of that day, not the euro value of the day before.
+    assert converted[("Close", "AAPL")].iloc[-1] == pytest.approx(229.98 / 1.04159)
+    assert converted[("Open", "AAPL")].iloc[-1] == pytest.approx(229.98 / 1.04159)
+    assert converted[("Close", "AAPL")].iloc[1] == pytest.approx(229.98 / 1.02669)
+
+
+def test_a_transaction_from_before_a_split_is_restated_to_todays_basis():
+    splits = {
+        "NVDA": pd.Series(
+            [4.0, 10.0], index=pd.to_datetime(["2021-07-20", "2024-06-10"])
+        ),
+        "XYZ": pd.Series([0.1], index=pd.to_datetime(["2023-01-02"])),
+    }
+    dates = pd.PeriodIndex(
+        [
+            "2024-05-01",
+            "2024-05-01",
+            "2020-06-01",
+            "2020-06-01",
+            "2024-07-01",
+            "2022-06-01",
+        ],
+        freq="D",
+    )
+    tickers = pd.Index(["NVDA", "NVDA", "NVDA", "NVDA", "NVDA", "XYZ"])
+    # Split-adjusted closes of the days.
+    closes = pd.Series([83.04, 83.04, 8.8, 8.8, 124.3, 50.0])
+    prices = pd.Series(
+        [
+            830.4,  # as confirmed before the ten for one split
+            83.6,  # already on today's basis
+            352.0,  # before both splits, as confirmed: 4 x 10
+            88.0,  # restated by the broker for the four for one split only
+            124.0,  # after both splits
+            5.0,  # before a one for ten reverse split
+        ]
+    )
+
+    factors = get_split_factors(prices, closes, dates, tickers, splits)
+
+    assert factors.tolist() == pytest.approx([10.0, 1.0, 40.0, 10.0, 1.0, 0.1])
+
+
+def test_overlapping_files_count_each_fill_as_often_as_one_file_holds_it(tmp_path):
+    fill = {
+        "Date": "2024-01-02",
+        "Ticker": "AAPL",
+        "Price": 185.0,
+        "Volume": 1,
+        "Costs": 0.0,
+        "Currency": "USD",
+    }
+    other = {**fill, "Date": "2024-01-03", "Price": 184.0}
+    # The second file covers the first and holds a second, identical fill of that day.
+    pd.DataFrame([fill]).to_csv(tmp_path / "first.csv", index=False)
+    pd.DataFrame([fill, fill, other]).to_csv(tmp_path / "second.csv", index=False)
+
+    dataset = read_portfolio_dataset(
+        excel_location=[str(tmp_path)],
+        adjust_duplicates=True,
+        date_column=["Date"],
+        date_format_options=["%Y-%m-%d"],
+        name_columns=["Name"],
+        ticker_columns=["Ticker"],
+        price_columns=["Price"],
+        volume_columns=["Volume"],
+        column_mapping={
+            "date": "Date",
+            "name": "Name",
+            "identifier": "Ticker",
+            "price": "Price",
+            "volume": "Volume",
+            "currency": "Currency",
+            "costs": "Costs",
+        },
+        currency_columns=["Currency"],
+        costs_columns=["Costs"],
+    )[0]
+
+    assert dataset["Volume"].sum() == 3
+    assert dataset.loc[dataset["Price"] == 185.0, "Volume"].tolist() == [2]
+
+
+def test_transactions_with_a_time_are_in_the_order_they_were_made():
+    data = pd.DataFrame(
+        {
+            "Date": [
+                "2022-01-03 15:59:00",
+                "2022-01-03 09:30:00",
+                "2021-01-04 10:00:00",
+            ],
+            "Ticker": ["AAPL", "AAPL", "AAPL"],
+            "Price": [182.01, 177.83, 129.41],
+            "Volume": [10, -10, 10],
+            "Currency": ["USD", "USD", "USD"],
+            "Costs": [0.0, 0.0, 0.0],
+        }
+    )
+
+    dataset = _format(data)
+
+    assert dataset["Volume"].tolist() == [10, -10, 10]
+    assert dataset["Price"].tolist() == [129.41, 177.83, 182.01]
+    assert dataset.attrs["ordered_by_time"]
+    assert not _format(data.assign(Date=data["Date"].str[:10])).attrs["ordered_by_time"]

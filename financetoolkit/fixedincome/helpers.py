@@ -6,11 +6,15 @@ import io
 
 import numpy as np
 import pandas as pd
+import requests
 
 from financetoolkit import helpers
 from financetoolkit.cache import policy_model
 from financetoolkit.cache.cache_controller import get_active_cache
+from financetoolkit.utilities import logger_model
 from financetoolkit.utilities.requests_model import get_request
+
+logger = logger_model.get_logger()
 
 BASE_URL = "https://data-api.ecb.europa.eu/service/data/"
 EXTENSIONS = "?format=csvdata"
@@ -35,7 +39,8 @@ def collect_ecb_data(
             the PeriodIndex, e.g. 'D' for daily or 'M' for monthly. Defaults to 'D'.
 
     Returns:
-       pd.DataFrame: A DataFrame containing the data from the ECB API.
+       pd.DataFrame: A DataFrame containing the data from the ECB API, empty (with an error
+       logged) when the ECB cannot be reached.
     """
     cache = get_active_cache()
     cache_entity = f"{dataset}/{ecb_data_string}"
@@ -53,7 +58,17 @@ def collect_ecb_data(
             return cached_data
 
     url = f"{BASE_URL}{dataset}/{ecb_data_string}{EXTENSIONS}"
-    response = get_request(url)
+    try:
+        response = get_request(url)
+    except requests.exceptions.RequestException as error:
+        logger.error(
+            "Could not reach the European Central Bank for the %s series %s (%s). No data is "
+            "returned for it.",
+            dataset,
+            ecb_data_string,
+            error,
+        )
+        return pd.Series(dtype=float)
     ecb_data = pd.read_csv(io.StringIO(response.text))
 
     ecb_data = ecb_data.set_index("TIME_PERIOD")
@@ -199,3 +214,32 @@ def parse_maturities(
         maturities = [maturities]
 
     return [maturity_key(maturity) for maturity in maturities]
+
+
+def discount_factors(zero_curve: pd.Series, years: float | np.ndarray) -> np.ndarray:
+    """
+    The discount factors of a zero-coupon curve at any times, as the Toolkit's curves define them.
+
+    The curve holds annually compounded zero-coupon rates by maturity in years, as
+    `get_zero_coupon_curve` and `get_eiopa_risk_free_rate` return them, so a payment in t
+    years is discounted with P(t) = (1 + r(t))^(-t). The zero rate r(t) between two
+    maturities of the curve is interpolated linearly, and held at the first and last rate
+    outside them, as `get_forward_rate` and `get_par_yield` read the curve. P(0) is 1.
+
+    Args:
+        zero_curve (pd.Series): The annually compounded zero-coupon rates (decimals),
+            indexed by maturity in years.
+        years (float | np.ndarray): The times of the payments, in years from today.
+
+    Returns:
+        np.ndarray: The discount factor of each time.
+    """
+    zero_curve = zero_curve.dropna().sort_index()
+    years = np.asarray(years, dtype=float)
+    zero_rates = np.interp(
+        years,
+        zero_curve.index.to_numpy(dtype=float),
+        zero_curve.to_numpy(dtype=float),
+    )
+
+    return (1 + zero_rates) ** -years

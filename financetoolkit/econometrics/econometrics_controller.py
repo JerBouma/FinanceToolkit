@@ -29,6 +29,9 @@ from financetoolkit.econometrics.significance.significance_controller import (
 from financetoolkit.econometrics.stationarity.stationarity_controller import (
     StationarityEconometrics,
 )
+from financetoolkit.econometrics.statistics.statistics_controller import (
+    StatisticsEconometrics,
+)
 from financetoolkit.econometrics.testing.testing_controller import TestingEconometrics
 from financetoolkit.helpers import LazyDict
 from financetoolkit.risk.helpers import (
@@ -36,6 +39,11 @@ from financetoolkit.risk.helpers import (
     mask_non_trading_days,
 )
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
+from financetoolkit.utilities.error_model import (
+    InvalidArgumentError,
+    check_option,
+    check_period,
+)
 from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.sources_model import track_sources
 
@@ -117,7 +125,7 @@ class EconometricsBase:
 
         econometrics = Econometrics(data=unemployment, changes='difference')
 
-        econometrics.get_augmented_dickey_fuller()
+        econometrics.get_unit_root_test()
         ```
 
         Which returns:
@@ -140,7 +148,7 @@ class EconometricsBase:
 
         if data is not None:
             if historical_data is not None:
-                raise ValueError(
+                raise InvalidArgumentError(
                     "Pass either data (any metric) or historical_data (from a Toolkit), not both."
                 )
             historical_data, series = data_model.build_historical_data(
@@ -213,10 +221,7 @@ class EconometricsBase:
         holiday next to a benchmark that traded), see `helpers.mask_non_trading_days`: the
         carried-forward price is not an observation.
         """
-        if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
-            raise ValueError(
-                "Period must be daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(period, ["daily", "weekly", "monthly", "quarterly", "yearly"])
 
         # Deduplicated so a ticker named twice (e.g. as dependent and independent)
         # still selects a single column.
@@ -226,6 +231,11 @@ class EconometricsBase:
         if key not in self._data_cache:
             # Historical data supplied to the Toolkit can reach beyond its date range.
             frame = self._historical_data[period]
+            # An unknown column is a mistake in the call, not missing data.
+            if not frame.empty:
+                check_option(
+                    "column", column, list(frame.columns.get_level_values(0).unique())
+                )
             data = (
                 mask_non_trading_days(frame, column)
                 if self._fills_non_trading_days
@@ -233,8 +243,29 @@ class EconometricsBase:
                 and "Return" in frame.columns
                 else frame[column]
             ).loc[self._start_date : self._end_date]
+            if tickers is not None:
+                data = data[tickers]
+
+            # A series without any value has no result of its own and, combined date by date
+            # with others, leaves no shared date for any of them, so it is named here.
+            without_values = data.columns[data.count() == 0]
+            if len(without_values):
+                logger.warning(
+                    "%s has no %s %s values between %s and %s, so every result that uses it is NaN%s.",
+                    ", ".join(map(str, without_values)),
+                    period,
+                    column,
+                    self._start_date,
+                    self._end_date,
+                    (
+                        ", also those of the series it is combined with"
+                        if tickers is not None and len(tickers) > 1
+                        else ""
+                    ),
+                )
+
             self._data_cache[key] = (
-                data.dropna(how="all") if tickers is None else data[tickers].dropna()
+                data.dropna(how="all") if tickers is None else data.dropna()
             )
 
         return self._data_cache[key]
@@ -278,7 +309,8 @@ class EconometricsBase:
         `self._tickers` for every simple "one dependent, one-or-more
         independent(s)" regression-style method on this controller. Defaults to
         `self._tickers[0]` as the dependent ticker and every other ticker in
-        `self._tickers` as independent, unless overridden.
+        `self._tickers` as independent, unless overridden. The Portfolio of a Portfolio's
+        Toolkit is left out of the default independents of a holding, as it combines them.
         """
         tickers = self._get_tickers(include_benchmark=include_benchmark)
 
@@ -287,8 +319,13 @@ class EconometricsBase:
         )
 
         if independent_tickers is None:
+            # The Portfolio of a Portfolio's Toolkit is a combination of its holdings, so a
+            # holding regressed on the others and the Portfolio would be collinear by construction.
             independent_tickers = [
-                ticker for ticker in tickers if ticker != dependent_ticker
+                ticker
+                for ticker in tickers
+                if ticker != dependent_ticker
+                and (ticker != "Portfolio" or dependent_ticker == "Portfolio")
             ]
         else:
             independent_tickers = (
@@ -320,11 +357,15 @@ class EconometricsBase:
         the symmetric pairwise methods below (two-sample t-test, RMSE, MAE), where
         swapping the pair does not change the test.
         """
-        return list(
-            itertools.combinations(
-                self._get_tickers(include_benchmark=include_benchmark), 2
+        tickers = self._get_tickers(include_benchmark=include_benchmark)
+        if len(tickers) < 2:  # noqa: PLR2004
+            raise ValueError(
+                f"A comparison of two series needs at least two series, not only "
+                f"{', '.join(tickers) or 'none'}. Please add a ticker, or pass "
+                "include_benchmark=True to compare with the Benchmark."
             )
-        )
+
+        return list(itertools.combinations(tickers, 2))
 
 
 # ruff: noqa: E501
@@ -341,6 +382,7 @@ class Econometrics(
     ForecastingEconometrics,
     DynamicsEconometrics,
     SignificanceEconometrics,
+    StatisticsEconometrics,
     EconometricsBase,
 ):
     """
@@ -350,7 +392,9 @@ class Econometrics(
     (Granger causality), and general model/residual diagnostics (ARCH effects,
     normality, autocorrelation, structural stability). These are the standard
     foundational tests behind approaches such as pairs trading, spread modeling,
-    and choosing an appropriate volatility or return model in the first place.
+    and choosing an appropriate volatility or return model in the first place. Next
+    to the tests, it holds the rolling statistics of a series: the rolling linear
+    regression, correlation, median, percentile, z-score and others.
 
     Through the Toolkit (`toolkit.econometrics`) it analyzes the prices and returns of the
     Toolkit's tickers. Standalone, `Econometrics(data=...)` analyzes any metric: ratios,

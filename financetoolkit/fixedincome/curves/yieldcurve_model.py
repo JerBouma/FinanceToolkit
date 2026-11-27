@@ -1,5 +1,7 @@
 """Yield Curve Model Module"""
 
+import numbers
+
 import numpy as np
 import pandas as pd
 
@@ -13,7 +15,8 @@ def get_forward_rate(
     far_maturity: float | pd.Series,
 ) -> float | pd.Series:
     """
-    Calculate the implied forward rate between two points on a yield curve.
+    Calculate the implied forward rate between two points on a yield curve: the rate for
+    borrowing between the two maturities that today's curve locks in.
 
     The forward rate is the interest rate, implied by the current (spot) yield curve,
     for a loan that starts at a future date. It answers the question "given what the
@@ -35,7 +38,7 @@ def get_forward_rate(
     directly as exponents. Note that this is a different convention from
     `get_par_yield` and `bond_model.get_bond_price_from_curve`, which read the same kind
     of spot curve as nominal annual rates compounded `frequency` times per year. The two
-    coincide at frequency=1; at any other frequency a curve should not be passed to both
+    coincide for annual compounding; at any other frequency a curve should not be passed to both
     without first restating it, since a 4% nominal semi-annual rate is a 4.04% effective
     annual one.
 
@@ -91,7 +94,8 @@ def get_par_yield(
     par_value: float = 100,
 ) -> float:
     """
-    Calculate the par yield for a given maturity given a zero-coupon (spot) yield curve.
+    Calculate the par yield for a given maturity given a zero-coupon (spot) yield curve: the
+    coupon rate at which a bond of that maturity prices at par on the curve.
 
     The par yield is the coupon rate that would need to be attached to a newly-issued
     bond of the given maturity so that, when its cash flows are discounted using the
@@ -147,7 +151,7 @@ def get_par_yield(
         raise TypeError(
             f"Expected years_to_maturity to be a float or int, received {type(years_to_maturity)} instead."
         )
-    if not isinstance(frequency, int):
+    if not isinstance(frequency, numbers.Integral):
         raise TypeError(
             f"Expected frequency to be an int, received {type(frequency)} instead."
         )
@@ -300,7 +304,8 @@ def get_yield_curve_spread(
     long_yield: float | pd.Series, short_yield: float | pd.Series
 ) -> float | pd.Series:
     """
-    Calculate the spread between two points on the yield curve.
+    Calculate the spread between two points on the yield curve: how much more the longer
+    maturity yields than the shorter one, the slope of the curve.
 
     The yield curve spread measures the difference in yield between a longer-dated and
     a shorter-dated instrument (e.g. the widely followed 10-year minus 2-year Treasury
@@ -336,11 +341,60 @@ def get_yield_curve_spread(
     return long_yield - short_yield
 
 
+def get_yield_curve_butterfly(
+    short_yield: float | pd.Series,
+    middle_yield: float | pd.Series,
+    long_yield: float | pd.Series,
+) -> float | pd.Series:
+    """
+    Calculate the butterfly ("fly") of three points on the yield curve: twice how far the
+    yield of the middle maturity (the body) lies above the average yield of the two wings, a
+    measure of the curvature of the curve. Only when the body lies midway between the wings
+    is that average the straight line through them; in 2s5s10s it is not, so a straight
+    curve there has a butterfly of its own. A positive butterfly means the body yields more
+    than the wings on average (it is cheap against them), a negative one that it yields
+    less.
+
+    Also known as: fly, curve butterfly, 2s5s10s, curvature.
+
+    The formula is as follows:
+
+        Butterfly = 2 * Middle Yield - Short Yield - Long Yield
+
+    The wings are weighted equally, as butterflies are quoted (e.g. 2s5s10s); a duration- or
+    regression-weighted butterfly trade has other weights.
+
+    For more information, see Tuckman and Serrat (2022), Fixed Income Securities, 4th
+    edition, chapter 6.
+
+    Args:
+        short_yield (float | pd.Series): The yield of the short wing (in decimal).
+        middle_yield (float | pd.Series): The yield of the body (in decimal).
+        long_yield (float | pd.Series): The yield of the long wing (in decimal).
+
+    Returns:
+        float | pd.Series: The butterfly (in decimal).
+
+    Raises:
+        TypeError: If a yield is not a float, int or pandas Series.
+    """
+    for value in (short_yield, middle_yield, long_yield):
+        if not isinstance(value, int | float | pd.Series):
+            raise TypeError(
+                "Expected the yields to be a float, int or pandas Series, received "
+                f"{type(value)} instead."
+            )
+
+    return 2 * middle_yield - short_yield - long_yield
+
+
 def get_breakeven_inflation_rate(
     nominal_yield: float | pd.Series, real_yield: float | pd.Series
 ) -> float | pd.Series:
     """
-    Calculate the breakeven inflation rate implied by a nominal and a real (inflation-protected) yield.
+    Calculate the breakeven inflation rate implied by a nominal and a real
+    (inflation-protected) yield: the average inflation at which the two bonds return the
+    same, the inflation the market expects.
 
     The breakeven inflation rate is the rate of inflation that would make an investor
     indifferent between holding a nominal bond and an inflation-protected bond (e.g. a

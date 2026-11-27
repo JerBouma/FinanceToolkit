@@ -11,6 +11,7 @@ import pandas as pd
 from financetoolkit.options import helpers, options_model
 from financetoolkit.options.greeks.greeks_controller import GreeksOptions
 from financetoolkit.options.market.market_controller import MarketOptions
+from financetoolkit.options.multiasset.multiasset_controller import MultiAssetOptions
 from financetoolkit.options.pricing.pricing_controller import PricingOptions
 from financetoolkit.options.volatility.volatility_controller import VolatilityOptions
 from financetoolkit.ratios import valuation_model
@@ -163,7 +164,7 @@ class OptionsBase:
         ]
 
     @cached_property
-    def _volatility(self) -> pd.DataFrame:
+    def _trailing_volatility(self) -> pd.DataFrame:
         """The annualized volatility of the year of daily returns up to each date."""
 
         # The volatility on a date is that of the year of daily returns up to it, so a past
@@ -179,6 +180,41 @@ class OptionsBase:
             ).std() * np.sqrt(TRAILING_DAYS)
 
         return trailing_volatility(self._daily_historical["Return"]).ffill()
+
+    def _report_short_history(self) -> None:
+        """
+        Names the tickers with too few daily returns for a volatility. Every option value of
+        such a ticker is NaN, which says nothing about why on its own, so this is said on every
+        call that uses the volatility, not only the first of an Options instance. A ticker
+        without any price is left out: it has a message of its own saying it has no price.
+        """
+        volatility = self._trailing_volatility
+        prices = self._prices
+        if short := [
+            str(ticker)
+            for ticker in volatility.columns
+            if volatility[ticker].isna().all()
+            and ticker in prices
+            and prices[ticker].notna().any()
+        ]:
+            logger.warning(
+                "%s %s fewer than %d daily returns, too few for a volatility, so %s option "
+                "values are NaN. Please pass an earlier start_date.",
+                ", ".join(short),
+                "has" if len(short) == 1 else "have",
+                MINIMUM_VOLATILITY_DAYS,
+                "its" if len(short) == 1 else "their",
+            )
+
+    @property
+    def _volatility(self) -> pd.DataFrame:
+        """
+        The annualized volatility of the year of daily returns up to each date, naming the
+        tickers without one (see _report_short_history). A method reads it once per call; a
+        helper that runs per ticker reads _trailing_volatility instead.
+        """
+        self._report_short_history()
+        return self._trailing_volatility
 
     @cached_property
     def _risk_free_rate(self) -> pd.Series:
@@ -310,6 +346,61 @@ class OptionsBase:
         # stock by the same amount over a year, as the risk-free rate conversion does.  # noqa: E501
         return float(np.log1p(self._dividend_yield[ticker].iloc[-1]))
 
+    def _projected_dividends(
+        self, ticker: str, date: pd.Period, horizon_days: int
+    ) -> pd.Series:
+        """
+        The cash dividends a ticker is expected to pay in the horizon_days after a pricing
+        date, projected from the dividends it paid up to that date (see
+        options_model.get_projected_dividends). A price history without dividends projects
+        none.
+
+        Args:
+            ticker (str): The ticker.
+            date (pd.Period): The pricing date.
+            horizon_days (int): The number of calendar days to project.
+
+        Returns:
+            pd.Series: The dividend per share by the number of days after the pricing date.
+        """
+        if "Dividends" not in self._daily_historical.columns.get_level_values(0):
+            logger.warning(
+                "The historical data has no dividends, so %s is priced without them.",
+                ticker,
+            )
+            return pd.Series(dtype=float, name="Dividend")
+
+        return options_model.get_projected_dividends(
+            dividends=self._daily_historical["Dividends"][ticker],
+            pricing_date=date.to_timestamp() if isinstance(date, pd.Period) else date,
+            horizon_days=horizon_days,
+        )
+
+    def _expiration_dates(self) -> dict[str, list[str]]:
+        """The expiration dates Yahoo Finance lists for each ticker, as each has its own."""
+        return {
+            ticker: options_model.get_option_expiry_dates(ticker=ticker)
+            for ticker in self._tickers
+        }
+
+    def _all_expiration_dates(self, shared_first: bool = False) -> list[str]:
+        """
+        The expiration dates of the tickers together, in date order, so a date one ticker
+        lists is valid for the analysis (the tickers without it are left out). With
+        shared_first, only the dates every ticker lists, when they have any in common.
+        """
+        dates_per_ticker = [
+            dates for dates in self._expiration_dates().values() if dates
+        ]
+        shared = (
+            set.intersection(*map(set, dates_per_ticker)) if dates_per_ticker else set()
+        )
+        return sorted(
+            shared
+            if shared_first and shared
+            else {date for dates in dates_per_ticker for date in dates}
+        )
+
     @handle_errors
     def get_option_chains(
         self,
@@ -321,27 +412,33 @@ class OptionsBase:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Get the Option Chains which gives information about the currently available
-        options as reported by Yahoo Finance. This returns the Contract Symbol, Last
-        Trade Date, Last Price, Bid, Ask, Change, Percent Change, Volume, Open Interest,
-        Implied Volatility, whether the option is In The Money and the Currency.
+        Get the Option Chains: the currently available options of each ticker as reported by
+        Yahoo Finance, with their prices, volume, open interest and implied volatility.
+
+        This returns the Expiration Date, Contract Symbol, Last Trade Date, Last Price, Bid,
+        Ask, Change, Percent Change, Volume, Open Interest, Implied Volatility, whether the
+        option is In The Money and the Currency.
+
+        Every ticker has its own expiration dates (one lists weekly options, another only
+        monthly ones). Without an expiration date each ticker shows its nearest expiry; with
+        one, a ticker that has no options expiring on that date is left out with a warning
+        that lists its own expiration dates.
 
         The data comes from Yahoo Finance. When Yahoo Finance has no options for a ticker,
-        Cboe's delayed quotes (15 minutes) are used, which cover every option listed on a US
-        equity or index, such as "^SPX" with expiries several years out. If neither has
-        data, it is advised to use the theoretical calculations as provided by the
+        it is advised to use the theoretical calculations as provided by the
         Black Scholes Model as well as the Greeks to get a better understanding of the
         option prices over time.
 
         Also known as: calls, puts, strike prices, expiry dates, option data.
 
         Args:
-            expiration_date (str | None, optional): The expiration date to use. Defaults to None which means it will
-                use the first available expiration date.
+            expiration_date (str | None, optional): The expiration date to use. Defaults to None which means each
+                ticker uses its own nearest expiration date.
             put_option (bool, optional): Whether to show the put options instead of the call options.
                 Defaults to False.
             show_expiration_dates (bool, optional): Whether to return the available expiration dates instead of
-                the option chains. Defaults to False.
+                the option chains: a list for a single ticker and a list per ticker (a dictionary) for several.
+                Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             strike_price_range (float | None, optional): Only the strikes within this fraction of the
@@ -354,10 +451,11 @@ class OptionsBase:
 
         Returns:
             pd.DataFrame: the option chains with the tickers and strike prices as the index
-            and the contract details (Contract Symbol, Last Trade Date, Last Price, Bid, Ask,
-            Change, Percent Change, Volume, Open Interest, Implied Volatility, In The Money
-            and Currency) as the columns. The expiration date is stored as the DataFrame's
-            name. If show_expiration_dates is True, it returns the list of expiration dates.
+            and the contract details (Expiration Date, Contract Symbol, Last Trade Date, Last
+            Price, Bid, Ask, Change, Percent Change (a decimal), Volume, Open Interest, Implied
+            Volatility, In The Money and Currency) as the columns. When every ticker shares
+            the expiration date, it is also stored as the DataFrame's name. If
+            show_expiration_dates is True, it returns the expiration dates instead.
 
         As an example:
 
@@ -385,28 +483,75 @@ class OptionsBase:
         |          537.5 |  0.71 |  0.98 |
         |          542.5 |  0.34 |  0.4  |
         """
-        expiry_dates = options_model.get_option_expiry_dates(ticker=self._tickers[0])
+        expiry_dates = self._expiration_dates()
 
         if show_expiration_dates:
-            return expiry_dates
-
-        if expiration_date is None:
-            expiration_date = expiry_dates[0]
-        elif expiration_date not in expiry_dates:
-            raise ValueError(
-                f"The expiration date {expiration_date} is not a valid date. Choose from {', '.join(expiry_dates)}"
+            return (
+                expiry_dates[self._tickers[0]]
+                if len(self._tickers) == 1
+                else expiry_dates
             )
 
-        option_chains = options_model.get_option_chains(
-            tickers=self._tickers,
-            expiration_date=expiration_date,
-            put_option=put_option,
+        # Each ticker is checked against its own expiration dates, so a date that only
+        # some tickers list leaves the others out rather than refusing them all.
+        dates = {
+            ticker: (expiration_date or available[0])
+            for ticker, available in expiry_dates.items()
+            if available and (expiration_date is None or expiration_date in available)
+        }
+        if not dates:
+            listed = {
+                ticker: available
+                for ticker, available in expiry_dates.items()
+                if available
+            }
+            if expiration_date is None or not listed:
+                raise ValueError(
+                    f"Yahoo Finance has no options of {', '.join(self._tickers)}."
+                )
+            raise ValueError(
+                f"The expiration date {expiration_date} is not a valid date. Choose from "
+                + "; ".join(
+                    f"{ticker}: {', '.join(available)}"
+                    for ticker, available in listed.items()
+                )
+            )
+        for ticker, available in expiry_dates.items():
+            if ticker in dates:
+                continue
+            logger.warning(
+                f"No options data is available for {ticker} expiring on {expiration_date}, so it is left out. "
+                f"Its expiration dates are {', '.join(available)}."
+                if available
+                else f"No options data is available for {ticker}, so it is left out: Yahoo Finance lists no "
+                "options of it."
+            )
+
+        chains = [
+            options_model.get_option_chains(
+                tickers=[ticker], expiration_date=date, put_option=put_option
+            )
+            for ticker, date in dates.items()
+        ]
+        chains = [chain for chain in chains if not chain.empty]
+        if not chains:
+            raise ValueError(
+                f"Yahoo Finance has no option chains of {', '.join(dates)} for "
+                f"{', '.join(sorted(set(dates.values())))}."
+            )
+        option_chains = pd.concat(chains)
+        # The expiry each ticker's chain is for, as they differ without an expiration date.
+        option_chains.insert(
+            0,
+            "Expiration Date",
+            option_chains.index.get_level_values(0).map(dates),
         )
 
         option_chains["Change"] = option_chains["Change"].pipe(
             apply_rounding, rounding if rounding is not None else self._rounding
         )
-        option_chains["Percent Change"] = option_chains["Percent Change"].pipe(
+        # Yahoo Finance quotes the change in percent (-3.36 for -3.36%), shown as a decimal.
+        option_chains["Percent Change"] = (option_chains["Percent Change"] / 100).pipe(
             apply_rounding, rounding if rounding is not None else self._rounding
         )
         option_chains["Implied Volatility"] = option_chains["Implied Volatility"].pipe(
@@ -430,7 +575,8 @@ class OptionsBase:
 
         option_chains = option_chains.drop(columns="Underlying Price", errors="ignore")
 
-        option_chains.name = expiration_date
+        if len(set(dates.values())) == 1:
+            option_chains.name = next(iter(dates.values()))
 
         return option_chains
 
@@ -449,7 +595,7 @@ class OptionsBase:
     def _spot_price(self, ticker: str, *chains: pd.DataFrame) -> float:
         """
         The price of the underlying to combine with live option chains: the price quoted
-        with the chain (Yahoo Finance's regular market price or Cboe's current price) when
+        with the chain (Yahoo Finance's regular market price) when
         the source provides one, otherwise the traded Close of the last historical date.
         The Adjusted Close is not used, since it is scaled down for later dividends and so
         is not a price the strikes can be compared with.
@@ -474,7 +620,12 @@ class OptionsBase:
 @filter_shown_columns
 @track_sources
 class Options(
-    PricingOptions, GreeksOptions, VolatilityOptions, MarketOptions, OptionsBase
+    PricingOptions,
+    GreeksOptions,
+    VolatilityOptions,
+    MarketOptions,
+    MultiAssetOptions,
+    OptionsBase,
 ):
     """
     The Options module is meant to calculate important options metrics such as the

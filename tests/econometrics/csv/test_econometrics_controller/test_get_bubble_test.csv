@@ -1,0 +1,11 @@
+,AAPL,MSFT
+GSADF Statistic,0.9008,0.6772
+P-Value,0.52,0.69
+Critical Value 10%,1.7985,1.7985
+Critical Value 5%,2.1245,2.1245
+Critical Value 1%,2.6446,2.6446
+Observations,157,157
+Minimum Window,24,24
+Lags,0,0
+Replications,100,100
+Explosive (5%),False,False

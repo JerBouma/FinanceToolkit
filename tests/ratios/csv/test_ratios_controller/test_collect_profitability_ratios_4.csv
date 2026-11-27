@@ -2,12 +2,14 @@
 AAPL,Gross Margin,,0.0575,0.0268
 AAPL,Operating Margin,,0.0979,0.0004
 AAPL,Net Profit Margin,,0.0772,-0.0108
+AAPL,Continuing Operations Profit Margin,,0.0772,-0.0108
 AAPL,EBITDA Margin,,0.0692,-0.0007
 AAPL,Free Cash Flow Margin,,0.0352,0.0092
 AAPL,Interest Coverage Ratio,,0.2897,-0.1686
 AAPL,Income Before Tax Profit Margin,,0.0909,-0.0031
 AAPL,Effective Tax Rate,,0.0791,0.0447
 AAPL,Return on Assets,,,-0.0156
+AAPL,Operating Return on Assets,,,-0.0044
 AAPL,Cash Return on Assets,,,0.0008
 AAPL,Return on Equity,,,0.0303
 AAPL,Return on Invested Capital,,,0.0417
@@ -17,10 +19,7 @@ AAPL,Financial Leverage,,,0.0997
 AAPL,Return on Capital Employed,,0.3639,0.0694
 AAPL,Return on Tangible Assets,,,-0.0156
 AAPL,Income Quality Ratio,,-0.0424,0.0167
-AAPL,Net Income per EBT,,-0.0126,-0.0078
 AAPL,Free Cash Flow to Operating Cash Flow Ratio,,0.0036,0.0036
-AAPL,EBT to EBIT Ratio,,0.0067,-0.0049
-AAPL,EBIT to Revenue,,0.0836,0.0018
 AAPL,Cash Tax Rate,,-0.0049,-0.1657
 AAPL,Tax Rate Divergence,,-0.1951,-0.8052
 AAPL,Gross Profitability,,0.2491,0.0509
@@ -33,12 +32,14 @@ AAPL,Percent Accruals,,0.2399,-0.1188
 MSFT,Gross Margin,,0.0035,0.0004
 MSFT,Operating Margin,,0.0594,0.0016
 MSFT,Net Profit Margin,,0.0781,-0.0329
+MSFT,Continuing Operations Profit Margin,,0.0781,-0.0329
 MSFT,EBITDA Margin,,0.0341,-0.0034
 MSFT,Free Cash Flow Margin,,0.016,-0.0821
 MSFT,Interest Coverage Ratio,,0.397,0.2265
 MSFT,Income Before Tax Profit Margin,,0.059,-0.0018
 MSFT,Effective Tax Rate,,-0.1023,0.2009
 MSFT,Return on Assets,,,-0.0251
+MSFT,Operating Return on Assets,,,0.0096
 MSFT,Cash Return on Assets,,,-0.0408
 MSFT,Return on Equity,,,-0.1022
 MSFT,Return on Invested Capital,,,-0.0323
@@ -48,10 +49,7 @@ MSFT,Financial Leverage,,,0.2032
 MSFT,Return on Capital Employed,,0.1488,-0.0004
 MSFT,Return on Tangible Assets,,,-0.0184
 MSFT,Income Quality Ratio,,-0.0498,-0.016
-MSFT,Net Income per EBT,,0.018,-0.0312
 MSFT,Free Cash Flow to Operating Cash Flow Ratio,,-0.0082,-0.0354
-MSFT,EBT to EBIT Ratio,,0.011,0.0051
-MSFT,EBIT to Revenue,,0.0475,-0.0068
 MSFT,Cash Tax Rate,,,
 MSFT,Tax Rate Divergence,,0.1023,-0.2009
 MSFT,Gross Profitability,,0.0812,-0.0081

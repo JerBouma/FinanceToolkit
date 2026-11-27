@@ -13,6 +13,8 @@ from financetoolkit.risk.helpers import (
     get_risk_free_rate_per_observation,
     get_risk_free_rate_per_ticker,
 )
+from financetoolkit.risk.value_at_risk import cvar_model, var_model
+from financetoolkit.utilities.error_model import InvalidArgumentError
 
 
 def test_get_max_drawdown(recorder):
@@ -139,30 +141,30 @@ def test_get_max_drawdown_recovery_time(recorder):
     )
 
 
-def test_get_rolling_skewness(recorder):
+def test_get_skewness_rolling(recorder):
     recorder.capture(
-        risk_model.get_rolling_skewness(
+        risk_model.get_skewness(
             returns=pd.Series([0.3, 0.2, 0.1, 0, 0.06, -0.1, -0.15]),
-            window_size=3,
+            window=3,
         ).round(4)
     )
 
 
-def test_get_rolling_kurtosis(recorder):
+def test_get_kurtosis_rolling(recorder):
     recorder.capture(
-        risk_model.get_rolling_kurtosis(
+        risk_model.get_kurtosis(
             returns=pd.Series([0.3, 0.2, 0.1, 0, 0.06, -0.1, -0.15]),
             # Kurtosis needs four observations, so a smaller window is all NaN.
-            window_size=4,
+            window=4,
             fisher=True,
         ).round(4)
     )
 
     recorder.capture(
-        risk_model.get_rolling_kurtosis(
+        risk_model.get_kurtosis(
             returns=pd.Series([0.3, 0.2, 0.1, 0, 0.06, -0.1, -0.15]),
             # Kurtosis needs four observations, so a smaller window is all NaN.
-            window_size=4,
+            window=4,
             fisher=False,
         ).round(4)
     )
@@ -199,51 +201,51 @@ def test_get_downside_deviation_dataframe(recorder):
     recorder.capture(risk_model.get_downside_deviation(returns=returns_df).round(4))
 
 
-def test_get_rolling_downside_deviation(recorder):
+def test_get_downside_deviation_rolling(recorder):
     recorder.capture(
-        risk_model.get_rolling_downside_deviation(
+        risk_model.get_downside_deviation(
             returns=pd.Series([0.3, 0.2, -0.1, -0.2, 0.06, -0.15, 0.1]),
-            window_size=3,
+            window=3,
         ).round(4)
     )
 
 
-def test_get_rolling_tail_ratio(recorder):
+def test_get_tail_ratio_rolling(recorder):
     recorder.capture(
-        risk_model.get_rolling_tail_ratio(
+        risk_model.get_tail_ratio(
             returns=pd.Series([0.3, 0.2, 0.1, 0, 0.06, -0.1, -0.15]),
             alpha=0.2,
-            window_size=4,
+            window=4,
         ).round(4)
     )
 
 
-def test_get_rolling_conditional_drawdown_at_risk(recorder):
+def test_get_conditional_drawdown_at_risk_rolling(recorder):
     recorder.capture(
-        risk_model.get_rolling_conditional_drawdown_at_risk(
+        risk_model.get_conditional_drawdown_at_risk(
             returns=pd.Series([0.3, 0.2, -0.1, -0.2, 0.06, -0.15, 0.1]),
             alpha=0.5,
-            window_size=4,
+            window=4,
         ).round(4)
     )
 
 
-def test_get_rolling_variance(recorder):
+def test_get_variance_rolling(recorder):
     recorder.capture(
-        risk_model.get_rolling_variance(
+        risk_model.get_variance(
             returns=pd.Series([0.3, 0.2, 0.1, 0, 0.06, -0.1, -0.15]),
             period="monthly",
-            window_size=3,
+            window=3,
         ).round(4)
     )
 
 
-def test_get_rolling_volatility(recorder):
+def test_get_volatility_rolling(recorder):
     recorder.capture(
-        risk_model.get_rolling_volatility(
+        risk_model.get_volatility(
             returns=pd.Series([0.3, 0.2, 0.1, 0, 0.06, -0.1, -0.15]),
             period="monthly",
-            window_size=3,
+            window=3,
         ).round(4)
     )
 
@@ -306,13 +308,13 @@ def test_get_hill_estimator_invalid_type():
         pass
 
 
-def test_get_rolling_excess_volatility(recorder):
+def test_get_excess_volatility_rolling(recorder):
     recorder.capture(
-        risk_model.get_rolling_excess_volatility(
+        risk_model.get_excess_volatility(
             returns=pd.Series([0.3, 0.2, 0.1, 0, 0.06, -0.1, -0.15]),
             risk_free_rate=pd.Series([0.01, 0.02, 0.01, 0.0, 0.006, 0.01, 0.02]),
             period="monthly",
-            window_size=3,
+            window=3,
         ).round(4)
     )
 
@@ -361,17 +363,6 @@ def test_get_ui_short_period_uses_the_high_so_far():
     )
 
 
-def test_get_hurst_exponent_includes_max_lag():
-    data = pd.Series(np.cumsum(np.random.default_rng(0).normal(0, 1, 2000)))
-    values = data.to_numpy()
-    lags = np.arange(2, 11)
-    standard_deviations = [np.std(values[lag:] - values[:-lag]) for lag in lags]
-    expected = np.polyfit(np.log(lags), np.log(standard_deviations), 1)[0]
-
-    assert np.isclose(risk_model.get_hurst_exponent(data, max_lag=10), expected)
-    assert abs(risk_model.get_hurst_exponent(data) - 0.5) < 0.1  # noqa: PLR2004
-
-
 def test_get_ui_invalid_method():
     with pytest.raises(ValueError, match="method"):
         risk_model.get_ui(pd.Series([0.01, -0.02]), method="bad")
@@ -387,23 +378,6 @@ def test_get_hill_estimator_without_data_uses_no_order_statistics():
     # With data, a fraction that rounds down to zero still uses one order statistic.
     result = risk_model.get_hill_estimator(pd.Series([-0.01, -0.02, -0.03]), k=0.1)
     assert result["Observations Used (k)"] == 1
-
-
-@pytest.mark.filterwarnings("error::RuntimeWarning")
-def test_hurst_exponent_bounds_lags_to_available_differences():
-    data = pd.Series([0.0, 1.0, 0.5, 2.0, 1.0, 3.0, 2.5, 4.0])
-    values = data.to_numpy()
-    lags = np.arange(2, len(values) - 1)
-    deviations = [np.std(values[lag:] - values[:-lag]) for lag in lags]
-    expected = np.polyfit(np.log(lags), np.log(deviations), 1)[0]
-
-    assert risk_model.get_hurst_exponent(data) == pytest.approx(expected)
-
-
-@pytest.mark.filterwarnings("error::RuntimeWarning")
-@pytest.mark.parametrize("values", [[], [1.0], [1.0, 2.0, 3.0, 4.0], [2.0] * 30])
-def test_hurst_exponent_without_two_usable_lags(values):
-    assert np.isnan(risk_model.get_hurst_exponent(pd.Series(values, dtype=float)))
 
 
 def _rolling_cdar_per_window(returns, alpha, window_size, method):
@@ -435,7 +409,7 @@ def test_rolling_cdar_matches_the_cdar_of_every_window(method):
     ).reindex(data.index)
 
     pd.testing.assert_frame_equal(
-        risk_model.get_rolling_conditional_drawdown_at_risk(data, 0.05, 20, method),
+        risk_model.get_conditional_drawdown_at_risk(data, 0.05, method, window=20),
         expected,
         rtol=1e-12,
         atol=1e-15,
@@ -665,7 +639,7 @@ def test_get_mean_absolute_deviation_per_period():
     assert result.tolist() == pytest.approx([1.0, 0.0])
     assert [str(period) for period in result.index] == ["2024-01", "2024-02"]
 
-    with pytest.raises(ValueError, match="not valid"):
+    with pytest.raises(InvalidArgumentError, match="period must be one of"):
         risk_model.get_mean_absolute_deviation(returns, "daily")
     with pytest.raises(TypeError):
         risk_model.get_mean_absolute_deviation(returns.tolist(), "monthly")
@@ -681,7 +655,7 @@ def test_get_coefficient_of_variation_per_group():
     assert result.loc["first", "A"] == pytest.approx(0.5)
     assert result.loc["second", "A"] == pytest.approx(0.0)
 
-    with pytest.raises(ValueError, match="not valid"):
+    with pytest.raises(InvalidArgumentError, match="period must be one of"):
         risk_model.get_coefficient_of_variation(returns, "hourly", groups=groups)
 
 
@@ -801,8 +775,8 @@ def test_skewness_and_kurtosis_of_returns_without_variation_are_nan():
     assert np.isnan(risk_model.get_skewness(pd.Series([0.01] * 5)))
 
     rolling_returns = pd.Series([0.0] * 10 + [0.01, -0.02, 0.03, 0.01])
-    rolling_skewness = risk_model.get_rolling_skewness(rolling_returns, 5)
-    rolling_kurtosis = risk_model.get_rolling_kurtosis(rolling_returns, 5)
+    rolling_skewness = risk_model.get_skewness(rolling_returns, window=5)
+    rolling_kurtosis = risk_model.get_kurtosis(rolling_returns, window=5)
 
     # Windows of only zero returns are undefined; once a window varies it has a value.
     assert rolling_skewness.iloc[:10].isna().all()
@@ -1140,3 +1114,95 @@ def test_the_pain_index_skips_the_rows_before_a_later_listing():
         risk_model.get_pain_index(alone)["Later"]
     )
     assert np.isnan(risk_model.get_pain_index(pd.Series([np.nan, np.nan])))
+
+
+def test_moves_that_differ_in_the_last_bits_are_ties():
+    # Changes of a rate quoted to four decimals: 0.001 comes out as 0.000999...994 or
+    # 0.001...009 depending on the levels, which must still rank as the same move.
+    levels = pd.Series(
+        [4.2513, 4.2523, 4.2533, 4.2543, 4.2553, 4.2443, 4.2453],
+        index=pd.date_range("2024-01-01", periods=7),
+    )
+    returns = levels.diff().dropna()
+
+    significance = risk_model.get_move_significance(returns, window=2)
+
+    # Four earlier moves of +0.001 and one of -0.011: the last +0.001 is a tie with four.
+    assert significance["Percentile"].iloc[-1] == pytest.approx((0 + 0.5 * 4) / 5)
+    assert significance["Largest Since"].iloc[-1] == "2024-01-05"
+
+
+def test_a_drawdown_back_at_exactly_its_old_high_is_recovered():
+    # Closes of 100, 99, 95 and 100 compound to a wealth of 0.9999999999999999, which read
+    # as below the peak left the drawdown open (to 101) or merged it with the next one.
+    dates = pd.period_range("2024-01-01", periods=7, freq="D")
+    closes = pd.DataFrame(
+        {
+            "New High": [100.0, 99.0, 95.0, 100.0, 101.0, 101.0, 101.0],
+            "Falls Again": [100.0, 99.0, 95.0, 100.0, 98.0, 96.0, 100.0],
+        },
+        index=dates,
+    )
+    returns = closes.pct_change()
+    assert (1 + returns["New High"].iloc[1:4]).prod() < 1
+
+    table = risk_model.get_drawdown_table(returns)
+
+    new_high = table.loc["New High"].iloc[0]
+    assert new_high["Recovery"] == pd.Period("2024-01-04", freq="D")
+    assert new_high["Length"] == 3
+    assert len(table.loc["New High"]) == 1
+
+    falls_again = table.loc["Falls Again"]
+    assert len(falls_again) == 2
+    assert falls_again["Recovery"].tolist() == [
+        pd.Period("2024-01-04", freq="D"),
+        pd.Period("2024-01-07", freq="D"),
+    ]
+    assert (risk_model.get_drawdown_series(returns).iloc[[0, 3]] == 0).all().all()
+
+    # The recovery time of the deepest drawdown ends on the same row (one period after the
+    # trough rather than two), per column and per series.
+    measured = returns.iloc[1:]
+    assert risk_model.get_max_drawdown_recovery_time(measured)["New High"] == 1
+    assert risk_model.get_max_drawdown_recovery_time(measured["New High"]) == 1
+
+
+def test_get_autocorrelation_is_missing_at_lags_without_pairs():
+    # Four values have pairs up to lag 3 (as statsmodels' acf, which stops there); the
+    # empty sums beyond gave 0.
+    result = risk_model.get_autocorrelation(pd.Series([1.0, 2.0, 3.0, 4.0]), lags=6)
+
+    np.testing.assert_allclose(result.loc[1:3], [0.25, -0.3, -0.45])
+    assert result.loc[4:].isna().all()
+
+
+def test_get_compounded_volatility_by_hand():
+    dates = pd.PeriodIndex(
+        ["2024-01-02", "2024-01-03", "2024-01-04", "2024-01-05"], freq="D"
+    )
+    returns = pd.Series([0.01, -0.02, 0.03, 0.005], index=dates)
+    days = 252 / 12
+    growth = np.prod(1 + returns.to_numpy()) ** (1 / 4)
+    expected = np.sqrt((returns.var(ddof=1) + growth**2) ** days - growth ** (2 * days))
+    volatility = risk_model.get_compounded_volatility(returns, "monthly")
+    assert volatility.iloc[0] == pytest.approx(expected)
+    # Small returns compound to about the square root of time scaling.
+    small = returns / 100
+    assert risk_model.get_compounded_volatility(small, "monthly").iloc[
+        0
+    ] == pytest.approx(small.std() * np.sqrt(days), rel=0.01)
+
+
+def test_a_window_of_no_observations_raises():
+    returns = pd.Series(np.random.default_rng(1).normal(0, 0.01, 50))
+
+    for window in (0, -1, 2.5):
+        with pytest.raises(InvalidArgumentError, match="window is a number"):
+            cvar_model.get_cvar_historic(returns, 0.05, window=window)
+        with pytest.raises(InvalidArgumentError, match="window is a number"):
+            risk_model.get_conditional_drawdown_at_risk(returns, 0.05, window=window)
+    # A value at risk of one return is that return; a skewness needs more.
+    assert var_model.get_var_historic(returns, 0.05, window=1).notna().all()
+    with pytest.raises(InvalidArgumentError, match="at least 2"):
+        risk_model.get_skewness(returns, window=1)

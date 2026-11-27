@@ -34,9 +34,11 @@ SUPPLY_CHAIN_PRESSURE_SHEET = "GSCPI Monthly Data"
 
 def get_term_premium() -> pd.DataFrame:
     """
-    Retrieves the daily Treasury term premia of the Adrian, Crump and Moench (2013) model
-    from 1961: per maturity of 1 to 10 years the term premium, the expected short rate
-    (the risk-neutral yield) and the fitted zero-coupon yield, which is their sum.
+    Retrieve the daily Treasury term premia of the Adrian, Crump and Moench (2013) model: the extra yield investors
+    demand for holding longer-dated Treasuries.
+
+    Per maturity of 1 to 10 years from 1961 it gives the term premium, the expected short rate (the risk-neutral
+    yield) and the fitted zero-coupon yield, which is their sum.
 
     Returns:
         pd.DataFrame: The components as decimals (continuously compounded), indexed by day
@@ -49,7 +51,9 @@ def get_term_premium() -> pd.DataFrame:
 
     def fetch() -> pd.DataFrame:
         response = get_request(TERM_PREMIUM_URL, timeout=120)
-        data = read_excel(io.BytesIO(response.content), sheet_name=TERM_PREMIUM_SHEET)
+        data = read_excel(
+            io.BytesIO(response.content), description, sheet_name=TERM_PREMIUM_SHEET
+        )
 
         columns = {
             f"{code}{maturity:02d}": (component, f"{maturity}Y")
@@ -79,11 +83,11 @@ def get_term_premium() -> pd.DataFrame:
 
 def get_supply_chain_pressure_index() -> pd.DataFrame:
     """
-    Retrieves the monthly Global Supply Chain Pressure Index (GSCPI) from 1998: the
-    pressure on global supply chains in standard deviations from its average, combining
-    shipping costs (the Baltic Dry Index, the Harpex index and air freight rates) with the
-    delivery times, backlogs and purchased stocks of the manufacturing surveys of the
-    largest economies.
+    Retrieve the monthly Global Supply Chain Pressure Index (GSCPI) from 1998: the pressure on global supply chains in
+    standard deviations from its average.
+
+    It combines shipping costs (the Baltic Dry Index, the Harpex index and air freight rates) with the delivery times,
+    backlogs and purchased stocks of the manufacturing surveys of the largest economies.
 
     Returns:
         pd.DataFrame: The index in standard deviations, indexed by month with a single
@@ -97,7 +101,9 @@ def get_supply_chain_pressure_index() -> pd.DataFrame:
     def fetch() -> pd.DataFrame:
         response = get_request(SUPPLY_CHAIN_PRESSURE_URL, timeout=60)
         data = read_excel(
-            io.BytesIO(response.content), sheet_name=SUPPLY_CHAIN_PRESSURE_SHEET
+            io.BytesIO(response.content),
+            description,
+            sheet_name=SUPPLY_CHAIN_PRESSURE_SHEET,
         )
         require_columns(data, {"Date", "GSCPI"}, description)
 

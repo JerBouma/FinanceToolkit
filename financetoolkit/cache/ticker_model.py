@@ -242,7 +242,6 @@ def collect_per_ticker(
 
         logger.warning(
             "No %s data is available for %s.",
-            # "earnings_call_transcripts_selection" is a cache name; the data is the transcripts.
             dataset.removesuffix("_selection").replace("_", " "),
             ", ".join(without_data),
         )

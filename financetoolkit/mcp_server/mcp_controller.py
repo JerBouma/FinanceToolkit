@@ -28,7 +28,9 @@ from starlette.middleware.cors import CORSMiddleware
 from financetoolkit.cache import policy_model
 from financetoolkit.mcp_server.analytics import analytics_model
 from financetoolkit.mcp_server.auth.auth_model import (
+    ANONYMOUS_ACCESS_ENVIRONMENT_VARIABLE,
     MCPAuthMiddleware,
+    allows_anonymous_access,
     get_secret_key,
     register_auth_routes,
     resolve_api_key,
@@ -41,6 +43,7 @@ from financetoolkit.mcp_server.registry.provider_model import ToolkitProvider
 from financetoolkit.mcp_server.registry.registry_controller import ToolRegistry
 from financetoolkit.mcp_server.registry.tools_model import UtilityToolRegistry
 from financetoolkit.mcp_server.setup import setup_model
+from financetoolkit.options import helpers as options_helpers
 from financetoolkit.utilities import requests_model
 from financetoolkit.utilities.logger_model import (
     add_redaction,
@@ -108,6 +111,26 @@ _load_dotenv_configuration()
 CACHE_MODES = ("full", "shared", "off")
 # The interfaces that serve this computer only.
 LOOPBACK_HOSTS = ("127.0.0.1", "localhost", "::1")
+
+
+class TrimEndpointPathMiddleware:
+    """
+    Serve "/mcp " followed by spaces, line breaks, dots or slashes as "/mcp" (and "/sse" alike).
+
+    Clients pass the server address as typed or pasted, and an address copied from a sentence
+    ("https://financetoolkit.jeroenbouma.com/mcp .") or with its line break otherwise gets a
+    404 on every request.
+    """
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http":
+            trimmed = scope["path"].rstrip(" \t\r\n./") or "/"
+            if trimmed != scope["path"] and trimmed in ("/mcp", "/sse"):
+                scope = dict(scope, path=trimmed, raw_path=trimmed.encode())
+        await self.app(scope, receive, send)
 
 
 def is_hosted(transport: str) -> bool:
@@ -246,6 +269,19 @@ def _build_mcp_app(transport: str = "stdio") -> FastMCP:
         # by whoever intercepted it, and on a hosted server it reaches every user through
         # the shared cache. An explicit setting of the operator still wins.
         os.environ.setdefault(requests_model.UNVERIFIED_SSL_ENVIRONMENT_VARIABLE, "0")
+        if allows_anonymous_access():
+            logger.warning(
+                "%s is set: callers without credentials use this server's "
+                "FinancialModelingPrep key. Only do this on a server that untrusted callers "
+                "can't reach.",
+                ANONYMOUS_ACCESS_ENVIRONMENT_VARIABLE,
+            )
+        elif os.environ.get("FINANCIAL_MODELING_PREP_API_KEY"):
+            logger.info(
+                "Callers sign in or pass their own key; set %s=1 to let callers without "
+                "credentials use this server's FinancialModelingPrep key.",
+                ANONYMOUS_ACCESS_ENVIRONMENT_VARIABLE,
+            )
 
     logger.info(
         "Caching is %s for this server.",
@@ -259,7 +295,6 @@ def _build_mcp_app(transport: str = "stdio") -> FastMCP:
     provider = ToolkitProvider(
         api_key=os.environ.get("FINANCIAL_MODELING_PREP_API_KEY", ""),
         fred_api_key=os.environ.get("FRED_API_KEY", ""),
-        # Tool responses are only cached when everything is, see _resolve_cache_mode.
         cache_ttl=(
             0
             if _cache_mode != "full"
@@ -282,8 +317,6 @@ def _build_mcp_app(transport: str = "stdio") -> FastMCP:
         name="Finance Toolkit Analyst",
         instructions=configuration.get("instructions"),
         website_url="https://www.jeroenbouma.com/projects/financetoolkit/mcp",
-        # Clients show this icon next to the server; the hosted server serves it, so a
-        # local installation shows it too.
         icons=[
             Icon(
                 src="https://financetoolkit.jeroenbouma.com/oauth/icon",
@@ -315,6 +348,13 @@ def _build_mcp_app(transport: str = "stdio") -> FastMCP:
         skip_params=configuration["skip_params"],
         init_handled_params=configuration["init_handled_params"],
     )
+
+    # The option grids of a call (strike prices times expirations per ticker) are capped in
+    # the package; the server lowers the cap to what it computes within its time limit.
+    if option_values := configuration.get("parameter_limits", {}).get("option_values"):
+        options_helpers.MAX_OPTION_VALUES = min(
+            options_helpers.MAX_OPTION_VALUES, int(option_values)
+        )
 
     toolkit_registry = ToolRegistry(
         mcp=mcp,
@@ -358,7 +398,6 @@ def _build_mcp_app(transport: str = "stdio") -> FastMCP:
 
             report: dict = {}
             try:
-
                 headers = get_http_headers(include={"authorization"})
                 report["header_names"] = sorted(headers.keys())
                 report["has_x_fmp_api_key"] = "x-fmp-api-key" in headers
@@ -384,13 +423,15 @@ def _build_mcp_app(transport: str = "stdio") -> FastMCP:
             return str(report)
 
         mcp.add_tool(
-            diagnostics, name="diagnostics", description=diagnostics.__doc__ or ""
+            diagnostics,
+            name="diagnostics",
+            description=diagnostics.__doc__ or "",
+            structured_output=False,
         )
         logger.info("Diagnostic tool registered (FT_MCP_DIAG set).")
 
     logger.info(
-        f"Finance Toolkit MCP Server ready. Registered {toolkit_count} "
-        f"router tools and {utility_count} utility tools."
+        f"Finance Toolkit MCP Server ready. Registered {toolkit_count} router tools and {utility_count} utility tools."
     )
 
     return mcp
@@ -458,6 +499,10 @@ def main() -> None:
     FT_MCP_CORS_ORIGINS lists the web origins that may call the server from a browser,
     comma-separated; it defaults to every origin when the server listens on a public
     interface and to none on 127.0.0.1.
+    On the sse and streamable-http transports every caller signs in (OAuth) or passes
+    their own key, also when the server has FINANCIAL_MODELING_PREP_API_KEY. To let callers
+    without credentials use the server's key, on a server only trusted callers can reach,
+    set FT_MCP_ALLOW_ANONYMOUS=1.
     """
     parser = argparse.ArgumentParser(
         prog="financetoolkit-mcp",
@@ -470,7 +515,9 @@ def main() -> None:
             "the global Finance Toolkit .env file or a .env file in the working directory, in "
             "that order (only these two keys are read from a file). Caching is "
             "controlled with FINANCE_TOOLKIT_CACHE_ENABLED; a server on the sse or "
-            "streamable-http transport shares only the public sources between its users."
+            "streamable-http transport shares only the public sources between its users, "
+            "and its callers sign in or pass their own key unless FT_MCP_ALLOW_ANONYMOUS=1 "
+            "lets them use the server's key."
         ),
     )
     parser.add_argument(
@@ -489,8 +536,7 @@ def main() -> None:
         "--port",
         type=int,
         help=(
-            "The port to bind to, for the sse and streamable-http transports only. "
-            "Defaults to MCP_PORT, then 8000."
+            "The port to bind to, for the sse and streamable-http transports only. Defaults to MCP_PORT, then 8000."
         ),
     )
 
@@ -537,6 +583,12 @@ def main() -> None:
                 ],
             )
 
+        # Every request stands on its own: the tools keep no state between calls, and with
+        # sessions a client that resumes after the 30-minute idle timeout, or sends a call
+        # without its session header (as hosted clients behind a pool of addresses do), is
+        # refused with "Session not found" or "Missing session ID" and has to start over.
+        server.settings.stateless_http = True
+
         starlette_app = (
             server.streamable_http_app()
             if transport == "streamable-http"
@@ -553,6 +605,10 @@ def main() -> None:
             allow_headers=["*"],
             expose_headers=["WWW-Authenticate"],
         )
+        # Outermost, so the authentication sees the path the request is served on: a server
+        # address copied with the end of its sentence ("/mcp .") or a line break ("/mcp\n")
+        # is the same endpoint, where it otherwise only ever gets a 404.
+        starlette_app.add_middleware(TrimEndpointPathMiddleware)
 
         # The client address and scheme are taken from X-Forwarded-For and
         # X-Forwarded-Proto only when the request comes from a trusted proxy, which
@@ -590,8 +646,7 @@ def inspector() -> None:
     argparse.ArgumentParser(
         prog="financetoolkit-mcp-inspector",
         description=(
-            "Launch the MCP Inspector against the Finance Toolkit MCP server. "
-            "Requires npx, which ships with Node.js."
+            "Launch the MCP Inspector against the Finance Toolkit MCP server. Requires npx, which ships with Node.js."
         ),
     ).parse_args()
 
@@ -691,8 +746,7 @@ def _setup_cli(client: str, overwrite: bool) -> None:
     if fred_api_key:
         masked_fred = setup_model.mask_key(fred_api_key)
         setup_model.ok(
-            f"FRED API key found (optional)  [dim]·[/]  [dim]{fred_key_source}[/]"
-            f"  [dim]·[/]  [dim cyan]{masked_fred}[/]"
+            f"FRED API key found (optional)  [dim]·[/]  [dim]{fred_key_source}[/]  [dim]·[/]  [dim cyan]{masked_fred}[/]"
         )
         if client != "claude-desktop" and (
             not global_env.exists() or fred_key_source != "global config"

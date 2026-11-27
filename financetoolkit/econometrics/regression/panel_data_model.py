@@ -4,11 +4,11 @@ __docformat__ = "google"
 
 import numpy as np
 import pandas as pd
-from linearmodels.panel import PanelOLS, RandomEffects
-from linearmodels.panel.utility import AbsorbingEffectError
 from scipy import sparse, stats
 from scipy.sparse.linalg import lsmr
 
+from financetoolkit.econometrics.helpers import import_optional
+from financetoolkit.utilities.error_model import InvalidArgumentError, check_option
 from financetoolkit.utilities.statistics_model import to_multi_index
 
 # (entity, time) levels are simultaneously meaningful, unlike the nested case.
@@ -16,6 +16,9 @@ ENTITY_TIME_INDEX_LEVELS = 2
 
 # The 5% level for flagging whether Hausman rejects Random Effects.
 SIGNIFICANCE_LEVEL = 0.05
+
+# The variances the Hausman test compares: each model's own, or both on one disturbance variance.
+HAUSMAN_VARIANCES = ["separate", "efficient", "consistent"]
 
 # Stopping tolerances of the sparse least squares fit on the entity and time dummies:
 # near machine precision, so the fit is exact on weakly connected panels too.
@@ -241,7 +244,7 @@ def _from_panel_result(
 ) -> dict:
     """
     Translates a fitted `linearmodels` panel results object into the same
-    regression result dict shape `regression_model._from_statsmodels_ols` returns
+    regression result dict shape `regression_model._to_regression_result` returns
     (see its docstring for the full key list) -- keeps `PanelOLS`/`RandomEffects`
     fits interchangeable with OLS/WLS/GLS fits everywhere downstream.
     """
@@ -282,8 +285,10 @@ def get_fixed_effects(
     time_effects: bool = False,
 ) -> dict:
     """
-    Fit a Fixed Effects ("within") estimator of `y` on `x` for panel data, via
-    `linearmodels.panel.PanelOLS`.
+    Fit a Fixed Effects ("within") estimator for panel data: how a series moves with its
+    regressors within every entity, after removing what is specific to each entity.
+
+    The model is fitted with linearmodels' PanelOLS.
 
     Also known as: within estimator, FE, least squares dummy variable (LSDV)
     estimator (numerically identical to, but far cheaper than, running OLS with a
@@ -301,7 +306,7 @@ def get_fixed_effects(
     - y~_it = y_it - ybar_i.,  x~_it = x_it - xbar_i.  (entity_effects)
     - beta_hat = (X~'X~)^-1 X~'y~
 
-    `time_effects=True` additionally (or instead) demeans by the time-period mean,
+    Time effects additionally (or instead) demean by the time-period mean,
     controlling for anything common to all entities at a given time (e.g. a
     market-wide shock) the same way. Because the entity/time intercepts are
     absorbed rather than estimated as coefficients, they are recovered separately
@@ -370,12 +375,14 @@ def get_fixed_effects(
 
     Which returns:
 
-    |    |   Coefficient |   Std. Error |   t-Statistic |   P-Value |
+    |    |   Coefficient |   Standard Error |   t-Statistic |   P-Value |
     |:---|--------------:|-------------:|--------------:|----------:|
     | X  |        1.9916 |       0.0072 |         278.2 |         0 |
     """
     if not entity_effects and not time_effects:
-        raise ValueError("At least one of entity_effects or time_effects must be True.")
+        raise InvalidArgumentError(
+            "At least one of entity_effects or time_effects must be True."
+        )
 
     y_panel = _to_panel_series(y, "y")
     x_panel = _to_panel_frame(x, "x")
@@ -424,11 +431,16 @@ def get_fixed_effects(
             f"({', '.join(absorbed_columns)}): {ABSORBED_REGRESSOR_EXPLANATION}"
         )
 
+    panel = import_optional("linearmodels.panel", "The Fixed Effects regression")
+    absorbing_effect_error = import_optional(
+        "linearmodels.panel.utility", "The Fixed Effects regression"
+    ).AbsorbingEffectError
+
     try:
-        sm_result = PanelOLS(
+        sm_result = panel.PanelOLS(
             y_panel, x_panel, entity_effects=entity_effects, time_effects=time_effects
         ).fit()
-    except AbsorbingEffectError as error:
+    except absorbing_effect_error as error:
         # A regressor that is identical for every entity at each date (a common factor
         # such as a market benchmark) is fully explained by the time effects, and one
         # that is constant per entity by the entity effects, so its slope is not identified.  # noqa: E501
@@ -460,9 +472,11 @@ def get_random_effects(
     x: pd.DataFrame | pd.Series,
 ) -> dict:
     """
-    Fit a Random Effects estimator of `y` on `x` for panel data, via
-    `linearmodels.panel.RandomEffects` (Swamy-Arora feasible Generalized Least
-    Squares).
+    Fit a Random Effects estimator for panel data: how a series moves with its regressors
+    across entities whose own effects are random and unrelated to the regressors.
+
+    The model is fitted with linearmodels' RandomEffects (Swamy-Arora feasible Generalized
+    Least Squares).
 
     Also known as: RE, GLS panel estimator, Swamy-Arora estimator.
 
@@ -539,7 +553,7 @@ def get_random_effects(
 
     Which returns:
 
-    |           |   Coefficient |   Std. Error |   t-Statistic |   P-Value |
+    |           |   Coefficient |   Standard Error |   t-Statistic |   P-Value |
     |:----------|--------------:|-------------:|--------------:|----------:|
     | Intercept |        1.4022 |       1.1402 |        1.2298 |      0.22 |
     | X         |        1.9916 |       0.0072 |      277.178  |      0    |
@@ -568,8 +582,10 @@ def get_random_effects(
     x_with_constant = x_panel.copy()
     x_with_constant.insert(0, "Intercept", 1.0)
 
+    panel = import_optional("linearmodels.panel", "The Random Effects regression")
+
     try:
-        sm_result = RandomEffects(y_panel, x_with_constant).fit()
+        sm_result = panel.RandomEffects(y_panel, x_with_constant).fit()
     except (ValueError, ZeroDivisionError, np.linalg.LinAlgError) as error:
         raise ValueError(
             "Could not fit the Random Effects model -- check that there are enough "
@@ -584,10 +600,12 @@ def get_random_effects(
 def get_hausman_test(
     y: pd.Series | pd.DataFrame,
     x: pd.DataFrame | pd.Series,
+    variance: str = "separate",
 ) -> pd.Series:
     """
-    Calculate the Hausman specification test comparing a Fixed Effects and a
-    Random Effects fit of the same panel data model.
+    Calculate the Hausman specification test: whether the Fixed Effects and Random Effects
+    fits of the same panel data model differ by more than chance, so that Random Effects is
+    inconsistent.
 
     Also known as: Hausman specification test, Hausman-Wu test.
 
@@ -601,6 +619,17 @@ def get_hausman_test(
     estimators' coefficients differ by more than sampling variation would explain:
 
     - H = (b_FE - b_RE)' * [Var(b_FE) - Var(b_RE)]^-1 * (b_FE - b_RE)
+    - With the efficient variance: Var(b_FE) * s²_RE / s²_FE in place of Var(b_FE)
+    - With the consistent variance: Var(b_RE) * s²_FE / s²_RE in place of Var(b_RE)
+
+    Where s²_FE and s²_RE are the residual variances of the two fits. Each model's own
+    variance (the separate variances, the statistic of Hausman 1978) can make Var(b_FE) - Var(b_RE)
+    not positive definite in a sample, and H negative. A negative H means that the data do
+    not meet the assumptions of the test rather than that the two models agree, so its
+    p-value and preference are NaN. Basing both variances on one disturbance variance, that
+    of the efficient Random Effects fit (Stata's sigmamore) or of the consistent Fixed
+    Effects fit (Stata's sigmaless), keeps the difference positive semi-definite in the
+    usual case and gives a statistic where the separate variances do not.
 
     Under the null hypothesis that Random Effects' exogeneity assumption holds
     (and is therefore consistent AND efficient), `H` is asymptotically
@@ -611,10 +640,8 @@ def get_hausman_test(
     preferred, even though it discards the between-entity variation Random
     Effects would otherwise use.
 
-    Neither `linearmodels` nor `statsmodels` ships a single Hausman-test function
-    for comparing separately fitted `PanelOLS`/`RandomEffects` results -- this
-    combines their `.params`/`.cov` directly via the standard formula above, the
-    usual practice recommended in the `linearmodels` documentation itself.
+    The test combines the coefficients and covariances of the two fits with the formula
+    above.
 
     Args:
         y (pd.Series | pd.DataFrame): The dependent variable. Either a `pd.Series`
@@ -622,21 +649,28 @@ def get_hausman_test(
         entity x time (one row per entity, one column per time period).
         x (pd.DataFrame | pd.Series): The independent variable(s)/regressor(s), in
         the same `(entity, time)` shape as `y`.
+        variance (str, optional): The variances compared. Options are: "separate" (each
+        model's own), "efficient" (both based on the residual variance of Random Effects),
+        "consistent" (both based on the residual variance of Fixed Effects). Defaults to
+        "separate".
 
     Returns:
         pd.Series: The Hausman statistic, its degrees of freedom, its p-value, and
-        whether Fixed Effects is preferred over Random Effects at the 5% level.
+        whether Fixed Effects is preferred over Random Effects at the 5% level. The
+        p-value and the preference are NaN when the statistic is negative.
 
     Raises:
         TypeError: If `y` or `x` is not one of the accepted types/shapes.
         ValueError: If `y` and `x` share no overlapping non-missing observations,
         there are not enough observations (or entities, see `get_random_effects`) to
         fit either model, the two estimators share no common regressors to compare,
-        or `Var(b_FE) - Var(b_RE)` has rank 0.
+        `Var(b_FE) - Var(b_RE)` has rank 0, or `variance` is not one of the three options.
 
     Notes:
         Reference: Hausman, J.A. (1978). "Specification Tests in Econometrics."
-        Econometrica, 46(6), 1251-1271.
+        Econometrica, 46(6), 1251-1271. The common disturbance variance follows the
+        `sigmamore` and `sigmaless` options of Stata's `hausman` (StataCorp, Stata Base
+        Reference Manual, "hausman").
 
     As an example:
 
@@ -680,6 +714,8 @@ def get_hausman_test(
     0.4871: comfortably fails to reject, correctly preferring the more efficient
     Random Effects estimator in that case.
     """
+    check_option("variance", variance, HAUSMAN_VARIANCES)
+
     fe_result = get_fixed_effects(y, x, entity_effects=True, time_effects=False)
     re_result = get_random_effects(y, x)
 
@@ -702,6 +738,14 @@ def get_hausman_test(
     b_re = re["coefficients"][re_index]
     var_fe = fe["covariance_matrix"][np.ix_(fe_index, fe_index)]
     var_re = re["covariance_matrix"][np.ix_(re_index, re_index)]
+
+    # Both nonrobust covariances are s² times a fixed matrix, so rescaling one by the ratio of
+    # the residual variances bases both on the same disturbance variance (Stata's sigmamore
+    # and sigmaless).  # noqa: E501
+    if variance == "efficient":
+        var_fe = var_fe * re["residual_variance"] / fe["residual_variance"]
+    elif variance == "consistent":
+        var_re = var_re * fe["residual_variance"] / re["residual_variance"]
 
     difference = b_fe - b_re
     variance_difference = var_fe - var_re
@@ -728,14 +772,22 @@ def get_hausman_test(
         inverse_variance_difference = np.linalg.inv(variance_difference)
 
     statistic = float(difference @ inverse_variance_difference @ difference)
-    statistic = max(statistic, 0.0)
-    p_value = float(stats.chi2.sf(statistic, degrees_of_freedom))
+
+    # A negative statistic says that Var(b_FE) - Var(b_RE) is not positive definite in this
+    # sample, so the test has no answer rather than a p-value of 1 (Stata reports it as failing
+    # the asymptotic assumptions of the test).  # noqa: E501
+    if statistic < 0:
+        p_value = np.nan
+        prefer_fixed_effects = np.nan
+    else:
+        p_value = float(stats.chi2.sf(statistic, degrees_of_freedom))
+        prefer_fixed_effects = bool(p_value < SIGNIFICANCE_LEVEL)
 
     return pd.Series(
         {
             "Hausman Statistic": statistic,
             "Degrees of Freedom": degrees_of_freedom,
             "P-Value": p_value,
-            "Prefer Fixed Effects (5%)": bool(p_value < SIGNIFICANCE_LEVEL),
+            "Prefer Fixed Effects (5%)": prefer_fixed_effects,
         }
     )

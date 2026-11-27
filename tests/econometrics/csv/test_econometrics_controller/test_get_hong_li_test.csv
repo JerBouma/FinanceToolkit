@@ -1,0 +1,13 @@
+,AAPL,MSFT
+Q(1) Statistic,2.3646,4.9015
+Q(1) P-Value,0.0407,0.0008
+Q(2) Statistic,3.9579,6.9411
+Q(2) P-Value,0.004,0.0
+Q(3) Statistic,2.2507,5.9274
+Q(3) P-Value,0.0472,0.0001
+Q(4) Statistic,2.0037,5.3862
+Q(4) P-Value,0.0646,0.0004
+W Statistic,5.2884,11.5781
+W P-Value,0.0128,0.0
+Bandwidth,0.0986,0.0998
+Observations,505.0,505.0

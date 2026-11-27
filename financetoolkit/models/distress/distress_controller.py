@@ -8,6 +8,7 @@ from financetoolkit.economics.sources import bea_model
 from financetoolkit.helpers import (
     add_score_zone,
     calendar_periods,
+    check_trailing,
     get_goodwill_and_intangible_assets,
     trailing_sum,
 )
@@ -19,14 +20,16 @@ from financetoolkit.models.distress import (
     fulmer_model,
     grover_model,
     ohlson_model,
+    shumway_model,
     springate_model,
     taffler_model,
     zmijewski_model,
 )
 from financetoolkit.models.valuation import damodaran_model
+from financetoolkit.options import options_model
 from financetoolkit.ratios import liquidity_model, valuation_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
-from financetoolkit.utilities.error_model import handle_errors
+from financetoolkit.utilities.error_model import check_option, handle_errors
 from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import (
@@ -38,18 +41,23 @@ from financetoolkit.utilities.statistics_model import (
 logger = get_logger()
 
 
+@check_trailing
 @filter_shown_columns
 @track_sources
 class DistressModels:
     """
-    Bankruptcy and credit risk models: the Altman, Ohlson, Zmijewski, Springate, Grover, Fulmer, Taffler and Campbell-Hilscher-Szilagyi scores, Merton's distance to default and the synthetic credit rating.
+    Bankruptcy and credit risk models.
+
+    They are the Altman, Ohlson, Zmijewski, Springate, Grover, Fulmer, Taffler and
+    Campbell-Hilscher-Szilagyi scores, Merton's distance to default and the synthetic credit
+    rating.
     """
 
     @handle_errors
     def get_altman_z_score(
         self,
         diluted: bool = True,
-        model: str = "original",
+        method: str = "original",
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
@@ -59,21 +67,26 @@ class DistressModels:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculates the Altman Z-Score, a financial metric used to predict the likelihood of a company going bankrupt.
-        The Altman Z-Score is calculated using several financial ratios, including working capital to total assets,
-        retained earnings to total assets, earnings before interest and taxes (EBIT) to total assets, equity to
-        book value of total liabilities, and (for manufacturers) sales to total assets. Altman estimated four
-        versions, chosen with `model`: the original Z-Score for listed manufacturers, the Z'-Score for private
-        manufacturers, the Z''-Score for non-manufacturers and the Z''-EM score for emerging market companies.
+        Calculates the Altman Z-Score, a financial metric used to predict the likelihood of a
+        company going bankrupt.
+
+        The Altman Z-Score is calculated using several financial ratios, including working
+        capital to total assets, retained earnings to total assets, earnings before interest and
+        taxes (EBIT) to total assets, equity to book value of total liabilities, and (for
+        manufacturers) sales to total assets. Altman estimated four versions, chosen with
+        `model`: the original Z-Score for listed manufacturers, the Z'-Score for private
+        manufacturers, the Z''-Score for non-manufacturers and the Z''-EM score for emerging
+        market companies.
 
         The formula is as follows:
 
             - Working Capital to Total Assets (X1) = Working Capital / Total Assets
             - Retained Earnings to Total Assets (X2) = Retained Earnings / Total Assets
             - EBIT to Total Assets (X3) = EBIT / Total Assets
-            - Market Value to Total Liabilities (X4, "original") = Market Value of Equity / Total Liabilities
+            - Market Value to Total Liabilities (X4, the original model) = Market Value of
+              Equity / Total Liabilities
             - Book Value to Total Liabilities (X4, the other models) = Total Shareholder Equity / Total Liabilities
-            - Sales to Total Assets (X5, "original" and "private") = Sales / Total Assets
+            - Sales to Total Assets (X5, the original and private models) = Sales / Total Assets
             - Original (Altman 1968): Z = 1.2 X1 + 1.4 X2 + 3.3 X3 + 0.6 X4 + 1.0 X5
             - Private (Altman 1983): Z' = 0.717 X1 + 0.847 X2 + 3.107 X3 + 0.420 X4 + 0.998 X5
             - Non-manufacturing (Altman, Hartzell and Peck 1995): Z'' = 6.56 X1 + 3.26 X2 + 6.72 X3 + 1.05 X4
@@ -101,9 +114,10 @@ class DistressModels:
         Args:
             diluted (bool, optional): Whether to use diluted shares outstanding in the market value of equity of
                 the "original" model. Defaults to True.
-            model (str, optional): The model to use: "original" (listed manufacturers, market value of
-                equity), "private" (Z', book value of equity), "non-manufacturing" (Z'', book value of equity,
-                no sales term) or "emerging" (Z''-EM, Z'' plus 3.25). Defaults to "original".
+            method (str, optional): The variant of the Altman Z-Score. Options are: "original" (listed
+                manufacturers, market value of equity), "private" (Z', book value of equity), "non-manufacturing"
+                (Z'', book value of equity, no sales term) or "emerging" (Z''-EM, Z'' plus 3.25). Defaults to
+                "original".
             rounding (int, optional): The number of decimals to round the results to. Defaults to None.
             growth (bool, optional): Whether to calculate the growth of the values. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
@@ -161,7 +175,7 @@ class DistressModels:
             end_date="2025-12-31",
         )
 
-        toolkit.models.get_altman_z_score(model="non-manufacturing").xs("Altman Z-Score", level=1)
+        toolkit.models.get_altman_z_score(method="non-manufacturing").xs("Altman Z-Score", level=1)
         ```
 
         Which returns:
@@ -176,11 +190,7 @@ class DistressModels:
         # year (a trailing twelve months) unless a trailing period is given.
         if trailing is None and self._quarterly:
             trailing = 4
-        if model not in altman_model.ALTMAN_COEFFICIENTS:
-            raise ValueError(
-                f"Invalid model {model!r}. Please choose from: "
-                f"{', '.join(altman_model.ALTMAN_COEFFICIENTS)}."
-            )
+        check_option("method", method, altman_model.ALTMAN_COEFFICIENTS)
 
         altman_z_score = {}
 
@@ -217,7 +227,7 @@ class DistressModels:
             )
         )
 
-        if model == "original":
+        if method == "original":
             share_prices = self._period_prices()
 
             average_shares = self._income_statement.loc[
@@ -252,7 +262,7 @@ class DistressModels:
             )
 
         # The Z''-Score and Z''-EM score have no sales term.
-        if model in ("original", "private"):
+        if method in ("original", "private"):
             revenue = self._income_statement.loc[:, "Revenue", :]
             altman_z_score["Sales to Total Assets"] = (
                 altman_model.get_sales_to_total_assets_ratio(
@@ -273,7 +283,7 @@ class DistressModels:
             ],
             equity_to_total_liabilities_ratio=altman_z_score[equity_ratio_name],
             sales_to_total_assets_ratio=altman_z_score.get("Sales to Total Assets"),
-            model=model,
+            method=method,
         )
 
         # The models were estimated on non-financial companies. A company without any cost
@@ -303,7 +313,7 @@ class DistressModels:
             altman_results = add_score_zone(
                 altman_results,
                 "Altman Z-Score",
-                list(altman_model.ALTMAN_CUT_OFFS[model]),
+                list(altman_model.ALTMAN_CUT_OFFS[method]),
                 ["Distress", "Grey", "Safe"],
             )
 
@@ -346,13 +356,15 @@ class DistressModels:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculates the Ohlson O-Score, a financial metric used to predict the likelihood of a company
-        going bankrupt. Unlike the Altman Z-Score, which is built with multiple discriminant analysis,
-        the O-Score's coefficients come from a fitted logistic regression (logit) model. This is why
-        the two models are usually reported side by side rather than one being treated as a replacement
-        for the other: the Z-Score is only meaningful compared against Altman's empirically derived
-        threshold bands, while the O-Score is directly interpretable as a probability of bankruptcy
-        once passed through the logistic transform.
+        Calculates the Ohlson O-Score, a financial metric used to predict the likelihood of a
+        company going bankrupt.
+
+        Unlike the Altman Z-Score, which is built with multiple discriminant analysis, the
+        O-Score's coefficients come from a fitted logistic regression (logit) model. This is why
+        the two models are usually reported side by side rather than one being treated as a
+        replacement for the other: the Z-Score is only meaningful compared against Altman's
+        empirically derived threshold bands, while the O-Score is directly interpretable as a
+        probability of bankruptcy once passed through the logistic transform.
 
         The formula is as follows:
 
@@ -487,7 +499,7 @@ class DistressModels:
         )
 
         ohlson_o_score["Working Capital to Total Assets"] = (
-            ohlson_model.get_working_capital_to_total_assets_ratio(
+            altman_model.get_working_capital_to_total_assets_ratio(
                 working_capital=working_capital,
                 total_assets=total_assets,
             )
@@ -583,11 +595,13 @@ class DistressModels:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculates the Zmijewski Score, a financial metric used to predict the likelihood of a company
-        going bankrupt. It is a simpler, three-variable model compared to both the Altman Z-Score and
-        the Ohlson O-Score, and is commonly used as a robustness check when those two models disagree,
-        since it is estimated on a different sample and with a different statistical technique (a
-        probit model rather than discriminant analysis or logistic regression).
+        Calculates the Zmijewski Score, a financial metric used to predict the likelihood of a
+        company going bankrupt.
+
+        It is a simpler, three-variable model compared to both the Altman Z-Score and the Ohlson
+        O-Score, and is commonly used as a robustness check when those two models disagree,
+        since it is estimated on a different sample and with a different statistical technique
+        (a probit model rather than discriminant analysis or logistic regression).
 
         The formula is as follows:
 
@@ -681,14 +695,14 @@ class DistressModels:
         )
 
         zmijewski_score["Net Income to Total Assets"] = (
-            zmijewski_model.get_net_income_to_total_assets_ratio(
+            ohlson_model.get_net_income_to_total_assets_ratio(
                 net_income=net_income,
                 total_assets=total_assets,
             )
         )
 
         zmijewski_score["Total Liabilities to Total Assets"] = (
-            zmijewski_model.get_total_liabilities_to_total_assets_ratio(
+            ohlson_model.get_total_liabilities_to_total_assets_ratio(
                 total_liabilities=total_liabilities,
                 total_assets=total_assets,
             )
@@ -742,10 +756,12 @@ class DistressModels:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculates the Springate Score, a financial metric used to predict the likelihood of
-        a company going bankrupt. It follows the same multiple discriminant analysis
-        methodology as the Altman Z-Score, but was calibrated on a smaller, Canadian-firm
-        sample using four financial ratios instead of five.
+        Calculates the Springate Score, a financial metric used to predict the likelihood of a
+        company going bankrupt.
+
+        It follows the same multiple discriminant analysis methodology as the Altman Z-Score,
+        but was calibrated on a smaller, Canadian-firm sample using four financial ratios
+        instead of five.
 
         The formula is as follows:
 
@@ -842,14 +858,14 @@ class DistressModels:
         )
 
         springate_score["Working Capital to Total Assets"] = (
-            springate_model.get_working_capital_to_total_assets_ratio(
+            altman_model.get_working_capital_to_total_assets_ratio(
                 working_capital=working_capital,
                 total_assets=total_assets,
             )
         )
 
         springate_score["EBIT to Total Assets"] = (
-            springate_model.get_ebit_to_total_assets_ratio(
+            grover_model.get_ebit_to_total_assets_ratio(
                 ebit=self._earnings_before_interest_and_taxes(trailing),
                 total_assets=total_assets,
             )
@@ -863,7 +879,7 @@ class DistressModels:
         )
 
         springate_score["Sales to Total Assets"] = (
-            springate_model.get_sales_to_total_assets_ratio(
+            altman_model.get_sales_to_total_assets_ratio(
                 sales=revenue,
                 total_assets=total_assets,
             )
@@ -903,10 +919,11 @@ class DistressModels:
     ) -> pd.DataFrame:
         """
         Calculates the Grover Score, a financial metric used to predict the likelihood of a
-        company going bankrupt. It was developed by re-estimating the coefficients of a
-        reduced-form Altman Z-Score and adding a Return on Assets term, using a sample that
-        paired each of Altman's original bankrupt firms with a matched non-bankrupt firm from
-        the same industry and year.
+        company going bankrupt.
+
+        It was developed by re-estimating the coefficients of a reduced-form Altman Z-Score and
+        adding a Return on Assets term, using a sample that paired each of Altman's original
+        bankrupt firms with a matched non-bankrupt firm from the same industry and year.
 
         The formula is as follows:
 
@@ -1001,7 +1018,7 @@ class DistressModels:
         )
 
         grover_score["Working Capital to Total Assets"] = (
-            grover_model.get_working_capital_to_total_assets_ratio(
+            altman_model.get_working_capital_to_total_assets_ratio(
                 working_capital=working_capital,
                 total_assets=total_assets,
             )
@@ -1043,10 +1060,12 @@ class DistressModels:
     ) -> pd.DataFrame:
         """
         Calculates the Fulmer H-Score, a financial metric used to predict the likelihood of a
-        company going bankrupt. Unlike the Altman Z-Score, which was built on relatively
-        large, listed manufacturing companies, the Fulmer H-Score was calibrated on a
-        matched-pair sample of small, failed and non-failed U.S. companies, using nine
-        financial ratios selected via step-wise multiple discriminant analysis.
+        company going bankrupt.
+
+        Unlike the Altman Z-Score, which was built on relatively large, listed manufacturing
+        companies, the Fulmer H-Score was calibrated on a matched-pair sample of small, failed
+        and non-failed U.S. companies, using nine financial ratios selected via step-wise
+        multiple discriminant analysis.
 
         The formula is as follows:
 
@@ -1177,14 +1196,14 @@ class DistressModels:
         )
 
         fulmer_h_score["Retained Earnings to Total Assets"] = (
-            fulmer_model.get_retained_earnings_to_total_assets_ratio(
+            altman_model.get_retained_earnings_to_total_assets_ratio(
                 retained_earnings=retained_earnings,
                 total_assets=total_assets,
             )
         )
 
         fulmer_h_score["Sales to Total Assets"] = (
-            fulmer_model.get_sales_to_total_assets_ratio(
+            altman_model.get_sales_to_total_assets_ratio(
                 sales=revenue,
                 total_assets=total_assets,
             )
@@ -1274,10 +1293,12 @@ class DistressModels:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculates the Taffler z-score, a discriminant model of financial distress estimated on UK listed
-        industrial companies (Taffler, 1983). It combines profitability, working capital, financial risk and
-        liquidity, and Agarwal and Taffler (2007) showed that it kept its predictive ability over 25 years of
-        UK data. A negative score places a company in the at-risk region.
+        Calculates the Taffler z-score, a discriminant model of financial distress estimated on
+        UK listed industrial companies (Taffler, 1983).
+
+        It combines profitability, working capital, financial risk and liquidity, and Agarwal
+        and Taffler (2007) showed that it kept its predictive ability over 25 years of UK data.
+        A negative score places a company in the at-risk region.
 
         The formula is as follows:
 
@@ -1391,7 +1412,7 @@ class DistressModels:
         )
 
         taffler_score["Current Liabilities to Total Assets"] = (
-            taffler_model.get_current_liabilities_to_total_assets_ratio(
+            fulmer_model.get_current_liabilities_to_total_assets_ratio(
                 current_liabilities=current_liabilities,
                 total_assets=balance_item("Total Assets"),
             )
@@ -1450,29 +1471,37 @@ class DistressModels:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculate the distance to default and probability of default with the Merton
-        (1974) structural credit model. Equity is seen as a call option on the company's
-        assets with its debt as strike price: shareholders receive what is left after the
-        debt is repaid. The market value and volatility of the assets, which cannot be
-        observed, are solved from the market value and volatility of the equity:
+        Calculate the distance to default and probability of default with the Merton (1974)
+        structural credit model.
+
+        Equity is seen as a call option on the company's assets with its debt as strike price:
+        shareholders receive what is left after the debt is repaid. The market value and
+        volatility of the assets, which cannot be observed, are solved from the market value and
+        volatility of the equity:
 
             - E = V N(d1) - D e^(-rT) N(d2)
             - σ_E E = N(d1) σ_V V
             - Distance to Default = (ln(V/D) + (r - σ_V²/2) T) / (σ_V √T)
             - Probability of Default = N(-Distance to Default)
+            - Debt Value = V - E
+            - Credit Spread = -ln(Debt Value / D) / T - r
 
         where E is the market capitalization, σ_E the volatility of the share price over the
         year before, D the default point (short-term debt plus half of the long-term debt,
         the KMV convention), r the risk free rate and T the time horizon. The distance to
         default is the number of standard deviations the asset value is above the default
         point; it reacts to the share price immediately, long before a rating changes.
+        The debt is a risk-free bond with face value D less a put on the assets, so its value
+        is what the assets are worth beyond the equity, and the credit spread is the yield it
+        pays over the risk free rate, both continuously compounded.
 
         The market capitalization, the equity volatility and the risk free rate are measured
         on the last trading day of each fiscal period (the filing day with point_in_time), the
         date of the balance sheet the default point comes from.
 
         The risk free rate is the Toolkit's (the 10-year Treasury yield unless set otherwise
-        with `risk_free_rate`) on that day, where Vassalou and Xing (2004) and
+        with `risk_free_rate`) on that day, converted from its semi-annual bond-equivalent
+        quote to continuous compounding, where Vassalou and Xing (2004) and
         Bharath and Shumway (2008) use the one-year rate for a one-year horizon; the
         difference moves the distance to default only slightly.
 
@@ -1486,7 +1515,12 @@ class DistressModels:
         - Bharath, S.T. and Shumway, T. (2008). "Forecasting Default with the Merton Distance
           to Default Model." The Review of Financial Studies, 21(3), 1339-1369.
 
-        Also known as: KMV model, structural credit model, expected default frequency.
+        Also known as: KMV model, structural credit model, expected default frequency, Merton
+        credit spread.
+
+        Referenced against:
+        - FinancePy, MertonFirm.credit_spread: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/models/merton_firm.py#L124
+        - FinancePy, MertonFirm.debt_value: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/models/merton_firm.py#L109
 
         Args:
             time_horizon (float, optional): The horizon in years over which default is
@@ -1500,14 +1534,17 @@ class DistressModels:
 
         Returns:
             pd.DataFrame: Per ticker and period the Equity Value, Equity Volatility, Default
-            Point, Asset Value, Asset Volatility, Distance to Default and Probability of
-            Default (a decimal).
+            Point, Asset Value, Asset Volatility, Debt Value, Credit Spread (a decimal),
+            Distance to Default and Probability of Default (a decimal).
 
         Notes:
         - The probability is the model's risk-neutral probability; it ranks companies by
           credit risk well but tends to understate the actual default rate of safe ones.
         - Financial companies, whose debt is their raw material, are outside the model's
           intended use.
+        - The credit spread of a one-year horizon is close to zero for all but the riskiest
+          companies, well below the spreads their bonds trade at, a known shortfall of the
+          model (Jones, Mason and Rosenfeld, 1984, The Journal of Finance, 39(3)).
 
         As an example:
 
@@ -1529,11 +1566,13 @@ class DistressModels:
         |                        |        2021 |        2022 |        2023 |        2024 |        2025 |
         |:-----------------------|------------:|------------:|------------:|------------:|------------:|
         | Equity Value           | 8.37862e+10 | 4.66828e+10 | 4.92598e+10 | 3.98079e+10 | 5.22045e+10 |
-        | Equity Volatility      | 0.4163      | 0.4912      | 0.3552      | 0.3595      | 0.3312      |
+        | Equity Volatility      | 0.4163      | 0.4912      | 0.3551      | 0.3601      | 0.3313      |
         | Default Point          | 9.3892e+10  | 9.45665e+10 | 9.945e+10   | 1.07294e+11 | 1.1133e+11  |
-        | Asset Value            | 1.76267e+11 | 1.37609e+11 | 1.44937e+11 | 1.42304e+11 | 1.58997e+11 |
-        | Asset Volatility       | 0.1979      | 0.1675      | 0.1208      | 0.1006      | 0.1088      |
-        | Distance to Default    | 3.1593      | 2.3871      | 3.379       | 3.2114      | 3.6053      |
+        | Asset Value            | 1.76273e+11 | 1.37643e+11 | 1.44969e+11 | 1.42359e+11 | 1.59043e+11 |
+        | Asset Volatility       | 0.1979      | 0.1675      | 0.1207      | 0.1007      | 0.1088      |
+        | Debt Value             | 9.24864e+10 | 9.09604e+10 | 9.57091e+10 | 1.02551e+11 | 1.06838e+11 |
+        | Credit Spread          | 0           | 0.0005      | 0           | 0           | 0           |
+        | Distance to Default    | 3.1593      | 2.387       | 3.3801      | 3.2055      | 3.6038      |
         | Probability of Default | 0.0008      | 0.0085      | 0.0004      | 0.0007      | 0.0002      |
         """
         balance = self._balance_sheet_statement
@@ -1555,17 +1594,23 @@ class DistressModels:
         equity_volatility = self._values_at_market_dates(volatility)
 
         # The risk free rate on that same day, and the period's rate where the daily rates do
-        # not reach it.
+        # not reach it. The Treasury yield is quoted semi-annually (bond-equivalent) and the
+        # model discounts with e^(-rT), so it is converted to its continuous equivalent.
         period_risk_free = self._period_risk_free_rate(balance.columns)
-        risk_free = self._values_at_market_dates(
-            self._risk_free_rate_data["daily"]["Adj Close"]
-        ).fillna(period_risk_free)
+        risk_free = options_model.get_continuously_compounded_rate(
+            self._values_at_market_dates(
+                self._risk_free_rate_data["daily"]["Adj Close"]
+            ).fillna(period_risk_free)
+        )
 
         model_metrics = [
             "Default Point",
             "Asset Value",
             "Asset Volatility",
+            "Debt Value",
+            "Credit Spread",
             "Distance to Default",
+            # The last row, the score the factor analysis ranks the companies on.
             "Probability of Default",
         ]
         results = {
@@ -1593,6 +1638,47 @@ class DistressModels:
 
         return self._finish_score(results, rounding, first_columns=0)
 
+    def _sp500_market_data(
+        self, close: pd.DataFrame, consequence: str
+    ) -> tuple[pd.Series, pd.Series]:
+        """
+        The S&P 500 total return index and the total market value of its companies on every
+        day from the first date of the prices up to today (its total market value is known
+        for the latest date only and scaled back with the price index), the market of the
+        Campbell-Hilscher-Szilagyi and Shumway models.
+
+        Args:
+            close (pd.DataFrame): The daily prices with a DatetimeIndex, whose first date the
+                index data starts at.
+            consequence (str): What a missing total market value leaves NaN, for the warning.
+
+        Returns:
+            tuple[pd.Series, pd.Series]: The daily total return index and total market value,
+            empty or NaN where not available.
+        """
+        index_data, latest_market_value = (
+            self._sp500_function(
+                close.index.min().strftime("%Y-%m-%d"),
+                pd.Timestamp.today().strftime("%Y-%m-%d"),
+            )
+            if self._sp500_function is not None and not close.empty
+            else (pd.DataFrame(), pd.Series(dtype=float))
+        )
+        price_index = index_data.get("Price Index", pd.Series(dtype=float))
+        total_return_index = index_data.get(
+            "Total Return Index", pd.Series(dtype=float)
+        )
+        index_market_value = chs_model.get_index_market_value(
+            price_index, latest_market_value
+        )
+        if index_market_value.dropna().empty:
+            logger.warning(
+                "The total market value of the S&P 500 (its constituents and their market "
+                "capitalizations from FinancialModelingPrep) is not available, so %s.",
+                consequence,
+            )
+        return total_return_index, index_market_value
+
     @handle_errors
     def get_campbell_hilscher_szilagyi_score(
         self,
@@ -1600,12 +1686,13 @@ class DistressModels:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculate the probability of failure of Campbell, Hilscher and Szilagyi (2008), a
-        logit model that combines accounting figures with market data to predict failure: a
-        bankruptcy filing, a delisting or a D (default) rating. It measures profitability
-        and leverage against the market value of the assets rather than the book value, and
-        adds the excess return of the shares, their volatility, the company's size, its
-        cash, its market-to-book ratio and its share price. In the paper it predicts failure
+        Calculate the probability of failure of Campbell, Hilscher and Szilagyi (2008), a logit
+        model that combines accounting figures with market data to predict failure.
+
+        Failure is a bankruptcy filing, a delisting or a D (default) rating. It measures
+        profitability and leverage against the market value of the assets rather than the book
+        value, and adds the excess return of the shares, their volatility, the company's size,
+        its cash, its market-to-book ratio and its share price. In the paper it predicts failure
         better than Shumway's (2001) model and than the Merton distance to default.
 
         The model is the 12-month-ahead logit of Table IV, column (3), of the paper:
@@ -1755,29 +1842,9 @@ class DistressModels:
         daily_returns = daily["Return"].reindex(columns=tickers)
         daily_returns.index = daily_returns.index.to_timestamp()
 
-        # The S&P 500 over the prices' dates and up to today, as its total market value is
-        # known for the latest date only.
-        index_data, latest_market_value = (
-            self._sp500_function(
-                close.index.min().strftime("%Y-%m-%d"),
-                pd.Timestamp.today().strftime("%Y-%m-%d"),
-            )
-            if self._sp500_function is not None and not close.empty
-            else (pd.DataFrame(), pd.Series(dtype=float))
+        total_return_index, index_market_value = self._sp500_market_data(
+            close, "the relative size (RSIZE) and the failure probability are NaN"
         )
-        price_index = index_data.get("Price Index", pd.Series(dtype=float))
-        total_return_index = index_data.get(
-            "Total Return Index", pd.Series(dtype=float)
-        )
-        index_market_value = chs_model.get_index_market_value(
-            price_index, latest_market_value
-        )
-        if index_market_value.dropna().empty:
-            logger.warning(
-                "The total market value of the S&P 500 (its constituents and their market "
-                "capitalizations from FinancialModelingPrep) is not available, so the "
-                "relative size (RSIZE) and the failure probability are NaN."
-            )
 
         price = helpers.values_on_or_before(close, dates)
         shares = self._rows(self._income_statement, "Weighted Average Shares Diluted")
@@ -1887,6 +1954,217 @@ class DistressModels:
         )
 
     @handle_errors
+    def get_shumway_score(
+        self,
+        method: str = "combined",
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the bankruptcy probability of Shumway's (2001) hazard model, which combines
+        two accounting ratios of Zmijewski's model with three market variables.
+
+        The market variables are the company's size relative to the market, its excess return
+        over the past year and the volatility of its returns that the market does not explain.
+        Shumway estimated it as a discrete-time hazard model (a logit on every firm year), which
+        uses every year a company is observed rather than one per company, and found that the
+        market variables predict bankruptcy better than most accounting ratios.
+
+        The model is Table 6 of the paper, panel B (the combined model) or panel A (the market model):
+
+            - Combined: H = -13.303 - 1.982 NI/TA + 3.593 TL/TA - 0.467 RELSIZE - 1.809 EXRET +
+              5.791 SIGMA
+            - Market: H = -12.027 - 0.503 RELSIZE - 2.072 EXRET + 9.834 SIGMA
+            - Bankruptcy Probability = e^H / (1 + e^H)
+
+        with:
+
+            - NI/TA = Net Income / Total Assets
+            - TL/TA = Total Liabilities / Total Assets
+            - RELSIZE = ln(Market Value of Equity / Total Market Value of the S&P 500)
+            - EXRET = the return of the shares over the past twelve months (cumulated from the
+              monthly returns) minus that of the S&P 500 total return index
+            - SIGMA = the standard deviation of the residuals of a regression of the twelve
+              monthly returns of the shares on those of the S&P 500 (the standard error of the
+              regression, sqrt(Σ e² / (12 - 2))), a monthly figure
+
+        The probability is that of a bankruptcy filing in the year after the period, the
+        statements and market data being known at its end. For comparison, 300 of the 39,745 firm
+        years in Shumway's sample ended in bankruptcy (0.75%).
+
+        For more information, see the following sources:
+
+        - Shumway, T. (2001). "Forecasting Bankruptcy More Accurately: A Simple Hazard Model."
+          The Journal of Business, 74(1), 101-124.
+        - Zmijewski, M. E. (1984). "Methodological Issues Related to the Estimation of Financial
+          Distress Prediction Models." Journal of Accounting Research, 22, 59-82.
+
+        Also known as: Shumway hazard model, hazard model bankruptcy probability, Shumway score.
+
+        Args:
+            method (str, optional): The variant of the hazard model. Options are: "combined" (the
+                market and accounting variables, Table 6, panel B) or "market" (the market variables only,
+                panel A, which also works for companies without statements). Defaults to "combined".
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the Toolkit's rounding.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: Per ticker and period the variables as they enter the model (NI/TA and
+            TL/TA only for the combined model), the Shumway Score (H) and the Bankruptcy
+            Probability (a decimal).
+
+        Notes:
+        - Truncation: Shumway truncates every variable at the 1st and 99th percentiles of his
+          sample, which a calculation per company cannot repeat. Each variable is clipped instead
+          to the range it spans in the paper's sample after truncation (Table 1, minimum and
+          maximum): NI/TA -0.329 to 0.231, TL/TA 0.090 to 1.028, RELSIZE -13.616 to -6.115,
+          EXRET -0.817 to 2.181 and SIGMA 0.030 to 0.325. A company larger than about 0.2% of the
+          S&P 500 has the largest RELSIZE the paper used.
+        - The market: Shumway compares with all NYSE and AMEX companies (the value-weighted CRSP
+          index and their total market value); this uses the S&P 500, its total return index
+          (^SP500TR) and the total market value of its companies (see
+          `get_campbell_hilscher_szilagyi_score`), which holds most of the US market value. As
+          RELSIZE enters with -0.467, a total market value 25% too low moves the score by about
+          -0.1. Without an API key that has access to the constituents, RELSIZE and the
+          probability are NaN.
+        - The market value of equity is the closing price times the diluted weighted average
+          shares, the returns are total returns (Adj Close), and every market variable is
+          measured up to the day each period's figures apply from (the fiscal period end, or the
+          filing day with point_in_time): no later data is used. Shumway lags the statements by
+          at least six months so they are known; set point_in_time on the Toolkit to measure on
+          the filing day instead.
+        - On quarterly statements the net income is that of the trailing twelve months, as the
+          model was estimated on yearly figures.
+        - A month without a price leaves EXRET and SIGMA NaN, where Shumway substitutes the
+          market return for a missing month.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["F", "AAPL"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.models.get_shumway_score().loc["F"]
+        ```
+
+        Which returns:
+
+        |                                     |    2021 |    2022 |    2023 |    2024 |    2025 |
+        |:------------------------------------|--------:|--------:|--------:|--------:|--------:|
+        | Net Income to Total Assets (NI/TA)  |  0.0698 | -0.0077 |  0.0159 |  0.0206 | -0.0283 |
+        | Liabilities to Total Assets (TL/TA) |  0.8108 |  0.8313 |  0.8434 |  0.8427 |  0.8756 |
+        | Relative Size (RELSIZE)             | -6.2444 | -6.6131 | -6.7763 | -7.1989 | -7.0795 |
+        | Excess Return (EXRET)               |  1.0878 | -0.2407 | -0.1047 | -0.3812 |  0.2447 |
+        | Idiosyncratic Volatility (SIGMA)    |  0.111  |  0.0861 |  0.1102 |  0.0533 |  0.036  |
+        | Shumway Score                       | -8.9366 | -6.2785 | -6.3123 | -5.9556 | -7.0292 |
+        | Bankruptcy Probability              |  0.0001 |  0.0019 |  0.0018 |  0.0026 |  0.0009 |
+        """
+        method = method.lower()
+        check_option("method", method, ("combined", "market"))
+
+        balance = self._balance_sheet_statement
+        periods = balance.columns
+        tickers = self._tickers
+        dates = self._market_dates()
+
+        # The daily data from a year before the start date, so that the first periods have their twelve months of returns.  # noqa: E501
+        daily = self._historical_data.get("lookback")
+        if daily is None or daily.empty:
+            daily = self._historical_data["daily"]
+        close = daily["Close"].reindex(columns=tickers)
+        close.index = close.index.to_timestamp()
+        adjusted_close = daily["Adj Close"].reindex(columns=tickers)
+        adjusted_close.index = adjusted_close.index.to_timestamp()
+
+        total_return_index, index_market_value = self._sp500_market_data(
+            close, "the relative size (RELSIZE) and the bankruptcy probability are NaN"
+        )
+
+        price = helpers.values_on_or_before(close, dates)
+        shares = self._rows(self._income_statement, "Weighted Average Shares Diluted")
+        market_equity = price * shares.reindex(index=tickers, columns=periods)
+        index_value = helpers.values_on_or_before(
+            pd.DataFrame(
+                {ticker: index_market_value for ticker in tickers},
+                index=index_market_value.index,
+            ),
+            dates,
+        )
+
+        company_returns = shumway_model.get_monthly_returns(adjusted_close, dates)
+        market_returns = shumway_model.get_monthly_returns(
+            pd.DataFrame(
+                {ticker: total_return_index.dropna() for ticker in tickers},
+                index=total_return_index.dropna().index,
+            ),
+            dates,
+        )
+
+        variables = {
+            "RELSIZE": shumway_model.get_truncated_variable(
+                chs_model.get_relative_size(market_equity, index_value), "RELSIZE"
+            ),
+            "EXRET": shumway_model.get_truncated_variable(
+                shumway_model.get_excess_return(company_returns, market_returns),
+                "EXRET",
+            ),
+            "SIGMA": shumway_model.get_truncated_variable(
+                shumway_model.get_residual_sigma(company_returns, market_returns),
+                "SIGMA",
+            ),
+        }
+        if method == "combined":
+            total_assets = self._rows(balance, "Total Assets")
+            total_assets = total_assets.where(total_assets > 0)
+            net_income = trailing_sum(
+                self._rows(self._income_statement, "Net Income"),
+                4 if self._quarterly else None,
+            )
+            variables["NI/TA"] = shumway_model.get_truncated_variable(
+                net_income / total_assets, "NI/TA"
+            )
+            variables["TL/TA"] = shumway_model.get_truncated_variable(
+                self._rows(balance, "Total Liabilities") / total_assets, "TL/TA"
+            )
+
+        score = shumway_model.get_shumway_score(
+            net_income_to_total_assets=variables.get("NI/TA", 0.0),
+            total_liabilities_to_total_assets=variables.get("TL/TA", 0.0),
+            relative_size=variables["RELSIZE"],
+            excess_return=variables["EXRET"],
+            sigma=variables["SIGMA"],
+            method=method,
+        )
+
+        results = {}
+        if method == "combined":
+            results["Net Income to Total Assets (NI/TA)"] = variables["NI/TA"]
+            results["Liabilities to Total Assets (TL/TA)"] = variables["TL/TA"]
+        results["Relative Size (RELSIZE)"] = variables["RELSIZE"]
+        results["Excess Return (EXRET)"] = variables["EXRET"]
+        results["Idiosyncratic Volatility (SIGMA)"] = variables["SIGMA"]
+        results["Shumway Score"] = score
+        results["Bankruptcy Probability"] = (
+            shumway_model.get_shumway_bankruptcy_probability(score)
+        )
+
+        return self._finish_score(
+            {name: frame.astype(float) for name, frame in results.items()},
+            rounding,
+            first_columns=0,
+        )
+
+    @handle_errors
     def get_synthetic_credit_rating(
         self,
         firm_type: str = "auto",
@@ -1895,11 +2173,11 @@ class DistressModels:
     ) -> pd.DataFrame:
         """
         Calculate a synthetic credit rating and the cost of debt that comes with it, from the
-        interest coverage ratio (EBIT divided by interest expense), following Aswath
-        Damodaran. Most companies have no traded bonds or rating of their own; the coverage
-        ratio is the measure that explains ratings best, so it is mapped to the rating that
-        companies with a similar ratio have, and to that rating's default spread over the
-        risk free rate:
+        interest coverage ratio (EBIT divided by interest expense), following Aswath Damodaran.
+
+        Most companies have no traded bonds or rating of their own; the coverage ratio is the
+        measure that explains ratings best, so it is mapped to the rating that companies with a
+        similar ratio have, and to that rating's default spread over the risk free rate:
 
             - Interest Coverage Ratio = EBIT / Interest Expense
             - Rating and Default Spread from Damodaran's synthetic rating table
@@ -1918,10 +2196,9 @@ class DistressModels:
         Also known as: implied credit rating, interest coverage rating, cost of debt.
 
         Args:
-            firm_type (str, optional): The table to use: "large" (market capitalization above
-                five billion), "small" (smaller and riskier firms), "financial" (banks and
-                other financial firms) or "auto", which picks large or small from the market
-                capitalization of every period. Defaults to "auto".
+            firm_type (str, optional): The table to use. Options are: "large" (market capitalization above five
+                billion), "small" (smaller and riskier firms), "financial" (banks and other financial firms), "auto"
+                (large or small from the market capitalization of every period). Defaults to "auto".
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -1934,11 +2211,14 @@ class DistressModels:
             Spread, Risk Free Rate and Pre-tax Cost of Debt.
 
         Notes:
-        - A company without debt that reports an interest expense of zero and a positive EBIT
-          gets the best rating; its coverage ratio, which is infinite, shows as NaN. A period
-          without a reported interest expense, with an interest expense of zero next to debt
-          (interest the statements do not report) or with an interest expense of zero and an
-          operating loss gets no rating.
+        - A period without interest expense (reported as zero or not reported) and with a
+          positive EBIT has an infinite coverage ratio, which Damodaran's tables map to the
+          highest rating (Aaa/AAA): there is no interest the operating income has to cover.
+          Its coverage ratio shows as NaN. This also holds for a company with debt whose
+          statements do not report its interest separately, such as Apple from its fiscal
+          year 2024. The rating is NaN where the EBIT (Operating Income) is missing, and for
+          an operating loss without interest expense, as the coverage ratio then says
+          nothing about the rating the company would get if it borrowed.
         - A coverage ratio below the lowest bound of the table gets the worst rating.
         - The market capitalization is compared with five billion in the reporting
           currency; for companies that do not report in US dollars, pass the firm type.
@@ -1979,10 +2259,7 @@ class DistressModels:
         | ('T', 'Pre-tax Cost of Debt')       | 0.0233   | 0.2196  | 0.0486  | 0.0532   | 0.0518  |
         """
         firm_type = firm_type.lower()
-        if firm_type not in ("auto", "large", "small", "financial"):
-            raise ValueError(
-                "The firm type must be 'auto', 'large', 'small' or 'financial'."
-            )
+        check_option("firm_type", firm_type, ("auto", "large", "small", "financial"))
 
         table = damodaran_model.get_synthetic_rating_table()
         if table.empty:
@@ -1992,16 +2269,13 @@ class DistressModels:
 
         ebit = self._rows(self._income_statement, "Operating Income")
         interest = self._rows(self._income_statement, "Interest Expense").abs()
-        debt = self._rows(self._balance_sheet_statement, "Total Debt")
-        # Only a reported interest expense of zero with a positive EBIT and no debt means there
-        # is nothing to cover (an infinite ratio, the best rating). An interest expense of zero
-        # next to debt is interest the statements do not report (or include in another line
-        # item), so the ratio is unknown, as it is for a missing interest expense and for an
-        # operating loss without interest, which says nothing about the rating the company
-        # would get if it borrowed.
+        # Damodaran treats a company without interest expense as having an infinite coverage
+        # ratio, the highest rating: a positive EBIT with an interest expense of zero or none
+        # reported. An operating loss without interest says nothing about the rating the
+        # company would get if it borrowed, and without an EBIT there is no ratio: both NaN.
         coverage = (
             (ebit / interest.where(interest > 0))
-            .mask((interest == 0) & (ebit > 0) & (debt == 0), float("inf"))
+            .mask(~(interest > 0) & (ebit > 0), float("inf"))
             .where(ebit.notna())
         )
 

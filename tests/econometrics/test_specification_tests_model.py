@@ -357,3 +357,19 @@ def test_get_breusch_pagan_and_white_without_constant_use_centered_auxiliary_reg
     white_result = specification_tests_model.get_white_test(result)
     assert np.isclose(white_result["White Statistic"], white_lm, rtol=1e-10)
     assert np.isclose(white_result["P-Value"], stats.chi2.sf(white_lm, 5), rtol=1e-10)
+
+
+def test_tests_on_the_residuals_of_a_perfect_fit_are_not_defined():
+    # y = 2x leaves only rounding noise as residuals, which says nothing about their variance
+    # or autocorrelation.
+    x = np.random.default_rng(3).normal(size=60)
+    result = regression_model.get_ols(2 * x, pd.DataFrame({"A": x}))
+    for test in [
+        specification_tests_model.get_breusch_pagan_test,
+        specification_tests_model.get_white_test,
+    ]:
+        outcome = test(result)
+        assert np.isnan(outcome.iloc[0])
+        assert not outcome["Reject Homoskedasticity (5%)"]
+    durbin_watson = specification_tests_model.get_durbin_watson_test(result)
+    assert np.isnan(durbin_watson["Durbin-Watson Statistic"])

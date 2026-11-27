@@ -1,0 +1,3 @@
+CUSIP,Coupon,Maturity,Price,Reference CPI,Index Ratio,Adjusted Price,Adjusted Accrued Interest,Real Yield,Nominal Yield,Breakeven Inflation Rate,Modified Duration,Price Date
+91282CLY5,0.0162,2029-10-15,99.9688,336.156,1.0709,107.0596,0.1673,0.0164,0.0439,0.0275,2.821,2026-11-19
+912810US5,0.0238,2056-02-15,83.4375,336.156,1.0372,86.5447,0.6426,0.0326,0.0546,0.022,19.8809,2026-11-19

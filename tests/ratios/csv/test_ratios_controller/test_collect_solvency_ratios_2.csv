@@ -38,6 +38,15 @@ AAPL,Dividend CAPEX Coverage Ratio,Lag 3,,,,0.128
 AAPL,Debt-to-Capital Ratio,Lag 1,,0.0494,0.0576,-0.1135
 AAPL,Debt-to-Capital Ratio,Lag 2,,,0.1098,-0.0624
 AAPL,Debt-to-Capital Ratio,Lag 3,,,,-0.0161
+AAPL,Long-Term Debt to Capitalization,Lag 1,,0.0532,0.0438,-0.0848
+AAPL,Long-Term Debt to Capitalization,Lag 2,,,0.0993,-0.0448
+AAPL,Long-Term Debt to Capitalization,Lag 3,,,,0.006
+AAPL,Debt-to-Market Cap,Lag 1,,-0.1329,0.37,
+AAPL,Debt-to-Market Cap,Lag 2,,,0.1879,
+AAPL,Debt-to-Market Cap,Lag 3,,,,
+AAPL,Solvency Ratio,Lag 1,,0.3898,-0.0025,0.0177
+AAPL,Solvency Ratio,Lag 2,,,0.3864,0.0152
+AAPL,Solvency Ratio,Lag 3,,,,0.4109
 AAPL,Preferred Dividend Coverage Ratio,Lag 1,,,,
 AAPL,Preferred Dividend Coverage Ratio,Lag 2,,,,
 AAPL,Preferred Dividend Coverage Ratio,Lag 3,,,,
@@ -107,6 +116,15 @@ MSFT,Dividend CAPEX Coverage Ratio,Lag 3,,,,-0.0787
 MSFT,Debt-to-Capital Ratio,Lag 1,,-0.1385,-0.1676,-0.1624
 MSFT,Debt-to-Capital Ratio,Lag 2,,,-0.2829,-0.3028
 MSFT,Debt-to-Capital Ratio,Lag 3,,,,-0.3994
+MSFT,Long-Term Debt to Capitalization,Lag 1,,-0.2216,-0.1554,-0.2318
+MSFT,Long-Term Debt to Capitalization,Lag 2,,,-0.3425,-0.3511
+MSFT,Long-Term Debt to Capitalization,Lag 3,,,,-0.4949
+MSFT,Debt-to-Market Cap,Lag 1,,-0.3625,0.2792,
+MSFT,Debt-to-Market Cap,Lag 2,,,-0.1845,
+MSFT,Debt-to-Market Cap,Lag 3,,,,
+MSFT,Solvency Ratio,Lag 1,,0.2197,0.156,-0.047
+MSFT,Solvency Ratio,Lag 2,,,0.4099,0.1016
+MSFT,Solvency Ratio,Lag 3,,,,0.3436
 MSFT,Preferred Dividend Coverage Ratio,Lag 1,,,,
 MSFT,Preferred Dividend Coverage Ratio,Lag 2,,,,
 MSFT,Preferred Dividend Coverage Ratio,Lag 3,,,,

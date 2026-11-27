@@ -1,0 +1,19 @@
+,AAPL,MSFT
+Mean t-Statistic,1.5,1.09
+Mean P-Value,0.13,0.28
+Variance t-Statistic,-0.06,-0.22
+Variance P-Value,0.96,0.83
+Skewness t-Statistic,1.01,-0.16
+Skewness P-Value,0.31,0.87
+Kurtosis t-Statistic,-0.12,-1.8
+Kurtosis P-Value,0.9,0.07
+Q2 Statistic,0.58,0.0
+Q2 P-Value,0.75,1.0
+Q3 Statistic,0.36,1.21
+Q3 P-Value,0.84,0.55
+Q4 Statistic,0.09,0.04
+Q4 P-Value,0.95,0.98
+Joint Statistic,3.52,3.04
+Joint P-Value,0.97,0.98
+Lags,2.0,2.0
+Observations,755.0,755.0

@@ -7,59 +7,80 @@ import warnings
 import numpy as np
 import pandas as pd
 from scipy import optimize, signal
-from statsmodels.tsa.statespace.mlemodel import MLEModel
 
+from financetoolkit.econometrics.helpers import import_optional
 from financetoolkit.risk.volatility import garch_model
 
 
-class _TimeVaryingRegression(MLEModel):
+def _time_varying_regression(endog: np.ndarray, exog: np.ndarray):
     """
-    y_t = α_t + β_t x_t + ε_t, with α and β random walks: the state space form of a
-    regression whose coefficients drift, estimated with the Kalman filter.
+    The state space model of `get_time_varying_beta`. It subclasses statsmodels' MLEModel, so
+    the class is defined when the method is first called and statsmodels is only needed then.
+
+    Args:
+        endog (np.ndarray): The dependent series.
+        exog (np.ndarray): The independent series.
+
+    Returns:
+        MLEModel: The unfitted model.
     """
+    mlemodel = import_optional(
+        "statsmodels.tsa.statespace.mlemodel", "The time-varying beta"
+    )
 
-    def __init__(self, endog: np.ndarray, exog: np.ndarray):
-        design = np.column_stack([np.ones_like(exog), exog]).T[np.newaxis]
-        super().__init__(endog, k_states=2, initialization="diffuse")
-        self["design"] = design
-        self["transition"] = np.eye(2)
-        self["selection"] = np.eye(2)
+    class _TimeVaryingRegression(mlemodel.MLEModel):
+        """
+        y_t = α_t + β_t x_t + ε_t, with α and β random walks: the state space form of a
+        regression whose coefficients drift, estimated with the Kalman filter.
+        """
 
-    @property
-    def param_names(self) -> list[str]:
-        return ["observation variance", "alpha variance", "beta variance"]
+        def __init__(self, endog: np.ndarray, exog: np.ndarray):
+            design = np.column_stack([np.ones_like(exog), exog]).T[np.newaxis]
+            super().__init__(endog, k_states=2, initialization="diffuse")
+            self["design"] = design
+            self["transition"] = np.eye(2)
+            self["selection"] = np.eye(2)
 
-    @property
-    def start_params(self) -> np.ndarray:
-        variance = float(np.nanvar(self.endog))
-        return np.array([variance, variance * 1e-3, 1e-3])
+        @property
+        def param_names(self) -> list[str]:
+            return ["observation variance", "alpha variance", "beta variance"]
 
-    def transform_params(self, unconstrained: np.ndarray) -> np.ndarray:
-        return unconstrained**2
+        @property
+        def start_params(self) -> np.ndarray:
+            variance = float(np.nanvar(self.endog))
+            return np.array([variance, variance * 1e-3, 1e-3])
 
-    def untransform_params(self, constrained: np.ndarray) -> np.ndarray:
-        return constrained**0.5
+        def transform_params(self, unconstrained: np.ndarray) -> np.ndarray:
+            return unconstrained**2
 
-    def update(
-        self, params, transformed=True, includes_fixed=False, complex_step=False
-    ):
-        params = super().update(
-            params,
-            transformed=transformed,
-            includes_fixed=includes_fixed,
-            complex_step=complex_step,
-        )
-        self["obs_cov", 0, 0] = params[0]
-        self["state_cov"] = np.diag(params[1:])
+        def untransform_params(self, constrained: np.ndarray) -> np.ndarray:
+            return constrained**0.5
+
+        def update(
+            self, params, transformed=True, includes_fixed=False, complex_step=False
+        ):
+            params = super().update(
+                params,
+                transformed=transformed,
+                includes_fixed=includes_fixed,
+                complex_step=complex_step,
+            )
+            self["obs_cov", 0, 0] = params[0]
+            self["state_cov"] = np.diag(params[1:])
+
+    return _TimeVaryingRegression(endog, exog)
 
 
 def get_time_varying_beta(
     dependent: pd.Series, independent: pd.Series
 ) -> tuple[pd.DataFrame, dict[str, float]]:
     """
-    Estimate a regression whose alpha and beta drift over time, with the Kalman filter:
-    every period the coefficients take a random step, and the size of those steps and of
-    the noise around the regression are estimated by maximum likelihood. Unlike a rolling
+    Estimate a time-varying regression with the Kalman filter: an alpha and beta that drift
+    over time.
+
+    Every period the coefficients take a random step, and the size of those steps and of
+    the noise around the regression are estimated by maximum likelihood, with a statsmodels
+    MLEModel state space model. Unlike a rolling
     regression there is no window to choose. Each alpha and beta is the filtered estimate,
     updated with the observations up to its date only; the three variances that set how
     fast the estimates adapt are estimated on the whole sample, so the path is not fully
@@ -98,7 +119,7 @@ def get_time_varying_beta(
     # steps with the beta variance still at its starting value, far from the maximum of the
     # likelihood, which makes a constant beta wander. Scaling only changes the units:
     # y / s_y = α_t / s_y + (β_t s_x / s_y) x / s_x + ε_t / s_y.
-    model = _TimeVaryingRegression(y / scale_y, x / scale_x)
+    model = _time_varying_regression(y / scale_y, x / scale_x)
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         fit = model.fit(disp=False, maxiter=200)
@@ -151,8 +172,10 @@ def _dcc_correlations(
 
 def get_dcc_garch(returns: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, float]]:
     """
-    Estimate dynamic conditional correlations with the DCC-GARCH(1,1) model (Engle, 2002):
-    every series gets its own GARCH(1,1) volatility, and the correlation of the
+    Estimate dynamic conditional correlations with the DCC-GARCH(1,1) model (Engle, 2002): how
+    the correlations between assets change from period to period.
+
+    Every series gets its own GARCH(1,1) volatility, and the correlation of the
     standardized residuals follows Q_t = (1 - a - b) Q̄ + a z_{t-1} z_{t-1}' + b Q_{t-1},
     with Q̄ their unconditional correlation. Correlations between assets tend to rise in
     crises, exactly when diversification is needed most; a rolling correlation sees that

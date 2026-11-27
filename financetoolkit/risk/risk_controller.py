@@ -12,6 +12,7 @@ from financetoolkit.risk.dependence.dependence_controller import DependenceRisk
 from financetoolkit.risk.distribution.distribution_controller import DistributionRisk
 from financetoolkit.risk.drawdown.drawdown_controller import DrawdownRisk
 from financetoolkit.risk.helpers import (
+    check_rolling,
     determine_within_historical_data,
     get_risk_free_rate_per_ticker,
     mask_non_trading_days,
@@ -21,10 +22,14 @@ from financetoolkit.risk.value_at_risk.value_at_risk_controller import ValueAtRi
 from financetoolkit.risk.volatility.volatility_controller import VolatilityRisk
 from financetoolkit.utilities import factor_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
-from financetoolkit.utilities.error_model import handle_errors
-from financetoolkit.utilities.logger_model import get_logger
+from financetoolkit.utilities.error_model import (
+    InvalidArgumentError,
+    check_period,
+    handle_errors,
+)
+from financetoolkit.utilities.logger_model import get_logger, log_each_message_once
 from financetoolkit.utilities.sources_model import track_sources
-from financetoolkit.utilities.statistics_model import apply_rounding
+from financetoolkit.utilities.statistics_model import apply_rounding, finalize_dataset
 
 logger = get_logger()
 
@@ -46,6 +51,7 @@ class RiskBase:
         rounding: int | None = 4,
         start_date: str | None = None,
         end_date: str | None = None,
+        profile: pd.DataFrame | Callable[[], pd.DataFrame] | None = None,
     ):
         """
         Initializes the Risk Controller Class.
@@ -66,6 +72,11 @@ class RiskBase:
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
             start_date (str | None, optional): The start date to use for the calculations. Defaults to None.
             end_date (str | None, optional): The end date to use for the calculations. Defaults to None.
+            profile (pd.DataFrame | Callable | None, optional): The company profiles, with
+                the tickers as columns and the profile items (such as "Sector" and
+                "Industry") as rows, or a function that retrieves them when first needed,
+                for the groups of get_factor_analysis. Defaults to None, which leaves
+                group="sector" and group="industry" unavailable.
 
         As an example:
 
@@ -97,6 +108,7 @@ class RiskBase:
         # The risk free rate is quoted as an annualized yield, so it is converted to the rate each ticker earns per period of its returns, on its own calendar (see `_get_risk_free_rate`).  # noqa: E501
         self._risk_free_rate_data = LazyDict(self._get_risk_free_rate)
         self._tickers_source = tickers
+        self._profile_source = profile
         self._quarterly = quarterly
         self._rounding: int | None = rounding
         self._start_date: str | None = start_date
@@ -175,6 +187,73 @@ class RiskBase:
 
         return returns
 
+    def _get_measure_returns(
+        self,
+        period: str,
+        within_period: bool,
+        rolling: int | None,
+        growth: bool,
+        minimum: int = 2,
+    ) -> pd.DataFrame:
+        """
+        The returns a measure of the return distribution runs on, after validating the
+        parameters it shares with the other distribution measures: the `period` returns of
+        the full history for a rolling window, else those of `_get_returns`. `minimum` is the
+        smallest rolling window the measure has a value for.
+        """
+        check_period(period, ["daily", "weekly", "monthly", "quarterly", "yearly"])
+        if (
+            period == "daily"
+            and within_period
+            and self._historical_data["intraday"].empty
+        ):
+            raise InvalidArgumentError(
+                "Intraday data is required for within-period daily calculations. Either set "
+                "within_period=False or initialise the Toolkit with an intraday_period."
+            )
+        if growth and not within_period and not rolling:
+            raise InvalidArgumentError(
+                "Growth calculations need one value per period, while "
+                "within_period=False produces a single value for the entire period. "
+                "Set within_period=True to calculate growth."
+            )
+
+        check_rolling(rolling, self._historical_data, period, minimum)
+        if rolling:
+            return self._historical_data[period]["Return"]
+
+        return self._get_returns(period, within_period)
+
+    def _finalize_measure(
+        self,
+        result: pd.Series | pd.DataFrame,
+        sliced: bool,
+        rounding: int | None,
+        growth: bool,
+        lag: int | list[int],
+        standardize: bool,
+    ) -> pd.Series | pd.DataFrame:
+        """
+        Cut a measure to the date range when it has a value per period or date (`sliced`,
+        with within_period=True or rolling) and apply the growth, rounding and
+        standardization, as every distribution measure does.
+        """
+        if sliced:
+            result = result.loc[self._start_date : self._end_date]
+
+        return finalize_dataset(
+            dataset=result,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            apply_slice=False,
+        )
+
     def _get_prices(
         self, column: str, period: str = "daily", within_period: bool = False
     ) -> pd.DataFrame:
@@ -192,10 +271,7 @@ class RiskBase:
 
     def _get_price_column(self, period: str, column: str) -> pd.DataFrame:
         # Reads the plain period-frequency history rather than the "within period" multi-index, so period="daily" simply means daily observations here and (unlike every within-period method above) needs no intraday data.  # noqa: E501
-        if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
-            raise ValueError(
-                "Period must be daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(period, ["daily", "weekly", "monthly", "quarterly", "yearly"])
 
         # Only rows without any value are dropped: the pairwise calculations (copulas, tail dependence, CoVaR) align each pair themselves, so a joint dropna would cut every ticker's sample down to the shortest history.  # noqa: E501
         return self._historical_data[period][column].dropna(how="all")
@@ -245,6 +321,7 @@ class Risk(
     """
 
     @handle_errors
+    @log_each_message_once()
     def collect_all_metrics(
         self,
         period: str | None = None,
@@ -255,11 +332,12 @@ class Risk(
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculates and collects all risk metrics.
+        Collect all risk metrics of every asset in one table: its volatility, tail risk, drawdowns and
+        distribution side by side.
 
         Args:
-            period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
-                Defaults to "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
+            period (str, optional): The data frequency for returns. Options are: "daily", "weekly", "monthly",
+                "quarterly", "yearly". Defaults to "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
@@ -277,7 +355,7 @@ class Risk(
 
         Notes:
         - The method calculates various risk metrics for each asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the ratio values
+        - With growth, the method calculates the growth of the ratio values
           using the specified `lag`.
 
         As an example:
@@ -309,12 +387,12 @@ class Risk(
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
-        if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
-            raise ValueError(
-                "Period must be daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(period, ["daily", "weekly", "monthly", "quarterly", "yearly"])
         if period == "daily" and self._historical_data["intraday"].empty:
-            raise ValueError("Intraday data is required for daily calculations.")
+            raise InvalidArgumentError(
+                "Intraday data is required for daily calculations. Please initialise the "
+                "Toolkit with an intraday_period or use a weekly or longer period."
+            )
 
         rounding = rounding if rounding is not None else self._rounding
 
@@ -489,13 +567,18 @@ class Risk(
         periods_apart: int = 1,
         detail: str | None = None,
         column: str | None = None,
+        group: str | dict | None = None,
+        demeaned: bool = False,
+        binning: str = "quantile",
         rounding: int | None = None,
         show_columns: str | list[str] | None = None,
         **kwargs,
     ) -> pd.DataFrame:
         """
-        Factor analysis (predictive power) of the risk metrics: whether the tickers that score
-        high on a metric go on to return more than those that score low. Per period, the
+        Calculate the factor analysis (predictive power) of the risk metrics: whether the tickers that
+        score high on a metric go on to return more than those that score low.
+
+        Per period, the
         information coefficient (IC) is the Spearman rank correlation between the metric of the
         tickers in the period and their return over the following horizon: 1 means the metric
         ranks the later returns perfectly, -1 in reverse and 0 that it says nothing about them.
@@ -503,13 +586,27 @@ class Risk(
         IR ≈ IC × √breadth: a small but consistent IC across many tickers and periods gives a
         high information ratio.
 
-        The summary has a row per metric and horizon with the mean IC, its standard deviation,
-        the IC information ratio (mean divided by standard deviation), the t-statistic of the
-        mean with its p-value, the share of periods with a positive IC, the number of periods,
-        the top minus bottom spread (the mean forward return of the highest quantile minus
-        that of the lowest), the mean turnover of the top and bottom quantiles and the mean
-        rank autocorrelation of the metric from one period to the next. With detail, it
-        returns one of those parts per period (or per quantile) for a single metric.
+        The summary has a row per metric and horizon with the mean IC, its standard deviation, the
+        IC information ratio (mean divided by standard deviation), the t-statistic of the mean with
+        its p-value, the skewness and excess kurtosis of the IC, the share of periods with a
+        positive IC, the number of periods, the top minus bottom spread (the mean forward return of
+        the highest quantile minus that of the lowest), the annualized alpha and the beta of the
+        factor-weighted long-short portfolio against the equally weighted tickers, the mean turnover
+        of the top and bottom quantiles and the mean rank autocorrelation of the metric from one
+        period to the next. With detail, it returns one part of the analysis per period, quantile or
+        group for a single metric.
+
+        The formula is as follows:
+
+        - IC(t) = Spearman rank correlation of f(i, t) and R(i, t, t + h) over the tickers i,
+          with f the factor and R the forward return over the horizon h
+        - Demeaned return: R(i, t) − mean R(j, t) over the tickers j (of the group of i)
+        - Portfolio weight: w(i, t) = (f(i, t) − mean f(t)) / Σ_j |f(j, t) − mean f(t)|
+        - Portfolio return: R_F(t) = Σ_i w(i, t) × R(i, t, t + h)
+        - Alpha and beta: R_F(t) = α + β × R_U(t) + ε(t), with R_U(t) = mean R(i, t, t + h)
+        - Annualized Alpha = (1 + α) ^ (periods per year / h) − 1
+        - Per period: (1 + mean return) ^ (1 / h) − 1 and standard error / √h
+        - Standard error of a quantile = standard deviation over the periods / √periods
 
         Each metric is measured within each period (e.g. the volatility of a month's daily
         returns) and compared with the returns from the close of the period's last trading day
@@ -517,14 +614,19 @@ class Risk(
         returns it is compared with. Each ticker keeps its own history: a ticker without a
         value or a return in a period is left out of that period only.
 
+        Shares similar logic:
+        - alphalens, factor_information_coefficient: https://github.com/stefan-jansen/alphalens-reloaded/blob/v0.4.4/src/alphalens/performance.py#L28
+        - alphalens, factor_returns: https://github.com/stefan-jansen/alphalens-reloaded/blob/v0.4.4/src/alphalens/performance.py#L210
+        - alphalens, mean_return_by_quantile: https://github.com/stefan-jansen/alphalens-reloaded/blob/v0.4.4/src/alphalens/performance.py#L461
+
         Args:
             metrics (str | list[str], optional): A risk method name with a value per ticker and period,
-                e.g. "get_volatility", a list of them, or a collection: "anomalies" or "all".
-                Defaults to "anomalies", the volatility, maximum drawdown, skewness and Amihud
-                illiquidity. "all" adds the downside deviation, kurtosis, value at risk,
+                e.g. "get_volatility", a list of them, or a collection. Options for a collection are:
+                "anomalies" (the volatility, maximum drawdown, skewness and Amihud illiquidity), "all"
+                (every risk metric with a value per ticker and period). Defaults to "anomalies". "all" adds the downside deviation, kurtosis, value at risk,
                 conditional value at risk, tail ratio and Roll spread.
-            period (str, optional): The frequency at which the metrics are measured and evaluated
-                (weekly, monthly, quarterly or yearly). Each metric is calculated
+            period (str, optional): The frequency at which the metrics are measured and evaluated.
+                Options are: "weekly", "monthly", "quarterly", "yearly". Each metric is calculated
                 within each period from that period's daily returns, so use monthly or longer
                 for enough returns per period. Defaults to "monthly".
             horizons (list[int] | int | None, optional): The number of periods the forward
@@ -535,12 +637,38 @@ class Risk(
             periods_apart (int, optional): The number of periods between the dates the
                 quantile turnover and the rank autocorrelation compare. Defaults to 1.
             detail (str | None, optional): Returns one part of the analysis of a single metric
-                instead of the summary: "information_coefficient" (per period and horizon),
+                instead of the summary. Options are: "information_coefficient" (per period and horizon),
+                "information_coefficient_by_month" (the mean IC per calendar month),
+                "information_coefficient_by_year" (the mean IC per calendar year),
+                "group_information_coefficient" (the IC statistics within each group, needs group),
                 "quantile_returns" (the mean forward return per quantile and horizon),
-                "quantile_turnover" (per period and quantile) or "rank_autocorrelation" (per
-                period). Defaults to None.
+                "quantile_returns_by_date" (per period), "quantile_return_statistics" (the mean, its
+                standard error and both per single period), "quantile_statistics" (the range, mean and
+                count of the factor values in each quantile), "quantile_turnover" (per period and
+                quantile), "rank_autocorrelation" (per period), "factor_weights" (the weights of the
+                factor-weighted long-short portfolio per period and ticker), "factor_returns" (its
+                return per period and horizon), "cumulative_returns" (the growth of 1 in it and in
+                each quantile), "event_returns" (the mean price path of each quantile from the
+                longest horizon before to the longest horizon after the periods it is formed).
+                Defaults to None.
             column (str | None, optional): The output to use of a metric with several.
                 Defaults to None, which uses the first.
+            group (str | dict | None, optional): The group of each ticker for the group options:
+                "sector" or "industry" (or another company profile item) from the company profiles
+                of Financial Modeling Prep, or a dictionary of tickers and their groups. Defaults to
+                None.
+            demeaned (bool, optional): Whether to compare the forward returns with the mean of
+                the tickers in each period, or with group with the mean of the ticker's group:
+                a group-neutral analysis, in which the IC is group-adjusted and the
+                factor-weighted portfolio neutral within each group. Without group the IC
+                stays the same, as subtracting one mean from every ticker keeps their ranks.
+                Defaults to False.
+            binning (str, optional): How the tickers are sorted into quantiles per period. Options are:
+                "quantile" (equally sized), "equal_width" (bins of equal width between the lowest
+                and highest value), "zero_aware" (half of the quantiles for the negative and half
+                for the zero and positive values, for a signal centred on zero; needs an even number
+                of quantiles), "group" (equally sized within each group, needs group). Defaults to
+                "quantile".
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
             **kwargs: Parameters passed to the metrics that take them, e.g. alpha=0.05.
@@ -562,8 +690,27 @@ class Risk(
             - A horizon longer than one period makes consecutive returns overlap, which
               inflates the t-statistic; judge those horizons by their mean IC and IC
               information ratio.
-            - Based on alphalens (Quantopian) and on Grinold and Kahn (2000), Active Portfolio
-              Management.
+            - The groups from the company profiles are today's sector or industry, applied
+              to every period.
+            - The factor-weighted portfolio is long-short: its weights sum to zero and their
+              absolute values to one. A horizon longer than one period makes its returns
+              overlap too, so its alpha and beta are averages rather than tests.
+            - The cumulative returns split the capital over as many portfolios as the horizon
+              has periods, started on consecutive periods and each rebalanced once per
+              horizon; a value shows when its holding period ends, so the series starts at 1.
+            - The IC is that of Grinold, R.C. and Kahn, R.N. (2000). "Active Portfolio
+              Management." 2nd ed. McGraw-Hill; the factor-weighted portfolio, the demeaned
+              and group-neutral returns that of Qian, E., Hua, R. and Sorensen, E. (2007).
+              "Quantitative Equity Portfolio Management." Chapman & Hall/CRC; the alpha that
+              of Jensen, M.C. (1968). "The Performance of Mutual Funds in the Period
+              1945-1964." Journal of Finance 23(2); the event returns follow MacKinlay, A.C.
+              (1997). "Event Studies in Economics and Finance." Journal of Economic Literature
+              35(1).
+            - The top minus bottom spread of alphalens (Stefan Jansen's alphalens-reloaded)
+              is half of the one here (a gross exposure of one rather than two), it
+              drops a period and ticker without every horizon's return where each horizon
+              here uses its own, and its event returns average the single-period returns at
+              each offset where these are the price paths rebased to the period itself.
 
         Also known as: predictive power, information coefficient, factor testing, alpha signal
 
@@ -584,16 +731,17 @@ class Risk(
         ```
 
         Which returns:
-        |                                         |   Mean IC |   IC Standard Deviation |   IC Information Ratio |   t-Statistic |   p-Value |   Positive Share |   Observations |   Top Minus Bottom |   Quantile Turnover |   Rank Autocorrelation |
-        |:----------------------------------------|----------:|------------------------:|-----------------------:|--------------:|----------:|-----------------:|---------------:|-------------------:|--------------------:|-----------------------:|
-        | ('get_volatility', '1 Month')           |    0.0963 |                  0.3676 |                 0.262  |        2.8586 |    0.005  |           0.6218 |            119 |             0.0185 |              0.4688 |                 0.5848 |
-        | ('get_volatility', '12 Months')         |    0.2759 |                  0.3703 |                 0.7451 |        7.7428 |    0      |           0.7685 |            108 |             0.3154 |              0.4688 |                 0.5848 |
-        | ('get_maximum_drawdown', '1 Month')     |   -0.0257 |                  0.3315 |                -0.0774 |       -0.8443 |    0.4002 |           0.4622 |            119 |            -0.0041 |              0.6275 |                 0.2719 |
-        | ('get_maximum_drawdown', '12 Months')   |   -0.1759 |                  0.3542 |                -0.4965 |       -5.1603 |    0      |           0.3241 |            108 |            -0.2094 |              0.6275 |                 0.2719 |
-        | ('get_skewness', '1 Month')             |    0.0136 |                  0.2943 |                 0.0464 |        0.5056 |    0.6141 |           0.5462 |            119 |            -0.0007 |              0.7521 |                 0.0593 |
-        | ('get_skewness', '12 Months')           |    0.0081 |                  0.2996 |                 0.0271 |        0.2815 |    0.7789 |           0.5093 |            108 |             0.0142 |              0.7521 |                 0.0593 |
-        | ('get_amihud_illiquidity', '1 Month')   |   -0.0285 |                  0.3896 |                -0.0731 |       -0.7971 |    0.427  |           0.479  |            119 |            -0.0059 |              0.1905 |                 0.8996 |
-        | ('get_amihud_illiquidity', '12 Months') |   -0.1164 |                  0.3789 |                -0.3072 |       -3.1927 |    0.0019 |           0.3611 |            108 |            -0.0796 |              0.1905 |                 0.8996 |
+
+        |                                         |   Mean IC |   IC Standard Deviation |   IC Information Ratio |   t-Statistic |   P-Value |   IC Skewness |   IC Kurtosis |   Positive Share |   Observations |   Top Minus Bottom |   Annualized Alpha |    Beta |   Quantile Turnover |   Rank Autocorrelation |
+        |:----------------------------------------|----------:|------------------------:|-----------------------:|--------------:|----------:|--------------:|--------------:|-----------------:|---------------:|-------------------:|-------------------:|--------:|--------------------:|-----------------------:|
+        | ('get_volatility', '1 Month')           |    0.0963 |                  0.3676 |                 0.262  |        2.8586 |    0.005  |       -0.2056 |       -0.405  |           0.6218 |            119 |             0.0185 |             0.0337 |  0.407  |              0.4688 |                 0.5848 |
+        | ('get_volatility', '12 Months')         |    0.2759 |                  0.3703 |                 0.7451 |        7.7428 |    0      |       -0.7586 |       -0.2658 |           0.7685 |            108 |             0.3154 |            -0.0757 |  1.0993 |              0.4688 |                 0.5848 |
+        | ('get_maximum_drawdown', '1 Month')     |   -0.0257 |                  0.3315 |                -0.0774 |       -0.8443 |    0.4002 |       -0.0332 |       -0.4476 |           0.4622 |            119 |            -0.0041 |             0.0118 | -0.3113 |              0.6275 |                 0.2719 |
+        | ('get_maximum_drawdown', '12 Months')   |   -0.1759 |                  0.3542 |                -0.4965 |       -5.1603 |    0      |        0.496  |       -0.4167 |           0.3241 |            108 |            -0.2094 |             0.0475 | -0.6263 |              0.6275 |                 0.2719 |
+        | ('get_skewness', '1 Month')             |    0.0136 |                  0.2943 |                 0.0464 |        0.5056 |    0.6141 |       -0.0773 |        0.1094 |           0.5462 |            119 |            -0.0007 |            -0.0055 |  0.0598 |              0.7521 |                 0.0593 |
+        | ('get_skewness', '12 Months')           |    0.0081 |                  0.2996 |                 0.0271 |        0.2815 |    0.7789 |        0.1058 |       -0.547  |           0.5093 |            108 |             0.0142 |            -0.0111 |  0.0936 |              0.7521 |                 0.0593 |
+        | ('get_amihud_illiquidity', '1 Month')   |   -0.0285 |                  0.3896 |                -0.0731 |       -0.7971 |    0.427  |       -0.0875 |       -0.9255 |           0.479  |            119 |            -0.0059 |             0.0216 | -0.1902 |              0.1905 |                 0.8996 |
+        | ('get_amihud_illiquidity', '12 Months') |   -0.1164 |                  0.3789 |                -0.3072 |       -3.1927 |    0.0019 |        0.68   |       -0.2884 |           0.3611 |            108 |            -0.0796 |             0.1036 | -0.457  |              0.1905 |                 0.8996 |
         """
         factors = factor_model.get_daily_factors(
             self,
@@ -614,6 +762,9 @@ class Risk(
             self._start_date,
             self._end_date,
             returns=self._historical_data["daily"].get("Return"),
+            binning=binning,
+            demeaned=demeaned,
+            groups=factor_model.get_groups(group, self._profile_source, self._tickers),
         )
 
         return apply_rounding(

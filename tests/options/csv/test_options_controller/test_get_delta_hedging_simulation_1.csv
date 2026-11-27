@@ -1,0 +1,3 @@
+,Stock Price,Strike Price,Volatility,Implied Volatility,Option Value,Mean Profit and Loss,Standard Deviation,5% Quantile,95% Quantile,Mean Transaction Costs,Approximate Standard Deviation
+AAPL,148.71,156.1455,0.2814,0.35,10.3453,0.9027,1.723,-1.8966,3.7155,0.1964,1.6538
+MSFT,272.42,286.041,0.2705,0.35,18.995,1.9483,3.0608,-2.9537,7.0263,0.3568,2.8665

@@ -8,6 +8,7 @@ import pytest
 import requests
 
 from financetoolkit.cache.cache_controller import clear_active_cache
+from financetoolkit.utilities.error_model import InvalidArgumentError
 
 
 @pytest.fixture(autouse=True)
@@ -469,7 +470,8 @@ def test_climate_scenario_applies_the_deviation_to_the_baseline(monkeypatch):
     assert rate_deviation.loc[pd.Period("2050", "Y"), "Germany"] == pytest.approx(0.006)
     assert gdp.loc[pd.Period("2050", "Y"), "Germany"] == pytest.approx(5400 * 0.95)
     assert carbon.loc[pd.Period("2050", "Y"), "World"] == pytest.approx(748.8)
-    assert economics.get_climate_scenario(scenario="Hothouse").empty
+    with pytest.raises(InvalidArgumentError):
+        economics.get_climate_scenario(scenario="Hothouse")
 
 
 def test_long_run_asset_returns_require_accepting_the_licence(monkeypatch):
@@ -495,7 +497,8 @@ def test_long_run_asset_returns_require_accepting_the_licence(monkeypatch):
 
     economics = Economics(start_date="2019-01-01", end_date="2020-12-31")
 
-    assert economics.get_long_run_asset_returns().empty
+    with pytest.raises(InvalidArgumentError):
+        economics.get_long_run_asset_returns()
     nominal = economics.get_long_run_asset_returns(accept_licence=True)
     real = economics.get_long_run_asset_returns(accept_licence=True, real=True)
 
@@ -593,7 +596,8 @@ def test_dnb_scenario_set_derives_zero_rates_from_the_state_variables(monkeypatc
     assert np.isnan(scenarios.loc[0, ("Equity return", 1)])
     assert scenarios.loc[2, ("Equity return", 2)] == pytest.approx(0.10)
     assert distribution.loc[1, ("Equity return", "50%")] == pytest.approx(0.03)
-    assert economics.get_scenario_set(variables="Gold price").empty
+    with pytest.raises(InvalidArgumentError):
+        economics.get_scenario_set(variables="Gold price")
 
 
 def test_asset_class_proxies_are_period_returns(monkeypatch):
@@ -629,7 +633,8 @@ def test_asset_class_proxies_are_period_returns(monkeypatch):
     assert proxies.loc[pd.Period("2026-09", "M"), "Private Equity"] == pytest.approx(
         -0.1
     )
-    assert Economics().get_asset_class_proxies(asset_classes="Art").empty
+    with pytest.raises(InvalidArgumentError):
+        Economics().get_asset_class_proxies(asset_classes="Art")
 
 
 def test_eiopa_symmetric_adjustment_reads_the_daily_history(monkeypatch):
@@ -686,76 +691,6 @@ def test_eiopa_symmetric_adjustment_reads_the_daily_history(monkeypatch):
     ] == pytest.approx(0.39)
 
 
-def test_option_chains_fall_back_to_cboe_when_yahoo_has_none(monkeypatch):
-    import yfinance as yf
-
-    from financetoolkit.economics.sources import cboe_model
-    from financetoolkit.options import options_model
-
-    payload = {
-        "data": {
-            "current_price": 7818.93,
-            "options": [
-                {
-                    "option": "SPX261016C07800000",
-                    "bid": 80.0,
-                    "ask": 82.0,
-                    "iv": 0.12,
-                    "open_interest": 900.0,
-                },
-                {
-                    "option": "SPXW261016C07800000",
-                    "bid": 80.5,
-                    "ask": 82.5,
-                    "iv": 0.121,
-                    "open_interest": 50.0,
-                },
-                {
-                    "option": "SPX261016C07900000",
-                    "bid": 35.0,
-                    "ask": 36.0,
-                    "iv": 0.11,
-                    "open_interest": 400.0,
-                },
-                {
-                    "option": "SPX261016P07800000",
-                    "bid": 60.0,
-                    "ask": 61.0,
-                    "iv": 0.13,
-                    "open_interest": 700.0,
-                },
-                {
-                    "option": "SPX261120C07800000",
-                    "bid": 150.0,
-                    "ask": 152.0,
-                    "iv": 0.125,
-                    "open_interest": 300.0,
-                },
-            ],
-        }
-    }
-
-    class JsonResponse(FakeResponse):
-        def json(self):
-            return payload
-
-    monkeypatch.setattr(cboe_model, "get_request", lambda url, timeout: JsonResponse())
-    monkeypatch.setattr(
-        yf, "Ticker", lambda ticker: (_ for _ in ()).throw(RuntimeError("down"))
-    )
-
-    assert options_model.get_option_expiry_dates("^SPX") == ["2026-10-16", "2026-11-20"]
-
-    calls = options_model.get_option_chains(["^SPX"], "2026-10-16")
-
-    # The monthly and the weekly contract on the same strike are one row: the more held.
-    assert list(calls.loc["^SPX"].index) == [7800.0, 7900.0]
-    assert calls.loc[("^SPX", 7800.0), "Contract Symbol"] == "SPX261016C07800000"
-    assert calls.loc[("^SPX", 7800.0), "In The Money"]
-    assert not calls.loc[("^SPX", 7900.0), "In The Money"]
-    assert calls.loc[("^SPX", 7900.0), "Implied Volatility"] == pytest.approx(0.11)
-
-
 def test_federal_reserve_scenario_files_named_after_their_table(monkeypatch):
     from financetoolkit.economics.sources import frb_model
 
@@ -783,3 +718,72 @@ def test_federal_reserve_scenario_files_named_after_their_table(monkeypatch):
         url.endswith("2025-Table_3A_Supervisory_Severely_Adverse_Domestic.csv")
         for url in requested
     )
+
+
+def test_an_unreachable_eex_is_asked_once_and_reported_in_one_line(monkeypatch, caplog):
+    from financetoolkit.economics import helpers as economics_helpers
+    from financetoolkit.economics.sources import eex_model
+
+    requested = []
+
+    def refused(url, timeout):  # noqa: ARG001
+        requested.append(url)
+        raise requests.exceptions.ConnectionError("Connection refused")
+
+    monkeypatch.setattr(eex_model, "get_request", refused)
+    monkeypatch.setattr(economics_helpers, "RETRY_DELAY_SECONDS", 0)
+
+    with caplog.at_level("ERROR"):
+        prices = eex_model.get_carbon_price("2021-01-01", "2023-12-31")
+
+    assert prices.empty
+    # The first year with its retries; the later years would fail alike.
+    assert all("2021" in url for url in requested)
+    errors = [record for record in caplog.records if record.levelname == "ERROR"]
+    assert len(errors) == 1
+    assert "auctions of 2021, 2022, 2023 (EEX could not be reached" in errors[0].message
+
+
+def test_a_refused_eex_year_is_reported_with_its_reason_in_one_line(
+    monkeypatch, caplog
+):
+    from financetoolkit.economics.sources import eex_model
+
+    def forbidden(url, timeout):  # noqa: ARG001
+        if "2022" in url:
+            raise _not_found(url)
+        response = requests.Response()
+        response.status_code = 403
+        raise requests.exceptions.HTTPError(f"403 for {url}", response=response)
+
+    monkeypatch.setattr(eex_model, "get_request", forbidden)
+
+    with caplog.at_level("DEBUG", logger="financetoolkit"):
+        prices = eex_model.get_carbon_price("2021-01-01", "2023-12-31")
+
+    assert prices.empty
+    # A refusal is not an unreachable source: it is an error, with the year not published
+    # folded into the same line rather than a line of its own.
+    records = [record for record in caplog.records if "2022" in record.getMessage()]
+    assert len(records) == 1
+    assert records[0].levelname == "ERROR"
+    assert records[0].getMessage() == (
+        "No carbon price is returned for the EEX emission allowance auctions of 2021, 2023 "
+        "(EEX answered HTTP 403); 2022 (the EEX has not published that year's report)."
+    )
+    assert "returned no" not in caplog.text
+
+
+def test_an_unpublished_eex_year_is_a_warning(monkeypatch, caplog):
+    from financetoolkit.economics.sources import eex_model
+
+    def not_published(url, timeout):  # noqa: ARG001
+        raise _not_found(url)
+
+    monkeypatch.setattr(eex_model, "get_request", not_published)
+
+    with caplog.at_level("WARNING", logger="financetoolkit"):
+        assert eex_model.get_carbon_price("2021-01-01", "2022-12-31").empty
+
+    assert [record.levelname for record in caplog.records] == ["WARNING"]
+    assert "auctions of 2021, 2022 (the EEX has not published" in caplog.text

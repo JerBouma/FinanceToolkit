@@ -1,0 +1,4 @@
+,Mean,Geometric,Exponential,Exponential Geometric,CAPM,Bayes-Stein,James-Stein,Bodnar-Okhrin-Parolya
+AAPL,0.2651,0.2179,-0.2996,-0.259,0.1236,0.1057,0.2651,-0.0807
+MSFT,0.2088,0.1601,-0.1074,-0.1018,0.1212,0.0902,0.2088,-0.0485
+Benchmark,0.1046,0.076,-0.055,-0.0535,0.1046,0.0614,0.1046,0.0109

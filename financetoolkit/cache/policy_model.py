@@ -269,6 +269,9 @@ POLICIES: dict[str, CachePolicy] = {
     # Auctions are added several times a week; a past year's results are final.
     f"{US_TREASURY}.auctions": CachePolicy(ttl_seconds=DAY),
     f"{US_TREASURY}.auctions_year": CachePolicy(ttl_seconds=30 * DAY),
+    # TreasuryDirect's auctions of a kind of security (FRN spreads, TIPS reference CPIs, the
+    # 13-week bill rates that index the FRNs) change with each auction.
+    f"{US_TREASURY}.securities": CachePolicy(ttl_seconds=DAY),
     # The FedInvest prices of a day are completed with the end-of-day price the next
     # business day; a day that has them is final.
     f"{US_TREASURY}.fedinvest_prices": CachePolicy(ttl_seconds=3600),
@@ -307,7 +310,6 @@ POLICIES: dict[str, CachePolicy] = {
     f"{IMF_PORTWATCH}.chokepoints": CachePolicy(ttl_seconds=30 * DAY),
     # Index histories published whole, one file per index, updated after every close.
     f"{CBOE}.index": CachePolicy(ttl_seconds=DAY),
-    f"{CBOE}.option_chain": CachePolicy(ttl_seconds=900),
     f"{STOXX}.index": CachePolicy(ttl_seconds=DAY),
     f"{RESERVE_BANK_OF_AUSTRALIA}.table": CachePolicy(ttl_seconds=DAY),
     # One workbook per year of EU carbon allowance auctions; past years do not change.

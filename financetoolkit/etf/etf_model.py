@@ -34,13 +34,13 @@ CANCELLED_EARNINGS = 1e-9
 
 def get_concentration(weights: pd.Series) -> pd.Series:
     """
-    Calculate how concentrated a fund is from the weights of its holdings: the number of
-    holdings, the weight of the largest holding and of the ten largest (shares of the fund),
-    the Herfindahl-Hirschman index (the sum of the squared weights, after scaling the weights
-    of the holdings to sum to one) and the effective number of holdings (one over that
-    index). A fund of 500 holdings whose ten largest make up 40% of
-    it behaves like a fund of far fewer stocks; the effective number says how many equally
-    weighted holdings would give the same concentration.
+    Calculate how concentrated a fund is in its largest holdings.
+
+    Calculate how concentrated a fund is from the weights of its holdings: the number of holdings, the weight of the
+    largest holding and of the ten largest (shares of the fund), the Herfindahl-Hirschman index (the sum of the
+    squared weights, after scaling the weights of the holdings to sum to one) and the effective number of holdings
+    (one over that index). A fund of 500 holdings whose ten largest make up 40% of it behaves like a fund of far fewer
+    stocks; the effective number says how many equally weighted holdings would give the same concentration.
 
     Args:
         weights (pd.Series): The weight of every holding, as decimals.
@@ -82,9 +82,10 @@ def get_concentration(weights: pd.Series) -> pd.Series:
 
 def get_overlap(weights: dict[str, pd.Series]) -> pd.DataFrame:
     """
-    Calculate the overlap between every pair of funds: the sum, over the holdings they share,
-    of the smaller of the two weights. Two funds with an overlap of 0.8 hold 80% of the same
-    portfolio, so holding both adds little diversification.
+    Calculate the overlap between every pair of funds: the sum, over the holdings they share, of the smaller of the
+    two weights.
+
+    Two funds with an overlap of 0.8 hold 80% of the same portfolio, so holding both adds little diversification.
 
     The weights are taken as listed, not scaled to add up to one, so the overlap of a fund
     whose list of holdings is incomplete is at most the weight that list covers (on the
@@ -116,9 +117,10 @@ def get_overlap(weights: dict[str, pd.Series]) -> pd.DataFrame:
 
 def get_active_share(weights: dict[str, pd.Series]) -> pd.DataFrame:
     """
-    Calculate the active share between every pair of funds: half the sum, over all holdings
-    of either fund, of the absolute difference between their weights. It is the share of a
-    fund's portfolio that differs from the other's, 0 for identical holdings and 1 for funds
+    Calculate the active share between every pair of funds: half the sum, over all holdings of either fund, of the
+    absolute difference between their weights.
+
+    It is the share of a fund's portfolio that differs from the other's, 0 for identical holdings and 1 for funds
     without a holding in common.
 
     The formula is as follows:
@@ -158,17 +160,16 @@ def get_active_share(weights: dict[str, pd.Series]) -> pd.DataFrame:
 
 def get_look_through_valuation(weights: pd.Series, ratios: pd.DataFrame) -> pd.Series:
     """
-    Calculate the valuation of a fund from the valuation of its holdings, weighted by their
-    weight in the fund. The multiples (price-to-earnings, price-to-book, price-to-sales
-    and price-to-free-cash-flow) are weighted harmonic means, 1 / Σ w / multiple, which is the
-    multiple of the fund as a whole (its price over its share of the holdings' earnings) and does not let one holding
-    with a very high multiple dominate; holdings with negative earnings count with their
-    negative earnings, as in the fund's own earnings. The dividend yield and net profit margin
-    are weighted arithmetic means. The coverage is the share of the fund's weight whose
-    holdings have a usable, non-zero price-to-earnings ratio (or, without price-to-earnings
-    ratios, the first multiple there is). When the holdings' earnings (or book value, sales or
-    free cash flow) add up to a loss or to about zero, the fund has no meaningful multiple, so
-    it is NaN with a logged warning rather than a negative or near infinite number.
+    Calculate the valuation of a fund from the valuation of its holdings, weighted by their weight in the fund.
+
+    The multiples (price-to-earnings, price-to-book, price-to-sales and price-to-free-cash-flow) are weighted harmonic
+    means, 1 / Σ w / multiple, which is the multiple of the fund as a whole (its price over its share of the holdings'
+    earnings) and does not let one holding with a very high multiple dominate; holdings with negative earnings count
+    with their negative earnings, as in the fund's own earnings. The dividend yield and net profit margin are weighted
+    arithmetic means. The coverage is the share of the fund's weight whose holdings have a usable, non-zero
+    price-to-earnings ratio (or, without price-to-earnings ratios, the first multiple there is). When the holdings'
+    earnings (or book value, sales or free cash flow) add up to a loss or to about zero, the fund has no meaningful
+    multiple, so it is NaN with a logged warning rather than a negative or near infinite number.
 
     The formula is as follows:
 
@@ -226,9 +227,11 @@ def get_price_impact(
     returns: pd.Series, dollar_volume: pd.Series, amount: float = 1e8
 ) -> float:
     """
-    The Amihud (2002) illiquidity, scaled to an amount traded: the average absolute daily
-    return per dollar traded, times the amount, so the average price move that trading that
-    amount in a day goes with. The lower, the more liquid.
+    Calculate the price impact of trading an amount of a fund, from the Amihud (2002) illiquidity.
+
+    The Amihud (2002) illiquidity, scaled to an amount traded: the average absolute daily return per dollar traded,
+    times the amount, so the average price move that trading that amount in a day goes with. The lower, the more
+    liquid.
 
     For more information, see the following paper:
 
@@ -251,11 +254,12 @@ def get_tracking(
     returns: pd.Series, benchmark_returns: pd.Series, periods_per_year: int = 252
 ) -> pd.Series:
     """
-    Calculate how closely a fund tracks a benchmark (its index): the tracking difference
-    (the annualized return of the fund minus the annualized return of the benchmark over the
-    period, which for an index fund should be about minus its expense ratio), the annualized
-    tracking error (the volatility of the per-period return difference), the correlation, the beta and
-    the R Squared.
+    Calculate how closely a fund tracks a benchmark (its index).
+
+    Calculate how closely a fund tracks a benchmark (its index): the tracking difference (the annualized return of the
+    fund minus the annualized return of the benchmark over the period, which for an index fund should be about minus
+    its expense ratio), the annualized tracking error (the volatility of the per-period return difference), the
+    correlation, the beta and the R Squared.
 
     Args:
         returns (pd.Series): The fund's returns.
@@ -285,6 +289,29 @@ def get_tracking(
     )
 
 
+def get_last_prices(
+    prices: pd.DataFrame, before: pd.Timestamp, inclusive: bool = True
+) -> pd.Series:
+    """
+    The last close up to a date, per ticker: a holding that did not trade on the date (a
+    holiday on its exchange) keeps its last close.
+
+    Args:
+        prices (pd.DataFrame): The closes, a column per ticker, with a DatetimeIndex.
+        before (pd.Timestamp): The date.
+        inclusive (bool, optional): Whether the close of the date itself counts. Defaults
+            to True.
+
+    Returns:
+        pd.Series: The last close per ticker, NaN for every ticker when there is no close
+        up to the date.
+    """
+    rows = prices.loc[prices.index <= before if inclusive else prices.index < before]
+    if rows.empty:
+        return pd.Series(float("nan"), index=prices.columns)
+    return rows.ffill().iloc[-1]
+
+
 def get_contribution(
     weights: pd.Series,
     start_prices: pd.Series,
@@ -293,9 +320,11 @@ def get_contribution(
     fund_change: float,
 ) -> pd.DataFrame:
     """
-    Calculate the contribution of every holding to a fund's return over a period: its weight
-    at the start of the period times its return over the period, so the contributions add up
-    to the return of the part of the fund the holdings cover.
+    Calculate how much every holding added to or took off a fund's return over a period.
+
+    Calculate the contribution of every holding to a fund's return over a period: its weight at the start of the
+    period times its return over the period, so the contributions add up to the return of the part of the fund the
+    holdings cover.
 
     The weights are those of a later date (a fund publishes only its current holdings). They
     are rolled back to the start of the period with every holding's own price change between

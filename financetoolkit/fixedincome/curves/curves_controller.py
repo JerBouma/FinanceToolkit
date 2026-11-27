@@ -22,12 +22,24 @@ from financetoolkit.economics.sources import (
     treasury_model,
 )
 from financetoolkit.fixedincome import helpers as fixedincome_helpers
-from financetoolkit.fixedincome.curves import curve_model, yieldcurve_model
+from financetoolkit.fixedincome.bonds import bond_model
+from financetoolkit.fixedincome.curves import (
+    curve_model,
+    interpolation_model,
+    smith_wilson_model,
+    yieldcurve_model,
+)
 from financetoolkit.fixedincome.helpers import maturity_key, parse_maturities
 from financetoolkit.fixedincome.sources import eiopa_model, fmp_model
 from financetoolkit.utilities import logger_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
-from financetoolkit.utilities.error_model import handle_errors
+from financetoolkit.utilities.error_model import (
+    InvalidArgumentError,
+    check_option,
+    check_period,
+    handle_errors,
+    validate_window,
+)
 from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import apply_rounding, finalize_dataset
 
@@ -154,6 +166,44 @@ class CurvesFixedIncome:
         years, zero_rates = bootstrap
         return pd.Series(zero_rates, index=years)
 
+    @staticmethod
+    def _curve_nodes(
+        par_curve: pd.Series, country: str, interpolation: str
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """
+        The maturities and continuously compounded zero rates of one day of a country's
+        yield curve, bootstrapped with an interpolation, see
+        interpolation_model.bootstrap_zero_curve. The Euro Area and German curves are
+        zero-coupon curves already, published continuously compounded.
+
+        Args:
+            par_curve (pd.Series): The yields as decimals by maturity label.
+            country (str): The country, which sets the coupon frequency and the quote
+                convention of the bills.
+            interpolation (str): One of interpolation_model.INTERPOLATIONS.
+
+        Returns:
+            tuple[np.ndarray, np.ndarray]: The maturities in years and their zero rates.
+        """
+        par_curve = par_curve.dropna()
+        maturities = np.array(
+            [curve_model.maturity_in_years(label) for label in par_curve.index]
+        )
+        if country in ZERO_COUPON_CURVES:
+            return maturities, par_curve.to_numpy(dtype=float)
+        if par_curve.empty or maturities.min() > 1:
+            raise ValueError(
+                f"The {country} yield curve has no maturity of a year or less to bootstrap "
+                "zero-coupon rates from."
+            )
+        return interpolation_model.bootstrap_zero_curve(
+            maturities,
+            par_curve.to_numpy(dtype=float),
+            COUPON_FREQUENCIES.get(country, 2),
+            BILL_CONVENTIONS.get(country),
+            interpolation,
+        )
+
     @handle_errors
     def get_forward_rate(
         self,
@@ -161,14 +211,17 @@ class CurvesFixedIncome:
         far_maturity: float | str | list | None = None,
         country: str = "United States",
         date: str | None = None,
+        interpolation: str = "linear_par",
         rounding: int | None = None,
         show_columns: str | list[str] | None = None,
     ):
         """
         Calculates the implied forward rates between pairs of maturities of a country's
-        zero-coupon (spot) yield curve on a day. The forward rate is the interest rate, implied by
-        that day's curve, for a loan that starts at a future date: it follows from no-arbitrage
-        pricing rather than being a forecast of future rates, and contains a term premium.
+        zero-coupon (spot) yield curve on a day: the interest rate, implied by that day's curve,
+        for a loan that starts at a future date.
+
+        It follows from no-arbitrage pricing rather than being a forecast of future rates, and
+        contains a term premium.
 
         The formula is as follows:
 
@@ -176,15 +229,17 @@ class CurvesFixedIncome:
 
         where:
 
-        - r1 = Zero-coupon rate at the near maturity, interpolated linearly from the curve
+        - r1 = Zero-coupon rate at the near maturity, read from the curve with the interpolation
         - t1 = Near maturity, in years
-        - r2 = Zero-coupon rate at the far maturity, interpolated linearly from the curve
+        - r2 = Zero-coupon rate at the far maturity, read from the curve with the interpolation
         - t2 = Far maturity, in years
 
         The curve is the zero-coupon curve of `get_zero_coupon_curve`, bootstrapped from the
         country's government bond par yields and annually compounded, so the forward rate is
-        annually compounded as well. It holds the zero rate of every coupon date the bootstrap
-        solves for, not only those of the quoted maturities. For a curve of your own, use
+        annually compounded as well. By default (linear par interpolation) it holds the zero
+        rate of every coupon date the bootstrap solves for, not only those of the quoted
+        maturities, and is linear between them; another interpolation bootstraps the curve
+        with that interpolation, see `get_zero_coupon_curve`. For a curve of your own, use
         `yieldcurve_model.get_forward_rate`.
 
         Also known as: implied forward rate, forward-forward rate.
@@ -198,6 +253,11 @@ class CurvesFixedIncome:
                 "United States".
             date (str | None, optional): The day of the curve (YYYY-MM-DD), or the last day
                 before it with a curve. Defaults to None, the end date.
+            interpolation (str, optional): How the zero-coupon curve is read between its maturities, see
+                `get_zero_coupon_curve`. Options are: "linear_par" (linear annually compounded zero rates on every
+                coupon date), "linear_zero" (linear zero rates), "log_linear" (linear log discount factors),
+                "natural_cubic" (a natural cubic spline), "monotone_cubic" (a monotone cubic spline), "monotone_convex"
+                (Hagan and West's monotone convex method). Defaults to "linear_par".
             rounding (int | None, optional): The number of decimals to round the results
                 to. Defaults to None, which uses the rounding of the class.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -230,12 +290,24 @@ class CurvesFixedIncome:
         |               2 |   0.0474 | 0.0505 | 0.0551 |
         |               5 | nan      | 0.0524 | 0.056  |
         """
-        zero_curve = self._latest_zero_curve(country, date)
+        maturities, zero_rates = self._curve_nodes(
+            self._latest_yield_curve(country, date), country, interpolation
+        )
         near = parse_maturities(near_maturity, range(1, 6))
         far = parse_maturities(far_maturity, range(5, 11))
+        if not any(far_years > near_years for near_years in near for far_years in far):
+            raise InvalidArgumentError(
+                f"A forward rate runs from the near to a later far maturity, while far_maturity "
+                f"({', '.join(f'{years:g}' for years in far)}) is nowhere above near_maturity "
+                f"({', '.join(f'{years:g}' for years in near)}). Please pass a far_maturity above "
+                "the near_maturity."
+            )
 
         def zero_rate(maturity: float) -> float:
-            return float(np.interp(maturity, zero_curve.index, zero_curve.to_numpy()))
+            discount = interpolation_model.get_discount_factors(
+                maturities, zero_rates, maturity, interpolation
+            )[0]
+            return float(discount ** (-1 / maturity) - 1) if maturity > 0 else 0.0
 
         forward_rates = pd.DataFrame(
             {
@@ -268,13 +340,14 @@ class CurvesFixedIncome:
         years_to_maturity: float | str | list | None = None,
         country: str = "United States",
         date: str | None = None,
+        interpolation: str = "linear_par",
         rounding: int | None = None,
         show_columns: str | list[str] | None = None,
     ):
         """
         Calculates the par yields of any maturity from a country's zero-coupon (spot) yield
-        curve on a day. The par yield for a maturity is the coupon rate a newly issued bond of
-        that maturity needs so that, discounted with the spot curve, its price equals par.
+        curve on a day: the coupon rate a newly issued bond of each maturity needs so that,
+        discounted with the spot curve, its price equals par.
 
         The government bond yield curve quotes par yields at its own maturities; this gives the
         par yield of any maturity in between (such as 4 or 15 years) from the zero-coupon rates
@@ -290,8 +363,11 @@ class CurvesFixedIncome:
 
         where Spot Rate(τ) is the zero-coupon rate of `get_zero_coupon_curve` at τ years, restated from annual
         compounding to the country's coupon frequency (twice a year, once for Sweden and Norway) and interpolated
-        linearly between the bills and the coupon dates of the bootstrap, a is the elapsed fraction of the current coupon period (0 on a coupon date) and t_i = i - a is
-        the time of the i-th coupon in periods. The par yield is a nominal annual coupon rate paid at the coupon
+        linearly between the bills and the coupon dates of the bootstrap (or read with another interpolation, see
+        below), a is the elapsed fraction of the current coupon period (0 on a coupon date) and t_i = i - a is
+        the time of the i-th coupon in periods. With an interpolation other than linear par the zero-coupon
+        curve is bootstrapped with that interpolation (see `get_zero_coupon_curve`), so every quoted par yield
+        reprices exactly and the maturities in between follow the interpolation. The par yield is a nominal annual coupon rate paid at the coupon
         frequency, like the government bond yield curve. For a curve of your own, use
         `yieldcurve_model.get_par_yield`.
 
@@ -304,6 +380,11 @@ class CurvesFixedIncome:
                 "United States".
             date (str | None, optional): The day of the curve (YYYY-MM-DD), or the last day
                 before it with a curve. Defaults to None, the end date.
+            interpolation (str, optional): How the zero-coupon curve is read between its maturities, see
+                `get_zero_coupon_curve`. Options are: "linear_par" (linear annually compounded zero rates on every
+                coupon date), "linear_zero" (linear zero rates), "log_linear" (linear log discount factors),
+                "natural_cubic" (a natural cubic spline), "monotone_cubic" (a monotone cubic spline), "monotone_convex"
+                (Hagan and West's monotone convex method). Defaults to "linear_par".
             rounding (int | None, optional): The number of decimals to round the results
                 to. Defaults to None, which uses the rounding of the class.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -335,13 +416,16 @@ class CurvesFixedIncome:
         |                  25 |      0.0526 |
         """
         frequency = COUPON_FREQUENCIES.get(country, 2)
-        zero_curve = self._latest_zero_curve(country, date)
-        spot_rates = frequency * ((1 + zero_curve) ** (1 / frequency) - 1)
+        maturities, zero_rates = self._curve_nodes(
+            self._latest_yield_curve(country, date), country, interpolation
+        )
 
         par_yields = pd.Series(
             {
                 years: yieldcurve_model.get_par_yield(
-                    spot_rates=spot_rates,
+                    spot_rates=interpolation_model.get_coupon_spot_rates(
+                        maturities, zero_rates, years, frequency, interpolation
+                    ),
                     years_to_maturity=years,
                     frequency=frequency,
                 )
@@ -357,6 +441,329 @@ class CurvesFixedIncome:
         )
 
     @handle_errors
+    def get_instantaneous_forward_curve(
+        self,
+        maturities: float | str | list | None = None,
+        country: str = "United States",
+        date: str | None = None,
+        interpolation: str = "monotone_convex",
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ):
+        """
+        Calculates the instantaneous forward curve of a country's zero-coupon curve on a day:
+        at every maturity t, the rate the curve implies for borrowing over an infinitesimal
+        period starting at t. Where a zero rate averages the forward rates up to its maturity,
+        the instantaneous forward shows each part of the curve on its own, which makes it the
+        sharpest view of the curve's shape and the curve the Heath-Jarrow-Morton and
+        Hull-White models start from.
+
+        The formula is as follows:
+
+        - f(t) = -d ln P(t) / dt = r(t) + t × dr(t) / dt
+        - r(t) = (1 / t) × ∫ f(s) ds, from 0 to t
+
+        where P(t) is the discount factor and r(t) the continuously compounded zero rate of
+        maturity t, read from the zero-coupon curve of `get_zero_coupon_curve` (bootstrapped
+        from the par yields) with the interpolation. As the forward rate is the slope of
+        r(t) t, it shows every kink of the interpolation: it jumps at every maturity of
+        the linear zero and linear par interpolations and is flat between those of the
+        log-linear one. The
+        default, Hagan and West's (2006) monotone convex method, gives a continuous forward
+        curve that keeps the discrete forwards between the maturities and does not
+        oscillate, which is why it is the default here (the other curve methods default to
+        linear par, the curve of `get_zero_coupon_curve`). At a maturity of the curve
+        itself the forward is that of the interval that starts there; beyond the last
+        maturity the zero rate, and so the forward, is held at the last zero rate.
+
+        The instantaneous forward rate is continuously compounded, as it is defined.
+
+        For more information, see the following papers:
+
+        - Hagan, P.S. and West, G. (2006). "Interpolation Methods for Curve Construction."
+          Applied Mathematical Finance, 13(2), 89-129.
+        - Hagan, P.S. and West, G. (2008). "Methods for Constructing a Yield Curve." Wilmott
+          Magazine, May, 70-81.
+
+        Referenced against:
+        - QuantLib, ZeroCurve (linear_zero): https://www.quantlib.org/reference/class_quant_lib_1_1_interpolated_zero_curve.html
+        - QuantLib, DiscountCurve (log_linear): https://www.quantlib.org/reference/class_quant_lib_1_1_interpolated_discount_curve.html
+        - QuantLib, NaturalCubicZeroCurve (natural_cubic): https://www.quantlib.org/reference/class_quant_lib_1_1_interpolated_zero_curve.html
+        - QuantLib, MonotonicCubicZeroCurve (monotone_cubic): https://www.quantlib.org/reference/class_quant_lib_1_1_interpolated_zero_curve.html
+        - QuantLib, PiecewiseYieldCurve with ConvexMonotone (monotone_convex): https://www.quantlib.org/reference/class_quant_lib_1_1_convex_monotone.html
+
+        Also known as: instantaneous forward rate, forward curve, short forward curve.
+
+        Args:
+            maturities (float | str | list | None, optional): The maturities, in years or as
+                labels such as '6M' (a list or a comma-separated string). Defaults to None,
+                3 and 6 months and 1 to 30 years.
+            country (str, optional): The country, see `get_zero_coupon_curve`. Defaults to
+                "United States".
+            date (str | None, optional): The day of the curve (YYYY-MM-DD), or the last day
+                before it with a curve. Defaults to None, the end date.
+            interpolation (str, optional): How the zero-coupon curve is read between its maturities, see
+                `get_zero_coupon_curve`. Options are: "linear_par" (linear annually compounded zero rates on every
+                coupon date), "linear_zero" (linear zero rates), "log_linear" (linear log discount factors),
+                "natural_cubic" (a natural cubic spline), "monotone_cubic" (a monotone cubic spline), "monotone_convex"
+                (Hagan and West's monotone convex method). Defaults to "monotone_convex".
+            rounding (int | None, optional): The number of decimals to round the results
+                to. Defaults to None, which uses the rounding of the class.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: The Instantaneous Forward Rate (continuously compounded) and the Zero
+            Rate (annually compounded, as `get_zero_coupon_curve`) by maturity in years.
+
+        As an example:
+
+        ```python
+        from financetoolkit import FixedIncome
+
+        fixedincome = FixedIncome()
+
+        fixedincome.get_instantaneous_forward_curve(maturities=[0.5, 1, 2, 5, 10, 20, 30], date="2026-11-05")
+        ```
+
+        Which returns:
+
+        |   Maturity |   Instantaneous Forward Rate |   Zero Rate |
+        |-----------:|-----------------------------:|------------:|
+        |        0.5 |                       0.0421 |      0.0423 |
+        |        1   |                       0.0441 |      0.0433 |
+        |        2   |                       0.0461 |      0.0451 |
+        |        5   |                       0.048  |      0.0465 |
+        |       10   |                       0.0536 |      0.0494 |
+        |       20   |                       0.0549 |      0.0552 |
+        |       30   |                       0.0485 |      0.0541 |
+        """
+        nodes = self._curve_nodes(
+            self._latest_yield_curve(country, date), country, interpolation
+        )
+        years = np.array(
+            parse_maturities(maturities, [0.25, 0.5, *range(1, 31)]), dtype=float
+        )
+
+        forwards = interpolation_model.get_instantaneous_forward_rates(
+            *nodes, years, interpolation
+        )
+        discount = interpolation_model.get_discount_factors(
+            *nodes, years, interpolation
+        )
+        with np.errstate(divide="ignore", invalid="ignore"):
+            annual = np.where(years > 0, discount ** (-1 / years) - 1, np.nan)
+
+        curve = pd.DataFrame(
+            {"Instantaneous Forward Rate": forwards, "Zero Rate": annual},
+            index=pd.Index([maturity_key(value) for value in years], name="Maturity"),
+        )
+
+        return apply_rounding(
+            curve, rounding if rounding is not None else self._rounding
+        )
+
+    @handle_errors
+    def get_smith_wilson_curve(
+        self,
+        maturities: float | str | list | None = None,
+        country: str = "United States",
+        date: str | None = None,
+        ultimate_forward_rate: float = 0.033,
+        convergence_speed: float | None = None,
+        last_liquid_point: float | None = None,
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ):
+        """
+        Extends a country's government bond yield curve to any maturity with the
+        Smith-Wilson method (Smith and Wilson, 2001): the risk-free curve that prices every
+        bill and par bond of the curve exactly and, beyond its last liquid point, converges
+        to an ultimate forward rate (UFR), as EIOPA builds the Solvency II risk-free rate
+        term structures.
+
+        Insurers and pension funds discount liabilities of 50 to 100 years with such a
+        curve, longer than any bond that trades.
+
+        The formula is as follows:
+
+        - P(t) = e^(-ω t) + Σ_j ζ_j W(t, u_j)
+        - W(t, u) = e^(-ω (t + u)) [α min(t, u) - ½ e^(-α max(t, u)) (e^(α min(t, u)) - e^(-α min(t, u)))]
+        - ζ = Cᵀ (C W Cᵀ)⁻¹ (m - C μ), with μ_j = e^(-ω u_j)
+        - ω = ln(1 + UFR)
+
+        where u_j are the cash flow times of the instruments, C their cash flows and m their
+        prices. The instruments are the curve's quotes of the day up to the last liquid point:
+        the bills (a year or less) as zero-coupon bonds whose price follows from their yield
+        in the country's quote convention, and the longer maturities as par bonds paying their
+        par yield in coupons twice a year (once for Sweden and Norway) at a price of par. The
+        Euro Area and German curves are zero-coupon curves, so every maturity is a
+        zero-coupon bond.
+
+        The convergence speed α, EIOPA's alpha, sets how fast the forward rate converges to
+        the UFR. By default it is set as EIOPA does: the smallest alpha of at least 0.05 for which the instantaneous forward
+        rate at the convergence point lies within a basis point of ω, with the convergence
+        point at the later of 60 years and the last liquid point plus 40 years (see
+        `smith_wilson_model.get_smith_wilson_alpha`).
+
+        The zero rates are annually compounded, as EIOPA publishes them and as
+        `get_zero_coupon_curve` returns them, and the instantaneous forward rate is
+        continuously compounded, so it converges to ln(1 + UFR).
+
+        For more information, see the following sources:
+
+        - Smith, A. and Wilson, T. (2001). "Fitting Yield Curves with Long Term Constraints."
+          Research Notes, Bacon and Woodrow.
+        - EIOPA (2022). "Technical Documentation of the Methodology to Derive EIOPA's Risk-Free
+          Interest Rate Term Structures." EIOPA-BoS-22/409.
+
+        EIOPA's October 2026 euro curve, its Smith-Wilson coefficients, alpha (0.068369) and
+        rates are reproduced from the same par swaps.
+
+        Referenced against:
+        - rateslib, SmithWilsonCurve: https://rateslib.com/py/en/3.0.x/api/rateslib.curves.SmithWilsonCurve.html
+
+        Also known as: Smith-Wilson extrapolation, UFR curve, Solvency II curve extrapolation,
+        ultimate forward rate.
+
+        Args:
+            maturities (float | str | list | None, optional): The maturities, in years or as
+                labels such as '50Y' (a list or a comma-separated string). Defaults to None,
+                1, 2, 3, 5, 7, 10, 20, 30, 40, 50, 60, 80, 100 and 150 years.
+            country (str, optional): The country, see `get_zero_coupon_curve`. Defaults to
+                "United States".
+            date (str | None, optional): The day of the curve (YYYY-MM-DD), or the last day
+                before it with a curve. Defaults to None, the end date.
+            ultimate_forward_rate (float, optional): The UFR, annually compounded (decimal);
+                EIOPA publishes it every year per currency. Defaults to 0.033.
+            convergence_speed (float | None, optional): The speed α of convergence to the UFR,
+                EIOPA's alpha, above 0. Defaults to None, EIOPA's convergence criterion.
+            last_liquid_point (float | None, optional): The longest maturity, in years, whose
+                quote the curve keeps. Defaults to None, the longest maturity of the curve.
+            rounding (int | None, optional): The number of decimals to round the results
+                to. Defaults to None, which uses the rounding of the class.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: The Zero Rate (annually compounded), the Discount Factor and the
+            Instantaneous Forward Rate (continuously compounded) by maturity in years, and the
+            Alpha of the curve.
+
+        As an example:
+
+        ```python
+        from financetoolkit import FixedIncome
+
+        fixedincome = FixedIncome()
+
+        fixedincome.get_smith_wilson_curve(date="2026-11-05")
+        ```
+
+        Which returns:
+
+        |   Maturity |   Zero Rate |   Discount Factor |   Instantaneous Forward Rate |   Alpha |
+        |-----------:|------------:|------------------:|-----------------------------:|--------:|
+        |          1 |      0.0433 |            0.9585 |                       0.0444 |  0.1202 |
+        |          2 |      0.0451 |            0.9155 |                       0.0466 |  0.1202 |
+        |          3 |      0.0459 |            0.8741 |                       0.0459 |  0.1202 |
+        |          5 |      0.0465 |            0.7966 |                       0.0479 |  0.1202 |
+        |          7 |      0.0478 |            0.7213 |                       0.0506 |  0.1202 |
+        |         10 |      0.0494 |            0.6172 |                       0.0543 |  0.1202 |
+        |         20 |      0.0553 |            0.3407 |                       0.0579 |  0.1202 |
+        |         30 |      0.0541 |            0.2061 |                       0.0436 |  0.1202 |
+        |         40 |      0.0505 |            0.1393 |                       0.036  |  0.1202 |
+        |         50 |      0.0474 |            0.0986 |                       0.0336 |  0.1202 |
+        |         60 |      0.0451 |            0.0708 |                       0.0328 |  0.1202 |
+        |         80 |      0.0421 |            0.0369 |                       0.0325 |  0.1202 |
+        |        100 |      0.0403 |            0.0193 |                       0.0325 |  0.1202 |
+        |        150 |      0.0379 |            0.0038 |                       0.0325 |  0.1202 |
+        """
+        par_curve = self._latest_yield_curve(country, date).dropna()
+        quoted = np.array(
+            [curve_model.maturity_in_years(label) for label in par_curve.index]
+        )
+        yields = par_curve.to_numpy(dtype=float)
+        liquid = quoted <= (
+            quoted.max()
+            if last_liquid_point is None
+            else float(last_liquid_point) + 1e-9
+        )
+        if not liquid.any():
+            raise ValueError(
+                f"The {country} yield curve quotes no maturity up to the last liquid point."
+            )
+        quoted, yields = quoted[liquid], yields[liquid]
+        frequency = COUPON_FREQUENCIES.get(country, 2)
+
+        if country in ZERO_COUPON_CURVES:
+            instruments = [
+                (np.array([years]), np.array([1.0]), np.exp(-rate * years))
+                for years, rate in zip(quoted, yields, strict=True)
+            ]
+        else:
+            bills = curve_model.bill_yields_to_annual(
+                quoted, yields, frequency, BILL_CONVENTIONS.get(country)
+            )
+            instruments = []
+            for years, par_yield, bill in zip(quoted, yields, bills, strict=True):
+                if years <= 1 + 1e-9:
+                    instruments.append(
+                        (np.array([years]), np.array([1.0]), (1 + bill) ** -years)
+                    )
+                    continue
+                times = bond_model.get_cash_flow_periods(years, frequency) / frequency
+                flows = np.full(len(times), par_yield / frequency)
+                flows[-1] += 1
+                accrued = bond_model.get_accrued_fraction(years, frequency)
+                instruments.append((times, flows, 1 + par_yield / frequency * accrued))
+
+        cash_flow_times = np.unique(
+            np.round(np.concatenate([times for times, _, _ in instruments]), 10)
+        )
+        cash_flows = np.zeros((len(instruments), len(cash_flow_times)))
+        for row, (times, flows, _) in enumerate(instruments):
+            cash_flows[row, np.searchsorted(cash_flow_times, np.round(times, 10))] = (
+                flows
+            )
+        prices = np.array([price for _, _, price in instruments])
+
+        if convergence_speed is None:
+            convergence_speed = smith_wilson_model.get_smith_wilson_alpha(
+                cash_flow_times,
+                cash_flows,
+                prices,
+                ultimate_forward_rate,
+                max(float(quoted.max()) + 40, 60.0),
+            )
+        years = np.array(
+            parse_maturities(
+                maturities, [1, 2, 3, 5, 7, 10, 20, 30, 40, 50, 60, 80, 100, 150]
+            ),
+            dtype=float,
+        )
+        curve = smith_wilson_model.get_smith_wilson_curve(
+            cash_flow_times,
+            cash_flows,
+            prices,
+            years,
+            ultimate_forward_rate,
+            convergence_speed,
+        )
+        curve.index = pd.Index(
+            [maturity_key(value) for value in years], name="Maturity"
+        )
+        curve["Alpha"] = convergence_speed
+
+        return apply_rounding(
+            curve, rounding if rounding is not None else self._rounding
+        )
+
+    @handle_errors
     def get_yield_curve_spread(
         self,
         long_maturity: float | str | list | None = None,
@@ -365,13 +772,15 @@ class CurvesFixedIncome:
         date: str | None = None,
         rounding: int | None = None,
         show_columns: str | list[str] | None = None,
+        middle_maturity: float | str | list | None = None,
     ):
         """
         Calculates the spreads between pairs of maturities of a country's government bond yield
-        curve on a day, e.g. the widely followed 10-year minus 2-year and 10-year minus 3-month
-        Treasury spreads. A positive spread indicates a "normal" upward-sloping curve, while a
-        negative spread ("inversion") has historically been used as a leading indicator of an
-        economic slowdown.
+        curve on a day: the slope of the curve, e.g. the widely followed 10-year minus 2-year
+        and 10-year minus 3-month Treasury spreads.
+
+        A positive spread indicates a "normal" upward-sloping curve, while a negative spread
+        ("inversion") has historically been used as a leading indicator of an economic slowdown.
 
         The formula is as follows:
 
@@ -386,15 +795,26 @@ class CurvesFixedIncome:
         difference of two columns of `get_government_bond_yield_curve`; for yields of your own,
         use `yieldcurve_model.get_yield_curve_spread`.
 
-        Also known as: term spread, yield curve slope, 10Y-2Y spread.
+        With `middle_maturity` it calculates butterflies instead, a measure of the curvature of
+        the curve: twice how far the yield of a middle maturity (the body) lies above the average
+        yield of a short and a long maturity (the wings), with the wings weighted equally as
+        butterflies are quoted (2s5s10s). That average is the straight line through the wings
+        only when the body lies midway between them, which 5 years does not in 2s5s10s:
+
+        - Butterfly = 2 * Middle Yield - Short Yield - Long Yield
+
+        A positive butterfly means the body yields more than the wings on average.
+
+        Also known as: term spread, yield curve slope, 10Y-2Y spread, 2s10s, 2y-10y spread,
+        inverted yield curve, curve inversion, fly, 2s5s10s.
 
         Args:
             long_maturity (float | str | list | None, optional): The longer maturity (or
                 maturities), in years or as labels such as '10Y'. Defaults to None, 5, 10 and
-                30 years.
+                30 years, or 10 years for a butterfly.
             short_maturity (float | str | list | None, optional): The shorter maturity (or
                 maturities), in years or as labels such as '3M'. Defaults to None, 3 months
-                and 2 years.
+                and 2 years, or 2 years for a butterfly.
             country (str, optional): The country, see `get_government_bond_yield_curve`.
                 Defaults to "United States".
             date (str | None, optional): The day of the curve (YYYY-MM-DD), or the last day
@@ -405,10 +825,15 @@ class CurvesFixedIncome:
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
                 exist the result is returned in full. Defaults to None, which keeps every column.
+            middle_maturity (float | str | list | None, optional): The middle maturity (or
+                maturities) of a butterfly, in years or as labels such as '5Y'. Defaults to
+                None, which calculates spreads.
 
         Returns:
             pd.DataFrame: The spread (decimal) for each combination of long (rows) and short
-            maturity (columns).
+            maturity (columns), or with `middle_maturity` the butterfly (decimal) for each
+            middle maturity (rows) and pair of wings (columns, short/long), NaN where the middle
+            maturity does not lie between the wings.
 
         As an example:
 
@@ -434,6 +859,38 @@ class CurvesFixedIncome:
         def par_yield(maturity: float) -> float:
             return float(
                 np.interp(maturity, maturities, par_curve.to_numpy(dtype=float))
+            )
+
+        if middle_maturity is not None:
+            middles = parse_maturities(middle_maturity, [])
+            wings = [
+                (short_years, long_years)
+                for short_years in parse_maturities(short_maturity, [2])
+                for long_years in parse_maturities(long_maturity, [10])
+            ]
+            label = fixedincome_helpers.maturity_label
+            butterflies = pd.DataFrame(
+                {
+                    f"{label(short_years)}/{label(long_years)}": {
+                        label(middle_years): (
+                            yieldcurve_model.get_yield_curve_butterfly(
+                                short_yield=par_yield(short_years),
+                                middle_yield=par_yield(middle_years),
+                                long_yield=par_yield(long_years),
+                            )
+                            if short_years < middle_years < long_years
+                            else np.nan
+                        )
+                        for middle_years in middles
+                    }
+                    for short_years, long_years in wings
+                }
+            )
+            butterflies.index.name = "Middle Maturity"
+            butterflies.columns.name = "Wings"
+
+            return apply_rounding(
+                butterflies, rounding if rounding is not None else self._rounding
             )
 
         long = parse_maturities(long_maturity, [5, 10, 30])
@@ -578,11 +1035,12 @@ class CurvesFixedIncome:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Get the government bond yield for a variety of countries over time from the OECD. By
-        default this is the long-term (10-year) government bond yield; set short_term=True to
-        get the short-term (3-month) rate instead. The two maturities are described below.
+        Get the government bond yield for a variety of countries over time from the OECD: what governments pay to
+        borrow, by default the long-term (10-year) government bond yield or else the short-term (3-month) rate.
 
-        Long-term (short_term=False): long-term interest rates refer to government bonds maturing
+        The two maturities are described below.
+
+        Long-term: long-term interest rates refer to government bonds maturing
         in ten years. Rates are mainly determined by the price charged by the lender, the risk
         from the borrower and the fall in the capital value. Long-term interest rates
         are generally averages of daily rates, measured as a percentage. These interest
@@ -596,7 +1054,7 @@ class CurvesFixedIncome:
 
         See definition: https://data.oecd.org/interest/long-term-interest-rates.htm
 
-        Short-term (short_term=True): short-term interest rates are the rates at which short-term
+        Short-term: short-term interest rates are the rates at which short-term
         borrowings are effected between financial institutions or the rate at which short-term
         government paper is issued or traded in the market. Short-term interest rates are
         generally averages of daily rates, measured as a percentage. They are based on
@@ -611,9 +1069,9 @@ class CurvesFixedIncome:
         Args:
             short_term (bool, optional): Whether to return the short-term interest rate. Defaults to False.
                 This means that the long-term interest rate will be returned.
-            period (str | None, optional): Whether to return the monthly, quarterly or the annual data.
-                Defaults to None, which returns the monthly data (quarterly when the class was
-                created with quarterly=True).
+            period (str | None, optional): The frequency of the data. Options are: "monthly", "quarterly",
+                "yearly", None (the monthly data, or the quarterly data when the class was created
+                with quarterly data). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
             lag (int, optional): The number of periods to lag the growth data by. Defaults to 1.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
@@ -627,7 +1085,7 @@ class CurvesFixedIncome:
 
         Returns:
             pd.DataFrame: A DataFrame containing the long-term (10-year) government bond yield, or the
-                short-term (3-month) interest rate when short_term=True.
+                short-term (3-month) interest rate.
 
         As an example:
 
@@ -694,11 +1152,13 @@ class CurvesFixedIncome:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Retrieves the government bond yield curve of a variety of countries, every maturity
-        a country's government borrows at, from treasury bills to bonds of 30 years and
-        more. The yield curve is the basis for discounting cash flows and pricing bonds,
-        and its shape is one of the most watched signals in markets: an inverted curve,
-        with short rates above long rates, has preceded most recessions.
+        Retrieves the government bond yield curve of a variety of countries: the yield of
+        every maturity a country's government borrows at, from treasury bills to bonds of 30
+        years and more.
+
+        The yield curve is the basis for discounting cash flows and pricing bonds, and its
+        shape is one of the most watched signals in markets: an inverted curve, with short
+        rates above long rates, has preceded most recessions.
 
         Every curve comes from the official source:
 
@@ -722,7 +1182,7 @@ class CurvesFixedIncome:
         - Australia: the Reserve Bank of Australia's government bond yields interpolated to
           2, 3, 5 and 10 years, from 2013.
 
-        With period="monthly", every other European Union member, such as France, Italy,
+        With monthly data, every other European Union member, such as France, Italy,
         Spain, the Netherlands and Poland, is included with its 10-year yield, the long-term
         interest rate for convergence purposes the ECB publishes monthly. For other
         countries, see `get_government_bond_yield` for the monthly 3-month and 10-year
@@ -747,11 +1207,11 @@ class CurvesFixedIncome:
         Args:
             countries (list[str] | str | None, optional): The countries to retrieve, from
                 "United States", "Euro Area", "Germany", "United Kingdom", "Japan", "Canada",
-                "Sweden", "Norway" and "Australia", and with period="monthly" any European
-                Union member.
+                "Sweden", "Norway" and "Australia", and with monthly data any European Union
+                member.
                 Defaults to None, which retrieves every country.
-            period (str, optional): Whether to return the daily, weekly or monthly data.
-                Defaults to "daily".
+            period (str, optional): The frequency of the data. Options are: "daily", "weekly", "monthly". Defaults to
+                "daily".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
             lag (int, optional): The number of periods to lag the data by. Defaults to 1.
@@ -928,9 +1388,11 @@ class CurvesFixedIncome:
     ):
         """
         Retrieves the daily U.S. Treasury par yield curve rates as officially published by the
-        U.S. Department of the Treasury, covering every maturity from 1 Month through 30 Year in
-        a single dataset. This is the official, risk-free curve widely used as the discount curve
-        for bond valuation and as the benchmark for credit spreads.
+        U.S. Department of the Treasury: the yields at which the US government borrows, for
+        every maturity from 1 Month through 30 Year in a single dataset.
+
+        This is the official, risk-free curve widely used as the discount curve for bond
+        valuation and as the benchmark for credit spreads.
 
         With a FinancialModelingPrep API key the rates come from FinancialModelingPrep, and
         without one, or when the key's plan does not include them, from the U.S. Department
@@ -1085,10 +1547,7 @@ class CurvesFixedIncome:
             datetime.strptime(end_date, "%Y-%m-%d") - timedelta(days=21)
         ).strftime("%Y-%m-%d")
         sources = self._get_country_yield_curves(start_date)
-        if country not in sources:
-            raise ValueError(
-                f"No daily yield curve is available for {country}. Choose from {', '.join(sources)}."
-            )
+        check_option("country", country, sources)
         curve = sources[country]()
         curve = curve.loc[: pd.Period(end_date, "D")].dropna(how="all")
         if curve.empty:
@@ -1111,7 +1570,13 @@ class CurvesFixedIncome:
 
         Returns:
             dict[str, pd.DataFrame]: The curve per country that has one.
+
+        Raises:
+            InvalidArgumentError: If the period is not daily, weekly or monthly.
         """
+        # Checked here rather than reported by get_government_bond_yield_curve, whose empty
+        # answer would read as a country without a curve.
+        check_period(str(period).lower(), ("daily", "weekly", "monthly"))
         requested = [countries] if isinstance(countries, str) else list(countries)
         # The yields are published to a basis point or finer, so the curve is not rounded
         # before the models use it.
@@ -1175,21 +1640,79 @@ class CurvesFixedIncome:
             zero_rates, index=curve.index, columns=curve.columns
         ).dropna(how="all")
 
+    @classmethod
+    def _interpolated_zero_curve(
+        cls,
+        curve: pd.DataFrame,
+        country: str,
+        interpolation: str,
+        maturities: float | str | list | None,
+    ) -> pd.DataFrame:
+        """
+        The zero-coupon rates of every date of a country's par curve, bootstrapped with an
+        interpolation and read at the maturities, see get_zero_coupon_curve. Each date uses
+        its own yields only.
+
+        Args:
+            curve (pd.DataFrame): The par yields by date (rows) and maturity label (columns).
+            country (str): The country, which sets the coupon frequency.
+            interpolation (str): One of interpolation_model.INTERPOLATIONS.
+            maturities (float | str | list | None): The maturities, or None for those the
+                curve quotes (left NaN on a date without a yield for it).
+
+        Returns:
+            pd.DataFrame: The zero-coupon rates (annually compounded) by date and maturity.
+        """
+        if maturities is None:
+            years = np.array(
+                [curve_model.maturity_in_years(label) for label in curve.columns]
+            )
+            labels = list(curve.columns)
+        else:
+            years = np.array(parse_maturities(maturities, []), dtype=float)
+            labels = [fixedincome_helpers.maturity_label(value) for value in years]
+        if np.any(years <= 0):
+            raise ValueError("The maturities must be longer than zero.")
+
+        rows = {}
+        for date, par_curve in curve.iterrows():
+            try:
+                nodes = cls._curve_nodes(par_curve, country, interpolation)
+            except ValueError as error:
+                if "maturity of a year or less" in str(error):
+                    continue
+                raise
+            discount = interpolation_model.get_discount_factors(
+                *nodes, years, interpolation
+            )
+            zero_rates = discount ** (-1 / years) - 1
+            if maturities is None:
+                zero_rates = np.where(par_curve.notna(), zero_rates, np.nan)
+            rows[date] = zero_rates
+
+        return pd.DataFrame.from_dict(rows, orient="index", columns=labels).dropna(
+            how="all"
+        )
+
     @handle_errors
     def get_zero_coupon_curve(
         self,
         countries: list[str] | str = "United States",
         period: str = "daily",
+        interpolation: str = "linear_par",
+        maturities: float | str | list | None = None,
         rounding: int | None = None,
         show_columns: str | list[str] | None = None,
     ):
         """
         Calculates the zero-coupon (spot) yield curve of a country by bootstrapping its
-        government bond par yields. A par yield is the coupon at which a bond trades at par,
-        so it mixes the discount rates of every coupon date; the zero-coupon rate of a
-        maturity is the single rate that discounts a payment at that date. Zero-coupon rates
-        are what bonds and other cash flows are discounted with, and what forward rates and
-        the curve models (Nelson-Siegel, Vasicek) are built on.
+        government bond par yields: the single rate that discounts a payment at each
+        maturity.
+
+        A par yield is the coupon at which a bond trades at par, so it mixes the discount
+        rates of every coupon date. Zero-coupon rates are what bonds and other cash flows
+        are discounted with, and what forward rates and the curve models (Nelson-Siegel,
+        Vasicek) are built on.
 
         Maturities up to one year are treasury bills, which pay no coupon, so their yield
         only needs converting to annual compounding: US bill yields are bond-equivalent
@@ -1207,13 +1730,67 @@ class CurvesFixedIncome:
         curve needs a maturity of a year or less to start from, so the United Kingdom,
         Norway and Australia (and Canada before its bill yields start) are not covered.
 
-        Also known as: spot curve, zero curve, bootstrapped curve, discount curve.
+        How the curve is read between the quoted maturities is a choice (Hagan and West,
+        2006). By default (linear par interpolation) the par yields are interpolated
+        linearly to every coupon date, as above, and the zero rates linearly between those
+        dates. The other interpolations bootstrap the zero curve itself: the coupon dates of
+        a bond lie between quoted maturities, so their discount factors are read from the
+        curve with the interpolation, and the discount factor of each maturity is solved so
+        that its par bond prices at par on that curve. For the interpolations whose shape
+        depends on the maturities further out (the cubic splines and monotone convex) the
+        bootstrap is repeated until the curve no longer changes (to 1e-13). They work on
+        continuously compounded zero rates r(t), with P(t) = e^(-r(t) t):
+
+        - Linear zero: r(t) linear between the maturities.
+        - Log-linear: ln P(t) linear between the maturities, so the instantaneous forward
+          rate is flat between them (piecewise flat forward, Hagan and West's raw
+          interpolation).
+        - Natural cubic: a natural cubic spline on r(t).
+        - Monotone cubic: a cubic on r(t) with the slopes of the natural spline held by
+          Hyman's (1983) filter, so it does not overshoot where the rates rise or fall.
+        - Monotone convex: Hagan and West's (2006) monotone convex method on the forward
+          rates, which keeps the discrete forwards between the maturities, gives a continuous
+          forward curve and does not oscillate.
+
+        The zero rate before the first maturity is that of the first maturity (monotone
+        convex extrapolates the forward instead) and beyond the last maturity it is held at
+        the last one. The curves of the Euro Area and Germany are zero-coupon curves already,
+        so the interpolation only matters between their maturities. Whatever the
+        interpolation, the rates returned are annually compounded.
+
+        For more information, see the following papers:
+
+        - Hagan, P.S. and West, G. (2006). "Interpolation Methods for Curve Construction."
+          Applied Mathematical Finance, 13(2), 89-129.
+        - Hyman, J.M. (1983). "Accurate Monotonicity Preserving Cubic Interpolation." SIAM
+          Journal on Scientific and Statistical Computing, 4(4), 645-654.
+
+        QuantLib's convex monotone forward curve is taken without forced positivity,
+        quadraticity 0 and monotonicity 1. The monotone cubic sets the slope to zero at a local
+        extremum of the zero rates, where QuantLib applies Hyman's extended filter.
+
+        Also known as: spot curve, zero curve, bootstrapped curve, discount curve, curve
+        interpolation, monotone convex, flat forward.
+
+        Referenced against:
+        - QuantLib, PiecewiseYieldCurve: https://www.quantlib.org/reference/class_quant_lib_1_1_piecewise_yield_curve.html
+        - QuantLib, FixedRateBondHelper: https://www.quantlib.org/reference/class_quant_lib_1_1_fixed_rate_bond_helper.html
+        - QuantLib, DepositRateHelper: https://www.quantlib.org/reference/class_quant_lib_1_1_deposit_rate_helper.html
+        - QuantLib, PiecewiseYieldCurve (linear_par): https://www.quantlib.org/reference/class_quant_lib_1_1_piecewise_yield_curve.html
 
         Args:
             countries (list[str] | str, optional): The countries, see
                 `get_government_bond_yield_curve`. Defaults to "United States".
-            period (str, optional): Whether to use the daily, weekly or monthly curves.
-                Defaults to "daily".
+            period (str, optional): The frequency of the curves. Options are: "daily", "weekly", "monthly". Defaults to
+                "daily".
+            interpolation (str, optional): How the curve is read between the quoted maturities. Options are:
+                "linear_par" (linear annually compounded zero rates on every coupon date), "linear_zero" (linear zero
+                rates), "log_linear" (linear log discount factors), "natural_cubic" (a natural cubic spline),
+                "monotone_cubic" (a monotone cubic spline), "monotone_convex" (Hagan and West's monotone convex method).
+                Defaults to "linear_par".
+            maturities (float | str | list | None, optional): The maturities to return the
+                zero rates of, in years or as labels such as '4Y' (a list or a
+                comma-separated string). Defaults to None, the maturities the curve quotes.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
@@ -1248,7 +1825,12 @@ class CurvesFixedIncome:
         """
         zero_curves = {}
         for country, curve in self._yield_curves(countries, period).items():
-            zero_curve = self._to_zero_coupon(curve, country)
+            if interpolation == "linear_par" and maturities is None:
+                zero_curve = self._to_zero_coupon(curve, country)
+            else:
+                zero_curve = self._interpolated_zero_curve(
+                    curve, country, interpolation, maturities
+                )
             if zero_curve.empty:
                 logger.warning(
                     "The %s yield curve has no maturity of a year or less to bootstrap "
@@ -1273,18 +1855,20 @@ class CurvesFixedIncome:
         self,
         countries: list[str] | str = "United States",
         period: str = "daily",
-        svensson: bool = True,
+        method: str = "svensson",
         maturities: list[float | str] | str | None = None,
         rounding: int | None = None,
         show_columns: str | list[str] | None = None,
     ):
         """
         Fits the Nelson-Siegel-Svensson model to the zero-coupon yield curve of a country on
-        every date. The model describes a whole curve with a few parameters, which smooths
-        out the noise of individual maturities, gives a yield for any maturity in between
-        and turns the history of curves into a history of a handful of factors. It is the
-        model central banks such as the ECB, the Bundesbank and the Federal Reserve
-        (Gürkaynak, Sack and Wright) publish their curves with.
+        every date: the level, slope and curvature factors that describe each curve with a
+        few parameters.
+
+        The model smooths out the noise of individual maturities, gives a yield for any
+        maturity in between and turns the history of curves into a history of a handful of
+        factors. It is the model central banks such as the ECB, the Bundesbank and the
+        Federal Reserve (Gürkaynak, Sack and Wright) publish their curves with.
 
         The Nelson-Siegel model has a level β0 (the yield at an infinite maturity), a slope
         β1 (the short end minus the long end) and a curvature β2 (a hump that peaks at about
@@ -1295,7 +1879,7 @@ class CurvesFixedIncome:
         Svensson adds a second curvature β3 with its own decay τ2, which fits the long end
         better. With the dozen maturities a government curve has, the six Svensson
         parameters are weakly identified, as the level and the second curvature can offset
-        each other; set svensson=False for the three factors to read as level, slope and
+        each other; the Nelson-Siegel model has three factors that read as level, slope and
         curvature (Diebold and Li, 2006).
 
         Given the decays the betas follow exactly from least squares, so the decays are
@@ -1327,10 +1911,11 @@ class CurvesFixedIncome:
         Args:
             countries (list[str] | str, optional): The countries, see
                 `get_zero_coupon_curve`. Defaults to "United States".
-            period (str, optional): Whether to fit the daily, weekly or monthly curves.
-                Defaults to "daily".
-            svensson (bool, optional): Whether to fit the Svensson model (True) or the
-                Nelson-Siegel model (False). Defaults to True.
+            period (str, optional): The frequency of the curves. Options are: "daily", "weekly", "monthly". Defaults to
+                "daily".
+            method (str, optional): The model to fit. Options are: "svensson" (the six
+                parameters of Svensson, 1994) or "nelson_siegel" (the three factors of Nelson and
+                Siegel, 1987). Defaults to "svensson".
             maturities (list[float | str] | str | None, optional): The maturities, in years or
                 as labels such as "3M" and "10Y" (a list or a comma-separated string), to
                 return the fitted zero-coupon yields at instead of the parameters. Defaults
@@ -1367,6 +1952,8 @@ class CurvesFixedIncome:
         | 2026-10-22 |   0.0397 |  -0.0161 |   0.0313 |  -0.0385 |  1.1471 |  1.8929 |                         0 |
         | 2026-10-23 |   0.0395 |  -0.0154 |   0.0365 |  -0.0462 |  1.2162 |  1.8245 |                         0 |
         """
+        check_option("method", method, ("svensson", "nelson_siegel"))
+        svensson = method == "svensson"
         # A number of years (also written as a string, "0.5") is labeled "0.5Y".
         labels = [
             (
@@ -1381,6 +1968,11 @@ class CurvesFixedIncome:
         for country, curve in self._yield_curves(countries, period).items():
             zero_curve = self._to_zero_coupon(curve, country)
             if zero_curve.empty:
+                logger.warning(
+                    "The %s yield curve has no maturity of a year or less to bootstrap "
+                    "zero-coupon rates from.",
+                    country,
+                )
                 continue
             zero_curve.columns = [
                 curve_model.maturity_in_years(label) for label in zero_curve.columns
@@ -1503,14 +2095,14 @@ class CurvesFixedIncome:
         Args:
             countries (list[str] | str, optional): The countries, see
                 `get_zero_coupon_curve`. Defaults to "United States".
-            period (str, optional): Whether to use the daily, weekly or monthly curves.
-                Defaults to "daily".
+            period (str, optional): The frequency of the curves. Options are: "daily", "weekly", "monthly". Defaults to
+                "daily".
             horizon (float | str, optional): The holding period, in years or as a label such
                 as "3M" or "1Y". Defaults to 0.25 (three months).
             maturities (list[float | str] | str | None, optional): The maturities of the
                 bonds, in years or as labels such as "2Y" (a list or a comma-separated
-                string). A maturity shorter than the horizon is NaN. Defaults to None, every
-                maturity of the curve longer than the horizon.
+                string), at least one longer than the horizon; a maturity shorter than the horizon
+                is NaN. Defaults to None, every maturity of the curve longer than the horizon.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
@@ -1547,7 +2139,17 @@ class CurvesFixedIncome:
         """
         horizon_years = fixedincome_helpers.maturity_in_years(horizon)
         if horizon_years <= 0:
-            raise ValueError(f"The horizon must be longer than zero, not {horizon!r}.")
+            raise InvalidArgumentError(
+                f"The horizon must be longer than zero, not {horizon!r}."
+            )
+        if maturities is not None and not any(
+            maturity > horizon_years for maturity in parse_maturities(maturities, [])
+        ):
+            raise InvalidArgumentError(
+                f"A bond is held over the horizon of {horizon!r}, so at least one of the maturities "
+                f"must be longer than it, not {maturities!r}. Please pass longer maturities or a "
+                "shorter horizon."
+            )
 
         results = {}
         for country, curve in self._yield_curves(countries, period).items():
@@ -1638,9 +2240,10 @@ class CurvesFixedIncome:
         Args:
             country (str, optional): The country, see `get_government_bond_yield_curve`.
                 Defaults to "United States".
-            period (str, optional): Whether to use the daily, weekly or monthly curves.
-                Defaults to "daily".
-            components (int, optional): The number of components. Defaults to 3.
+            period (str, optional): The frequency of the curves. Options are: "daily", "weekly", "monthly". Defaults to
+                "daily".
+            components (int, optional): The number of components, at least 1 and at most the number of
+                maturities of the curve. Defaults to 3.
             changes (bool, optional): Whether to analyze the changes of the yields, the usual
                 choice as yields themselves are not stationary, or their levels. Defaults to True.
             scores (bool, optional): Whether to return the value of every component per date
@@ -1682,12 +2285,19 @@ class CurvesFixedIncome:
         | 30Y                | 0.2855 |  0.1773 |  0.4831 |
         | Explained Variance | 0.732  |  0.1938 |  0.0501 |
         """
+        validate_window("components", components)
         curve = self._yield_curves(country, period)[country]
 
         # A maturity published for only part of the period would cut the analysis short,
         # as only the dates with every maturity can be used.
         coverage = curve.notna().sum()
         curve = curve.loc[:, coverage >= CURVE_COVERAGE * coverage.max()]
+        # A curve of one maturity has no components whatever is asked, which the model reports.
+        if 1 < curve.shape[1] < components:
+            raise InvalidArgumentError(
+                f"The {country} yield curve has {curve.shape[1]} maturities, so at most "
+                f"{curve.shape[1]} components, not {components}. Please pass fewer components."
+            )
 
         loadings, component_scores, explained = curve_model.get_principal_components(
             curve, components=components, changes=changes
@@ -1742,13 +2352,15 @@ class CurvesFixedIncome:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Retrieves the Treasury term premia of Adrian, Crump and Moench (2013), as the
-        Federal Reserve Bank of New York estimates them daily from 1961 for maturities of 1
-        to 10 years. A Treasury yield is split into the average short rate investors expect
-        over the bond's life and the term premium: the extra yield they demand for holding a
-        long bond instead of rolling over short ones. The split tells whether a move in long
-        yields comes from expected monetary policy or from compensation for risk, such as
-        inflation and fiscal uncertainty.
+        Retrieves the Treasury term premia of Adrian, Crump and Moench (2013): the extra
+        yield investors demand for holding a long Treasury instead of rolling over short
+        ones, as the Federal Reserve Bank of New York estimates it daily from 1961 for
+        maturities of 1 to 10 years.
+
+        A Treasury yield is split into the average short rate investors expect over the
+        bond's life and the term premium. The split tells whether a move in long yields
+        comes from expected monetary policy or from compensation for risk, such as inflation
+        and fiscal uncertainty.
 
         Adrian, T., Crump, R. K., & Moench, E. (2013). Pricing the Term Structure with Linear
         Regressions. Journal of Financial Economics, 110(1), 110-138.
@@ -1773,8 +2385,8 @@ class CurvesFixedIncome:
         short rate, bond risk premium.
 
         Args:
-            period (str, optional): Whether to return the daily, weekly or monthly data.
-                Defaults to "daily".
+            period (str, optional): The frequency of the data. Options are: "daily", "weekly", "monthly". Defaults to
+                "daily".
             maturity_years (list[int] | str | None, optional): The maturities in years to keep,
                 from 1 to 10, e.g. [2, 5, 10] (or "2,5,10"). Defaults to None, which keeps every
                 maturity.
@@ -1863,16 +2475,17 @@ class CurvesFixedIncome:
         """
         Retrieves the risk-free interest rate term structures the European Insurance and
         Occupational Pensions Authority (EIOPA) publishes monthly: the curves European
-        insurers must discount their liabilities with under Solvency II. They cover the euro
-        and the currencies of every country of the European Economic Area, plus Switzerland,
-        the United Kingdom, Australia, Canada, China, Colombia, Hong Kong, Japan, Taiwan and
-        the United States, for maturities of 1 to 150 years. Beyond the last liquid maturity
-        each curve converges to the ultimate forward rate (UFR), as Solvency II prescribes.
+        insurers must discount their liabilities with under Solvency II.
 
-        Four curves are published: the basic spot curve (curve="spot_no_va"), the spot curve
-        with the volatility adjustment (curve="spot_with_va"), and the basic curve after the
-        interest rate shocks of the Solvency II standard formula (curve="shock_up" and
-        curve="shock_down"). EIOPA ships the shocked worksheets as formulas without computed
+        They cover the euro and the currencies of every country of the European Economic
+        Area, plus Switzerland, the United Kingdom, Australia, Canada, China, Colombia, Hong
+        Kong, Japan, Taiwan and the United States, for maturities of 1 to 150 years. Beyond
+        the last liquid maturity each curve converges to the ultimate forward rate (UFR), as
+        Solvency II prescribes.
+
+        Four curves are published: the basic spot curve, the spot curve with the volatility
+        adjustment, and the basic curve after the upward and downward interest rate shocks of
+        the Solvency II standard formula. EIOPA ships the shocked worksheets as formulas without computed
         values, so they are computed here with those formulas: upwards by the relative shock
         per maturity and at least one percentage point, downwards by the relative shock with
         negative rates left unchanged. Every value is a decimal fraction (0.0358 for 3.58%),
@@ -1900,8 +2513,10 @@ class CurvesFixedIncome:
             countries (list[str] | str | None, optional): The currencies or countries to include,
                 as EIOPA names them, e.g. 'Euro Area', 'United Kingdom' or 'United States'.
                 Defaults to None, which returns all of them.
-            curve (str, optional): "spot_no_va", "spot_with_va", "shock_up" or "shock_down".
-                Defaults to "spot_no_va".
+            curve (str, optional): The curve. Options are: "spot_no_va" (the basic spot curve),
+                "spot_with_va" (the spot curve with the volatility adjustment), "shock_up" (the
+                basic curve after the upward shock), "shock_down" (the basic curve after the
+                downward shock). Defaults to "spot_no_va".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
             lag (int, optional): The number of periods to lag the growth data by. Defaults to 1.
@@ -1939,10 +2554,9 @@ class CurvesFixedIncome:
         | 2026-07 |                0.0283 |                     0.0415 |                 0.0316 |                      0.0468 |                 0.0337 |                      0.0518 |                 0.0335 |                      0.0443 |                  0.0332 |                       0.0375 |
         | 2026-09 |                0.0327 |                     0.0445 |                 0.0358 |                      0.0501 |                 0.0351 |                      0.0533 |                 0.0342 |                      0.0447 |                  0.0335 |                       0.0376 |
         """
-        if curve not in {**eiopa_model.CURVES, **eiopa_model.SHOCKED_CURVES}:
-            raise ValueError(
-                f"The curve must be one of {', '.join({**eiopa_model.CURVES, **eiopa_model.SHOCKED_CURVES})}, not {curve!r}."
-            )
+        check_option(
+            "curve", curve, {**eiopa_model.CURVES, **eiopa_model.SHOCKED_CURVES}
+        )
         if countries is not None and not isinstance(countries, str | list | tuple):
             raise TypeError(
                 "The countries must be a name or a list of names, such as 'Euro Area' or "
@@ -2009,13 +2623,14 @@ class CurvesFixedIncome:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Retrieves the symmetric adjustment of the equity capital charge of Solvency II, the
-        "equity dampener" EIOPA publishes, daily from 1991, and the equity charges of the
-        standard formula it results in. The adjustment raises the charge when equity prices
-        are above their three-year average and lowers it when they are below, between -10%
-        and +10%, so insurers are not forced to sell equities into a falling market. With
-        get_eiopa_risk_free_rate it completes the market inputs of the standard formula's
-        market risk module.
+        Retrieves the symmetric adjustment of the equity capital charge of Solvency II: how
+        much the "equity dampener" EIOPA publishes, daily from 1991, raises or lowers the
+        equity charges of the standard formula.
+
+        The adjustment raises the charge when equity prices are above their three-year
+        average and lowers it when they are below, between -10% and +10%, so insurers are
+        not forced to sell equities into a falling market. With get_eiopa_risk_free_rate it
+        completes the market inputs of the standard formula's market risk module.
 
         The formula is as follows:
 
@@ -2030,8 +2645,8 @@ class CurvesFixedIncome:
         Also known as: equity dampener, symmetric adjustment, Solvency II equity charge.
 
         Args:
-            period (str, optional): Whether to return the daily, weekly or monthly data.
-                Defaults to "daily".
+            period (str, optional): The frequency of the data. Options are: "daily", "weekly", "monthly". Defaults to
+                "daily".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
             lag (int, optional): The number of periods to lag the growth data by. Defaults to 1.
@@ -2104,18 +2719,18 @@ class CurvesFixedIncome:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Retrieves the UK yield curves the Bank of England estimates daily from 1985, for
-        maturities from 0.5 years to 40 years (25 years for OIS): the nominal spot curve of
-        UK government bonds (gilts) and the spot curve of overnight index swaps on SONIA (OIS,
-        from 2009). Unlike the par yields of 5, 10 and 20 years in
-        `get_government_bond_yield_curve`, these are zero-coupon spot rates over the full
-        range of maturities with history back to 1985. The Bank of England publishes them
-        continuously compounded, and they are returned that way: a spot rate r discounts a
-        payment in t years with exp(-r t).
+        Retrieves the UK yield curves the Bank of England estimates daily from 1985: the
+        spot rates of UK government bonds (gilts) and of overnight index swaps on SONIA
+        (OIS, from 2009), for maturities from 0.5 years to 40 years (25 years for OIS).
+
+        Unlike the par yields of 5, 10 and 20 years in `get_government_bond_yield_curve`,
+        these are zero-coupon spot rates over the full range of maturities with history back
+        to 1985. The Bank of England publishes them continuously compounded, and they are
+        returned that way: a spot rate r discounts a payment in t years with exp(-r t).
 
         The Bank of England's real and implied inflation curves are part of
         `economics.get_real_yield_curve` and `economics.get_breakeven_inflation_expectations`
-        (countries='United Kingdom').
+        for the United Kingdom.
 
         The archive is a set of large files, of which only those
         covering the requested years are read, and they are cached since past years do not
@@ -2126,9 +2741,10 @@ class CurvesFixedIncome:
         Also known as: gilt curve, UK spot curve, SONIA OIS curve.
 
         Args:
-            curve (str, optional): "nominal" or "ois". Defaults to "nominal".
-            period (str, optional): Whether to return the daily, weekly or monthly data.
-                Defaults to "daily".
+            curve (str, optional): The curve. Options are: "nominal" (the gilt spot curve), "ois" (the
+                SONIA overnight index swap spot curve). Defaults to "nominal".
+            period (str, optional): The frequency of the data. Options are: "daily", "weekly", "monthly". Defaults to
+                "daily".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
             lag (int, optional): The number of periods to lag the growth data by. Defaults to 1.
@@ -2177,8 +2793,7 @@ class CurvesFixedIncome:
                 )
                 + "(countries='United Kingdom')."
             )
-        if curve not in ("nominal", "ois"):
-            raise ValueError(f"The curve must be 'nominal' or 'ois', not {curve!r}.")
+        check_option("curve", curve, ("nominal", "ois"))
         period = validate_period(
             period, ["daily", "weekly", "monthly"], "Bank of England yield curve"
         )

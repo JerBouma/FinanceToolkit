@@ -53,6 +53,12 @@ def _query(parameters: dict) -> dict:
         f"{QUERY_URL}?{urlencode({**parameters, 'f': 'json'})}", timeout=60
     ).json()
 
+    if not isinstance(response, dict):
+        raise ValueError(
+            "The IMF PortWatch service answered in an unexpected format (a JSON "
+            f"{type(response).__name__} instead of an object), which means it changed."
+        )
+
     if "error" in response:
         error = response["error"]
         message = error.get("message", error)
@@ -122,9 +128,8 @@ def get_chokepoint_names() -> list[str]:
 
 def get_chokepoint_transits(chokepoint: str) -> pd.DataFrame:
     """
-    Retrieves IMF PortWatch's daily transits of one chokepoint from 2019: the number of
-    ships that passed it each day (UTC) and the estimated trade volume they carried in
-    metric tons, by ship category.
+    Retrieves IMF PortWatch's daily transits of one chokepoint from 2019: the number of ships that passed it each day
+    (UTC) and the estimated trade volume they carried in metric tons, by ship category.
 
     A ship is counted when it crosses the chokepoint's boundary, once per transit, and not
     again within 48 hours. The trade volume is each ship's deadweight tonnage times its

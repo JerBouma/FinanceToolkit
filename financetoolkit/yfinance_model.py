@@ -2,22 +2,27 @@
 
 __docformat__ = "google"
 
+import logging
+import re
+import sqlite3
 import warnings
+from collections.abc import Generator
+from contextlib import contextmanager
+from contextvars import ContextVar
 from datetime import UTC, datetime, timedelta
-from urllib.parse import quote
 
 import numpy as np
 import pandas as pd
-import requests
+import peewee
 import yfinance as yf
 import yfinance.exceptions
 
 from financetoolkit import helpers
-from financetoolkit.cache import policy_model
+from financetoolkit.cache import frame_model, policy_model
 from financetoolkit.cache.cache_controller import get_active_cache
 from financetoolkit.currencies_model import to_yahoo_finance_symbol
 from financetoolkit.utilities import error_model, logger_model
-from financetoolkit.utilities.requests_model import get_request
+from financetoolkit.utilities.error_model import check_option
 from financetoolkit.utilities.sources_model import record_source
 
 logger = logger_model.get_logger()
@@ -30,6 +35,67 @@ FISCAL_PERIOD_ITEM = "period"
 
 # The reporting currency and fiscal year end of a company change almost never, so they are resolved once per ticker per process rather than on every statement request.  # noqa: E501
 COMPANY_INFORMATION_CACHE: dict[str, dict[str, str]] = {}
+
+
+# yfinance keeps its caches of time zones, cookies and ISINs in SQLite databases shared by every thread. A thread that writes to one while another checkpoints it gets "database is locked" (an OperationalError of peewee, or of sqlite3 underneath), which says nothing about the ticker, so a download is tried once more before it counts as failed.  # noqa: E501
+CACHE_DATABASE_ERRORS = (peewee.OperationalError, sqlite3.OperationalError)
+
+
+# Whether yfinance's own log is muted for the current call. A context variable rather than the logger's level, so concurrent calls cannot leave the logger muted for good (one restoring the level another muted), and the worker threads of helpers.run_in_parallel, which copy the context, are muted with their caller.  # noqa: E501
+YFINANCE_QUIET: ContextVar[bool] = ContextVar("yfinance_quiet", default=False)
+
+logging.getLogger("yfinance").addFilter(lambda _record: not YFINANCE_QUIET.get())
+
+
+@contextmanager
+def quiet_yfinance() -> Generator[None]:
+    """
+    Silences yfinance's own log while a caller retrieves data it reports on itself: yfinance
+    logs every ticker without prices ("possibly delisted") and every answer of Yahoo Finance
+    with an error, which the caller reports in one line or counts as a failed request.
+
+    Yields:
+        None: The block runs with the yfinance log muted for this call.
+    """
+    token = YFINANCE_QUIET.set(True)
+    try:
+        yield
+    finally:
+        YFINANCE_QUIET.reset(token)
+
+
+def is_cache_database_locked(error: Exception) -> bool:
+    """
+    Whether an error of yfinance's cache database is a lock held by another thread, which a
+    second attempt can get past, rather than a lasting fault such as a missing table, a
+    read-only file or a disk error.
+
+    Args:
+        error (Exception): The OperationalError raised by the cache database.
+
+    Returns:
+        bool: Whether the database was locked or busy.
+    """
+    text = str(error).lower()
+    return "locked" in text or "busy" in text
+
+
+def report_cache_database_error(error: Exception) -> None:
+    """
+    Report a cache database error of yfinance that is not a passing lock, since a missing table,
+    a read-only file or a disk error fails every download until it is fixed and says nothing
+    about the ticker. The message is the same for every ticker, so a caller running inside
+    logger_model.log_each_message_once writes it once.
+
+    Args:
+        error (Exception): The OperationalError raised by the cache database.
+    """
+    if not is_cache_database_locked(error):
+        logger.warning(
+            "yfinance's cache database could not be used (%s), so the data from Yahoo Finance "
+            "could not be retrieved.",
+            error,
+        )
 
 
 def get_financial_statement(
@@ -92,6 +158,10 @@ def get_financial_statement(
     except (OSError, IndexError, AttributeError):
         # OSError covers the network errors of both urllib and curl_cffi, which yfinance
         # uses in recent versions, such as a timeout or a refused connection.
+        error_model.report_request_failure()
+        return pd.DataFrame()
+    except CACHE_DATABASE_ERRORS as error:
+        report_cache_database_error(error)
         error_model.report_request_failure()
         return pd.DataFrame()
     except yf.exceptions.YFRateLimitError:
@@ -300,6 +370,10 @@ def get_company_information(ticker: str) -> dict[str, str]:
     ):
         error_model.report_request_failure()
         return {"financialCurrency": "", "lastFiscalYearEnd": ""}
+    except CACHE_DATABASE_ERRORS as error:
+        report_cache_database_error(error)
+        error_model.report_request_failure()
+        return {"financialCurrency": "", "lastFiscalYearEnd": ""}
 
     record_source(policy_model.YAHOO_FINANCE)
     fiscal_year_end = information.get("lastFiscalYearEnd")
@@ -405,20 +479,27 @@ def get_historical_data(
             "auto_adjust": False,
         }
 
-        try:
-            historical_data = yf.Ticker(to_yahoo_finance_symbol(ticker)).history(
-                **history_parameters, repair=repair_splits
-            )
-        except ModuleNotFoundError:
-            # The repair needs yfinance's optional "repair" extra (scikit-learn in recent versions), which a plain install lacks; the prices are then taken unrepaired rather than lost.  # noqa: E501
-            logger.info(
-                "yfinance's price repair needs its 'repair' extra (pip install 'yfinance[repair]'), "
-                "so the prices of %s are not repaired.",
-                ticker,
-            )
-            historical_data = yf.Ticker(to_yahoo_finance_symbol(ticker)).history(
-                **history_parameters, repair=False
-            )
+        for attempt in range(2):
+            try:
+                try:
+                    historical_data = yf.Ticker(
+                        to_yahoo_finance_symbol(ticker)
+                    ).history(**history_parameters, repair=repair_splits)
+                except ModuleNotFoundError:
+                    # The repair needs yfinance's optional "repair" extra (scikit-learn in recent versions), which a plain install lacks; the prices are then taken unrepaired rather than lost.  # noqa: E501
+                    logger.info(
+                        "yfinance's price repair needs its 'repair' extra (pip install 'yfinance[repair]'), "
+                        "so the prices of %s are not repaired.",
+                        ticker,
+                    )
+                    historical_data = yf.Ticker(
+                        to_yahoo_finance_symbol(ticker)
+                    ).history(**history_parameters, repair=False)
+                break
+            except CACHE_DATABASE_ERRORS as error:
+                # A cache database locked by another thread's download is retried once; a second lock, or any other database error (which a retry would hit again), counts as a failed download.  # noqa: E501
+                if attempt == 1 or not is_cache_database_locked(error):
+                    raise
 
         if (
             interval == "1d"
@@ -468,6 +549,10 @@ def get_historical_data(
             ].to_numpy()
 
     except (OSError, IndexError):
+        error_model.report_request_failure()
+        return pd.DataFrame()
+    except CACHE_DATABASE_ERRORS as error:
+        report_cache_database_error(error)
         error_model.report_request_failure()
         return pd.DataFrame()
     except yf.exceptions.YFRateLimitError:
@@ -571,71 +656,433 @@ def get_historical_statistics(ticker: str) -> pd.Series:
             return cached_statistics
 
     try:
-        response = get_request(
-            "https://query1.finance.yahoo.com/v8/finance/chart/"
-            f"{quote(to_yahoo_finance_symbol(ticker), safe='')}?interval=1d&range=None",
-            timeout=60,
-        )
-    except requests.exceptions.RequestException:
-        # Yahoo Finance answers 404 for a symbol it does not know, such as the
-        # "Portfolio" a Portfolio's Toolkit includes, which has no statistics. A
-        # timeout is reported the same way, so one slow ticker does not fail the rest.
+        # The metadata of the chart, which yfinance requests with the last five days of hourly bars (and, for a ticker it has not seen before, a first request for its exchange time zone). Without price repair the currency is the one Yahoo Finance quotes the prices in (GBp for a London listing), as in the historical data. yfinance logs a symbol it does not know, which is counted as a failed request below instead.  # noqa: E501
+        with quiet_yfinance():
+            statistics = dict(
+                yf.Ticker(to_yahoo_finance_symbol(ticker)).get_history_metadata(
+                    repair=False
+                )
+            )
+
+        # The dates are the exchange's calendar dates: a timestamp read in the machine's own
+        # timezone would move a day for users east or west of it.
+        exchange_offset = timedelta(seconds=statistics.get("gmtoffset") or 0)
+
+        # Counted from the epoch rather than with datetime.fromtimestamp, which raises an
+        # OSError on Windows for the negative timestamps of stocks first traded before 1970
+        # (such as KO, IBM and XOM).
+        epoch = datetime(1970, 1, 1, tzinfo=UTC)
+
+        for timestamp_data in ["firstTradeDate", "regularMarketTime"]:
+            if statistics.get(timestamp_data):
+                statistics[timestamp_data] = (
+                    epoch
+                    + timedelta(seconds=statistics[timestamp_data])
+                    + exchange_offset
+                ).strftime("%Y-%m-%d")
+    except (
+        OSError,
+        IndexError,
+        KeyError,
+        TypeError,
+        ValueError,
+        yf.exceptions.YFException,
+    ):
+        # Yahoo Finance knows no chart of a symbol such as the "Portfolio" a Portfolio's Toolkit includes, which yfinance answers with metadata lacking the exchange time zone (a KeyError). A timeout, a rate limit or an unexpected answer is reported the same way, so one ticker does not fail the rest.  # noqa: E501
+        error_model.report_request_failure()
+        return pd.Series()
+    except CACHE_DATABASE_ERRORS as error:
+        report_cache_database_error(error)
         error_model.report_request_failure()
         return pd.Series()
 
-    if response.status_code == 200:  # noqa
-        try:
-            # A consent page instead of JSON, a null result or an empty one is no data
-            # for this ticker rather than a failure of every ticker requested with it.
-            statistics = response.json()["chart"]["result"][0]["meta"]
+    columns = {
+        "currency": "Currency",
+        "symbol": "Symbol",
+        "exchangeName": "Exchange Name",
+        "instrumentType": "Instrument Type",
+        "firstTradeDate": "First Trade Date",
+        "regularMarketTime": "Regular Market Time",
+        "gmtoffset": "GMT Offset",
+        "timezone": "Timezone",
+        "exchangeTimezoneName": "Exchange Timezone Name",
+    }
 
-            # The dates are the exchange's calendar dates: a timestamp read in the
-            # machine's own timezone would move a day for users east or west of it.
-            exchange_offset = timedelta(seconds=statistics.get("gmtoffset") or 0)
+    statistics = pd.Series(
+        {name: statistics[key] for key, name in columns.items() if key in statistics},
+        dtype=object,
+    )
 
-            # Counted from the epoch rather than with datetime.fromtimestamp, which raises
-            # an OSError on Windows for the negative timestamps of stocks first traded
-            # before 1970 (such as KO, IBM and XOM).
-            epoch = datetime(1970, 1, 1, tzinfo=UTC)
+    if statistics.empty:
+        error_model.report_request_failure()
+        return statistics
 
-            for timestamp_data in ["firstTradeDate", "regularMarketTime"]:
-                if timestamp_data in statistics and statistics[timestamp_data]:
-                    timestamp = (
-                        epoch
-                        + timedelta(seconds=statistics[timestamp_data])
-                        + exchange_offset
-                    ).strftime("%Y-%m-%d")
-                    statistics[timestamp_data] = timestamp
+    record_source(policy_model.YAHOO_FINANCE)
 
-        except (KeyError, ValueError, TypeError, IndexError):
-            return pd.Series()
+    if cache is not None:
+        cache.set(
+            source=policy_model.YAHOO_FINANCE,
+            dataset="historical_statistics",
+            entity=ticker,
+            data=statistics,
+        )
 
-        columns = {
-            "currency": "Currency",
-            "symbol": "Symbol",
-            "exchangeName": "Exchange Name",
-            "instrumentType": "Instrument Type",
-            "firstTradeDate": "First Trade Date",
-            "regularMarketTime": "Regular Market Time",
-            "gmtoffset": "GMT Offset",
-            "timezone": "Timezone",
-            "exchangeTimezoneName": "Exchange Timezone Name",
-        }
+    return statistics
 
-        stats_df = pd.Series(statistics)
-        stats_df = stats_df.rename(index=columns)
-        stats_df = stats_df.loc[
-            [column for column in columns.values() if column in stats_df.index]
-        ]
 
-        if cache is not None and not stats_df.empty:
-            cache.set(
+def convert_isin_to_ticker(isin_code: str) -> str:
+    """
+    Converts an ISIN code to a ticker symbol with the search of Yahoo Finance, which ranks
+    the primary listing first.
+
+    Args:
+        isin_code (str): The ISIN code to convert.
+
+    Returns:
+        str: The corresponding ticker symbol if found, otherwise the original ISIN code (or
+        the input itself when it is not an ISIN).
+    """
+    if not re.match("^([A-Z]{2})([A-Z0-9]{9})([0-9])$", isin_code):
+        return isin_code
+
+    try:
+        # Only the best match is needed, so no news, lists or other parts of the search are requested.  # noqa: E501
+        quotes = yf.Search(
+            isin_code,
+            max_results=1,
+            news_count=0,
+            lists_count=0,
+            include_cb=False,
+            recommended=0,
+        ).quotes
+        symbol = quotes[0]["symbol"] if quotes else None
+    except (OSError, yf.exceptions.YFException) as error:
+        error_model.report_request_failure()
+        logger.warning(
+            "Request failed for ISIN %s: %s. Returning ISIN.", isin_code, error
+        )
+        return isin_code
+    except CACHE_DATABASE_ERRORS as error:
+        report_cache_database_error(error)
+        error_model.report_request_failure()
+        logger.warning(
+            "Request failed for ISIN %s: %s. Returning ISIN.", isin_code, error
+        )
+        return isin_code
+    except (KeyError, ValueError, IndexError, TypeError):
+        logger.warning(
+            "Could not parse response for ISIN %s. Returning ISIN.", isin_code
+        )
+        return isin_code
+
+    if not symbol:
+        logger.warning(
+            "Could not find a ticker for ISIN %s. Returning ISIN.", isin_code
+        )
+        return isin_code
+
+    record_source(policy_model.YAHOO_FINANCE)
+    logger.info("Converted ISIN %s to ticker %s", isin_code, symbol)
+
+    return symbol
+
+
+def report_failed_request(error: Exception) -> None:
+    """
+    Reports an error of yfinance as a failed request when it is one (no connection, a timeout,
+    a rate limit or a broken cache database), rather than Yahoo Finance having no such data.
+
+    Args:
+        error (Exception): The error yfinance raised.
+    """
+    if isinstance(error, CACHE_DATABASE_ERRORS):
+        report_cache_database_error(error)
+        error_model.report_request_failure()
+    elif isinstance(error, OSError | yf.exceptions.YFRateLimitError):
+        error_model.report_request_failure()
+
+
+def get_option_expiry_dates(ticker: str) -> list[str]:
+    """
+    Retrieves the dates on which the listed options of a ticker expire.
+
+    Args:
+        ticker (str): The ticker symbol to retrieve the option expiry dates for.
+
+    Returns:
+        list[str]: The option expiry dates in 'YYYY-MM-DD' format, empty when Yahoo Finance
+        lists no options for the ticker or cannot be reached.
+    """
+    try:
+        expiry_dates = list(yf.Ticker(ticker).options)
+    except Exception as error:  # noqa: BLE001 - Yahoo Finance fails in many ways
+        report_failed_request(error)
+        logger.info("Yahoo Finance has no options of %s (%s).", ticker, error)
+        return []
+
+    if expiry_dates:
+        record_source(policy_model.YAHOO_FINANCE)
+
+    return expiry_dates
+
+
+def get_option_chain(
+    ticker: str, expiration_date: str, put_option: bool = False
+) -> tuple[pd.DataFrame, float]:
+    """
+    Retrieves the option chain (calls or puts) of a ticker for one expiration date, as
+    Yahoo Finance reports it, with the price of the underlying quoted with the chain.
+
+    Args:
+        ticker (str): The ticker symbol to retrieve the option chain for.
+        expiration_date (str): The expiration date of the options (format: 'YYYY-MM-DD').
+        put_option (bool, optional): If True, the puts; otherwise, the calls. Defaults to False.
+
+    Returns:
+        tuple[pd.DataFrame, float]: The option chain with Yahoo Finance's column names and the
+        price of the underlying (NaN when Yahoo Finance does not report it). The chain is
+        empty, with a warning, when it cannot be retrieved.
+    """
+    try:
+        option_chain = yf.Ticker(ticker).option_chain(expiration_date)
+        options = option_chain.puts if put_option else option_chain.calls
+        # The price of the underlying quoted with the chain, so metrics that combine
+        # the two use prices of the same moment rather than the last historical close.
+        underlying_price = (option_chain.underlying or {}).get(
+            "regularMarketPrice", np.nan
+        )
+    except Exception as error:  # noqa: BLE001 - Yahoo Finance fails in many ways
+        report_failed_request(error)
+        # A warning, so the answer says which ticker is left out and why.
+        logger.warning(
+            "No options data is available for %s expiring on %s, so it is left out (%s).",
+            ticker,
+            expiration_date,
+            error,
+        )
+        return pd.DataFrame(), np.nan
+
+    record_source(policy_model.YAHOO_FINANCE)
+
+    return options, underlying_price
+
+
+def get_dividends(ticker: str) -> pd.Series:
+    """
+    Retrieves every dividend Yahoo Finance reports for a ticker, split-adjusted as
+    FinancialModelingPrep's adjDividend is.
+
+    Args:
+        ticker (str): The ticker symbol to retrieve the dividends for.
+
+    Returns:
+        pd.Series: The dividend per share indexed by a daily PeriodIndex of the payment
+        dates, empty when Yahoo Finance has none or cannot be reached.
+    """
+    # When Yahoo Finance answers with an error (a rate limit, for example), yfinance logs it and returns None instead of raising, so anything but a Series counts as no dividends.  # noqa: E501
+    try:
+        dividends = yf.Ticker(to_yahoo_finance_symbol(ticker)).dividends
+    except Exception as error:  # noqa: BLE001 - Yahoo Finance fails in many ways
+        report_failed_request(error)
+        logger.info(
+            "Yahoo Finance dividends of %s could not be retrieved: %s", ticker, error
+        )
+        return pd.Series(dtype=float)
+
+    if not isinstance(dividends, pd.Series) or dividends.empty:
+        return pd.Series(dtype=float)
+
+    record_source(policy_model.YAHOO_FINANCE)
+    dividends.index = pd.DatetimeIndex(dividends.index).tz_localize(None).to_period("D")
+
+    return dividends
+
+
+# CME futures month codes, one letter per calendar month.
+_MONTH_CODES: dict[int, str] = {
+    1: "F",
+    2: "G",
+    3: "H",
+    4: "J",
+    5: "K",
+    6: "M",
+    7: "N",
+    8: "Q",
+    9: "U",
+    10: "V",
+    11: "X",
+    12: "Z",
+}
+
+# (root, exchange suffix) in Yahoo's dated futures notation, e.g. CLZ26.NYM.
+COMMODITY_TICKERS: dict[str, tuple[str, str]] = {
+    "Crude Oil": ("CL", "NYM"),
+    "Natural Gas": ("NG", "NYM"),
+    "Gold": ("GC", "CMX"),
+    "Silver": ("SI", "CMX"),
+    "Copper": ("HG", "CMX"),
+    "Corn": ("ZC", "CBT"),
+    "Wheat": ("ZW", "CBT"),
+    "Soybeans": ("ZS", "CBT"),
+}
+
+
+def get_commodity_forward_curve(
+    commodity: str,
+    start_date: str,
+    end_date: str,
+    contracts: int = 12,
+) -> pd.DataFrame:
+    """
+    Retrieve the futures curve of a commodity from Yahoo Finance: the daily closing price of each dated futures
+    contract over the coming calendar months.
+
+    These are the contracts of the coming calendar months, such as Crude Oil's December 2026 and January 2027
+    contracts, rather than a single continuous or spot price.
+
+    This is what a Schwartz-Smith (2000) two-factor commodity price model needs to
+    back out the convenience-yield term structure under the risk-neutral (Q)
+    measure -- the curve's shape (contango or backwardation) at each point in time
+    is exactly what a single spot price series cannot reveal.
+
+    Not every commodity has a listed contract for every calendar month (grains in
+    particular only trade specific delivery months), so months with no listed (or an
+    expired) contract are skipped and later months are tried instead, until the requested
+    number of contracts is found.
+
+    Args:
+        commodity (str): The commodity to retrieve the curve for. Options are: "Crude Oil" (WTI crude oil), "Natural
+            Gas" (Henry Hub natural gas), "Gold" (gold), "Silver" (silver), "Copper" (copper), "Corn" (corn), "Wheat"
+            (wheat), "Soybeans" (soybeans).
+        start_date (str): Start date in YYYY-MM-DD format.
+        end_date (str): End date in YYYY-MM-DD format.
+        contracts (int, optional): The number of contracts to return, the nearest
+            listed ones from the current month on. Defaults to 12.
+
+    Raises:
+        InvalidArgumentError: If the commodity is not one of the supported names.
+
+    Returns:
+        pd.DataFrame: A DataFrame indexed by date, with one column per contract
+            labeled by its delivery month (e.g. "2026-12"), containing that
+            contract's daily closing price over its trading life. Columns are NaN
+            outside the date range the contract actually traded in.
+    """
+    check_option("commodity", commodity, tuple(COMMODITY_TICKERS))
+
+    root, exchange = COMMODITY_TICKERS[commodity]
+    today = datetime.today()
+    cache = get_active_cache()
+
+    curve: dict[str, pd.Series] = {}
+    tried, reached = 0, True
+    # The months are scanned until `contracts` contracts are found, since the nearest ones
+    # may have expired and some commodities only list a few delivery months a year.
+    for months_ahead in range(contracts * 3 + 3):
+        if len(curve) >= contracts:
+            break
+        month_index = today.month - 1 + months_ahead
+        year = today.year + month_index // 12
+        month = month_index % 12 + 1
+
+        ticker = f"{root}{_MONTH_CODES[month]}{year % 100:02d}.{exchange}"
+
+        # Each contract is cached separately, so a rebuild refetches only stale months.
+        cached_contract = None
+        fetch_start, fetch_end = start_date, end_date
+
+        if cache is not None:
+            plan = cache.plan(
                 source=policy_model.YAHOO_FINANCE,
-                dataset="historical_statistics",
-                entity=ticker,
-                data=stats_df,
+                dataset="futures",
+                entities=[ticker],
+                start=start_date,
+                end=end_date,
+            )
+            cached_contract = plan.cached.get(ticker)
+            fetch_span = plan.get_fetch_span(ticker)
+
+            if fetch_span is None:
+                if cached_contract is not None and not cached_contract.empty:
+                    curve[f"{year}-{month:02d}"] = cached_contract["Close"]
+
+                continue
+
+            fetch_start = fetch_span[0].strftime("%Y-%m-%d")
+            fetch_end = fetch_span[1].strftime("%Y-%m-%d")
+
+        # Yahoo Finance's end date is exclusive, so the day after includes the end date.
+        # yfinance logs every month without a listed contract as "possibly delisted",
+        # which is expected while scanning, so its logger is quiet for the request.
+        tried += 1
+        try:
+            with quiet_yfinance():
+                contract_data = yf.Ticker(ticker).history(
+                    start=fetch_start,
+                    end=(pd.Timestamp(fetch_end) + pd.Timedelta(days=1)).strftime(
+                        "%Y-%m-%d"
+                    ),
+                )
+        except (
+            OSError,
+            yf.exceptions.YFRateLimitError,
+            *CACHE_DATABASE_ERRORS,
+        ) as error:
+            # curl's connection errors are OSErrors; the other months would fail alike, as they would after a rate limit or with a broken cache database.  # noqa: E501
+            report_failed_request(error)
+            logger.error(
+                "Could not reach Yahoo Finance for the %s futures (%s).",
+                commodity,
+                error,
+            )
+            reached = False
+            break
+
+        if not contract_data.empty:
+            record_source(policy_model.YAHOO_FINANCE)
+            contract_data.index = pd.to_datetime(contract_data.index).tz_localize(None)
+            contract_data = frame_model.slice_frame(
+                contract_data, fetch_start, fetch_end
             )
 
-        return stats_df
+            if cache is not None:
+                cache.store(
+                    source=policy_model.YAHOO_FINANCE,
+                    dataset="futures",
+                    entity=ticker,
+                    data=contract_data,
+                    start=fetch_start,
+                    end=fetch_end,
+                )
 
-    return pd.Series()
+        if cached_contract is not None and not cached_contract.empty:
+            contract_data = frame_model.merge_frames(cached_contract, contract_data)
+            contract_data = frame_model.slice_frame(contract_data, start_date, end_date)
+
+        if contract_data.empty:
+            continue
+
+        curve[f"{year}-{month:02d}"] = contract_data["Close"]
+
+    if not curve:
+        if tried and reached:
+            logger.warning(
+                "Yahoo Finance returned no data for any of the %s %s futures contracts "
+                "tried, so no futures curve is returned.",
+                tried,
+                commodity,
+            )
+        return pd.DataFrame()
+
+    forward_curve = pd.DataFrame(curve)
+    expiration_dates = pd.to_datetime(forward_curve.index)
+
+    # Cached contracts are already tz-naive, and tz_localize(None) rejects those.
+    if expiration_dates.tz is not None:
+        expiration_dates = expiration_dates.tz_localize(None)
+
+    forward_curve.index = expiration_dates.to_period(freq="D")
+    forward_curve.index.name = "Date"
+    forward_curve = forward_curve.sort_index()
+
+    return forward_curve

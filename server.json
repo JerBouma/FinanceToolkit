@@ -2,12 +2,12 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.JerBouma/financetoolkit",
   "title": "Finance Toolkit",
-  "description": "500+ transparent financial methods calculated from raw statements, not third-party endpoints.",
+  "description": "1100+ transparent financial methods calculated from raw statements, not third-party endpoints.",
   "repository": {
     "url": "https://github.com/JerBouma/FinanceToolkit",
     "source": "github"
   },
-  "version": "2.3.5",
+  "version": "2.4.0",
   "remotes": [
     {
       "type": "streamable-http",
@@ -18,7 +18,7 @@
     {
       "registryType": "pypi",
       "identifier": "financetoolkit",
-      "version": "2.3.5",
+      "version": "2.4.0",
       "transport": {
         "type": "stdio",
         "command": "financetoolkit-mcp"

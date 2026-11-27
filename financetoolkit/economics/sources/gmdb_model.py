@@ -1,6 +1,7 @@
 """Global Macro Database (GMDB) Model"""
 
 import io
+import struct
 import threading
 import time
 
@@ -123,7 +124,8 @@ def get_shared_dataset(
     cache: Cache | None = None, include_forecasts: bool = False
 ) -> pd.DataFrame:
     """
-    The Global Macro Database dataset, read once per hour per process and shared.
+    Get the Global Macro Database dataset, read once per hour per process and shared between the indicators that use
+    it.
 
     Args:
         cache (Cache | None): An optional cache to serve the dataset from and store it in.
@@ -166,9 +168,10 @@ def collect_global_macro_database_dataset(
     include_forecasts: bool = False,
 ) -> pd.DataFrame:
     """
-    Collect and transform the Global Macro Database dataset: the latest quarterly release,
-    or the January 2025 file on GitHub when the release storage cannot be reached. The
-    file is reshaped into one column per variable and country, indexed by year.
+    Collect and transform the Global Macro Database dataset: the yearly macroeconomic series of every country in one
+    table.
+
+    The file is reshaped into one column per variable and country, indexed by year.
 
     The Global Macro Database is published as one annual Stata file covering every
     country at once, so there is no per-country request to make and nothing to append
@@ -177,7 +180,7 @@ def collect_global_macro_database_dataset(
 
     The file extends most variables with the IMF's World Economic Outlook projections up
     to five years ahead and flags those years per variable. They are left out unless
-    include_forecasts is True, so a series ends with its last observation.
+    forecasts are included, so a series ends with its last observation.
 
     Note on units: the Global Macro Database quotes every rate, share and ratio variable in
     percentage points (3.625 for a 3.625% policy rate, 81.0 for consumption worth 81% of
@@ -194,7 +197,9 @@ def collect_global_macro_database_dataset(
             to False.
 
     Returns:
-        pd.DataFrame: A transformed DataFrame indexed by 'year' with country-wise columns.
+        pd.DataFrame: A transformed DataFrame indexed by 'year' with country-wise columns, or
+            an empty DataFrame when the Global Macro Database cannot be reached or its file
+            cannot be read (both logged).
     """
     # The quarterly releases are cached apart from the January 2025 file read before,
     # since they have variables that file lacks.
@@ -214,25 +219,45 @@ def collect_global_macro_database_dataset(
     # so the next run tries the release again.
     cacheable = True
 
-    if gmd_location is None:
-        try:
-            version = get_latest_version()
-            response = get_request(RELEASE_URL.format(version=version), timeout=300)
+    try:
+        if gmd_location is None:
+            try:
+                version = get_latest_version()
+                response = get_request(RELEASE_URL.format(version=version), timeout=300)
+                response.raise_for_status()
+            except (requests.exceptions.RequestException, ValueError) as error:
+                logger.warning(
+                    "Could not retrieve the latest Global Macro Database release (%s), so "
+                    "the January 2025 release is used instead.",
+                    error,
+                )
+                response = get_request(GMD_LOCATION, timeout=300)
+                response.raise_for_status()
+                cacheable = False
+        else:
+            response = get_request(gmd_location, timeout=300)
             response.raise_for_status()
-        except (requests.exceptions.RequestException, ValueError) as error:
-            logger.warning(
-                "Could not retrieve the latest Global Macro Database release (%s), so the "
-                "January 2025 release is used instead.",
-                error,
-            )
-            response = get_request(GMD_LOCATION, timeout=300)
-            response.raise_for_status()
-            cacheable = False
-    else:
-        response = get_request(gmd_location, timeout=300)
-        response.raise_for_status()
+    except requests.exceptions.RequestException as error:
+        # Offline or the host is down: reported like the other sources, with no data
+        # rather than an exception, so the metrics built on it report it as missing.
+        logger.error(
+            "Could not reach the Global Macro Database (%s). No data is returned for it.",
+            error,
+        )
+        return pd.DataFrame()
 
-    gmd_dataset = _parse_dataset(response.content, include_forecasts)
+    try:
+        gmd_dataset = _parse_dataset(response.content, include_forecasts)
+    except (struct.error, EOFError, ValueError) as error:
+        # An empty or cut-off download, or an error page instead of the Stata file, which
+        # the Stata reader fails on with an unpacking error, an end of file or a ValueError.
+        logger.error(
+            "The Global Macro Database file could not be read (%s: %s). No data is "
+            "returned for it.",
+            type(error).__name__,
+            error,
+        )
+        return pd.DataFrame()
 
     if cache is not None and cache.enabled and cacheable:
         cache.set(
@@ -249,7 +274,9 @@ def get_series(
     gmd_dataset: pd.DataFrame, variable: str, in_percent: bool = False
 ) -> pd.DataFrame:
     """
-    Retrieves one variable with a column per country, removing rows with all NaNs.
+    Retrieve one variable of the Global Macro Database with a column per country.
+
+    Rows without a value for any country are left out.
 
     Args:
         gmd_dataset (pd.DataFrame): The dataset of collect_global_macro_database_dataset.
@@ -258,12 +285,17 @@ def get_series(
             divided by 100 to return a decimal fraction. Defaults to False.
 
     Returns:
-        pd.DataFrame: The variable, indexed by year with a column per country.
+        pd.DataFrame: The variable, indexed by year with a column per country, or an empty
+        DataFrame when the dataset is empty (the database could not be reached).
 
     Raises:
         ValueError: When the dataset has no such variable, which is the case for the
             variables added after the January 2025 release when that is used instead.
     """
+    # Already reported where the database could not be reached.
+    if gmd_dataset.empty:
+        return pd.DataFrame()
+
     if variable not in gmd_dataset.columns.get_level_values(0):
         raise ValueError(
             f"The Global Macro Database release in use has no variable '{variable}'."
@@ -276,36 +308,48 @@ def get_series(
 
 
 def get_nominal_gross_domestic_product(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
-    """Retrieves nominal GDP ('nGDP'), removing rows with all NaNs.
+    """Retrieve the nominal GDP of every country from the Global Macro Database ('nGDP'): the value of everything an
+    economy produces in a year at current prices.
+
+    Rows without a value for any country are left out.
 
     Args:
         gmd_dataset (pd.DataFrame): The dataset of collect_global_macro_database_dataset.
     """
-    return gmd_dataset["nGDP"].dropna(axis="rows", how="all")
+    return get_series(gmd_dataset, "nGDP")
 
 
 def get_real_gross_domestic_product(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
-    """Retrieves real GDP ('rGDP'), removing rows with all NaNs.
+    """Retrieve the real GDP of every country from the Global Macro Database ('rGDP'): the value of everything an economy
+    produces in a year at constant prices.
+
+    Rows without a value for any country are left out.
 
     Args:
         gmd_dataset (pd.DataFrame): The dataset of collect_global_macro_database_dataset.
     """
-    return gmd_dataset["rGDP"].dropna(axis="rows", how="all")
+    return get_series(gmd_dataset, "rGDP")
 
 
 def get_real_gross_domestic_product_per_capita(
     gmd_dataset: pd.DataFrame,
 ) -> pd.DataFrame:
-    """Retrieves real GDP per capita ('rGDP_pc'), removing rows with all NaNs.
+    """Retrieve the real GDP per capita of every country from the Global Macro Database ('rGDP_pc'): the
+    inflation-adjusted output per person.
+
+    Rows without a value for any country are left out.
 
     Args:
         gmd_dataset (pd.DataFrame): The dataset of collect_global_macro_database_dataset.
     """
-    return gmd_dataset["rGDP_pc"].dropna(axis="rows", how="all")
+    return get_series(gmd_dataset, "rGDP_pc")
 
 
 def get_gross_domestic_product_deflator(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
-    """Retrieves GDP deflator ('deflator'), removing rows with all NaNs.
+    """Retrieve the GDP deflator of every country from the Global Macro Database ('deflator'): the price level of
+    everything an economy produces.
+
+    Rows without a value for any country are left out.
 
     This is a price index (100 in the base year) rather than a rate, so it is returned
     on the scale the Global Macro Database publishes it on.
@@ -313,11 +357,14 @@ def get_gross_domestic_product_deflator(gmd_dataset: pd.DataFrame) -> pd.DataFra
     Args:
         gmd_dataset (pd.DataFrame): The dataset of collect_global_macro_database_dataset.
     """
-    return gmd_dataset["deflator"].dropna(axis="rows", how="all")
+    return get_series(gmd_dataset, "deflator")
 
 
 def get_population(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
-    """Retrieves population data ('pop'), removing rows with all NaNs.
+    """Retrieve the population of every country from the Global Macro Database ('pop'): the number of people living in
+    each country.
+
+    Rows without a value for any country are left out.
 
     This is a head count in millions rather than a rate, so it is returned on the scale
     the Global Macro Database publishes it on.
@@ -325,20 +372,26 @@ def get_population(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
     Args:
         gmd_dataset (pd.DataFrame): The dataset of collect_global_macro_database_dataset.
     """
-    return gmd_dataset["pop"].dropna(axis="rows", how="all")
+    return get_series(gmd_dataset, "pop")
 
 
 def get_total_consumption(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
-    """Retrieves total consumption ('cons'), removing rows with all NaNs.
+    """Retrieve the total consumption of every country from the Global Macro Database ('cons'): what households and the
+    government spend on goods and services.
+
+    Rows without a value for any country are left out.
 
     Args:
         gmd_dataset (pd.DataFrame): The dataset of collect_global_macro_database_dataset.
     """
-    return gmd_dataset["cons"].dropna(axis="rows", how="all")
+    return get_series(gmd_dataset, "cons")
 
 
 def get_total_consumption_to_gdp_ratio(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
-    """Retrieves the total consumption to GDP ratio ('cons_GDP'), removing rows with all NaNs.
+    """Retrieve the total consumption to GDP ratio of every country from the Global Macro Database ('cons_GDP'): the
+    share of the economy that is consumed.
+
+    Rows without a value for any country are left out.
 
     The Global Macro Database quotes this series in percentage points, so it is divided
     by 100 here to return a decimal fraction (0.81 for consumption worth 81% of GDP),
@@ -347,9 +400,7 @@ def get_total_consumption_to_gdp_ratio(gmd_dataset: pd.DataFrame) -> pd.DataFram
     Args:
         gmd_dataset (pd.DataFrame): The dataset of collect_global_macro_database_dataset.
     """
-    total_consumption_to_gdp_ratio = gmd_dataset["cons_GDP"].dropna(
-        axis="rows", how="all"
-    )
+    total_consumption_to_gdp_ratio = get_series(gmd_dataset, "cons_GDP")
 
     # The GMDB quotes this in percentage points, so divide by 100 for the decimal.
     return total_consumption_to_gdp_ratio / 100
@@ -357,16 +408,21 @@ def get_total_consumption_to_gdp_ratio(gmd_dataset: pd.DataFrame) -> pd.DataFram
 
 def get_real_total_consumption(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
     """
-    Retrieves real total consumption in 2015 prices, removing rows with all NaNs. The
-    January 2025 release published it ('rcons'); later releases do not, so it is total
-    consumption divided by the GDP deflator (2015 = 100), the way the Global Macro
-    Database itself derives real GDP from nominal GDP.
+    Retrieve the real total consumption of every country from the Global Macro Database in 2015 prices: what
+    households and the government spend on goods and services, adjusted for inflation.
+
+    The January 2025 release published it ('rcons'); later releases do not, so it is total consumption divided by the
+    GDP deflator (2015 = 100), the way the Global Macro Database itself derives real GDP from nominal GDP.
 
     Args:
         gmd_dataset (pd.DataFrame): The dataset of collect_global_macro_database_dataset.
     """
+    # Already reported where the database could not be reached.
+    if gmd_dataset.empty:
+        return pd.DataFrame()
+
     if "rcons" in gmd_dataset.columns.get_level_values(0):
-        return gmd_dataset["rcons"].dropna(axis="rows", how="all")
+        return get_series(gmd_dataset, "rcons")
 
     real_total_consumption = gmd_dataset["cons"] / gmd_dataset["deflator"] * 100
 
@@ -376,16 +432,22 @@ def get_real_total_consumption(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
 
 
 def get_investment(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
-    """Retrieves investment data ('inv'), removing rows with all NaNs.
+    """Retrieve the investment of every country from the Global Macro Database ('inv'): gross capital formation, what is
+    spent on fixed assets plus the change in inventories.
+
+    Rows without a value for any country are left out.
 
     Args:
         gmd_dataset (pd.DataFrame): The dataset of collect_global_macro_database_dataset.
     """
-    return gmd_dataset["inv"].dropna(axis="rows", how="all")
+    return get_series(gmd_dataset, "inv")
 
 
 def get_investment_to_gdp_ratio(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
-    """Retrieves the investment to GDP ratio ('inv_GDP'), removing rows with all NaNs.
+    """Retrieve the investment to GDP ratio of every country from the Global Macro Database ('inv_GDP'): the share of the
+    economy that is invested.
+
+    Rows without a value for any country are left out.
 
     The Global Macro Database quotes this series in percentage points, so it is divided
     by 100 here to return a decimal fraction (0.2248 for investment worth 22.48% of GDP),
@@ -394,23 +456,29 @@ def get_investment_to_gdp_ratio(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
     Args:
         gmd_dataset (pd.DataFrame): The dataset of collect_global_macro_database_dataset.
     """
-    investment_to_gdp_ratio = gmd_dataset["inv_GDP"].dropna(axis="rows", how="all")
+    investment_to_gdp_ratio = get_series(gmd_dataset, "inv_GDP")
 
     # The GMDB quotes this in percentage points, so divide by 100 for the decimal.
     return investment_to_gdp_ratio / 100
 
 
 def get_fixed_investment(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
-    """Retrieves fixed investment ('finv'), removing rows with all NaNs.
+    """Retrieve the fixed investment of every country from the Global Macro Database ('finv'): gross fixed capital
+    formation, what is spent on machinery, equipment and buildings.
+
+    Rows without a value for any country are left out.
 
     Args:
         gmd_dataset (pd.DataFrame): The dataset of collect_global_macro_database_dataset.
     """
-    return gmd_dataset["finv"].dropna(axis="rows", how="all")
+    return get_series(gmd_dataset, "finv")
 
 
 def get_fixed_investment_to_gdp_ratio(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
-    """Retrieves the fixed investment to GDP ratio ('finv_GDP'), removing rows with all NaNs.
+    """Retrieve the fixed investment to GDP ratio of every country from the Global Macro Database ('finv_GDP'): the share
+    of the economy invested in fixed assets.
+
+    Rows without a value for any country are left out.
 
     The Global Macro Database quotes this series in percentage points, so it is divided
     by 100 here to return a decimal fraction (0.2179 for fixed investment worth 21.79% of
@@ -419,25 +487,29 @@ def get_fixed_investment_to_gdp_ratio(gmd_dataset: pd.DataFrame) -> pd.DataFrame
     Args:
         gmd_dataset (pd.DataFrame): The dataset of collect_global_macro_database_dataset.
     """
-    fixed_investment_to_gdp_ratio = gmd_dataset["finv_GDP"].dropna(
-        axis="rows", how="all"
-    )
+    fixed_investment_to_gdp_ratio = get_series(gmd_dataset, "finv_GDP")
 
     # The GMDB quotes this in percentage points, so divide by 100 for the decimal.
     return fixed_investment_to_gdp_ratio / 100
 
 
 def get_exports(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
-    """Retrieves exports data ('exports'), removing rows with all NaNs.
+    """Retrieve the exports of every country from the Global Macro Database ('exports'): the goods and services a country
+    sells abroad.
+
+    Rows without a value for any country are left out.
 
     Args:
         gmd_dataset (pd.DataFrame): The dataset of collect_global_macro_database_dataset.
     """
-    return gmd_dataset["exports"].dropna(axis="rows", how="all")
+    return get_series(gmd_dataset, "exports")
 
 
 def get_exports_to_gdp_ratio(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
-    """Retrieves the exports to GDP ratio ('exports_GDP'), removing rows with all NaNs.
+    """Retrieve the exports to GDP ratio of every country from the Global Macro Database ('exports_GDP'): the share of
+    output sold abroad.
+
+    Rows without a value for any country are left out.
 
     The Global Macro Database quotes this series in percentage points, so it is divided
     by 100 here to return a decimal fraction (0.1016 for exports worth 10.16% of GDP),
@@ -446,23 +518,29 @@ def get_exports_to_gdp_ratio(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
     Args:
         gmd_dataset (pd.DataFrame): The dataset of collect_global_macro_database_dataset.
     """
-    exports_to_gdp_ratio = gmd_dataset["exports_GDP"].dropna(axis="rows", how="all")
+    exports_to_gdp_ratio = get_series(gmd_dataset, "exports_GDP")
 
     # The GMDB quotes this in percentage points, so divide by 100 for the decimal.
     return exports_to_gdp_ratio / 100
 
 
 def get_imports(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
-    """Retrieves imports data ('imports'), removing rows with all NaNs.
+    """Retrieve the imports of every country from the Global Macro Database ('imports'): the goods and services a country
+    buys from abroad.
+
+    Rows without a value for any country are left out.
 
     Args:
         gmd_dataset (pd.DataFrame): The dataset of collect_global_macro_database_dataset.
     """
-    return gmd_dataset["imports"].dropna(axis="rows", how="all")
+    return get_series(gmd_dataset, "imports")
 
 
 def get_imports_to_gdp_ratio(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
-    """Retrieves the imports to GDP ratio ('imports_GDP'), removing rows with all NaNs.
+    """Retrieve the imports to GDP ratio of every country from the Global Macro Database ('imports_GDP'): what a country
+    buys from abroad against the size of its economy.
+
+    Rows without a value for any country are left out.
 
     The Global Macro Database quotes this series in percentage points, so it is divided
     by 100 here to return a decimal fraction (0.1213 for imports worth 12.13% of GDP),
@@ -471,23 +549,29 @@ def get_imports_to_gdp_ratio(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
     Args:
         gmd_dataset (pd.DataFrame): The dataset of collect_global_macro_database_dataset.
     """
-    imports_to_gdp_ratio = gmd_dataset["imports_GDP"].dropna(axis="rows", how="all")
+    imports_to_gdp_ratio = get_series(gmd_dataset, "imports_GDP")
 
     # The GMDB quotes this in percentage points, so divide by 100 for the decimal.
     return imports_to_gdp_ratio / 100
 
 
 def get_current_account_balance(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
-    """Extracts current account balance ('CA') from the dataset, removing NaN rows.
+    """Retrieve the current account balance of every country from the Global Macro Database ('CA'): the trade balance
+    plus net income and transfers from abroad.
+
+    Rows without a value for any country are left out.
 
     Args:
         gmd_dataset (pd.DataFrame): The dataset of collect_global_macro_database_dataset.
     """
-    return gmd_dataset["CA"].dropna(axis="rows", how="all")
+    return get_series(gmd_dataset, "CA")
 
 
 def get_current_account_balance_to_gdp(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
-    """Retrieves the current account balance to GDP ratio ('CA_GDP'), removing rows with all NaNs.
+    """Retrieve the current account balance to GDP ratio of every country from the Global Macro Database ('CA_GDP'): the
+    current account as a share of the economy.
+
+    Rows without a value for any country are left out.
 
     The Global Macro Database quotes this series in percentage points, so it is divided
     by 100 here to return a decimal fraction (-0.0211 for a deficit worth 2.11% of GDP),
@@ -496,16 +580,17 @@ def get_current_account_balance_to_gdp(gmd_dataset: pd.DataFrame) -> pd.DataFram
     Args:
         gmd_dataset (pd.DataFrame): The dataset of collect_global_macro_database_dataset.
     """
-    current_account_balance_to_gdp = gmd_dataset["CA_GDP"].dropna(
-        axis="rows", how="all"
-    )
+    current_account_balance_to_gdp = get_series(gmd_dataset, "CA_GDP")
 
     # The GMDB quotes this in percentage points, so divide by 100 for the decimal.
     return current_account_balance_to_gdp / 100
 
 
 def get_usd_exchange_rate(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
-    """Retrieves the USD exchange rate ('USDfx'), removing rows with all NaNs.
+    """Retrieve the US dollar exchange rate of every country from the Global Macro Database ('USDfx'): the units of
+    national currency per US dollar.
+
+    Rows without a value for any country are left out.
 
     This is a price (units of local currency per US dollar) rather than a rate, so it is
     returned on the scale the Global Macro Database publishes it on.
@@ -513,11 +598,14 @@ def get_usd_exchange_rate(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
     Args:
         gmd_dataset (pd.DataFrame): The dataset of collect_global_macro_database_dataset.
     """
-    return gmd_dataset["USDfx"].dropna(axis="rows", how="all")
+    return get_series(gmd_dataset, "USDfx")
 
 
 def get_real_effective_exchange_rate(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
-    """Retrieves the real effective exchange rate ('REER'), removing rows with all NaNs.
+    """Retrieve the real effective exchange rate of every country from the Global Macro Database ('REER'): the
+    inflation-adjusted value of a currency against its trading partners.
+
+    Rows without a value for any country are left out.
 
     This is an index (100 in the base year) rather than a rate, so it is returned on the
     scale the Global Macro Database publishes it on.
@@ -525,20 +613,26 @@ def get_real_effective_exchange_rate(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
     Args:
         gmd_dataset (pd.DataFrame): The dataset of collect_global_macro_database_dataset.
     """
-    return gmd_dataset["REER"].dropna(axis="rows", how="all")
+    return get_series(gmd_dataset, "REER")
 
 
 def get_government_debt(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
-    """Extracts government debt ('govdebt'), removing rows with all NaNs.
+    """Retrieve the government debt of every country from the Global Macro Database ('govdebt'): what a government owes
+    to its creditors.
+
+    Rows without a value for any country are left out.
 
     Args:
         gmd_dataset (pd.DataFrame): The dataset of collect_global_macro_database_dataset.
     """
-    return gmd_dataset["govdebt"].dropna(axis="rows", how="all")
+    return get_series(gmd_dataset, "govdebt")
 
 
 def get_government_debt_to_gdp_ratio(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
-    """Retrieves the government debt to GDP ratio ('govdebt_GDP'), removing rows with all NaNs.
+    """Retrieve the government debt to GDP ratio of every country from the Global Macro Database ('govdebt_GDP'): what a
+    government owes against the size of its economy.
+
+    Rows without a value for any country are left out.
 
     The Global Macro Database quotes this series in percentage points, so it is divided
     by 100 here to return a decimal fraction (1.3173 for debt worth 131.73% of GDP),
@@ -547,25 +641,29 @@ def get_government_debt_to_gdp_ratio(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
     Args:
         gmd_dataset (pd.DataFrame): The dataset of collect_global_macro_database_dataset.
     """
-    government_debt_to_gdp_ratio = gmd_dataset["govdebt_GDP"].dropna(
-        axis="rows", how="all"
-    )
+    government_debt_to_gdp_ratio = get_series(gmd_dataset, "govdebt_GDP")
 
     # The GMDB quotes this in percentage points, so divide by 100 for the decimal.
     return government_debt_to_gdp_ratio / 100
 
 
 def get_government_revenue(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
-    """Retrieves government revenue ('govrev'), removing rows with all NaNs.
+    """Retrieve the government revenue of every country from the Global Macro Database ('govrev'): what a government
+    collects from taxes and other sources.
+
+    Rows without a value for any country are left out.
 
     Args:
         gmd_dataset (pd.DataFrame): The dataset of collect_global_macro_database_dataset.
     """
-    return gmd_dataset["govrev"].dropna(axis="rows", how="all")
+    return get_series(gmd_dataset, "govrev")
 
 
 def get_government_revenue_to_gdp_ratio(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
-    """Retrieves the government revenue to GDP ratio ('govrev_GDP'), removing rows with all NaNs.
+    """Retrieve the government revenue to GDP ratio of every country from the Global Macro Database ('govrev_GDP'): the
+    revenue as a share of the economy.
+
+    Rows without a value for any country are left out.
 
     The Global Macro Database quotes this series in percentage points, so it is divided
     by 100 here to return a decimal fraction (0.3104 for revenue worth 31.04% of GDP),
@@ -574,25 +672,29 @@ def get_government_revenue_to_gdp_ratio(gmd_dataset: pd.DataFrame) -> pd.DataFra
     Args:
         gmd_dataset (pd.DataFrame): The dataset of collect_global_macro_database_dataset.
     """
-    government_revenue_to_gdp_ratio = gmd_dataset["govrev_GDP"].dropna(
-        axis="rows", how="all"
-    )
+    government_revenue_to_gdp_ratio = get_series(gmd_dataset, "govrev_GDP")
 
     # The GMDB quotes this in percentage points, so divide by 100 for the decimal.
     return government_revenue_to_gdp_ratio / 100
 
 
 def get_government_tax_revenue(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
-    """Retrieves government tax revenue ('govtax'), removing rows with all NaNs.
+    """Retrieve the government tax revenue of every country from the Global Macro Database ('govtax'): what a government
+    collects from taxes.
+
+    Rows without a value for any country are left out.
 
     Args:
         gmd_dataset (pd.DataFrame): The dataset of collect_global_macro_database_dataset.
     """
-    return gmd_dataset["govtax"].dropna(axis="rows", how="all")
+    return get_series(gmd_dataset, "govtax")
 
 
 def get_government_tax_revenue_to_gdp_ratio(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
-    """Retrieves the government tax revenue to GDP ratio ('govtax_GDP'), removing rows with all NaNs.
+    """Retrieve the government tax revenue to GDP ratio of every country from the Global Macro Database ('govtax_GDP'):
+    the tax burden as a share of the economy.
+
+    Rows without a value for any country are left out.
 
     The Global Macro Database quotes this series in percentage points, so it is divided
     by 100 here to return a decimal fraction (0.1022 for tax revenue worth 10.22% of GDP),
@@ -601,25 +703,29 @@ def get_government_tax_revenue_to_gdp_ratio(gmd_dataset: pd.DataFrame) -> pd.Dat
     Args:
         gmd_dataset (pd.DataFrame): The dataset of collect_global_macro_database_dataset.
     """
-    government_tax_revenue_to_gdp_ratio = gmd_dataset["govtax_GDP"].dropna(
-        axis="rows", how="all"
-    )
+    government_tax_revenue_to_gdp_ratio = get_series(gmd_dataset, "govtax_GDP")
 
     # The GMDB quotes this in percentage points, so divide by 100 for the decimal.
     return government_tax_revenue_to_gdp_ratio / 100
 
 
 def get_government_expenditure(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
-    """Retrieves government expenditure ('govexp'), removing rows with all NaNs.
+    """Retrieve the government expenditure of every country from the Global Macro Database ('govexp'): what a government
+    spends.
+
+    Rows without a value for any country are left out.
 
     Args:
         gmd_dataset (pd.DataFrame): The dataset of collect_global_macro_database_dataset.
     """
-    return gmd_dataset["govexp"].dropna(axis="rows", how="all")
+    return get_series(gmd_dataset, "govexp")
 
 
 def get_government_expenditure_to_gdp_ratio(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
-    """Retrieves the government expenditure to GDP ratio ('govexp_GDP'), removing rows with all NaNs.
+    """Retrieve the government expenditure to GDP ratio of every country from the Global Macro Database ('govexp_GDP'):
+    the spending as a share of the economy.
+
+    Rows without a value for any country are left out.
 
     The Global Macro Database quotes this series in percentage points, so it is divided
     by 100 here to return a decimal fraction (0.3708 for spending worth 37.08% of GDP),
@@ -628,25 +734,29 @@ def get_government_expenditure_to_gdp_ratio(gmd_dataset: pd.DataFrame) -> pd.Dat
     Args:
         gmd_dataset (pd.DataFrame): The dataset of collect_global_macro_database_dataset.
     """
-    government_expenditure_to_gdp_ratio = gmd_dataset["govexp_GDP"].dropna(
-        axis="rows", how="all"
-    )
+    government_expenditure_to_gdp_ratio = get_series(gmd_dataset, "govexp_GDP")
 
     # The GMDB quotes this in percentage points, so divide by 100 for the decimal.
     return government_expenditure_to_gdp_ratio / 100
 
 
 def get_government_deficit(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
-    """Retrieves government deficit ('govdef'), removing rows with all NaNs.
+    """Retrieve the government deficit of every country from the Global Macro Database ('govdef'): how much more a
+    government spends than it collects.
+
+    Rows without a value for any country are left out.
 
     Args:
         gmd_dataset (pd.DataFrame): The dataset of collect_global_macro_database_dataset.
     """
-    return gmd_dataset["govdef"].dropna(axis="rows", how="all")
+    return get_series(gmd_dataset, "govdef")
 
 
 def get_government_deficit_to_gdp_ratio(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
-    """Retrieves the government deficit to GDP ratio ('govdef_GDP'), removing rows with all NaNs.
+    """Retrieve the government deficit to GDP ratio of every country from the Global Macro Database ('govdef_GDP'): the
+    shortfall as a share of the economy.
+
+    Rows without a value for any country are left out.
 
     The Global Macro Database quotes this series in percentage points, so it is divided
     by 100 here to return a decimal fraction (-0.0604 for a deficit worth 6.04% of GDP),
@@ -655,25 +765,33 @@ def get_government_deficit_to_gdp_ratio(gmd_dataset: pd.DataFrame) -> pd.DataFra
     Args:
         gmd_dataset (pd.DataFrame): The dataset of collect_global_macro_database_dataset.
     """
-    government_deficit_to_gdp_ratio = gmd_dataset["govdef_GDP"].dropna(
-        axis="rows", how="all"
-    )
+    government_deficit_to_gdp_ratio = get_series(gmd_dataset, "govdef_GDP")
 
     # The GMDB quotes this in percentage points, so divide by 100 for the decimal.
     return government_deficit_to_gdp_ratio / 100
 
 
 def get_money_supply(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
-    """Extracts money supply data ('M0', 'M1', 'M2', 'M3', 'M4'), dropping rows with all NaNs.
+    """Retrieve the money supply of every country from the Global Macro Database ('M0', 'M1', 'M2', 'M3', 'M4'): the
+    money in circulation, from cash to the broad aggregates.
+
+    Rows without a value for any country are left out.
 
     Args:
         gmd_dataset (pd.DataFrame): The dataset of collect_global_macro_database_dataset.
     """
+    # Already reported where the database could not be reached.
+    if gmd_dataset.empty:
+        return pd.DataFrame()
+
     return gmd_dataset[["M0", "M1", "M2", "M3", "M4"]].dropna(axis="rows", how="all")
 
 
 def get_central_bank_policy_rate(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
-    """Retrieves the central bank policy rate ('cbrate'), removing rows with all NaNs.
+    """Retrieve the central bank policy rate of every country from the Global Macro Database ('cbrate'): the rate a
+    central bank sets to steer the economy.
+
+    Rows without a value for any country are left out.
 
     The Global Macro Database quotes this series in percentage points, so it is divided
     by 100 here to return a decimal fraction (0.0538 for a 5.375% policy rate), matching
@@ -682,14 +800,17 @@ def get_central_bank_policy_rate(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
     Args:
         gmd_dataset (pd.DataFrame): The dataset of collect_global_macro_database_dataset.
     """
-    central_bank_policy_rate = gmd_dataset["cbrate"].dropna(axis="rows", how="all")
+    central_bank_policy_rate = get_series(gmd_dataset, "cbrate")
 
     # The GMDB quotes this in percentage points, so divide by 100 for the decimal.
     return central_bank_policy_rate / 100
 
 
 def get_short_term_interest_rate(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
-    """Retrieves the short-term interest rate ('strate'), removing rows with all NaNs.
+    """Retrieve the short-term interest rate of every country from the Global Macro Database ('strate'): the rate on
+    short-term borrowing.
+
+    Rows without a value for any country are left out.
 
     The Global Macro Database quotes this series in percentage points, so it is divided
     by 100 here to return a decimal fraction (0.0408 for 4.08%), putting it on exactly
@@ -698,14 +819,17 @@ def get_short_term_interest_rate(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
     Args:
         gmd_dataset (pd.DataFrame): The dataset of collect_global_macro_database_dataset.
     """
-    short_term_interest_rate = gmd_dataset["strate"].dropna(axis="rows", how="all")
+    short_term_interest_rate = get_series(gmd_dataset, "strate")
 
     # The GMDB quotes this in percentage points, so divide by 100 for the decimal.
     return short_term_interest_rate / 100
 
 
 def get_long_term_interest_rate(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
-    """Retrieves the long-term interest rate ('ltrate'), removing rows with all NaNs.
+    """Retrieve the long-term interest rate of every country from the Global Macro Database ('ltrate'): the yield on
+    long-term government bonds.
+
+    Rows without a value for any country are left out.
 
     The Global Macro Database quotes this series in percentage points, so it is divided
     by 100 here to return a decimal fraction (0.0416 for 4.16%), putting it on exactly
@@ -714,14 +838,17 @@ def get_long_term_interest_rate(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
     Args:
         gmd_dataset (pd.DataFrame): The dataset of collect_global_macro_database_dataset.
     """
-    long_term_interest_rate = gmd_dataset["ltrate"].dropna(axis="rows", how="all")
+    long_term_interest_rate = get_series(gmd_dataset, "ltrate")
 
     # The GMDB quotes this in percentage points, so divide by 100 for the decimal.
     return long_term_interest_rate / 100
 
 
 def get_consumer_price_index(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
-    """Retrieves consumer price index ('CPI') data, removing rows with all NaNs.
+    """Retrieve the consumer price index of every country from the Global Macro Database ('CPI'): the level of the prices
+    consumers pay.
+
+    Rows without a value for any country are left out.
 
     This is a price index (100 in the base year) rather than a rate, so it is returned
     on the scale the Global Macro Database publishes it on.
@@ -729,11 +856,14 @@ def get_consumer_price_index(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
     Args:
         gmd_dataset (pd.DataFrame): The dataset of collect_global_macro_database_dataset.
     """
-    return gmd_dataset["CPI"].dropna(axis="rows", how="all")
+    return get_series(gmd_dataset, "CPI")
 
 
 def get_house_price_index(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
-    """Retrieves house price index ('HPI'), removing rows with all NaNs.
+    """Retrieve the house price index of every country from the Global Macro Database ('HPI'): the level of residential
+    property prices.
+
+    Rows without a value for any country are left out.
 
     This is a price index (100 in the base year) rather than a rate, so it is returned
     on the scale the Global Macro Database publishes it on.
@@ -741,11 +871,14 @@ def get_house_price_index(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
     Args:
         gmd_dataset (pd.DataFrame): The dataset of collect_global_macro_database_dataset.
     """
-    return gmd_dataset["HPI"].dropna(axis="rows", how="all")
+    return get_series(gmd_dataset, "HPI")
 
 
 def get_inflation_rate(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
-    """Retrieves the inflation rate ('infl'), removing rows with all NaNs.
+    """Retrieve the inflation rate of every country from the Global Macro Database ('infl'): how fast consumer prices
+    rise.
+
+    Rows without a value for any country are left out.
 
     The Global Macro Database quotes this series in percentage points, so it is divided
     by 100 here to return a decimal fraction (0.0214 for 2.14% inflation), matching the
@@ -754,14 +887,17 @@ def get_inflation_rate(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
     Args:
         gmd_dataset (pd.DataFrame): The dataset of collect_global_macro_database_dataset.
     """
-    inflation_rate = gmd_dataset["infl"].dropna(axis="rows", how="all")
+    inflation_rate = get_series(gmd_dataset, "infl")
 
     # The GMDB quotes this in percentage points, so divide by 100 for the decimal.
     return inflation_rate / 100
 
 
 def get_unemployment_rate(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
-    """Retrieves the unemployment rate ('unemp'), removing rows with all NaNs.
+    """Retrieve the unemployment rate of every country from the Global Macro Database ('unemp'): the share of the labour
+    force without work.
+
+    Rows without a value for any country are left out.
 
     The Global Macro Database quotes this series in percentage points, so it is divided
     by 100 here to return a decimal fraction (0.0397 for 3.97% unemployment), putting it
@@ -770,14 +906,17 @@ def get_unemployment_rate(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
     Args:
         gmd_dataset (pd.DataFrame): The dataset of collect_global_macro_database_dataset.
     """
-    unemployment_rate = gmd_dataset["unemp"].dropna(axis="rows", how="all")
+    unemployment_rate = get_series(gmd_dataset, "unemp")
 
     # The GMDB quotes this in percentage points, so divide by 100 for the decimal.
     return unemployment_rate / 100
 
 
 def get_sovereign_debt_crisis(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
-    """Retrieves the sovereign debt crisis dummy ('SovDebtCrisis'), removing rows with all NaNs.
+    """Retrieve the sovereign debt crisis dummy of every country from the Global Macro Database ('SovDebtCrisis'): 1 in a
+    year of a sovereign debt crisis.
+
+    Rows without a value for any country are left out.
 
     The values are binary (0 = no crisis, 1 = crisis) Reinhart & Rogoff style crisis-dating
     indicators, not a continuous economic series.
@@ -785,11 +924,14 @@ def get_sovereign_debt_crisis(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
     Args:
         gmd_dataset (pd.DataFrame): The dataset of collect_global_macro_database_dataset.
     """
-    return gmd_dataset["SovDebtCrisis"].dropna(axis="rows", how="all")
+    return get_series(gmd_dataset, "SovDebtCrisis")
 
 
 def get_currency_crisis(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
-    """Retrieves the currency crisis dummy ('CurrencyCrisis'), removing rows with all NaNs.
+    """Retrieve the currency crisis dummy of every country from the Global Macro Database ('CurrencyCrisis'): 1 in a year
+    of a currency crisis.
+
+    Rows without a value for any country are left out.
 
     The values are binary (0 = no crisis, 1 = crisis) Reinhart & Rogoff style crisis-dating
     indicators, not a continuous economic series.
@@ -797,11 +939,14 @@ def get_currency_crisis(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
     Args:
         gmd_dataset (pd.DataFrame): The dataset of collect_global_macro_database_dataset.
     """
-    return gmd_dataset["CurrencyCrisis"].dropna(axis="rows", how="all")
+    return get_series(gmd_dataset, "CurrencyCrisis")
 
 
 def get_banking_crisis(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
-    """Retrieves the banking crisis dummy ('BankingCrisis'), removing rows with all NaNs.
+    """Retrieve the banking crisis dummy of every country from the Global Macro Database ('BankingCrisis'): 1 in a year
+    of a systemic banking crisis.
+
+    Rows without a value for any country are left out.
 
     The values are binary (0 = no crisis, 1 = crisis) Reinhart & Rogoff style crisis-dating
     indicators, not a continuous economic series.
@@ -809,4 +954,4 @@ def get_banking_crisis(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
     Args:
         gmd_dataset (pd.DataFrame): The dataset of collect_global_macro_database_dataset.
     """
-    return gmd_dataset["BankingCrisis"].dropna(axis="rows", how="all")
+    return get_series(gmd_dataset, "BankingCrisis")

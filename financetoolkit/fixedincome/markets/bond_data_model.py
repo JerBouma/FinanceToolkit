@@ -11,6 +11,7 @@ from dateutil.relativedelta import relativedelta
 
 from financetoolkit.fixedincome.bonds import bond_model
 from financetoolkit.fixedincome.curves import curve_model
+from financetoolkit.utilities.error_model import check_option
 
 # US Treasuries and corporate bonds pay their coupon twice a year.
 FREQUENCY = 2
@@ -85,31 +86,6 @@ def parse_bond_name(name: str) -> dict | None:
     }
 
 
-def cusip_to_isin(cusip: str) -> str:
-    """
-    The ISIN of a US security from its CUSIP: "US", the CUSIP and a check digit (ISO 6166).
-
-    Args:
-        cusip (str): The nine-character CUSIP.
-
-    Returns:
-        str: The ISIN, or an empty string when the CUSIP is not nine characters.
-    """
-    cusip = str(cusip or "").strip().upper()
-    if len(cusip) != 9:  # noqa: PLR2004
-        return ""
-
-    # Letters count as 10 to 35; the digits are then doubled from the right, every other
-    # one, and the digits of the result summed (the Luhn algorithm).
-    digits = "".join(str(int(character, 36)) for character in f"US{cusip}")
-    total = 0
-    for position, digit in enumerate(reversed(digits)):
-        value = int(digit) * (2 if position % 2 == 0 else 1)
-        total += value // 10 + value % 10
-
-    return f"US{cusip}{(10 - total % 10) % 10}"
-
-
 def exclusion_reason(name: str, maturity: date | None = None) -> str | None:
     """
     The reason a holding is left out of the yield calculations, if any.
@@ -182,26 +158,78 @@ def get_years_to_maturity(
       30/360 US, which also counts the last day of February as the 30th; the two differ by
       at most a few days of accrual around February.
 
+    Referenced against:
+    - QuantLib, FixedRateBond: https://www.quantlib.org/reference/class_quant_lib_1_1_fixed_rate_bond.html
+
     Args:
         settlement (date): The date the price applies to.
         maturity (date): The maturity date.
-        frequency (int): The number of coupons per year. Defaults to 2.
-        day_count (str): The day count convention, "act/act" or "30/360". Defaults to
+        frequency (int): The number of coupons per year: 1, 2, 3, 4, 6 or 12. Defaults to 2.
+        day_count (str): The day count convention. Options are: "act/act" (actual/actual, the
+            Treasury's), "30/360" (the 30/360 Bond Basis of corporate bonds). Defaults to
             "act/act".
 
     Returns:
-        float: The years to maturity, or NaN when the bond has matured.
+        float: The years to maturity, above 0.
 
     Raises:
-        ValueError: If the day count convention is not "act/act" or "30/360".
+        ValueError: If the day count convention is not "act/act" or "30/360", the
+            settlement is on or after maturity (a matured bond has no years left) or the
+            frequency is not one of 1, 2, 3, 4, 6 or 12.
     """
-    if day_count not in DAY_COUNTS:
-        raise ValueError(
-            f"The day count convention must be one of {', '.join(DAY_COUNTS)}, got {day_count}."
-        )
+    check_option("day_count", day_count, DAY_COUNTS)
     if maturity <= settlement:
-        return np.nan
+        raise ValueError(
+            f"The settlement date {settlement} is on or after the maturity date {maturity}: "
+            "a matured bond has no years to maturity left."
+        )
 
+    previous_coupon, coupons = get_coupon_dates(settlement, maturity, frequency)
+    periods = len(coupons)
+    next_coupon = coupons[0]
+    if day_count == "30/360":
+        # Counted from the previous coupon date, so the accrued interest is the 30/360
+        # accrued interest also where a period does not count 180 days (31 August to 28
+        # February counts 178).
+        remaining = 1 - _days_30_360(previous_coupon, settlement) / (360 / frequency)
+    else:
+        remaining = (next_coupon - settlement).days / (
+            next_coupon - previous_coupon
+        ).days
+
+    return (periods - 1 + remaining) / frequency
+
+
+def get_coupon_dates(
+    settlement: date, maturity: date, frequency: int = FREQUENCY
+) -> tuple[date, list[date]]:
+    """
+    The coupon date on or before the settlement date and the coupon dates after it, up to
+    and including maturity.
+
+    The coupon dates run back from maturity in steps of 12 / frequency months. A bond that
+    matures on the last day of a month pays every coupon on the last day of its month (the
+    end-of-month rule): a note maturing on 30 April pays on 31 October, a floating rate note
+    maturing on 31 July pays on 31 October, 31 January and 30 April. A settlement on a coupon
+    date has that date as its previous coupon date, as the coupon is paid to the seller.
+
+    Args:
+        settlement (date): The settlement date, before maturity.
+        maturity (date): The maturity date.
+        frequency (int): The number of coupons per year: 1, 2, 3, 4, 6 or 12. Defaults to 2.
+
+    Returns:
+        tuple[date, list[date]]: The previous coupon date and the remaining coupon dates in
+        order, the last one being the maturity date.
+
+    Raises:
+        ValueError: If the frequency does not divide the year into whole months (1, 2, 3,
+            4, 6 or 12).
+    """
+    if frequency not in (1, 2, 3, 4, 6, 12):
+        raise ValueError(
+            f"The frequency must be 1, 2, 3, 4, 6 or 12 coupons a year, got {frequency}."
+        )
     months = 12 // frequency
     end_of_month = maturity == maturity + relativedelta(day=31)
 
@@ -215,19 +243,34 @@ def get_years_to_maturity(
     while coupon_date(periods) > settlement:
         periods += 1
 
-    previous_coupon = coupon_date(periods)
-    next_coupon = coupon_date(periods - 1)
-    if day_count == "30/360":
-        # Counted from the previous coupon date, so the accrued interest is the 30/360
-        # accrued interest also where a period does not count 180 days (31 August to 28
-        # February counts 178).
-        remaining = 1 - _days_30_360(previous_coupon, settlement) / (360 / frequency)
-    else:
-        remaining = (next_coupon - settlement).days / (
-            next_coupon - previous_coupon
-        ).days
+    return coupon_date(periods), [
+        coupon_date(remaining) for remaining in range(periods - 1, -1, -1)
+    ]
 
-    return (periods - 1 + remaining) / frequency
+
+def get_treasury_accrued_interest(
+    coupon: float, settlement: date, maturity: date
+) -> float:
+    """
+    The interest accrued per 100 of par on a semi-annual Treasury note or bond on its actual
+    coupon dates, actual/actual: the half coupon times the elapsed share of the days of the
+    current coupon period (31 CFR 356, Appendix B, I.D). It is `bond_model.get_accrued_interest`
+    on the years to maturity of get_years_to_maturity.
+
+    Args:
+        coupon (float): The annual coupon rate (decimal).
+        settlement (date): The settlement date.
+        maturity (date): The maturity date.
+
+    Returns:
+        float: The accrued interest per 100 of par, 0 on a coupon date.
+
+    Raises:
+        ValueError: If the settlement is on or after maturity.
+    """
+    years = get_years_to_maturity(settlement, maturity)
+
+    return bond_model.get_accrued_interest(100, coupon, years, FREQUENCY)
 
 
 def get_bond_analytics(
@@ -244,7 +287,7 @@ def get_bond_analytics(
         coupon (float): The annual coupon rate (decimal).
         years_to_maturity (float): The years to maturity, see get_years_to_maturity.
         price (float): The clean price per 100 of par.
-        frequency (int): The number of coupons per year. Defaults to 2.
+        frequency (int): The number of coupons per year, at least 1. Defaults to 2.
 
     Returns:
         tuple[float, float]: The yield to maturity (nominal, compounded `frequency` times a
@@ -278,6 +321,9 @@ def get_bill_price(years_to_maturity: float, yield_to_maturity: float) -> float:
     where y is the bond-equivalent yield and t the days to maturity divided by 365. Up to
     half a year the yield is simple interest; beyond it an equivalent note would have paid
     a coupon after half a year, so the yield compounds once.
+
+    Referenced against:
+    - QuantLib, ZeroCouponBond: https://www.quantlib.org/reference/class_quant_lib_1_1_zero_coupon_bond.html
 
     Args:
         years_to_maturity (float): The days to maturity divided by 365.
@@ -317,6 +363,9 @@ def get_bill_measures(years_to_maturity: float, yield_to_maturity: float) -> dic
 
     where P is get_bill_price, y the bond-equivalent yield and t the days to maturity
     divided by 365.
+
+    Referenced against:
+    - QuantLib, ZeroCouponBond: https://www.quantlib.org/reference/class_quant_lib_1_1_zero_coupon_bond.html
 
     Args:
         years_to_maturity (float): The days to maturity divided by 365.
@@ -379,6 +428,35 @@ def get_bill_analytics(days_to_maturity: int, price: float) -> tuple[float, floa
         "Modified Duration"
     ]
     return yield_to_maturity, duration
+
+
+def get_security_analytics(
+    security: pd.Series, price_date: date
+) -> tuple[float, float]:
+    """
+    Calculate the yield to maturity and modified duration of a Treasury security from its
+    price: a bill as a discount security, a note or bond from its coupons, and nothing for
+    a floating rate note, whose yield follows its index rate.
+
+    Args:
+        security (pd.Series): The Security Type, Coupon, Maturity (a timestamp) and Price
+            (per 100 face value) of the security.
+        price_date (date): The date of the price.
+
+    Returns:
+        tuple[float, float]: The yield to maturity and the modified duration, NaN for a
+        floating rate note.
+    """
+    maturity = security["Maturity"].date()
+    if security["Security Type"] == "FRN":
+        return np.nan, np.nan
+    if security["Security Type"] == "Bill":
+        return get_bill_analytics((maturity - price_date).days, security["Price"])
+    return get_bond_analytics(
+        security["Coupon"],
+        get_years_to_maturity(price_date, maturity),
+        security["Price"],
+    )
 
 
 def interpolate_curve(curve: pd.Series, years: pd.Series) -> pd.Series:

@@ -4,11 +4,12 @@ __docformat__ = "google"
 
 import pandas as pd
 
+from financetoolkit import yfinance_model
 from financetoolkit.economics.helpers import (
     buffered_start_date,
     get_exchange_business_days,
 )
-from financetoolkit.economics.sources import futures_model, yfinance_model
+from financetoolkit.economics.sources import futures_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
 from financetoolkit.utilities.error_model import handle_errors
 from financetoolkit.utilities.sources_model import track_sources
@@ -129,10 +130,11 @@ class CommoditiesEconomics:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Get the forward/futures curve for a commodity from Yahoo Finance -- the
-        historical daily closing (settlement) price of each of the nearest `contracts`
-        dated futures contracts from the current month on (e.g. Crude Oil's December 2026,
-        January 2027, ... contracts), rather than a single flat continuous/spot price.
+        Get the futures curve of a commodity from Yahoo Finance: the daily closing (settlement) price of each of its
+        nearest dated contracts, the price the market sets for delivery in each month.
+
+        The contracts run from the current month on, such as Crude Oil's December 2026 and January 2027 contracts,
+        rather than a single continuous or spot price.
 
         This is what a Schwartz-Smith (2000) two-factor commodity price model needs
         to back out the convenience-yield term structure under the risk-neutral (Q)
@@ -143,11 +145,11 @@ class CommoditiesEconomics:
         in particular only trade specific delivery months), and the contracts of the
         first months may already have expired (for crude oil the current month's
         contract and, late in the month, the next month's). Those months are skipped and
-        later months are tried instead, until `contracts` contracts are found.
+        later months are tried instead, until the requested number of contracts is found.
 
         By default the columns are the contracts listed today, so a past date shows how
-        those contracts traded then, not the curve as it stood that day. With
-        generic=True the columns are the positions on each day's curve instead:
+        those contracts traded then, not the curve as it stood that day. With the
+        generic curve the columns are the positions on each day's curve instead:
         the front (the nearest contract that has not expired on that day), +1, +2 and so on,
         rolling to the next contract the day after the front's last trading day (the
         generic or nearby series, CL1, CL2, ... in Bloomberg notation). A position is a
@@ -161,20 +163,20 @@ class CommoditiesEconomics:
         contracts that have expired since are therefore NaN rather than filled with
         another contract: for crude oil on 2026-09-15 the front (October 2026) and +1
         (November 2026) are NaN and +2 is the December 2026 contract. The further back the
-        date, the more positions are NaN, until none is left about `contracts` months back.
+        date, the more positions are NaN, until none is left about as many months back as there are contracts.
 
-        With growth=True the change is that of each column over `lag` trading days: of a
-        contract, or with generic of a position, which compares two contracts
+        With growth the change is that of each column over the lag in trading days: of a
+        contract, or with the generic curve of a position, which compares two contracts
         across a roll.
 
         Also known as: futures term structure, forward curve, generic futures, nearby
         futures.
 
         Args:
-            commodity (str | list[str] | None, optional): The commodity, or a list of
-                them, to retrieve the curve for: "Crude Oil", "Natural Gas", "Gold",
-                "Silver", "Copper", "Corn", "Wheat" or "Soybeans". Defaults to None, which
-                retrieves every one of them.
+            commodity (str | list[str] | None, optional): The commodity, or a list of them, to retrieve the curve for.
+                Options are: "Crude Oil" (WTI crude oil), "Natural Gas" (Henry Hub natural gas), "Gold" (gold),
+                "Silver" (silver), "Copper" (copper), "Corn" (corn), "Wheat" (wheat), "Soybeans" (soybeans). Defaults
+                to None, which retrieves every one of them.
             contracts (int, optional): The number of contracts to return, the nearest
                 listed ones from the current month on, or with generic the
                 number of positions (the front included). Defaults to 12.
@@ -193,7 +195,7 @@ class CommoditiesEconomics:
                 exist the result is returned in full. Defaults to None, which keeps every column.
 
         Raises:
-            ValueError: If `commodity` is not one of the supported names.
+            InvalidArgumentError: If the commodity is not one of the supported names.
 
         Returns:
             pd.DataFrame: A DataFrame indexed by date, with one column per contract
@@ -236,6 +238,10 @@ class CommoditiesEconomics:
         )
         curves = self._get_commodity_curves(commodity, contracts, generic, start_date)
 
+        # No commodity has prices (Yahoo Finance unreachable), which the model logged.
+        if not curves:
+            return pd.DataFrame()
+
         # Each commodity's changes are taken over its own trading days.
         commodity_forward_curve = {
             name: finalize_dataset(
@@ -267,10 +273,11 @@ class CommoditiesEconomics:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Get the term structure of a commodity futures curve per day: the front contract,
-        the 12-month calendar spread between the front and the last contract of the
-        12-month strip that starts with it (in price and in percent), the annualised roll
-        yield and whether the curve is in backwardation, contango or flat.
+        Get the term structure of a commodity futures curve per day: whether the curve is in backwardation, contango
+        or flat, with the 12-month calendar spread and the annualised roll yield.
+
+        Next to the front contract, the calendar spread compares it with the last contract of the 12-month strip that
+        starts with it, in price and in percent.
 
         The far contract is the furthest one delivering less than 12 months after the
         front: for a December 2026 front of a monthly listed commodity (crude oil, natural
@@ -293,20 +300,21 @@ class CommoditiesEconomics:
         months between both delivery months.
 
         By default the front of each day is the nearest contract that had not expired on
-        that day (see get_commodity_forward_curve with generic=True), so the
+        that day (see the generic curve of get_commodity_forward_curve), so the
         spread is a time series of the curve as it stood each day. Yahoo Finance drops a
         contract once it expires, so on the days whose front has expired since, Front, the
         Spread, Slope and Roll Yield are NaN while Front Contract names the contract.
-        generic=False instead takes today's front and far contract on every day
+        Without the generic curve, today's front and far contract are taken on every day
         (e.g. December 2026 against November 2027 for crude oil): a fixed calendar spread
         with its full history.
 
         Also known as: calendar spread, roll yield, carry, basis, backwardation, contango.
 
         Args:
-            commodity (str | list[str] | None, optional): The commodity, or a list of
-                them: "Crude Oil", "Natural Gas", "Gold", "Silver", "Copper", "Corn",
-                "Wheat" or "Soybeans". Defaults to None, which retrieves every one of them.
+            commodity (str | list[str] | None, optional): The commodity, or a list of them. Options are: "Crude Oil"
+                (WTI crude oil), "Natural Gas" (Henry Hub natural gas), "Gold" (gold), "Silver" (silver), "Copper"
+                (copper), "Corn" (corn), "Wheat" (wheat), "Soybeans" (soybeans). Defaults to None, which retrieves
+                every one of them.
             generic (bool, optional): Whether the front and far contract are
                 those of each day's curve, instead of today's. Defaults to True.
             rounding (int | None, optional): The number of decimals to round the results to.
@@ -317,7 +325,7 @@ class CommoditiesEconomics:
                 exist the result is returned in full. Defaults to None, which keeps every column.
 
         Raises:
-            ValueError: If `commodity` is not one of the supported names.
+            InvalidArgumentError: If the commodity is not one of the supported names.
 
         Returns:
             pd.DataFrame: Per date the Front Contract and Far Contract (delivery months),
@@ -352,6 +360,10 @@ class CommoditiesEconomics:
         | 2026-11-06 | 2026-12          |   90.83 | 2027-11        | 76.42 |       11 |    14.41 | -0.1586 |       0.1884 | Backwardation |
         """
         curves = self._get_commodity_curves(commodity, 12, generic, self._start_date)
+
+        # No commodity has prices (Yahoo Finance unreachable), which the model logged.
+        if not curves:
+            return pd.DataFrame()
 
         term_structures = {}
 

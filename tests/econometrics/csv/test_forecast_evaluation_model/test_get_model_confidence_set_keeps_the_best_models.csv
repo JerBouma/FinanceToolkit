@@ -1,0 +1,7 @@
+,Average Loss,MCS P-Value,In Confidence Set,Rank
+M0,0.9843,1.0,True,1
+M1,1.0912,0.165,True,2
+M2,1.0991,0.165,True,3
+M3,1.1116,0.165,True,4
+M4,1.2068,0.0,False,5
+M5,1.2646,0.0,False,6

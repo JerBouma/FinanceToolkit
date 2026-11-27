@@ -10,6 +10,7 @@ from __future__ import annotations
 import functools
 import json
 import math
+import re
 from typing import Any
 
 import numpy as np
@@ -309,7 +310,7 @@ def _no_data(
     if sources:
         payload["_sources"] = sources
 
-    return json.dumps(payload)
+    return _dumps(payload)
 
 
 # The number of rows a cut answer keeps at least, before columns are cut as well.
@@ -517,6 +518,81 @@ def convert_to_period(
     return converted
 
 
+# The calendar periods an answer can be sampled to, with their pandas frequency. A week runs
+# from Monday to Sunday, so a market that trades at the weekend keeps its Sunday.
+SAMPLE_PERIODS = {"weekly": "W-SUN", "monthly": "M", "quarterly": "Q", "yearly": "Y"}
+SAMPLE_PERIOD_NAMES = {
+    "weekly": "week",
+    "monthly": "month",
+    "quarterly": "quarter",
+    "yearly": "year",
+}
+
+
+def sample_rows(
+    data: pd.DataFrame | pd.Series, sample: str
+) -> tuple[pd.DataFrame | pd.Series, str]:
+    """
+    Keeps the last row with a value in each calendar week, month, quarter or year of an
+    answer finer than that (daily, intraday, weekly, monthly or quarterly), including the
+    latest period that has not ended yet. The rows keep
+    their own dates, so a weekly sample of a 200-day moving average is that average on the
+    last trading day of every week. A table with its dates as columns is sampled by column,
+    and rows of a date and an item keep every row of the chosen dates.
+
+    Args:
+        data (pd.DataFrame | pd.Series): The answer.
+        sample (str): "weekly", "monthly", "quarterly" or "yearly".
+
+    Returns:
+        tuple[pd.DataFrame | pd.Series, str]: The sampled answer and a note on what was done,
+        or the answer unchanged and a note on why, when it has no dates or is not finer than
+        the sample.
+    """
+    by_columns = isinstance(data, pd.DataFrame) and has_period_columns(data)
+    table = data.T if by_columns else data
+    axis = "columns" if by_columns else "rows"
+
+    if not _is_time_index(table.index):
+        return data, (
+            f"sample={sample!r} was not applied: the answer has no dates as its rows or columns."
+        )
+
+    dates = table.index.get_level_values(0)
+    observed = observed_period(dates.unique()) or (
+        observed_period(dates.unique().to_timestamp())
+        if isinstance(dates, pd.PeriodIndex)
+        else None
+    )
+    order = list(PERIOD_ORDER)
+    if observed is None or order.index(observed) >= order.index(sample):
+        return data, (
+            f"sample={sample!r} was not applied: the answer is "
+            f"{observed or 'a single date'} already, as coarse as {sample} or coarser."
+        )
+
+    # A week, month or quarter belongs to the period it ends in, as in convert_to_period.
+    timestamps = (
+        dates.to_timestamp(how="end").normalize()
+        if isinstance(dates, pd.PeriodIndex)
+        else dates.tz_localize(None)
+    )
+    periods = timestamps.to_period(SAMPLE_PERIODS[sample])
+    # The last date with a value per period; a row without any value is not a reading.
+    has_value = (
+        table.notna().any(axis=1) if isinstance(table, pd.DataFrame) else table.notna()
+    ).to_numpy()
+    if not has_value.any():
+        return data, f"sample={sample!r} was not applied: the answer has no values."
+    last_dates = pd.Series(timestamps[has_value]).groupby(periods[has_value]).max()
+    sampled = table[timestamps.isin(last_dates)]
+    before, after = len(dates.unique()), len(last_dates)
+
+    return (sampled.T if by_columns else sampled), (
+        f"Sampled to the last {axis[:-1]} of each {SAMPLE_PERIOD_NAMES[sample]} ({after} of {before} {axis})."
+    )
+
+
 SKIPPED_PERIODS_SHOWN = 3
 
 
@@ -568,6 +644,217 @@ def skipped_periods_note(data: pd.DataFrame | pd.Series) -> str | None:
 def has_period_columns(dataframe: pd.DataFrame) -> bool:
     """Whether the periods are the columns (and not the rows), as with ratios."""
     return not _is_time_index(dataframe.index) and _is_time_index(dataframe.columns)
+
+
+# The pandas frequency of a base window date by its length: 'YYYY', 'YYYY-MM', 'YYYY-MM-DD'.
+BASE_DATE_FREQUENCIES = {4: "Y", 7: "M", 10: "D"}
+
+# The columns a rebase note names before it counts the rest.
+MAXIMUM_NAMED_COLUMNS = 10
+
+
+def parse_base_window(text: str) -> tuple[pd.Period, pd.Period]:
+    """
+    The first and last day of a base window: 'YYYY', 'YYYY-MM' or 'YYYY-MM-DD' for one
+    year, month or day, 'START:END' for a range in those forms, or 'YYYY-YYYY' for a range
+    of years. A second part of four digits is a year ('1340-1347'), one of two digits a
+    month ('2020-03'), so the two never mix up.
+
+    The days are daily periods rather than timestamps, which end in 1677 and cannot hold
+    the medieval years of a long history.
+
+    Args:
+        text (str): The base window.
+
+    Returns:
+        tuple[pd.Period, pd.Period]: The first and the last day of the window.
+    """
+    text = str(text).strip()
+    year_range = re.fullmatch(r"(\d{4})-(\d{4})", text)
+    if year_range:
+        parts = list(year_range.groups())
+    elif ":" in text:
+        parts = [part.strip() for part in text.split(":")]
+    else:
+        parts = [text, text]
+
+    usage = (
+        f"rebase_to={text!r} is not a date or a range: use 'YYYY', 'YYYY-MM' or "
+        "'YYYY-MM-DD', a range 'START:END' in those forms (e.g. '2020-01:2020-06'), or "
+        "'YYYY-YYYY' for a range of years (e.g. '1340-1347')."
+    )
+    if len(parts) != 2 or not all(  # noqa: PLR2004
+        re.fullmatch(r"\d{4}(-\d{2}(-\d{2})?)?", part) for part in parts
+    ):
+        raise ValueError(usage)
+    try:
+        start, end = (
+            pd.Period(part, freq=BASE_DATE_FREQUENCIES[len(part)]).asfreq("D", how=how)
+            for part, how in zip(parts, ("start", "end"), strict=True)
+        )
+    except ValueError as exc:  # a month 13 or a day 32
+        raise ValueError(usage) from exc
+    if start.ordinal > end.ordinal:  # both daily periods
+        raise ValueError(
+            f"rebase_to={text!r} ends before it starts; give the earlier date first."
+        )
+
+    return start, end
+
+
+def _row_days(index: pd.Index) -> tuple[pd.PeriodIndex, pd.PeriodIndex]:
+    """The first and last day of every row of a date or period index, as daily periods."""
+    if isinstance(index, pd.PeriodIndex):
+        return index.asfreq("D", how="start"), index.asfreq("D", how="end")
+    if index.tz is not None:
+        index = index.tz_localize(None)
+    days = index.to_period("D")
+
+    return days, days
+
+
+def _name_columns(columns: list) -> str:
+    """The column labels for a note, a tuple label joined by spaces, the rest counted."""
+    names = [
+        " ".join(map(str, column)) if isinstance(column, tuple) else str(column)
+        for column in columns
+    ]
+    if len(names) > MAXIMUM_NAMED_COLUMNS:
+        return (
+            ", ".join(names[:MAXIMUM_NAMED_COLUMNS])
+            + f" and {len(names) - MAXIMUM_NAMED_COLUMNS:,} more"
+        )
+
+    return ", ".join(names)
+
+
+def rebase_result(
+    result: Any, window: tuple[pd.Period, pd.Period], text: str
+) -> tuple[Any, list[str]]:
+    """
+    Indexes every column of a time series to 100 at its average over a base window: each
+    value divided by the column's mean over the rows of the window, times 100. A row
+    belongs to the window when its date, or any day of its period (a year, a quarter),
+    lies in it, so a yearly series rebased to '2020-03' takes the year 2020.
+
+    A table with its periods as columns (a ratio per ticker and year) is turned around, so
+    each row is indexed to its own base. A column without a value in the window, or with
+    an average of zero there, has no base and becomes empty, which a note says; text
+    columns are kept as they are. Anything without dates or periods as its rows or
+    columns (a list, several tables, a row per ticker and date) is returned unchanged
+    with a note, rather than indexed along a guessed direction.
+
+    Args:
+        result (Any): The answer of the indicator.
+        window (tuple[pd.Period, pd.Period]): The first and last day of the base window,
+            from parse_base_window.
+        text (str): The base window as given, for the notes.
+
+    Returns:
+        tuple[Any, list[str]]: The rebased result and the notes on it.
+
+    Raises:
+        ValueError: When no row falls in the window, saying how to widen the dates.
+    """
+    was_series = isinstance(result, pd.Series) and not isinstance(
+        result.index, pd.MultiIndex
+    )
+    series_name = result.name if was_series else None
+    if was_series:
+        result = result.to_frame()
+    if not isinstance(result, pd.DataFrame) or (
+        not result.empty
+        and not (
+            isinstance(result.index, pd.DatetimeIndex | pd.PeriodIndex)
+            or (
+                has_period_columns(result)
+                and isinstance(result.columns, pd.DatetimeIndex | pd.PeriodIndex)
+            )
+        )
+    ):
+        return result, [
+            f"rebase_to={text!r} was ignored: the answer has no single row (or column) of "
+            "dates or periods per value to index to."
+        ]
+    if result.empty:
+        return result, []
+
+    transposed = not isinstance(result.index, pd.DatetimeIndex | pd.PeriodIndex)
+    table = result.T.copy() if transposed else result.copy()
+    first_days, last_days = _row_days(table.index)
+    start, end = window
+    in_window = (first_days <= end) & (last_days >= start)
+    if not in_window.any():
+        first, last = table.index.min(), table.index.max()
+        if last_days.max() < start:
+            hint = f"the answer ends at {last}; set end_date on or after {start} to include it."
+        elif first_days.min() > end:
+            hint = (
+                f"the answer starts at {first}; set start_date on or before {start} to "
+                "include it (where the data goes back that far)."
+            )
+        else:
+            hint = (
+                f"the answer runs from {first} to {last} without a row in between; choose a "
+                "window that holds at least one of its periods."
+            )
+        raise ValueError(
+            f"rebase_to={text!r} ({start} to {end}) matches no row of the answer: {hint}"
+        )
+
+    numeric = [
+        position
+        for position in range(table.shape[1])
+        if pd.api.types.is_numeric_dtype(table.iloc[:, position])
+        and not pd.api.types.is_bool_dtype(table.iloc[:, position])
+    ]
+    values = table.iloc[:, numeric].astype(float)
+    base = values[in_window].mean()
+    missing = base.isna()
+    # A negative base would flip the sign of every value and a zero one has no ratio, so
+    # neither is indexed.
+    not_positive = base <= 0
+    rebased = values / base.where(~missing & ~not_positive) * 100
+    for column, position in enumerate(numeric):
+        table.isetitem(position, rebased.iloc[:, column])
+
+    periods = int(in_window.sum())
+    notes = [
+        f"Every {'row' if transposed else 'column'} is indexed to 100 = its average over "
+        f"{start} to {end} ({periods} {'period' if periods == 1 else 'periods'}), "
+        "rebase_to=" + repr(text) + "."
+    ]
+    labels = list(values.columns)
+    if missing.any():
+        notes.append(
+            f"{_name_columns([labels[i] for i in range(len(labels)) if missing.iloc[i]])} "
+            f"{'has' if missing.sum() == 1 else 'have'} no value in the base window of "
+            f"rebase_to={text!r}, so {'it is' if missing.sum() == 1 else 'they are'} empty."
+        )
+    if not_positive.any():
+        one = not_positive.sum() == 1
+        notes.append(
+            f"{_name_columns([labels[i] for i in range(len(labels)) if not_positive.iloc[i]])} "
+            f"{'has' if one else 'have'} an average over the base window of "
+            f"rebase_to={text!r} that is not positive, so {'it' if one else 'they'} can't be "
+            f"indexed to 100 and {'is' if one else 'are'} empty."
+        )
+    if len(numeric) < table.shape[1]:
+        text_columns = [
+            table.columns[position]
+            for position in range(table.shape[1])
+            if position not in numeric
+        ]
+        notes.append(
+            f"{_name_columns(text_columns)} {'is' if len(text_columns) == 1 else 'are'} "
+            "not numeric and kept as published."
+        )
+
+    table = table.T if transposed else table
+    if was_series:
+        return table.iloc[:, 0].rename(series_name), notes
+
+    return table, notes
 
 
 def _fit_to_size(
@@ -734,12 +1021,37 @@ def filled_day_notes(result: Any) -> list[str]:
     return notes
 
 
+def _columnar(records: list[dict]) -> dict[str, list]:
+    """A table as its column names once and a list of values per row, rather than records
+    that repeat every column name on every row, which about halves an answer.
+
+    Args:
+        records (list[dict]): The table as records.
+
+    Returns:
+        dict[str, list]: The ``columns`` and the ``rows``, each row's values in the order of
+            the columns.
+    """
+    columns = list(dict.fromkeys(key for record in records for key in record))
+
+    return {
+        "columns": columns,
+        "rows": [[record.get(column) for column in columns] for record in records],
+    }
+
+
+def _dumps(payload: Any) -> str:
+    """The answer as JSON without the spaces after separators."""
+    return json.dumps(payload, default=str, separators=(",", ":"))
+
+
 def format_result(
     dataset: dict | pd.Series | pd.DataFrame | int | float | str | None,
     notes: list[str] | None = None,
     reason: str | None = None,
     max_characters: int | None = None,
     sources: list[str] | None = None,
+    outcome: list[str] | None = None,
 ) -> str:
     """Format a Finance Toolkit result as a compact JSON string for LLM consumption.
 
@@ -755,13 +1067,22 @@ def format_result(
             most recent rows (or the first columns) with a note on how to narrow it.
         sources: Optional publishers the data comes from, such as FinancialModelingPrep or
             the Bank for International Settlements, included under a ``"_sources"`` key.
+        outcome: Optional list the kind of answer is appended to, for the usage statistics:
+            "empty" for an answer without data, "cut" for one cut to max_characters and
+            "data" for any other.
 
     Returns:
-        A JSON string.  DataFrames become lists of flat records; dicts of
-        DataFrames become JSON objects keyed by the original dict keys;
+        A JSON string.  DataFrames become ``{"columns": [...], "rows": [[...], ...]}``
+        (the ``_notes`` and ``_sources`` next to them); dicts of DataFrames become JSON
+        objects keyed by the original dict keys, a table of columns and rows each;
         scalars become ``{"value": <scalar>}``; missing data becomes
         ``{"error": "No data available."}``.
     """
+
+    def _answered(state: str, text: str) -> str:
+        if outcome is not None:
+            outcome.append(state)
+        return text
 
     def _inject(payload: Any) -> Any:
         """Wrap payload in a dict with ``_notes`` and ``_sources`` when present."""
@@ -774,58 +1095,70 @@ def format_result(
             return payload
         if isinstance(payload, list):
             return {"data": payload, **extras}
+        # A table's columns and rows sit next to the notes and sources.
         if isinstance(payload, dict):
             payload.update(extras)
             return payload
         return payload
 
     if dataset is None:
-        return _no_data(reason, notes, sources)
+        return _answered("empty", _no_data(reason, notes, sources))
 
     if isinstance(dataset, pd.Series):
         dataset = dataset.to_frame()
 
     if isinstance(dataset, pd.DataFrame):
         if dataset.empty or not int(dataset.notna().to_numpy().sum()):
-            return _no_data(reason, notes, sources)
+            return _answered("empty", _no_data(reason, notes, sources))
+        # The size a response may have is that of the table as records, so a cut keeps
+        # the same rows whatever form the answer is sent in.
         if max_characters:
             records, cut_note = _fit_to_size(dataset, max_characters)
             if cut_note:
                 notes = [*(notes or []), cut_note]
-            return json.dumps(_inject(records), default=str)
-        return json.dumps(_inject(_df_to_records(dataset)), default=str)
+            return _answered(
+                "cut" if cut_note else "data", _dumps(_inject(_columnar(records)))
+            )
+        return _answered("data", _dumps(_inject(_columnar(_df_to_records(dataset)))))
 
     if isinstance(dataset, dict):
         out: dict[str, Any] = {}
         tables = [
             value for value in dataset.values() if isinstance(value, pd.DataFrame)
         ]
+        state = "data"
         for key, value in dataset.items():
             if isinstance(value, pd.DataFrame):
                 if not value.empty and int(value.notna().to_numpy().sum()):
                     if max_characters:
                         # The tables share the size a response may have.
-                        out[str(key)], cut_note = _fit_to_size(
+                        records, cut_note = _fit_to_size(
                             value, max_characters // max(1, len(tables))
                         )
+                        out[str(key)] = _columnar(records)
                         if cut_note:
                             notes = [*(notes or []), f"{key}: {cut_note}"]
+                            state = "cut"
                     else:
-                        out[str(key)] = _df_to_records(value)
+                        out[str(key)] = _columnar(_df_to_records(value))
                 else:
                     out[str(key)] = []
             else:
                 out[str(key)] = _clean(value)
-        return json.dumps(_inject(out), default=str)
+        # Tables only, none of them with a value: a model whose every part is empty.
+        if tables and len(tables) == len(dataset) and not any(out.values()):
+            state = "empty"
+        return _answered(state, _dumps(_inject(out)))
 
     if isinstance(dataset, int | float | str):
-        return json.dumps(_inject({"value": _clean(dataset)}))
+        return _answered("data", _dumps(_inject({"value": _clean(dataset)})))
 
     # A plain list of values, such as the expiration dates of an option chain.
     if isinstance(dataset, list | tuple):
         if not dataset:
-            return _no_data(reason, notes, sources)
+            return _answered("empty", _no_data(reason, notes, sources))
         values = [_clean(value) for value in dataset]
+        state = "data"
         # A list has no rows to cut by date, so it keeps its first values that fit.
         if max_characters and len(json.dumps(values, default=str)) > max_characters:
             kept = len(values)
@@ -840,7 +1173,8 @@ def format_result(
                 "response size; use limit to choose which values are returned.",
             ]
             values = values[:kept]
-        return json.dumps(_inject(values), default=str)
+            state = "cut"
+        return _answered(state, _dumps(_inject(values)))
 
     logger.warning("Unexpected result type: %s. Returning raw string.", type(dataset))
-    return json.dumps(_inject({"value": str(dataset)}))
+    return _answered("data", _dumps(_inject({"value": str(dataset)})))

@@ -1,0 +1,3 @@
+Ticker,v0,sigma,rho,Feller Ratio,RMSE,Quotes,Expirations,At Bound
+AAPL,0.06,0.17,-0.89,0.4,0.0,73,2,
+MSFT,0.06,0.16,-0.95,1.0,0.0,73,2,

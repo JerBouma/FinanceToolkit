@@ -1,0 +1,24 @@
+,AAPL,MSFT
+Win Rate,0.5278,0.5556
+Average Win,0.1009,0.0656
+Average Loss,-0.0683,-0.0486
+Payoff Ratio,1.4777,1.3498
+Profit Factor,1.6515,1.6873
+Expectancy,0.021,0.0148
+Max Consecutive Wins,5.0,6.0
+Max Consecutive Losses,3.0,3.0
+Recovery Factor,3.0553,1.8482
+Common Sense Ratio,2.4299,2.4234
+Best Return,0.2166,0.1763
+Worst Return,-0.1223,-0.1093
+Exposure,1.0,1.0
+CPC Index,1.288,1.2653
+Profit Ratio,1.3221,1.0798
+Outlier Win Ratio,2.049,2.4757
+Outlier Loss Ratio,1.7836,2.1817
+Risk of Ruin,0.0,0.0
+Risk-Adjusted Return,0.218,0.1608
+Mean Return,0.021,0.0148
+Standard Error,0.0162,0.0117
+Lower Confidence Limit,-0.0118,-0.0088
+Upper Confidence Limit,0.0538,0.0385

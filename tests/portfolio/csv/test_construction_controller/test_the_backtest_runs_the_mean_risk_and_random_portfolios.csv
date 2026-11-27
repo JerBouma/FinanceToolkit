@@ -1,0 +1,6 @@
+Portfolio,Annualized Return,Annualized Volatility,Sharpe Ratio,Maximum Drawdown,Average Turnover,Annualized Costs,In-Sample Return,In-Sample Sharpe Ratio
+Minimum MAD,0.0216,0.2828,0.139,-0.3218,0.138,0.0005,0.2968,1.0677
+Minimum Semideviation,0.0133,0.2853,0.1117,-0.3337,0.2493,0.0009,0.2979,1.0721
+Random,0.0239,0.2909,0.1509,-0.3118,0.7636,0.0027,0.3363,1.1259
+Equal Weight,0.0243,0.2826,0.1482,-0.3004,0.0332,0.0001,0.3163,1.0825
+Benchmark,0.0263,0.1947,0.118,-0.2449,,,,

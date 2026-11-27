@@ -2,6 +2,7 @@
 
 __docformat__ = "google"
 
+import numbers
 from collections.abc import Callable
 
 import pandas as pd
@@ -10,7 +11,14 @@ from financetoolkit import currencies_model
 from financetoolkit.etf import etf_model
 from financetoolkit.portfolio import portfolio_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
-from financetoolkit.utilities.error_model import handle_errors
+from financetoolkit.utilities.error_model import (
+    InvalidArgumentError,
+    check_option,
+    check_period,
+    count_request_failures,
+    handle_errors,
+    validate_window,
+)
 from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import PERIODS_PER_YEAR, apply_rounding
@@ -132,6 +140,10 @@ class ETF:
         self._sector_function = sector_function
         self._holding_currency_function = holding_currency_function
         self._benchmark_ticker = benchmark_ticker
+        # The funds without weightings (per "country" or "sector") after a call in which a
+        # request failed, so a later call served from memory does not read them as funds
+        # that have no weightings.
+        self._unanswered_funds: dict[str, set[str]] = {}
 
     def _listing_currencies(self) -> pd.Series:
         """The currency every ticker is listed in, empty when it cannot be retrieved."""
@@ -350,10 +362,33 @@ class ETF:
             fund: weights.get(fund, pd.Series(dtype=float)) for fund in self._funds()
         }
 
-    @staticmethod
-    def _sorted_weightings(weightings: pd.DataFrame | None) -> pd.DataFrame | None:
-        """The weightings with the largest weights of the first fund first."""
-        if weightings is None or weightings.empty:
+    def _sorted_weightings(self, name: str, overwrite: bool) -> pd.DataFrame | None:
+        """
+        The country or sector weightings with the largest weights of the first fund first,
+        naming the funds without any, as an empty answer for a fund otherwise says nothing
+        about why. A fund whose request failed is not named here: the collector reported it.
+        """
+        with count_request_failures() as failed_requests:
+            weightings = self._fund_data_function(
+                f"{name}_weightings", overwrite=overwrite
+            )
+        if weightings is None:
+            return weightings
+        without = [fund for fund in self._funds() if fund not in weightings.columns]
+        if failed_requests():
+            self._unanswered_funds[name] = set(without)
+        else:
+            if overwrite:
+                self._unanswered_funds.pop(name, None)
+            unanswered = self._unanswered_funds.get(name, set())
+            if no_weightings := [fund for fund in without if fund not in unanswered]:
+                logger.warning(
+                    "Financial Modeling Prep has no %s weightings for %s; it publishes "
+                    "them for ETFs and funds only.",
+                    name,
+                    ", ".join(no_weightings),
+                )
+        if weightings.empty:
             return weightings
         # A fund lists only the sectors or countries it holds, so one another fund holds has
         # no weight in it rather than an unknown one.
@@ -369,9 +404,10 @@ class ETF:
         rounding: int | None = None,
     ) -> pd.DataFrame | None:
         """
-        Get the holdings of every fund: each asset it holds with the number of shares, the
-        market value and the weight in the fund (as a decimal). This shows what the fund is
-        actually exposed to and how concentrated it is; get_concentration and get_overlap
+        Get the holdings of every fund: each asset it holds with the number of shares, the market value and the weight
+        in the fund (as a decimal).
+
+        This shows what the fund is actually exposed to and how concentrated it is; get_concentration and get_overlap
         summarize the weights.
 
         Tickers that are not an ETF or fund have no holdings and return no data. They are not
@@ -424,6 +460,16 @@ class ETF:
         | MU      | Micron Technology Inc | US5951121038 | 595112103 | 2.35156e+07 |   0.0457 |    2.19699e+10 | 2026-10-31 15:30:02 |
         | AMZN    | Amazon.com Inc        | US0231351067 | 023135106 | 8.13519e+07 |   0.0412 |    1.98328e+10 | 2026-10-31 15:30:02 |
         """
+        if limit is not None and (
+            isinstance(limit, bool)
+            or not isinstance(limit, numbers.Integral)
+            or limit == 0
+        ):
+            raise InvalidArgumentError(
+                f"limit is a number of holdings, not {limit!r}. Please pass a positive whole "
+                "number for the largest holdings, a negative one for the smallest, or None."
+            )
+
         holdings = self._fund_data_function("holdings", overwrite=overwrite)
         if holdings is None:
             return None
@@ -455,12 +501,13 @@ class ETF:
         self, overwrite: bool = False, show_columns: str | list[str] | None = None
     ) -> pd.DataFrame | None:
         """
-        Get everything Financial Modeling Prep publishes about every fund: its name,
-        identifiers, issuer, asset class, domicile, inception date, expense ratio (as a
-        decimal), assets under management, net asset value, number of holdings, description
-        and website. The expense ratio in particular determines how much of the return is lost
-        to costs every year. get_profile adds the latest price, the premium or discount to the
-        NAV and the dollar volume to the key figures.
+        Get everything Financial Modeling Prep publishes about every fund.
+
+        Get everything Financial Modeling Prep publishes about every fund: its name, identifiers, issuer, asset class,
+        domicile, inception date, expense ratio (as a decimal), assets under management, net asset value, number of
+        holdings, description and website. The expense ratio in particular determines how much of the return is lost
+        to costs every year. get_profile adds the latest price, the premium or discount to the NAV and the dollar
+        volume to the key figures.
 
         Tickers that are not an ETF or fund return no data. They are not removed from the
         Toolkit instance.
@@ -520,12 +567,13 @@ class ETF:
         self, overwrite: bool = False, show_columns: str | list[str] | None = None
     ) -> pd.DataFrame | None:
         """
-        Get how every fund is allocated across countries, as decimals, the largest weights of
-        the first fund first. Two funds tracking similar markets can differ considerably here,
-        which matters for the currency and political risk the fund carries.
+        Get how every fund is allocated across countries, as decimals, the largest weights of the first fund first.
 
-        Tickers that are not an ETF or fund return no data. They are not removed from the
-        Toolkit instance.
+        Two funds tracking similar markets can differ considerably here, which matters for the currency and political
+        risk the fund carries.
+
+        Tickers that are not an ETF or fund return no data, which is logged. They are not removed
+        from the Toolkit instance.
 
         Also known as: country allocation, geographic exposure, country exposure.
 
@@ -566,20 +614,19 @@ class ETF:
         | Canada         | 0.0096 | 0.0007 |
         | Singapore      | 0.0074 | 0.0025 |
         """
-        return self._sorted_weightings(
-            self._fund_data_function("country_weightings", overwrite=overwrite)
-        )
+        return self._sorted_weightings("country", overwrite)
 
     def get_sector_weightings(
         self, overwrite: bool = False, show_columns: str | list[str] | None = None
     ) -> pd.DataFrame | None:
         """
-        Get how every fund is allocated across sectors, as decimals, the largest weights of the
-        first fund first. This shows whether a fund that looks broad is in fact concentrated
-        in a few sectors, such as technology in many large-cap indices.
+        Get how every fund is allocated across sectors, as decimals, the largest weights of the first fund first.
 
-        Tickers that are not an ETF or fund return no data. They are not removed from the
-        Toolkit instance.
+        This shows whether a fund that looks broad is in fact concentrated in a few sectors, such as technology in
+        many large-cap indices.
+
+        Tickers that are not an ETF or fund return no data, which is logged. They are not removed
+        from the Toolkit instance.
 
         Also known as: sector allocation, sector exposure, sector breakdown.
 
@@ -627,9 +674,7 @@ class ETF:
         | Financial Services     | 0.001949 | 0.123878 |
         | Real Estate            | 0        | 0.022741 |
         """
-        return self._sorted_weightings(
-            self._fund_data_function("sector_weightings", overwrite=overwrite)
-        )
+        return self._sorted_weightings("sector", overwrite)
 
     @handle_errors
     def get_profile(
@@ -639,23 +684,22 @@ class ETF:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Get the profile of every fund: its name, issuer, asset class, domicile, inception date,
-        expense ratio, assets under management, net asset value (NAV), latest price and the
-        premium or discount of that price to the NAV, the number of holdings and the average
-        daily volume and dollar volume (in US dollars, at the exchange rate of every day for a
-        fund listed in another currency). The expense ratio is what holding the fund costs every
-        year; a premium means buying it costs more than the holdings are worth, which happens in
-        stress for funds of less liquid assets such as bonds. The NAV is the latest Financial
-        Modeling Prep publishes and the NAV Date the New York close it was struck at (the last
-        16:00 close before its update), so the premium compares the close on the NAV Date with
-        the NAV (SEC Rule 6c-11), not the latest Price. It is empty without a close within three
-        days before the NAV Date (an end date in the past), when the NAV is in another currency
-        than the listing (a close in pence, GBp or GBX, is compared in pounds) and, with a logged
-        warning, when it exceeds 50% either way, which is a data error rather than a price.
-        With stale_nav=True the premium is given however old the NAV is: it compares the NAV
-        with the last close on or before the NAV Date, or with the latest close when the prices
-        end before the NAV Date or the NAV has no date. A NAV days older than the close then
-        mostly shows how the market moved since, not what the fund trades at.
+        Get the profile of every fund: who issues it, what it holds, what it costs and how large it is.
+
+        Get the profile of every fund: its name, issuer, asset class, domicile, inception date, expense ratio, assets
+        under management, net asset value (NAV), latest price and the premium or discount of that price to the NAV,
+        the number of holdings and the average daily volume and dollar volume (in US dollars, at the exchange rate of
+        every day for a fund listed in another currency). The expense ratio is what holding the fund costs every year;
+        a premium means buying it costs more than the holdings are worth, which happens in stress for funds of less
+        liquid assets such as bonds. The NAV is the latest Financial Modeling Prep publishes and the NAV Date the New
+        York close it was struck at (the last 16:00 close before its update), so the premium compares the close on the
+        NAV Date with the NAV (SEC Rule 6c-11), not the latest Price. It is empty without a close within three days
+        before the NAV Date (an end date in the past), when the NAV is in another currency than the listing (a close
+        in pence, GBp or GBX, is compared in pounds) and, with a logged warning, when it exceeds 50% either way, which
+        is a data error rather than a price. Including a stale NAV, the premium is given however old the NAV is: it
+        compares the NAV with the last close on or before the NAV Date, or with the latest close when the prices end
+        before the NAV Date or the NAV has no date. A NAV days older than the close then mostly shows how the market
+        moved since, not what the fund trades at.
 
         Also known as: ETF profile, expense ratio, assets under management, premium discount.
 
@@ -868,9 +912,10 @@ class ETF:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Measure how closely every fund tracks the Benchmark of the Toolkit, which for an index
-        fund should be the index it follows (set benchmark_ticker to a total return index or to
-        another fund of the same index). Per fund:
+        Measure how closely every fund tracks the Benchmark of the Toolkit, which for an index fund should be the
+        index it follows (set benchmark_ticker to a total return index or to another fund of the same index).
+
+        Per fund:
 
         - Tracking Difference: the annualized return of the fund minus that of the Benchmark
           over the period, as issuers report it. An index fund trails its index by roughly its
@@ -880,7 +925,7 @@ class ETF:
           far the fund strays from the index from period to period.
         - Correlation, Beta and R Squared of the fund's returns with the Benchmark's.
 
-        With yearly=True the tracking difference is given per calendar year instead, the return
+        Per year, the tracking difference is given per calendar year instead, the return
         of the fund minus that of the Benchmark. Each fund is compared with the Benchmark on the
         dates both have a close, so a fund whose prices stop within a year (after a ticker
         change, for example) is measured up to its last close. The daily closes of two funds can differ by the
@@ -897,8 +942,9 @@ class ETF:
         Also known as: tracking difference, tracking error, index tracking.
 
         Args:
-            period (str, optional): The return frequency (daily, weekly, monthly, quarterly or
-                yearly). Defaults to "daily".
+            period (str, optional): The return frequency. Options are: "daily" (daily returns), "weekly"
+                (weekly returns), "monthly" (monthly returns), "quarterly" (quarterly returns), "yearly" (yearly
+                returns). Defaults to "daily".
             yearly (bool, optional): Whether to return the tracking difference per year.
                 Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to.
@@ -938,10 +984,7 @@ class ETF:
         | Beta                | 0.9994 | 1.0014 | 0.9996 |
         | R Squared           | 0.9999 | 0.9999 | 0.9999 |
         """
-        if period not in PERIODS_PER_YEAR:
-            raise ValueError(
-                "Period must be daily, weekly, monthly, quarterly or yearly."
-            )
+        check_period(period, PERIODS_PER_YEAR)
         full = self._historical()["Adj Close"]
         if BENCHMARK_TICKER not in full:
             raise ValueError(
@@ -1007,13 +1050,14 @@ class ETF:
         self, rounding: int | None = None, show_columns: str | list[str] | None = None
     ) -> pd.DataFrame:
         """
-        Measure how concentrated every fund is from its holdings: the number of holdings, the
-        largest holding and its weight, the weight of the ten largest (shares of the fund), the
-        Herfindahl-Hirschman index (the sum of the squared weights, after scaling the weights of
-        the holdings to sum to one, so cash and holdings without a weight do not dilute it) and
-        the effective number of holdings (one over that index). A fund of 500 holdings whose ten largest make up a third
-        of it behaves like a fund of far fewer stocks; the effective number says how many
-        equally weighted holdings would give the same concentration.
+        Measure how concentrated every fund is in its largest holdings.
+
+        Measure how concentrated every fund is from its holdings: the number of holdings, the largest holding and its
+        weight, the weight of the ten largest (shares of the fund), the Herfindahl-Hirschman index (the sum of the
+        squared weights, after scaling the weights of the holdings to sum to one, so cash and holdings without a
+        weight do not dilute it) and the effective number of holdings (one over that index). A fund of 500 holdings
+        whose ten largest make up a third of it behaves like a fund of far fewer stocks; the effective number says how
+        many equally weighted holdings would give the same concentration.
 
         Also known as: fund concentration, top 10 weight, Herfindahl index, effective number of
         holdings.
@@ -1071,9 +1115,10 @@ class ETF:
         self, rounding: int | None = None, show_columns: str | list[str] | None = None
     ) -> pd.DataFrame:
         """
-        Measure how much the funds hold of the same: for every pair of funds the sum, over the
-        holdings they share, of the smaller of the two weights. An overlap of 0.8 means 80% of
-        the two portfolios is the same, so holding both adds little diversification.
+        Measure how much the funds hold of the same: for every pair of funds the sum, over the holdings they share, of
+        the smaller of the two weights.
+
+        An overlap of 0.8 means 80% of the two portfolios is the same, so holding both adds little diversification.
 
         The weights are taken as listed, not scaled to add up to one, so the overlap of a fund
         whose list of holdings is incomplete is at most the weight that list covers, also with
@@ -1123,11 +1168,12 @@ class ETF:
         self, rounding: int | None = None, show_columns: str | list[str] | None = None
     ) -> pd.DataFrame:
         """
-        Measure how much each fund's holdings differ from every other fund's: half the sum, over
-        all holdings of either fund, of the absolute difference between their weights. Against
-        an index fund it shows how far a fund departs from the index: an active share of 0.2
-        means 20% of the portfolio differs and 80% is the index. Cremers and Petajisto (2009)
-        call funds below about 0.6 closet indexers.
+        Measure how much each fund's holdings differ from every other fund's: half the sum, over all holdings of
+        either fund, of the absolute difference between their weights.
+
+        Against an index fund it shows how far a fund departs from the index: an active share of 0.2 means 20% of the
+        portfolio differs and 80% is the index. Cremers and Petajisto (2009) call funds below about 0.6 closet
+        indexers.
 
         Also known as: active share, portfolio difference, deviation from the benchmark.
 
@@ -1194,16 +1240,16 @@ class ETF:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Value every fund through its holdings: the price-to-earnings, price-to-book,
-        price-to-sales and price-to-free-cash-flow ratio, the dividend yield and the net profit
-        margin of its largest holdings, weighted by their weight in the fund. The multiples are
-        weighted harmonic means, the multiple of the fund as a whole, so one holding with a very
-        high multiple does not dominate. When the holdings' earnings (or book value, sales or
-        free cash flow) add up to a loss or to about zero, the fund has no meaningful multiple,
-        so it is NaN with a logged warning. The coverage is the share of the fund's weight held
-        in holdings with a usable, non-zero price-to-earnings ratio (or, without
-        price-to-earnings ratios, the first other multiple there is); more holdings raise it at
-        the cost of more requests.
+        Value every fund through its holdings, as the weighted valuation ratios of the companies it holds.
+
+        Value every fund through its holdings: the price-to-earnings, price-to-book, price-to-sales and
+        price-to-free-cash-flow ratio, the dividend yield and the net profit margin of its largest holdings, weighted
+        by their weight in the fund. The multiples are weighted harmonic means, the multiple of the fund as a whole,
+        so one holding with a very high multiple does not dominate. When the holdings' earnings (or book value, sales
+        or free cash flow) add up to a loss or to about zero, the fund has no meaningful multiple, so it is NaN with a
+        logged warning. The coverage is the share of the fund's weight held in holdings with a usable, non-zero
+        price-to-earnings ratio (or, without price-to-earnings ratios, the first other multiple there is); more
+        holdings raise it at the cost of more requests.
 
         The ratios are the trailing twelve month ratios Financial Modeling Prep calculates for
         every holding.
@@ -1246,6 +1292,8 @@ class ETF:
         | Net Profit Margin       |  0.3673 |  0.3113 |  0.1583 |
         | Coverage                |  0.5324 |  0.7154 |  0.8077 |
         """
+        validate_window("holdings", holdings)
+
         weights = {
             fund: fund_weights.sort_values(ascending=False).iloc[:holdings]
             for fund, fund_weights in self._weights().items()
@@ -1281,17 +1329,18 @@ class ETF:
         self, rounding: int | None = None, show_columns: str | list[str] | None = None
     ) -> pd.DataFrame:
         """
-        Measure how liquid every fund is to trade over the last year of the period: its average
-        daily volume and dollar volume, that dollar volume relative to the fund's assets under
-        management, and the price impact of trading 100 million dollars in a day (the Amihud,
-        2002, illiquidity: the average absolute daily return per dollar traded, scaled to 100
-        million). The dollar volume of a fund listed in another currency is its traded value
-        in the major unit (pounds for a close in pence) converted at the exchange rate of every
-        day, and its assets, published in the NAV's currency (the major unit of the listing
-        currency when the NAV currency is not published), at the latest rate; without an
-        exchange rate these measures are NaN, with a logged warning. An ETF can also be traded through its holdings, so a thinly traded fund of
-        liquid holdings is easier to trade than its own volume suggests; a fund whose holdings
-        are themselves illiquid (small companies, high yield bonds) is not.
+        Measure how liquid every fund is to trade, from its daily volume and the price impact of trading it.
+
+        Measure how liquid every fund is to trade over the last year of the period: its average daily volume and
+        dollar volume, that dollar volume relative to the fund's assets under management, and the price impact of
+        trading 100 million dollars in a day (the Amihud, 2002, illiquidity: the average absolute daily return per
+        dollar traded, scaled to 100 million). The dollar volume of a fund listed in another currency is its traded
+        value in the major unit (pounds for a close in pence) converted at the exchange rate of every day, and its
+        assets, published in the NAV's currency (the major unit of the listing currency when the NAV currency is not
+        published), at the latest rate; without an exchange rate these measures are NaN, with a logged warning. An ETF
+        can also be traded through its holdings, so a thinly traded fund of liquid holdings is easier to trade than
+        its own volume suggests; a fund whose holdings are themselves illiquid (small companies, high yield bonds) is
+        not.
 
         For more information, see the following paper:
 
@@ -1394,9 +1443,11 @@ class ETF:
         return and the level that converts a contribution into points.
         """
         if self._prices_function is None:
-            raise ValueError(
-                "Prices of the holdings are not available for this Toolkit."
+            raise InvalidArgumentError(
+                "The prices of the holdings come from the Toolkit. Please use this method from a "
+                "Toolkit (toolkit.etf), or pass prices_function when creating the ETF class."
             )
+        validate_window("holdings", holdings)
 
         weights = {
             fund: fund_weights.sort_values(ascending=False).iloc[:holdings]
@@ -1463,21 +1514,16 @@ class ETF:
             prices.index = prices.index.to_timestamp()
         prices = prices.reindex(columns=tickers)
 
-        def close(
-            frame: pd.DataFrame, before: pd.Timestamp, inclusive: bool = True
-        ) -> pd.Series:
-            # The last close up to a date, per ticker: a holding that did not trade on the
-            # date (a holiday on its exchange) keeps its last close.
-            rows = frame.loc[
-                frame.index <= before if inclusive else frame.index < before
-            ]
-            if rows.empty:
-                return pd.Series(float("nan"), index=frame.columns)
-            return rows.ffill().iloc[-1]
-
-        if close(prices, start, inclusive=False).isna().all():
+        if etf_model.get_last_prices(prices, start, inclusive=False).isna().all():
             raise ValueError(
                 "There are no prices before the start date to measure the period from."
+            )
+        # The funds are priced, so an index without any price is not a ticker.
+        if index and prices[index].isna().all():
+            raise InvalidArgumentError(
+                f"index {index!r} has no prices over the period. Please pass the ticker of an "
+                "index or fund, such as '^GSPC' for SPY, or None for points of the fund's own "
+                "price."
             )
 
         holding_currencies = self._holding_currencies(
@@ -1502,9 +1548,13 @@ class ETF:
                     fund_currencies.get(fund),
                     pd.DatetimeIndex(prices.index),
                 )
-            start_prices = close(fund_prices, start, inclusive=False)
-            end_prices = close(fund_prices, end)
-            weight_date_prices = close(fund_prices, weight_dates[fund])
+            start_prices = etf_model.get_last_prices(
+                fund_prices, start, inclusive=False
+            )
+            end_prices = etf_model.get_last_prices(fund_prices, end)
+            weight_date_prices = etf_model.get_last_prices(
+                fund_prices, weight_dates[fund]
+            )
             table = etf_model.get_contribution(
                 fund_weights[symbols[fund]],
                 start_prices,
@@ -1549,12 +1599,13 @@ class ETF:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculate how much every holding (or sector) of a fund added to or took off its return
-        over the period: the holding's weight at the start of the period times its return over
-        the period, in decimals and in points of the fund's price (or of an index, e.g. the
-        S&P 500 for SPY). It answers questions such as "how many points did technology take
-        off the S&P 500 this month?" and shows when a few large holdings carry an index while
-        most of its stocks fall, or the other way around.
+        Calculate how much every holding or sector of a fund added to or took off its return over the period.
+
+        Calculate how much every holding (or sector) of a fund added to or took off its return over the period: the
+        holding's weight at the start of the period times its return over the period, in decimals and in points of the
+        fund's price (or of an index, e.g. the S&P 500 for SPY). It answers questions such as "how many points did
+        technology take off the S&P 500 this month?" and shows when a few large holdings carry an index while most of
+        its stocks fall, or the other way around.
 
         The period runs from the close before the Toolkit's start date to the close on its
         end date, so a start date of January 1 gives the return so far this year. Returns are
@@ -1579,8 +1630,8 @@ class ETF:
         move, points contribution, sector contribution.
 
         Args:
-            group_by (str, optional): "holding" for every holding or "sector" for every sector
-                (from the holdings' company profiles). Defaults to "holding".
+            group_by (str, optional): What the contribution is given for. Options are: "holding" (every
+                holding), "sector" (every sector, from the holdings' company profiles). Defaults to "holding".
             holdings (int | None, optional): The number of largest holdings (by weight) to
                 price, one request each; the rest counts towards the Remainder. Defaults to
                 None, which prices every holding with a symbol.
@@ -1639,12 +1690,12 @@ class ETF:
         | Remainder              |         0.0008 | nan      |         0.0004 |    2.9928 |
         | Total                  |         1      |  -0.0091 |        -0.0091 |  -69.3287 |
         """
-        if group_by not in ("holding", "sector"):
-            raise ValueError("group_by must be 'holding' or 'sector'.")
+        check_option("group_by", group_by, ("holding", "sector"))
 
         if group_by == "sector" and self._sector_function is None:
-            raise ValueError(
-                "The sectors of the holdings are not available for this Toolkit."
+            raise InvalidArgumentError(
+                "The sectors of the holdings come from the Toolkit. Please use this method from a "
+                "Toolkit (toolkit.etf), or pass sector_function when creating the ETF class."
             )
 
         tables = {}
@@ -1682,11 +1733,12 @@ class ETF:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculate the return a fund would have had without some of its holdings or sectors:
-        the contribution of the other holdings over their weight, Σ contribution / Σ start
-        weight over the holdings that remain, so the rest of the fund reweighted to a whole.
-        It answers "what did the S&P 500 do without technology?" or "without Nvidia?", showing
-        how much of an index move comes from a few stocks.
+        Calculate the return a fund would have had without some of its holdings or sectors.
+
+        Calculate the return a fund would have had without some of its holdings or sectors: the contribution of the
+        other holdings over their weight, Σ contribution / Σ start weight over the holdings that remain, so the rest
+        of the fund reweighted to a whole. It answers "what did the S&P 500 do without technology?" or "without
+        Nvidia?", showing how much of an index move comes from a few stocks.
 
         The contributions come from get_contribution: weights rolled back from the fund's
         current holdings to the start of the period, price returns from the close before the
@@ -1752,7 +1804,10 @@ class ETF:
             names = [exclude] if isinstance(exclude, str) else list(exclude)
             wanted = {name.strip().upper() for name in names if name and name.strip()}
             if not wanted:
-                raise ValueError("Name at least one holding or sector to exclude.")
+                raise InvalidArgumentError(
+                    "Name at least one holding or sector to exclude, or pass None to leave out "
+                    "the largest holding of each fund."
+                )
 
         contributions = self._contributions(holdings, index=None)
         priced = sorted(
@@ -1762,8 +1817,10 @@ class ETF:
         if wanted is not None and wanted - {asset.upper() for asset in priced}:
             # Not every name is a holding, so the others are matched against the sectors.
             if self._sector_function is None:
-                raise ValueError(
-                    "The sectors of the holdings are not available for this Toolkit."
+                raise InvalidArgumentError(
+                    "The sectors of the holdings come from the Toolkit. Please use this method "
+                    "from a Toolkit (toolkit.etf), or pass sector_function when creating the ETF "
+                    "class."
                 )
             sectors = self._sector_function(priced)
             known = {asset.upper() for asset in priced} | set(
@@ -1776,21 +1833,44 @@ class ETF:
                 )
 
         result = {}
+        # A ticker that is not a fund (or a fund without published holdings) has nothing
+        # to exclude from, so it is left out rather than failing the funds that have them.
+        without_holdings = [
+            fund for fund, (table, _, _) in contributions.items() if table.empty
+        ]
+        if without_holdings:
+            logger.warning(
+                "%s %s no holdings and %s left out.",
+                ", ".join(without_holdings),
+                "has" if len(without_holdings) == 1 else "have",
+                "is" if len(without_holdings) == 1 else "are",
+            )
         for fund, (table, fund_return, _) in contributions.items():
+            if table.empty:
+                continue
             sector = sectors.reindex(table.index).fillna("").astype(str).str.upper()
-            # Without names, each fund leaves out its own largest holding.
+            # Without names, each fund leaves out its own largest holding (none when no
+            # holding has a start weight, as the fund has no price at the start).
+            start_weights = table["Start Weight"].dropna()
             names_out = (
                 wanted
                 if wanted is not None
-                else {str(table["Start Weight"].idxmax()).upper()}
+                else (
+                    {str(start_weights.idxmax()).upper()}
+                    if not start_weights.empty
+                    else set()
+                )
             )
             excluded = table.index.str.upper().isin(names_out) | sector.isin(names_out)
             rest = table.loc[~excluded]
             result[fund] = {
                 "Return": fund_return,
                 # The like-for-like comparison for the Return Excluding.
-                "Priced Holdings Return": float(
-                    table["Contribution"].sum() / table["Start Weight"].sum()
+                # NaN without a start weight (no holding priced at the start), as below.
+                "Priced Holdings Return": (
+                    float(table["Contribution"].sum() / table["Start Weight"].sum())
+                    if table["Start Weight"].sum() > 0
+                    else float("nan")
                 ),
                 "Excluded Weight": float(table.loc[excluded, "Start Weight"].sum()),
                 "Excluded Contribution": float(

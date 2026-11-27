@@ -23,19 +23,24 @@ def get_intrinsic_value(
     preferred_stock: float = 0.0,
 ) -> pd.DataFrame:
     """
-    Intrinsic value is a fundamental concept in finance and investing that represents the true
-    worth of an asset, independent of its current market price. This function estimates the
-    intrinsic value of a company using a Discounted Cash Flow (DCF) model: it projects a base
-    cash flow forward at a constant growth rate, discounts a terminal value off the final
-    projection, and discounts every projected cash flow back to the present at the weighted
-    average cost of capital.
+    Intrinsic value is a fundamental concept in finance and investing that represents the
+    true worth of an asset, independent of its current market price.
+
+    This function estimates the intrinsic value of a company using a Discounted Cash Flow
+    (DCF) model: it projects a base cash flow forward at a constant growth rate, discounts a
+    terminal value off the final projection, and discounts every projected cash flow back to
+    the present at the weighted average cost of capital.
 
     The formula is as follows:
 
         - Cash Flow Projection_t = Cash Flow_t-1 * (1 + Growth Rate)
         - Terminal Value = Last Cash Flow Projection * (1 + Perpetual Growth Rate) /
         (Weighted Average Cost of Capital — Perpetual Growth Rate)
-        - Enterprise Value = Sum of Present Value of Cash Flow Projections + Terminal Value
+        - Present Value of Cash Flows = Sum of Cash Flow Projection_t / (1 + Weighted Average
+        Cost of Capital)^t for t = 1 to Periods
+        - Present Value of Terminal Value = Terminal Value / (1 + Weighted Average Cost of
+        Capital)^Periods
+        - Enterprise Value = Present Value of Cash Flows + Present Value of Terminal Value
         - Equity Value = Enterprise Value + Cash and Cash Equivalents + Short Term Investments —
         Total Debt — Minority Interest — Preferred Stock
         - Intrinsic Value = Equity Value / Total Shares Outstanding
@@ -60,8 +65,9 @@ def get_intrinsic_value(
         common shareholders. Defaults to 0.0.
 
     Returns:
-        pd.DataFrame: A DataFrame containing the Terminal Value, Cash Flow Projection, Enterprise
-        Value, Equity Value and Intrinsic Value.
+        pd.DataFrame: A DataFrame containing the Terminal Value, Cash Flow Projection (the last
+        projected cash flow), Present Value of Cash Flows, Present Value of Terminal Value,
+        Enterprise Value, Equity Value and Intrinsic Value.
 
     Notes:
     - The results are highly dependent on the input. Therefore, think carefully about each input
@@ -69,6 +75,10 @@ def get_intrinsic_value(
     - The Weighted Average Cost of Capital must be greater than the Perpetual Growth Rate,
     otherwise the Terminal Value formula divides by a non-positive number. A ValueError is
     raised when it is not.
+    - The cash flows are discounted at the end of each period (no mid-year convention), and the
+    Terminal Value at the end of the last projected period. The Present Value of Cash Flows and
+    the Present Value of Terminal Value add up to the Enterprise Value, which shows how much of
+    it comes from the years beyond the projection.
     - The Weighted Average Cost of Capital is the discount rate of the cash flow to all capital
     providers, so the base cash flow should be the Free Cash Flow to the Firm. Debt is subtracted
     from the Enterprise Value afterwards, which counts interest twice when the base cash flow is
@@ -112,12 +122,12 @@ def get_intrinsic_value(
     ]
 
     # The Terminal Value sits at the end of the projection horizon and is therefore discounted over the number of periods, not one period further.  # noqa: E501
-    cash_flow_present_value.append(
+    terminal_value_present_value = (
         terminal_value / (1 + weighted_average_cost_of_capital) ** periods
     )
 
     # Calculate the Enterprise Value, using fsum so the total is correctly rounded rather than accumulation-order dependent (builtin sum only compensates on 3.12+)  # noqa: E501
-    enterprise_value = fsum(cash_flow_present_value)
+    enterprise_value = fsum([*cash_flow_present_value, terminal_value_present_value])
 
     # Calculate the Equity Value: the cash and the marketable securities belong to the shareholders on top of the operating Enterprise Value, while the debt, the minority interest and the preferred stock are claims ahead of them.  # noqa: E501
     equity_value = (
@@ -129,13 +139,18 @@ def get_intrinsic_value(
         - preferred_stock
     )
 
-    # Calculate the Intrinsic Value
-    intrinsic_value = equity_value / shares_outstanding
+    # Calculate the Intrinsic Value; without shares (none reported, or 0) there is no value
+    # per share rather than an infinite one.
+    intrinsic_value = (
+        equity_value / shares_outstanding if shares_outstanding > 0 else np.nan
+    )
 
     # Combine the components into a dictionary
     components = {
         "Terminal Value": terminal_value,
         "Cash Flow Projection": cash_flow_projection[-1],
+        "Present Value of Cash Flows": fsum(cash_flow_present_value),
+        "Present Value of Terminal Value": terminal_value_present_value,
         "Enterprise Value": enterprise_value,
         "Equity Value": equity_value,
         "Intrinsic Value": intrinsic_value,
@@ -283,13 +298,15 @@ def get_free_cash_flow_to_firm(
 ) -> float | pd.Series | pd.DataFrame:
     """
     Free Cash Flow to the Firm (FCFF) is the cash flow available to all providers of
-    capital, both debt and equity holders, after the company has paid all of its operating
-    expenses and invested in the assets (fixed assets and working capital) needed to sustain
-    its operations. Because it is measured before any financing cash flows (interest, debt
-    repayments or issuances, dividends), FCFF is capital-structure neutral, which makes it
-    the appropriate cash flow to discount at the Weighted Average Cost of Capital (WACC) when
-    valuing the Enterprise Value of a company directly (as opposed to FCFE, which values
-    equity directly and should be discounted at the Cost of Equity).
+    capital, both debt and equity holders.
+
+    It is what is left after the company has paid all of its operating expenses and invested
+    in the assets (fixed assets and working capital) needed to sustain its operations.
+    Because it is measured before any financing cash flows (interest, debt repayments or
+    issuances, dividends), FCFF is capital-structure neutral, which makes it the appropriate
+    cash flow to discount at the Weighted Average Cost of Capital (WACC) when valuing the
+    Enterprise Value of a company directly (as opposed to FCFE, which values equity directly
+    and should be discounted at the Cost of Equity).
 
     The formula is as follows:
 
@@ -350,10 +367,12 @@ def get_free_cash_flow_to_equity(
 ) -> float | pd.Series | pd.DataFrame:
     """
     Free Cash Flow to Equity (FCFE) is the cash flow available to a company's common equity
-    holders after all operating expenses, reinvestment needs (capital expenditure and working
-    capital), and net payments to (or from) debt holders have been accounted for. Unlike
-    FCFF, FCFE is a levered cash flow measure, so it should be discounted at the Cost of
-    Equity, not the Weighted Average Cost of Capital, when used in a valuation.
+    holders.
+
+    It is what is left after all operating expenses, reinvestment needs (capital expenditure
+    and working capital), and net payments to (or from) debt holders have been accounted
+    for. Unlike FCFF, FCFE is a levered cash flow measure, so it should be discounted at the
+    Cost of Equity, not the Weighted Average Cost of Capital, when used in a valuation.
 
     The formula is as follows:
 
@@ -418,11 +437,12 @@ def get_two_stage_dividend_discount_model(
 ) -> pd.DataFrame:
     """
     The Two-Stage Dividend Discount Model extends the (single-stage) Gordon Growth Model to
-    companies that are not expected to grow at a constant rate forever. It explicitly
-    projects and discounts dividends over an initial "high-growth" phase (e.g. a young,
-    fast-growing company), and then, from the end of that phase onward, assumes dividends
-    settle into perpetual growth at a lower, more sustainable "stable" rate — valued with the
-    Gordon Growth Model as a terminal value.
+    companies that are not expected to grow at a constant rate forever.
+
+    It explicitly projects and discounts dividends over an initial "high-growth" phase (e.g.
+    a young, fast-growing company), and then, from the end of that phase onward, assumes
+    dividends settle into perpetual growth at a lower, more sustainable "stable" rate —
+    valued with the Gordon Growth Model as a terminal value.
 
     The formula is as follows:
 
@@ -566,11 +586,13 @@ def get_h_model(
     high_growth_periods: int = 10,
 ) -> float | pd.Series | pd.DataFrame:
     """
-    The H-Model of Fuller and Hsia (1984) values a stock whose dividend growth starts at a high
-    rate and declines linearly to a stable rate over a number of periods, after which it grows
-    at the stable rate forever. It approximates the three-stage dividend discount model in one
-    closed-form expression: the Gordon Growth Model at the stable rate, plus the value of the
-    extra growth during the decline.
+    The H-Model of Fuller and Hsia (1984) shows the value of a stock whose dividend growth
+    declines linearly to a stable rate.
+
+    The growth starts at a high rate and declines over a number of periods, after which it
+    grows at the stable rate forever. It approximates the three-stage dividend discount
+    model in one closed-form expression: the Gordon Growth Model at the stable rate, plus
+    the value of the extra growth during the decline.
 
     The formula is as follows:
 
@@ -692,13 +714,15 @@ def get_residual_income(
 ) -> float | pd.Series | pd.DataFrame:
     """
     Residual Income is a measure of the profit a company generates in excess of the return
-    required by its equity holders. It is the equity-side counterpart to Economic Value Added
-    (EVA): where EVA nets the cost of both debt and equity capital off of NOPAT, Residual
-    Income nets only the cost of equity capital off of Net Income, since equity holders'
-    claim is on Net Income (a profit already net of interest paid to debt holders). It
-    underpins the Residual Income Model, an alternative equity valuation lens to a
-    traditional Discounted Cash Flow (DCF) that is particularly useful when a company's free
-    cash flows are negative or unpredictable but its accounting earnings are more stable.
+    required by its equity holders.
+
+    It is the equity-side counterpart to Economic Value Added (EVA): where EVA nets the cost
+    of both debt and equity capital off of NOPAT, Residual Income nets only the cost of
+    equity capital off of Net Income, since equity holders' claim is on Net Income (a profit
+    already net of interest paid to debt holders). It underpins the Residual Income Model,
+    an alternative equity valuation lens to a traditional Discounted Cash Flow (DCF) that is
+    particularly useful when a company's free cash flows are negative or unpredictable but
+    its accounting earnings are more stable.
 
     The formula is as follows:
 
@@ -764,6 +788,10 @@ def _equity_value_per_share(
     present_value = (projections / (1 + wacc[..., None]) ** years).sum(axis=-1)
     terminal = projections[..., -1] * (1 + perpetual) / (wacc - perpetual)
     enterprise_value = present_value + terminal / (1 + wacc) ** periods
+    # Without shares (0 reported) there is no value per share rather than an infinite one.
+    if not shares_outstanding > 0:
+        return np.full(np.shape(enterprise_value), np.nan)
+
     return (enterprise_value + net_cash) / shares_outstanding
 
 
@@ -781,15 +809,16 @@ def get_implied_growth_rate(
     preferred_stock: float = 0.0,
 ) -> float:
     """
-    The growth rate the share price implies (a reverse DCF): the yearly growth of the cash
-    flow over the projection periods at which the Discounted Cash Flow value per share of
-    `get_intrinsic_value` equals the share price. Rather than asking what a company is
-    worth, it asks what the market expects, which can then be judged against the company's
-    history and prospects.
+    The growth rate the share price implies (a reverse DCF).
+
+    It is the yearly growth of the cash flow over the projection periods at which the
+    Discounted Cash Flow value per share of `get_intrinsic_value` equals the share price.
+    Rather than asking what a company is worth, it asks what the market expects, which can
+    then be judged against the company's history and prospects.
 
     For more information, see the following book:
 
-    - Mauboussin, M.J. and Rappaport, A. (2001). "Expectations Investing: Reading Stock
+    - Rappaport, A. and Mauboussin, M.J. (2001). "Expectations Investing: Reading Stock
       Prices for Better Returns." Harvard Business School Press.
 
     Args:
@@ -864,12 +893,13 @@ def get_earnings_power_value(
 ) -> pd.Series:
     """
     The Earnings Power Value (Greenwald): the value of the company's current, sustainable
-    earnings if they never grew, NOPAT / WACC. Earnings are normalized by applying the
-    average operating margin over the given periods to the latest revenue, which smooths out
-    a single good or bad year. Comparing it with the market value shows how much of the
-    price rests on growth: a price far above the EPV requires growth that creates value.
-    The NOPAT is capitalized as a yearly amount, so every period should cover a year (for
-    quarterly statements, the sum of four quarters).
+    earnings if they never grew, NOPAT / WACC.
+
+    Earnings are normalized by applying the average operating margin over the given periods
+    to the latest revenue, which smooths out a single good or bad year. Comparing it with
+    the market value shows how much of the price rests on growth: a price far above the EPV
+    requires growth that creates value. The NOPAT is capitalized as a yearly amount, so
+    every period should cover a year (for quarterly statements, the sum of four quarters).
 
     For more information, see the following book:
 
@@ -901,11 +931,25 @@ def get_earnings_power_value(
     - Maintenance capital expenditure is assumed to equal depreciation, so operating income
       stands in for the cash the business can distribute without shrinking.
     """
-    margin = float((operating_income / revenue).mean())
+    # A period without revenue has no margin and one without income before tax no tax
+    # rate: left out of the averages rather than turning them infinite.
+    margin = float((operating_income / revenue.where(revenue > 0)).mean())
     normalized_operating_income = margin * float(revenue.iloc[-1])
-    tax_rate = float(np.clip((income_tax_expense / income_before_tax).mean(), 0, 1))
+    tax_rate = float(
+        np.clip(
+            (
+                income_tax_expense / income_before_tax.where(income_before_tax != 0)
+            ).mean(),
+            0,
+            1,
+        )
+    )
     nopat = normalized_operating_income * (1 - tax_rate)
-    earnings_power_value = nopat / weighted_average_cost_of_capital
+    earnings_power_value = (
+        nopat / weighted_average_cost_of_capital
+        if weighted_average_cost_of_capital > 0
+        else np.nan
+    )
     # The Equity Value as in get_intrinsic_value: the cash and marketable securities added,
     # the claims ahead of the common shareholders deducted.
     equity_value = (
@@ -925,7 +969,9 @@ def get_earnings_power_value(
             "Normalized NOPAT": nopat,
             "Earnings Power Value": earnings_power_value,
             "Equity Value": equity_value,
-            "Earnings Power Value per Share": equity_value / shares_outstanding,
+            "Earnings Power Value per Share": (
+                equity_value / shares_outstanding if shares_outstanding > 0 else np.nan
+            ),
         }
     )
 
@@ -950,10 +996,12 @@ def get_monte_carlo_intrinsic_value(
 ) -> np.ndarray:
     """
     The distribution of the Discounted Cash Flow value per share when the growth rate, the
-    perpetual growth rate and the discount rate are uncertain. Each simulation draws the
-    three rates from normal distributions around their expected values and calculates the
-    value as in `get_intrinsic_value`. Draws in which the discount rate does not exceed the
-    perpetual growth rate are redrawn, as the terminal value is undefined there.
+    perpetual growth rate and the discount rate are uncertain.
+
+    Each simulation draws the three rates from normal distributions around their expected
+    values and calculates the value as in `get_intrinsic_value`. Draws in which the discount
+    rate does not exceed the perpetual growth rate are redrawn, as the terminal value is
+    undefined there.
 
     Args:
         cash_flow (float): The base cash flow, e.g. the latest Free Cash Flow.
@@ -1021,3 +1069,79 @@ def get_monte_carlo_intrinsic_value(
         shares_outstanding,
         periods,
     )
+
+
+def get_owner_earnings(
+    net_income: pd.Series | pd.DataFrame,
+    depreciation_and_amortization: pd.Series | pd.DataFrame,
+    maintenance_capital_expenditure: pd.Series | pd.DataFrame,
+    change_in_working_capital: pd.Series | pd.DataFrame,
+) -> pd.Series | pd.DataFrame:
+    """
+    Buffett's owner earnings: the cash a business could hand its owners while keeping its
+    competitive position and unit volume, the earnings the owners of the business own.
+
+    The formula is as follows:
+
+        - Owner Earnings = Net Income + Depreciation and Amortization - Maintenance Capital
+          Expenditure - Change in Working Capital
+
+    Args:
+        net_income (pd.Series | pd.DataFrame): The reported net income.
+        depreciation_and_amortization (pd.Series | pd.DataFrame): The depreciation and
+            amortization (Buffett also adds other non-cash charges).
+        maintenance_capital_expenditure (pd.Series | pd.DataFrame): The capital expenditure
+            needed to keep the business as it is, as a positive amount.
+        change_in_working_capital (pd.Series | pd.DataFrame): The increase in working capital,
+            positive when working capital grows.
+
+    Returns:
+        pd.Series | pd.DataFrame: The owner earnings.
+
+    References:
+    - Buffett, W. E. (1986). "Chairman's Letter." Berkshire Hathaway Inc. Annual Report 1986,
+      appendix on purchase-price accounting adjustments and owner earnings.
+    """
+    return (
+        net_income
+        + depreciation_and_amortization
+        - maintenance_capital_expenditure
+        - change_in_working_capital
+    )
+
+
+def get_greenwald_maintenance_capital_expenditure(
+    capital_expenditure: pd.Series | pd.DataFrame,
+    property_plant_and_equipment_to_revenue: pd.Series | pd.DataFrame,
+    change_in_revenue: pd.Series | pd.DataFrame,
+) -> pd.Series | pd.DataFrame:
+    """
+    Greenwald's estimate of the maintenance capital expenditure.
+
+    It is the capital expenditure minus the investment that the growth in revenue required
+    at the company's ratio of fixed assets to revenue (the growth capital expenditure).
+
+    The formula is as follows:
+
+        - Growth Capital Expenditure = PP&E / Revenue * Change in Revenue (0 when revenue falls)
+        - Maintenance Capital Expenditure = Capital Expenditure - Growth Capital Expenditure,
+          at least 0
+
+    Args:
+        capital_expenditure (pd.Series | pd.DataFrame): The capital expenditure, positive.
+        property_plant_and_equipment_to_revenue (pd.Series | pd.DataFrame): The property, plant
+            and equipment per unit of revenue.
+        change_in_revenue (pd.Series | pd.DataFrame): The change in revenue over the period.
+
+    Returns:
+        pd.Series | pd.DataFrame: The maintenance capital expenditure.
+
+    References:
+    - Greenwald, B. C. N., Kahn, J., Sonkin, P. D. and van Biema, M. (2001). "Value Investing:
+      From Graham to Buffett and Beyond." Wiley, chapter 6.
+    """
+    growth_capital_expenditure = property_plant_and_equipment_to_revenue * (
+        change_in_revenue.clip(lower=0)
+    )
+    # Growth capital expenditure above the actual capital expenditure leaves no maintenance part, not a negative one.  # noqa: E501
+    return (capital_expenditure - growth_capital_expenditure).clip(lower=0)

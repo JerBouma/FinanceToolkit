@@ -90,9 +90,8 @@ def get_defensive_interval_ratio(
     daily_operating_expenses: pd.Series | pd.DataFrame,
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the defensive interval ratio (DIR), a liquidity ratio that measures how
-    many days a company could continue to cover its operating expenses using only its
-    existing defensive (most liquid) assets, without relying on additional revenue.
+    Calculate the defensive interval ratio (DIR): how many days a company could cover its operating expenses with its
+    most liquid assets alone, without new revenue.
 
     Unlike the current, quick, and cash ratios, which express liquidity relative to
     current liabilities, the defensive interval ratio expresses liquidity relative to

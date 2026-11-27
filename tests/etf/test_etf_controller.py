@@ -659,3 +659,114 @@ def test_tracking_without_an_exchange_rate_compares_the_prices_as_they_are(caplo
         "include the move of the exchange rate" in record.getMessage()
         for record in caplog.records
     )
+
+
+def test_return_excluding_leaves_out_a_ticker_without_holdings(index_fund, caplog):
+    etf, _ = index_fund
+    # A stock next to the fund: it is priced like the fund but holds nothing.
+    etf._tickers = ["FND", "^IDX"]
+
+    excluding = etf.get_return_excluding("X", rounding=8)
+
+    assert list(excluding.columns) == ["FND"]
+    assert excluding.loc["Return Excluding", "FND"] == pytest.approx(-0.2)
+    assert "^IDX has no holdings and is left out." in caplog.text
+
+
+@pytest.mark.parametrize(
+    ("method", "arguments"),
+    [
+        ("get_contribution", {"holdings": 0}),
+        ("get_contribution", {"holdings": -1}),
+        ("get_contribution", {"index": "NOPE"}),
+        ("get_return_excluding", {"holdings": 0}),
+        ("get_return_excluding", {"exclude": []}),
+        ("get_look_through_valuation", {"holdings": 0}),
+    ],
+)
+def test_contribution_arguments_are_checked(index_fund, method, arguments):
+    from financetoolkit.utilities.error_model import InvalidArgumentError
+
+    etf, _ = index_fund
+    with pytest.raises(InvalidArgumentError):
+        getattr(etf, method)(**arguments)
+
+
+@pytest.mark.parametrize("limit", [0, 1.5, True])
+def test_a_holdings_limit_of_zero_is_refused(etf, limit):
+    from financetoolkit.utilities.error_model import InvalidArgumentError
+
+    with pytest.raises(InvalidArgumentError, match="limit"):
+        etf.get_holdings(limit=limit)
+
+    # A negative limit keeps the smallest holdings.
+    assert not etf.get_holdings(limit=-1).empty
+
+
+def test_return_excluding_without_priced_holdings_is_nan_without_a_warning(etf):
+    import warnings
+
+    # The holdings' prices end long before the holdings' date, so no weight rolls back to
+    # a start weight and there is nothing to divide by.
+    rng = np.random.default_rng(1)
+    dates = pd.bdate_range("2024-11-01", periods=340).to_period("D")
+    prices = pd.DataFrame(
+        {s: 10 * np.exp(np.cumsum(rng.normal(0, 0.01, 340))) for s in ["X", "Y", "Z"]},
+        index=dates,
+    )
+    etf._prices_function = lambda tickers, start, end: prices[
+        [ticker for ticker in tickers if ticker in prices]
+    ]
+    etf._sector_function = lambda tickers: pd.Series({"X": "Tech", "Y": "Energy"})
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", RuntimeWarning)
+        excluding = etf.get_return_excluding("X", rounding=8)
+
+    assert excluding.loc["Priced Holdings Return"].isna().all()
+
+
+def test_funds_without_country_weightings_are_named(etf, caplog):
+    assert etf.get_country_weightings().empty
+    assert "no country weightings for AAA, BBB" in caplog.text
+
+    caplog.clear()
+    assert not etf.get_sector_weightings().empty
+    assert "weightings" not in caplog.text
+
+
+def test_funds_whose_weightings_request_failed_are_not_called_non_funds(etf, caplog):
+    from financetoolkit.utilities import error_model
+
+    sectors = pd.DataFrame(
+        {"AAA": [0.2, 0.8]}, index=pd.Index(["Energy", "Technology"], name="Sector")
+    )
+
+    def failing_for_bbb(dataset, overwrite=False):  # noqa: ARG001
+        # The collector reports BBB's failed request itself and leaves it out.
+        error_model.report_request_failure()
+        return sectors
+
+    etf._fund_data_function = failing_for_bbb
+    assert list(etf.get_sector_weightings().columns) == ["AAA"]
+    assert "weightings for BBB" not in caplog.text
+
+    # A later call served from memory does not read the failed fund as one without any.
+    etf._fund_data_function = lambda dataset, overwrite=False: sectors  # noqa: ARG005
+    etf.get_sector_weightings()
+    assert "weightings for BBB" not in caplog.text
+
+    # Asked again, an answer without BBB means it has none.
+    etf.get_sector_weightings(overwrite=True)
+    assert "no sector weightings for BBB" in caplog.text
+
+
+def test_a_failed_fmp_request_names_its_status_for_the_tickers(caplog):
+    from financetoolkit import fmp_model
+    from financetoolkit.utilities import error_model
+
+    frame = fmp_model._request_failed("HTTP 500")
+    error_model.check_for_error_messages({"QQQ": frame}, user_subscription="Free")
+
+    assert "failed (HTTP 500) for the following tickers: QQQ" in caplog.text
+    assert "unrecognised" not in caplog.text

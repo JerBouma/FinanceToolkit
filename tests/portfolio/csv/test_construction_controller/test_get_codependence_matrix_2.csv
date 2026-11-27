@@ -1,0 +1,4 @@
+,AAPL,MSFT,Benchmark
+AAPL,1.0,0.311,0.3048
+MSFT,0.311,1.0,0.3157
+Benchmark,0.3048,0.3157,1.0

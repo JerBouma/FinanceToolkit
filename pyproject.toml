@@ -1,6 +1,6 @@
 [project]
 name = "financetoolkit"
-version = "2.3.5"
+version = "2.4.0"
 description = "Transparent and Efficient Financial Analysis"
 license = {text = "MIT"}
 authors = [
@@ -188,7 +188,7 @@ missing-union-attribute = "ignore"
 no-matching-overload = "ignore"
 
 [tool.codespell]
-ignore-words-list = 'ore,te,hsi,amplitud,nam,tha,plaform,ine,daa,pring,pezier,trough,zar,ons,bund,aer,ois,ihs,hims,ist,sie,acn,sive'
+ignore-words-list = 'ore,te,hsi,amplitud,nam,tha,plaform,ine,daa,pring,pezier,trough,zar,ons,bund,aer,ois,ihs,hims,ist,sie,acn,sive,feld,hart,andler'
 skip = '*.json,./.git,pyproject.toml,poetry.lock'
 
 [tool.pytest.ini_options]

@@ -1,0 +1,37 @@
+,All
+Trades,5.0
+Closed Trades,1.0
+Open Trades,4.0
+Long Trades,5.0
+Short Trades,0.0
+Winning Trades,0.0
+Losing Trades,1.0
+Win Rate,0.0
+Gross PnL,-13.125
+Costs,2.8333
+Net PnL,-15.9583
+Open PnL,15264.5577
+Best Trade,-0.1362
+Worst Trade,-0.1362
+Average Trade,-0.1362
+Average Winning Trade,
+Average Losing Trade,-0.1362
+Average PnL,-15.9583
+Average Winning PnL,
+Average Losing PnL,-15.9583
+Payoff Ratio,
+Profit Factor,0.0
+Expectancy,-15.9583
+Expectancy Ratio,-1.0
+SQN,
+Kelly Criterion,
+Average Duration,87.0
+Average Winning Duration,
+Average Losing Duration,87.0
+Maximum Duration,87.0
+Minimum Duration,87.0
+Longest Winning Streak,0.0
+Longest Losing Streak,1.0
+Current Streak,-1.0
+Coverage,1.0
+Overlap Coverage,0.9998

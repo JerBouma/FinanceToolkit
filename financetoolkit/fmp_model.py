@@ -7,6 +7,9 @@ import hashlib
 import random
 import re
 import time
+from collections.abc import Generator
+from contextlib import contextmanager
+from contextvars import ContextVar
 from datetime import datetime, timedelta
 from http.client import RemoteDisconnected
 from io import StringIO
@@ -18,14 +21,13 @@ import pandas as pd
 import requests
 from urllib3.exceptions import MaxRetryError
 
-from financetoolkit import currencies_model, helpers
+from financetoolkit import currencies_model, helpers, yfinance_model
 from financetoolkit.cache import policy_model
 from financetoolkit.cache.cache_controller import get_active_cache
 from financetoolkit.cache.request_model import redact_credentials
 from financetoolkit.utilities import error_model, logger_model
 from financetoolkit.utilities.dataframe_model import to_dataframe
 from financetoolkit.utilities.requests_model import get_request
-from financetoolkit.utilities.sources_model import record_source
 
 logger = logger_model.get_logger()
 
@@ -49,6 +51,53 @@ TRANSIENT_STATUS_CODES = (429, 500, 502, 503, 504)
 # on the very next attempt.
 RETRY_BASE_DELAY_SECONDS = 2.5
 RETRY_MAX_DELAY_SECONDS = 60.0
+
+# A server error or an answer that is not JSON usually hits every request of a call (each
+# ticker, each page), so within a call (see log_server_errors_once) it is logged once per
+# kind rather than once per request. Outside such a call every one is logged.
+_server_errors_logged: ContextVar[set[int | str] | None] = ContextVar(
+    "financetoolkit_fmp_server_errors_logged", default=None
+)
+
+
+@contextmanager
+def log_server_errors_once() -> Generator[None]:
+    """
+    Logs each kind of server error once while the block runs, including in the worker
+    threads it starts, for a call that sends many requests (one per ticker or page). A block
+    inside another shares the outer one's record, so an MCP tool call that collects several
+    datasets still logs each kind once, and every new call logs it again.
+
+    Yields:
+        None: Nothing; the server errors are logged once per kind until the block ends.
+    """
+    if _server_errors_logged.get() is not None:
+        yield
+        return
+
+    token = _server_errors_logged.set(set())
+    try:
+        yield
+    finally:
+        _server_errors_logged.reset(token)
+
+
+def _log_server_error(kind: int | str, message: str, *args) -> None:
+    """
+    Logs a server error, once per kind (a status code, or "not json") within
+    log_server_errors_once.
+
+    Args:
+        kind (int | str): What failed, which decides whether it was logged in this call.
+        message (str): The message, with %s placeholders.
+        *args: The values of the placeholders.
+    """
+    logged = _server_errors_logged.get()
+    if logged is not None:
+        if kind in logged:
+            return
+        logged.add(kind)
+    logger.error(message, *args)
 
 
 def determine_retry_delay(attempt: int) -> float:
@@ -150,6 +199,22 @@ def to_financial_modeling_prep_symbols(url: str) -> str:
         ),
         url,
     )
+
+
+def _request_failed(reason: str) -> pd.DataFrame:
+    """
+    The error frame of a request that failed, with the reason (such as "HTTP 500") in its
+    attrs, so the collectors that report the tickers without data name it.
+
+    Args:
+        reason (str): Why the request failed.
+
+    Returns:
+        pd.DataFrame: An empty frame with the single column REQUEST FAILED.
+    """
+    frame = pd.DataFrame(columns=["REQUEST FAILED"])
+    frame.attrs["reason"] = reason
+    return frame
 
 
 def get_financial_data(
@@ -270,6 +335,35 @@ def get_financial_data(
                 error_retry_counter += 1
                 continue
 
+            if status_code == requests.codes.too_many_requests:
+                # A 429 without FMP's own "Limit Reach" message is still a rate limit, which
+                # the callers report as one.
+                error_model.report_request_failure()
+                return pd.DataFrame(columns=["LIMIT REACH"])
+
+            if status_code in TRANSIENT_STATUS_CODES:
+                _log_server_error(
+                    status_code,
+                    "Financial Modeling Prep answered HTTP %s after %s attempts, so no "
+                    "data could be collected. The service is likely down for a moment; "
+                    "please try again later.",
+                    status_code,
+                    error_retry_counter + 1,
+                )
+                error_model.report_request_failure()
+                return _request_failed(f"HTTP {status_code}")
+
+            if not isinstance(e, requests.exceptions.HTTPError):
+                # The body could not be read as JSON: an error page (HTML) or a cut-off answer.
+                _log_server_error(
+                    "not json",
+                    "Financial Modeling Prep answered with something other than JSON (%s), "
+                    "so no data could be collected.",
+                    e,
+                )
+                error_model.report_request_failure()
+                return _request_failed("an answer other than JSON")
+
             # Anything that is not one of the messages above is not retryable, without this the loop would fall through and hammer the endpoint indefinitely.  # noqa: E501
             # An HTTP error without a body reads as its URL, which carries the API key.
             logger.error(
@@ -278,7 +372,9 @@ def get_financial_data(
             )
 
             error_model.report_request_failure()
-            return pd.DataFrame(columns=["REQUEST FAILED"])
+            return _request_failed(
+                f"HTTP {status_code}" if status_code else "an unrecognised error"
+            )
 
         except (
             requests.exceptions.Timeout,
@@ -288,8 +384,15 @@ def get_financial_data(
             # then reported for this request only, so it does not abort the other
             # tickers fetched alongside it.
             if error_retry_counter >= TRANSIENT_RETRY_LIMIT:
+                _log_server_error(
+                    "timeout",
+                    "Financial Modeling Prep did not answer in full after %s attempts (a "
+                    "timeout or a cut-off answer), so no data could be collected. Please try "
+                    "again later.",
+                    error_retry_counter + 1,
+                )
                 error_model.report_request_failure()
-                return pd.DataFrame(columns=["REQUEST FAILED"])
+                return _request_failed("a timeout or a cut-off answer")
 
             time.sleep(determine_retry_delay(error_retry_counter))
             error_retry_counter += 1
@@ -634,32 +737,12 @@ def _complete_older_dividends(
         ones and True, or the given ones and False (with a warning) when Yahoo Finance has
         none, so the caller knows the earlier payments are missing.
     """
-    # Imported when first used, as only a Free plan with a long dividend history needs it.
-    import yfinance as yf  # noqa: PLC0415
-
-    from financetoolkit.currencies_model import (  # noqa: PLC0415
-        to_yahoo_finance_symbol,
-    )
-
     first_payment = dividends.index.min()
 
-    # The older payments are an optional addition, so any failure counts as no history. When
-    # Yahoo Finance answers with an error (a rate limit, for example), yfinance logs it and
-    # returns None instead of raising.
-    try:
-        older = yf.Ticker(to_yahoo_finance_symbol(ticker)).dividends
-    except Exception as error:  # noqa: BLE001
-        logger.info(
-            "Yahoo Finance dividends of %s could not be retrieved: %s", ticker, error
-        )
-        older = None
-
-    if not isinstance(older, pd.Series):
-        older = pd.Series(dtype=float)
+    # The older payments are an optional addition, so any failure counts as no history.
+    older = yfinance_model.get_dividends(ticker)
 
     if not older.empty:
-        record_source(policy_model.YAHOO_FINANCE)
-        older.index = pd.DatetimeIndex(older.index).tz_localize(None).to_period("D")
         older = older[older.index < first_payment]
 
     if older.empty:
@@ -879,16 +962,25 @@ def get_historical_data(
                     dividends_df.index = pd.DatetimeIndex(dividends_df.index).to_period(
                         freq="D"
                     )
+                    # An ordinary and a special dividend with the same ex-dividend date (such as Airbus in 2024 and 2025) are two records that are both paid, so they are added up; only a record that is served twice is one payment. Keeping one record per date would leave out the other dividend and its order in the response would decide which.  # noqa: E501
                     dividends_df = dividends_df[
-                        ~dividends_df.index.duplicated(keep="first")
+                        ~dividends_df.reset_index().duplicated().to_numpy()
                     ]
 
                     # The prices are split-adjusted, so the dividends are too: "dividend"
                     # is the amount as paid, which before a 4-for-1 split is four times
                     # the dividend per share of today.
-                    paid = dividends_df[
-                        ("adjDividend" if "adjDividend" in dividends_df else "dividend")
-                    ]
+                    paid = (
+                        dividends_df[
+                            (
+                                "adjDividend"
+                                if "adjDividend" in dividends_df
+                                else "dividend"
+                            )
+                        ]
+                        .groupby(level=0)
+                        .sum()
+                    )
 
                     if (
                         user_subscription == "Free"
@@ -1153,6 +1245,7 @@ def get_historical_statistics(ticker: str, api_key: str) -> pd.Series:
     return profile_df
 
 
+@log_server_errors_once()
 def get_revenue_segmentation(
     tickers: str | list[str],
     method: str = "",
@@ -1251,7 +1344,10 @@ def get_revenue_segmentation(
     elif isinstance(tickers, list):
         ticker_list = tickers
     else:
-        raise ValueError(f"Type for the tickers ({type(tickers)}) variable is invalid.")
+        raise error_model.InvalidArgumentError(
+            "tickers must be a str or a list of str, such as 'AAPL' or ['AAPL', 'MSFT'], "
+            f"not {type(tickers).__name__}. Please pass the tickers in one of these forms."
+        )
 
     if method == "geographic":
         location = "revenue-geographic-segmentation"
@@ -1343,6 +1439,7 @@ def get_revenue_segmentation(
     return pd.DataFrame(), no_data
 
 
+@log_server_errors_once()
 def get_analyst_estimates(
     tickers: str | list[str],
     api_key: str = "",
@@ -1458,7 +1555,10 @@ def get_analyst_estimates(
     elif isinstance(tickers, list):
         ticker_list = tickers
     else:
-        raise ValueError(f"Type for the tickers ({type(tickers)}) variable is invalid.")
+        raise error_model.InvalidArgumentError(
+            "tickers must be a str or a list of str, such as 'AAPL' or ['AAPL', 'MSFT'], "
+            f"not {type(tickers).__name__}. Please pass the tickers in one of these forms."
+        )
 
     if not api_key:
         raise ValueError(
@@ -1521,6 +1621,7 @@ def get_analyst_estimates(
     return pd.DataFrame(), no_data
 
 
+@log_server_errors_once()
 def get_profile(
     tickers: list[str] | str,
     api_key: str,
@@ -1588,7 +1689,10 @@ def get_profile(
     elif isinstance(tickers, list):
         ticker_list = tickers
     else:
-        raise ValueError(f"Type for the tickers ({type(tickers)}) variable is invalid.")
+        raise error_model.InvalidArgumentError(
+            "tickers must be a str or a list of str, such as 'AAPL' or ['AAPL', 'MSFT'], "
+            f"not {type(tickers).__name__}. Please pass the tickers in one of these forms."
+        )
 
     logger.info("Obtaining company profiles for %d ticker(s)", len(ticker_list))
     results = helpers.run_in_parallel(worker, [(ticker,) for ticker in ticker_list])
@@ -1637,6 +1741,7 @@ def get_profile(
     return pd.DataFrame(), no_data
 
 
+@log_server_errors_once()
 def get_quote(
     tickers: list[str] | str,
     api_key: str,
@@ -1698,7 +1803,10 @@ def get_quote(
     elif isinstance(tickers, list):
         ticker_list = tickers
     else:
-        raise ValueError(f"Type for the tickers ({type(tickers)}) variable is invalid.")
+        raise error_model.InvalidArgumentError(
+            "tickers must be a str or a list of str, such as 'AAPL' or ['AAPL', 'MSFT'], "
+            f"not {type(tickers).__name__}. Please pass the tickers in one of these forms."
+        )
 
     logger.info("Obtaining company quotes for %d ticker(s)", len(ticker_list))
     results = helpers.run_in_parallel(worker, [(ticker,) for ticker in ticker_list])
@@ -1738,6 +1846,7 @@ def get_quote(
     return quote_dataframe, no_data
 
 
+@log_server_errors_once()
 def get_rating(
     tickers: list[str] | str,
     api_key: str,
@@ -1793,7 +1902,10 @@ def get_rating(
     elif isinstance(tickers, list):
         ticker_list = tickers
     else:
-        raise ValueError(f"Type for the tickers ({type(tickers)}) variable is invalid.")
+        raise error_model.InvalidArgumentError(
+            "tickers must be a str or a list of str, such as 'AAPL' or ['AAPL', 'MSFT'], "
+            f"not {type(tickers).__name__}. Please pass the tickers in one of these forms."
+        )
 
     logger.info("Obtaining company ratings for %d ticker(s)", len(ticker_list))
     results = helpers.run_in_parallel(worker, [(ticker,) for ticker in ticker_list])
@@ -1819,6 +1931,7 @@ def get_rating(
     return pd.DataFrame(), no_data
 
 
+@log_server_errors_once()
 def get_earnings_calendar(
     tickers: list[str] | str,
     api_key: str,
@@ -1895,7 +2008,10 @@ def get_earnings_calendar(
     elif isinstance(tickers, list):
         ticker_list = tickers
     else:
-        raise ValueError(f"Type for the tickers ({type(tickers)}) variable is invalid.")
+        raise error_model.InvalidArgumentError(
+            "tickers must be a str or a list of str, such as 'AAPL' or ['AAPL', 'MSFT'], "
+            f"not {type(tickers).__name__}. Please pass the tickers in one of these forms."
+        )
 
     if not api_key:
         raise ValueError(
@@ -1925,6 +2041,7 @@ def get_earnings_calendar(
     return pd.DataFrame(), no_data
 
 
+@log_server_errors_once()
 def get_dividend_calendar(
     tickers: list[str] | str,
     api_key: str,
@@ -2009,7 +2126,10 @@ def get_dividend_calendar(
     elif isinstance(tickers, list):
         ticker_list = tickers
     else:
-        raise ValueError(f"Type for the tickers ({type(tickers)}) variable is invalid.")
+        raise error_model.InvalidArgumentError(
+            "tickers must be a str or a list of str, such as 'AAPL' or ['AAPL', 'MSFT'], "
+            f"not {type(tickers).__name__}. Please pass the tickers in one of these forms."
+        )
 
     if not api_key:
         raise ValueError(
@@ -2041,6 +2161,7 @@ def get_dividend_calendar(
     return pd.DataFrame(), no_data
 
 
+@log_server_errors_once()
 def get_esg_scores(
     tickers: list[str] | str,
     api_key: str,
@@ -2114,7 +2235,10 @@ def get_esg_scores(
     elif isinstance(tickers, list):
         ticker_list = tickers
     else:
-        raise ValueError(f"Type for the tickers ({type(tickers)}) variable is invalid.")
+        raise error_model.InvalidArgumentError(
+            "tickers must be a str or a list of str, such as 'AAPL' or ['AAPL', 'MSFT'], "
+            f"not {type(tickers).__name__}. Please pass the tickers in one of these forms."
+        )
 
     if not api_key:
         raise ValueError(
@@ -2160,7 +2284,8 @@ def get_market_risk_premium(api_key: str) -> pd.DataFrame:
     Returns:
         pd.DataFrame: the market risk premium by country, indexed by country and including
         the continent, Country Risk Premium and Total Equity Risk Premium (both as decimals,
-        0.0446 for 4.46%).
+        0.0446 for 4.46%). Empty, with the reason logged, when Financial Modeling Prep does
+        not answer with the premiums (a rate limit, a plan restriction, unreachable).
     """
     if not api_key:
         raise ValueError(
@@ -2174,8 +2299,26 @@ def get_market_risk_premium(api_key: str) -> pd.DataFrame:
 
     market_risk_premium = get_financial_data(url=url)
 
+    if error_model.is_error_response(market_risk_premium):
+        # The error frame (a rate limit, an unreachable FMP) is no premium to return.
+        error = str(market_risk_premium.columns[0])
+        logger.error(
+            "The market risk premium could not be retrieved from Financial Modeling Prep: "
+            "%s.",
+            {
+                "NO ERRORS": "it could not be reached",
+                "REQUEST FAILED": "the request failed",
+                "LIMIT REACH": "the rate limit was reached",
+            }.get(error, error.lower()),
+        )
+        return pd.DataFrame()
+
     if "country" not in market_risk_premium.columns:
-        return market_risk_premium
+        logger.error(
+            "Financial Modeling Prep answered the market risk premium without countries, "
+            "so no premium is returned."
+        )
+        return pd.DataFrame()
 
     market_risk_premium = market_risk_premium.rename(
         columns={
@@ -2257,6 +2400,7 @@ def get_sp500_market_value(api_key: str, user_subscription: str = "Free") -> pd.
     return pd.Series({date: total}, dtype=float)
 
 
+@log_server_errors_once()
 def get_commitment_of_traders(
     tickers: list[str] | str,
     api_key: str,
@@ -2354,7 +2498,10 @@ def get_commitment_of_traders(
     elif isinstance(tickers, list):
         ticker_list = tickers
     else:
-        raise ValueError(f"Type for the tickers ({type(tickers)}) variable is invalid.")
+        raise error_model.InvalidArgumentError(
+            "tickers must be a str or a list of str, such as 'AAPL' or ['AAPL', 'MSFT'], "
+            f"not {type(tickers).__name__}. Please pass the tickers in one of these forms."
+        )
 
     if not api_key:
         raise ValueError(
@@ -2406,7 +2553,10 @@ def _to_ticker_list(tickers: list[str] | str) -> list[str]:
     if isinstance(tickers, list):
         return tickers
 
-    raise ValueError(f"Type for the tickers ({type(tickers)}) variable is invalid.")
+    raise error_model.InvalidArgumentError(
+        "tickers must be a str or a list of str, such as 'AAPL' or ['AAPL', 'MSFT'], "
+        f"not {type(tickers).__name__}. Please pass the tickers in one of these forms."
+    )
 
 
 def _require_fmp_api_key(api_key: str) -> None:
@@ -2440,6 +2590,7 @@ def _record_limit(user_subscription: str) -> str:
     return "99999" if user_subscription != "Free" else "5"
 
 
+@log_server_errors_once()
 def _collect_per_ticker_frames(
     worker,
     ticker_list: list[str],
@@ -2710,9 +2861,11 @@ def get_employee_count(
             "employeeCount"
         ].sort_index()
         employee_count = employee_count.truncate(before=start_date, after=end_date)
-        employee_count.index = pd.DatetimeIndex(employee_count.index).to_period(
-            freq="Y"
-        )
+        # A 52/53-week fiscal year ending in the first week of January (2 January 2021)
+        # belongs to the year before, as its statements do.
+        employee_count.index = (
+            pd.DatetimeIndex(employee_count.index) - pd.Timedelta(days=7)
+        ).to_period(freq="Y")
         employee_count = employee_count[~employee_count.index.duplicated(keep="last")]
         employee_count.index.name = "Period"
 
@@ -3036,6 +3189,7 @@ def get_insider_trade_statistics(
 FORM_13F_FILING_DAYS = 45
 
 
+@log_server_errors_once()
 def get_institutional_ownership(
     tickers: list[str] | str,
     api_key: str,

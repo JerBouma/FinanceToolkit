@@ -1,0 +1,7 @@
+,AAPL,MSFT,Benchmark
+Duration Statistic,0.1297,0.9016,1.4754
+Duration P-Value,0.752,0.447,0.314
+Weibull Shape,1.0461,0.8994,0.8639
+McNeil-Frey Statistic,0.4902,1.3317,3.0497
+McNeil-Frey P-Value,0.321,0.082,0.0
+Breaches,38.0,43.0,40.0

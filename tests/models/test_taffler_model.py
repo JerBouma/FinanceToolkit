@@ -25,15 +25,6 @@ def test_get_current_assets_to_total_liabilities_ratio(recorder):
     )
 
 
-def test_get_current_liabilities_to_total_assets_ratio(recorder):
-    recorder.capture(
-        taffler_model.get_current_liabilities_to_total_assets_ratio(
-            current_liabilities=pd.Series([100, 110, 120, 130, 80]),
-            total_assets=pd.Series([500, 400, 300, 200, 100]),
-        )
-    )
-
-
 def test_get_no_credit_interval():
     # (400 - 300) / ((1,000 - 100 - 50) / 365) = 100 / (850 / 365) days.
     interval = taffler_model.get_no_credit_interval(

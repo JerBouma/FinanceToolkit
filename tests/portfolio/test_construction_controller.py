@@ -8,6 +8,7 @@ from financetoolkit.portfolio.construction.construction_controller import (
     PortfolioConstruction,
 )
 from financetoolkit.portfolio.construction.optimization import optimization_model
+from financetoolkit.utilities.error_model import InvalidArgumentError
 
 # pylint: disable=missing-function-docstring,redefined-outer-name
 
@@ -144,15 +145,6 @@ def test_fractional_kelly_holds_the_rest_in_cash(portfolio_module):
     assert "Cash" not in full.index
 
 
-def test_get_minimum_cvar_weights(recorder, portfolio_module):
-    recorder.capture(portfolio_module.get_minimum_cvar_weights(include_benchmark=True))
-    recorder.capture(
-        portfolio_module.get_minimum_cvar_weights(
-            confidence_level=0.99, include_benchmark=True
-        )
-    )
-
-
 def test_get_hierarchical_equal_risk_contribution_weights(recorder, portfolio_module):
     table = portfolio_module.get_hierarchical_equal_risk_contribution_weights(
         include_benchmark=True
@@ -179,18 +171,9 @@ def test_get_nested_clustered_optimization_weights(recorder, portfolio_module):
     )
 
 
-def test_get_minimum_drawdown_weights(recorder, portfolio_module):
-    for measure in ("cdar", "maximum", "average"):
-        recorder.capture(
-            portfolio_module.get_minimum_drawdown_weights(
-                measure=measure, include_benchmark=True
-            )
-        )
-
-
 def test_the_minimum_drawdown_portfolio_has_the_lowest_drawdown(portfolio_module):
-    table = portfolio_module.get_minimum_drawdown_weights(
-        measure="maximum", include_benchmark=True, rounding=12
+    table = portfolio_module.get_mean_risk_weights(
+        risk_measure="maximum_drawdown", include_benchmark=True, rounding=12
     )
     returns = portfolio_module._get_returns("daily", True)
     weights = table["Weight"].drop("Portfolio")
@@ -216,18 +199,147 @@ def test_get_maximum_omega_weights(recorder, portfolio_module):
     ).empty
 
 
-def test_get_maximum_cvar_ratio_weights(recorder, portfolio_module):
-    table = portfolio_module.get_maximum_cvar_ratio_weights(include_benchmark=True)
+def test_get_mean_risk_weights(recorder, portfolio_module):
+    table = portfolio_module.get_mean_risk_weights(include_benchmark=True)
+    recorder.capture(table)
+    # The minimum risk portfolio has no more risk than any asset on its own.
+    assert table.loc["Portfolio", "MAD"] <= table["MAD"].drop("Portfolio").min() + 1e-4
+    ratio = portfolio_module.get_mean_risk_weights(
+        risk_measure="gini_mean_difference",
+        objective="maximum_ratio",
+        include_benchmark=True,
+    )
+    recorder.capture(ratio)
+    assert (
+        ratio.loc["Portfolio", "Gini Mean Difference Ratio"]
+        >= ratio["Gini Mean Difference Ratio"].drop("Portfolio").max() - 1e-4
+    )
+    recorder.capture(
+        portfolio_module.get_mean_risk_weights(
+            risk_measure="semideviation",
+            target_return=0.2,
+            minimum_acceptable_return="mean",
+            include_benchmark=True,
+        )
+    )
+
+    # The minimum CVaR portfolio, recorded without its ratio column.
+    for alpha in (0.05, 0.01):
+        recorder.capture(
+            portfolio_module.get_mean_risk_weights(
+                risk_measure="cvar",
+                alpha=alpha,
+                include_benchmark=True,
+            ).drop(columns="CVaR Ratio")
+        )
+
+    # The maximum CVaR ratio (STARR) portfolio.
+    table = portfolio_module.get_mean_risk_weights(
+        risk_measure="cvar", objective="maximum_ratio", include_benchmark=True
+    )
     recorder.capture(table)
     assert (
         table.loc["Portfolio", "CVaR Ratio"]
         >= table["CVaR Ratio"].drop("Portfolio").max() - 1e-4
     )
     recorder.capture(
-        portfolio_module.get_maximum_cvar_ratio_weights(
-            confidence_level=0.99, include_benchmark=True
+        portfolio_module.get_mean_risk_weights(
+            risk_measure="cvar",
+            objective="maximum_ratio",
+            alpha=0.01,
+            include_benchmark=True,
         )
     )
+
+    # The minimum drawdown portfolios, recorded without their ratio columns.
+    for risk_measure, name in (
+        ("cdar", "CDaR"),
+        ("maximum_drawdown", "Maximum Drawdown"),
+        ("average_drawdown", "Average Drawdown"),
+    ):
+        recorder.capture(
+            portfolio_module.get_mean_risk_weights(
+                risk_measure=risk_measure, include_benchmark=True
+            ).drop(columns=f"{name} Ratio")
+        )
+
+    # Holding nothing has no drawdown, so a net exposure of 0 is refused.
+    assert portfolio_module.get_mean_risk_weights(
+        risk_measure="cdar", net_exposure=0, minimum_weight=-1, include_benchmark=True
+    ).empty
+    with pytest.raises(InvalidArgumentError, match="risk_measure must be one of"):
+        portfolio_module.get_mean_risk_weights(risk_measure="cvaR")
+
+
+def test_get_risk_parity_weights_risk_measure(recorder, portfolio_module):
+    table = portfolio_module.get_risk_parity_weights(
+        risk_measure="cvar", include_benchmark=True
+    )
+    recorder.capture(table)
+    assert np.allclose(table["CVaR Contribution"].iloc[:-1], 1 / 3, atol=1e-3)
+    recorder.capture(
+        portfolio_module.get_risk_parity_weights(
+            risk_measure="mad",
+            risk_budget={"AAPL": 0.5, "MSFT": 0.3, "Benchmark": 0.2},
+            include_benchmark=True,
+        )
+    )
+
+
+def test_get_hierarchical_weights_with_other_risk_measures(recorder, portfolio_module):
+    table = portfolio_module.get_hierarchical_risk_parity_weights(
+        risk_measure="cvar", include_benchmark=True
+    )
+    recorder.capture(table)
+    assert "CVaR" in table.columns
+    recorder.capture(
+        portfolio_module.get_hierarchical_equal_risk_contribution_weights(
+            risk_measure="cdar",
+            within_clusters="equal",
+            clusters=2,
+            include_benchmark=True,
+        )
+    )
+    recorder.capture(
+        portfolio_module.get_nested_clustered_optimization_weights(
+            risk_measure="mad",
+            objective="risk_parity",
+            clusters=2,
+            include_benchmark=True,
+        )
+    )
+    recorder.capture(
+        portfolio_module.get_hierarchical_equal_risk_contribution_weights(
+            cluster_criterion="standardized_silhouette", include_benchmark=True
+        )
+    )
+
+
+def test_get_schur_complementary_weights(recorder, portfolio_module):
+    table = portfolio_module.get_schur_complementary_weights(include_benchmark=True)
+    recorder.capture(table)
+    # With three assets one half of the first split is a single asset, which leaves
+    # nothing to augment, so the weights are those of Hierarchical Risk Parity.
+    pd.testing.assert_frame_equal(
+        table,
+        portfolio_module.get_hierarchical_risk_parity_weights(include_benchmark=True),
+    )
+
+
+def test_get_stacking_weights(recorder, portfolio_module):
+    table = portfolio_module.get_stacking_weights(include_benchmark=True)
+    recorder.capture(table)
+    assert table.loc["Portfolio", "Weight"] == pytest.approx(1, abs=1e-4)
+    recorder.capture(
+        portfolio_module.get_stacking_weights(
+            methods="minimum_variance,risk_parity,equal_weight",
+            final_method="inverse_volatility",
+            folds=None,
+            include_benchmark=True,
+        )
+    )
+    with pytest.raises(InvalidArgumentError, match="methods must be one of"):
+        portfolio_module.get_stacking_weights(methods=["random"])
 
 
 def test_get_black_litterman_weights(recorder, portfolio_module):
@@ -330,7 +442,8 @@ def test_get_look_through_exposure(recorder, test_toolkit):
     recorder.capture(construction.get_look_through_exposure())
     recorder.capture(construction.get_look_through_exposure(by="country"))
     recorder.capture(construction.get_look_through_exposure(by="holdings"))
-    assert construction.get_look_through_exposure(by="industry").empty
+    with pytest.raises(InvalidArgumentError, match="by must be one of"):
+        construction.get_look_through_exposure(by="industry")
 
 
 def test_get_brinson_attribution(recorder, test_toolkit):
@@ -373,10 +486,10 @@ def test_get_brinson_attribution_linked(recorder, test_toolkit):
 
 def test_get_brinson_attribution_invalid_period_and_linking(test_toolkit):
     construction = _offline_construction(test_toolkit)
-    assert construction.get_brinson_attribution(period="hourly").empty
-    assert construction.get_brinson_attribution(
-        period="monthly", linking="frongello"
-    ).empty
+    with pytest.raises(InvalidArgumentError, match="period must be weekly"):
+        construction.get_brinson_attribution(period="hourly")
+    with pytest.raises(InvalidArgumentError, match="linking must be one of"):
+        construction.get_brinson_attribution(period="monthly", linking="frongello")
 
 
 def test_get_brinson_attribution_looks_through_funds(test_toolkit):
@@ -512,9 +625,16 @@ def test_brinson_attribution_keeps_an_asset_closed_on_the_first_day(test_toolkit
         "ledoit_wolf_constant_correlation",
         "ledoit_wolf_single_factor",
         "oas",
+        "shrunk",
         "semicovariance",
         "exponential",
         "denoised",
+        "denoised_spectral",
+        "denoised_shrink",
+        "gerber",
+        "jlogo",
+        "geodesic",
+        "regime_adjusted_ew",
     ],
 )
 def test_the_optimizers_take_a_covariance_estimator(
@@ -552,25 +672,27 @@ def test_a_covariance_estimator_changes_the_weights_and_their_risk(portfolio_mod
 
 
 @pytest.mark.parametrize(
-    "method",
+    ("method", "extra"),
     [
-        "get_minimum_variance_weights",
-        "get_maximum_sharpe_weights",
-        "get_mean_variance_weights",
-        "get_minimum_cvar_weights",
-        "get_maximum_diversification_weights",
-        "get_growth_optimal_weights",
-        "get_risk_parity_weights",
-        "get_hierarchical_equal_risk_contribution_weights",
-        "get_minimum_drawdown_weights",
-        "get_maximum_omega_weights",
-        "get_maximum_cvar_ratio_weights",
-        "get_resampled_efficient_weights",
+        ("get_minimum_variance_weights", {}),
+        ("get_maximum_sharpe_weights", {}),
+        ("get_mean_variance_weights", {}),
+        ("get_mean_risk_weights", {"risk_measure": "cvar"}),
+        ("get_maximum_diversification_weights", {}),
+        ("get_growth_optimal_weights", {}),
+        ("get_risk_parity_weights", {}),
+        ("get_hierarchical_equal_risk_contribution_weights", {}),
+        ("get_mean_risk_weights", {"risk_measure": "cdar"}),
+        ("get_maximum_omega_weights", {}),
+        (
+            "get_mean_risk_weights",
+            {"risk_measure": "cvar", "objective": "maximum_ratio"},
+        ),
+        ("get_resampled_efficient_weights", {"resamples": 50}),
     ],
 )
-def test_sector_and_country_bounds_come_from_the_profiles(test_toolkit, method):
+def test_sector_and_country_bounds_come_from_the_profiles(test_toolkit, method, extra):
     construction = _offline_construction(test_toolkit)
-    extra = {"resamples": 50} if "resampled" in method else {}
     by_sector = getattr(construction, method)(
         include_benchmark=True,
         sector_bounds={"Technology": (0, 0.6)},
@@ -658,6 +780,36 @@ def test_fractional_kelly_with_a_net_exposure_holds_the_rest_in_cash(test_toolki
     assert table.loc["Cash", "Weight"] == pytest.approx(0.6)
 
 
+def test_l2_regularization(recorder, portfolio_module):
+    recorder.capture(
+        portfolio_module.get_minimum_variance_weights(l2_regularization=0.05)
+    )
+    recorder.capture(
+        portfolio_module.get_maximum_sharpe_weights(
+            maximum_weight=0.8, l2_regularization=0.05
+        )
+    )
+    recorder.capture(portfolio_module.get_mean_variance_weights(l2_regularization=0.05))
+    recorder.capture(
+        portfolio_module.get_efficient_frontier(points=4, l2_regularization=0.05)
+    )
+
+    # A higher γ brings the weights closer to equal weights.
+    distances = [
+        (
+            portfolio_module.get_minimum_variance_weights(
+                l2_regularization=gamma, rounding=10
+            )["Weight"].drop("Portfolio")
+            - 0.5
+        )
+        .abs()
+        .sum()
+        for gamma in (0.0, 0.05, 1.0)
+    ]
+    assert distances == sorted(distances, reverse=True)
+    assert portfolio_module.get_minimum_variance_weights(l2_regularization=-1).empty
+
+
 def test_get_optimization_backtest(recorder, portfolio_module):
     summary = portfolio_module.get_optimization_backtest(transaction_cost=0.001)
     recorder.capture(summary)
@@ -678,10 +830,42 @@ def test_get_optimization_backtest(recorder, portfolio_module):
         "Benchmark",
     ]
     weights = portfolio_module.get_optimization_backtest(
-        methods=["mean_variance"], expected_returns="james_stein", output="weights"
+        methods=["mean_variance"], expected_returns="bayes_stein", output="weights"
     )
     recorder.capture(weights)
     assert np.allclose(weights.T.groupby(level=0).sum().T, 1, atol=1e-3)
+
+
+def test_the_backtest_runs_the_mean_risk_and_random_portfolios(
+    recorder, portfolio_module
+):
+    methods = "minimum_mad,minimum_semideviation,random"
+    summary = portfolio_module.get_optimization_backtest(
+        methods=methods, rebalancing="quarterly", transaction_cost=0.001
+    )
+    recorder.capture(summary)
+    assert list(summary.index) == [
+        "Minimum MAD",
+        "Minimum Semideviation",
+        "Random",
+        "Equal Weight",
+        "Benchmark",
+    ]
+    weights = portfolio_module.get_optimization_backtest(
+        methods=methods, rebalancing="quarterly", maximum_weight=0.7, output="weights"
+    )
+    recorder.capture(weights)
+    assert np.allclose(weights.T.groupby(level=0).sum().T, 1, atol=1e-6)
+    assert (weights[["Minimum MAD", "Minimum Semideviation"]] <= 0.7 + 1e-6).all().all()
+
+    # One generator seeded at 0 per backtest: the random portfolios are the successive
+    # draws of that generator (to the Toolkit's rounding), the same on every run.
+    generator = np.random.default_rng(0)
+    draws = [
+        optimization_model.get_random_weights(weights["Random"].columns, generator)
+        for _ in weights.index
+    ]
+    np.testing.assert_allclose(weights["Random"], draws, atol=1e-4)
 
 
 def test_get_optimization_backtest_refuses_unknown_methods(portfolio_module):
@@ -721,7 +905,7 @@ def test_expected_return_estimators_change_the_expected_returns(portfolio_module
         method: portfolio_module.get_mean_variance_weights(
             expected_returns=method, include_benchmark=True, rounding=8
         )
-        for method in ("mean", "exponential", "capm", "james_stein")
+        for method in ("mean", "exponential", "capm", "bayes_stein")
     }
     returns = portfolio_module._get_returns("daily", True)
     assert np.allclose(
@@ -731,7 +915,7 @@ def test_expected_return_estimators_change_the_expected_returns(portfolio_module
     assert tables["capm"].loc["Benchmark", "Expected Return"] == pytest.approx(
         tables["mean"].loc["Benchmark", "Expected Return"]
     )
-    for method in ("exponential", "capm", "james_stein"):
+    for method in ("exponential", "capm", "bayes_stein"):
         assert not np.allclose(
             tables[method]["Expected Return"], tables["mean"]["Expected Return"]
         )
@@ -814,10 +998,10 @@ def test_get_resampled_efficient_weights(recorder, portfolio_module):
         resamples=50, maximum_weight=0.4, include_benchmark=True, rounding=10
     )
     assert (capped["Weight"].drop("Portfolio") <= 0.4 + 1e-8).all()
-    assert portfolio_module.get_resampled_efficient_weights(objective="best").empty
-    assert portfolio_module.get_resampled_efficient_weights(
-        resampling="jackknife"
-    ).empty
+    with pytest.raises(InvalidArgumentError, match="objective must be one of"):
+        portfolio_module.get_resampled_efficient_weights(objective="best")
+    with pytest.raises(InvalidArgumentError, match="resampling must be one of"):
+        portfolio_module.get_resampled_efficient_weights(resampling="jackknife")
 
 
 def test_the_backtest_runs_the_clustering_drawdown_and_ratio_optimizers(
@@ -854,23 +1038,29 @@ def test_the_backtest_runs_the_clustering_drawdown_and_ratio_optimizers(
 
 
 @pytest.mark.parametrize(
-    "method",
+    ("method", "extra"),
     [
-        "get_minimum_drawdown_weights",
-        "get_maximum_omega_weights",
-        "get_maximum_cvar_ratio_weights",
+        ("get_mean_risk_weights", {"risk_measure": "cdar"}),
+        ("get_maximum_omega_weights", {}),
+        (
+            "get_mean_risk_weights",
+            {"risk_measure": "cvar", "objective": "maximum_ratio"},
+        ),
     ],
 )
-def test_the_drawdown_and_ratio_optimizers_limit_the_turnover(portfolio_module, method):
+def test_the_drawdown_and_ratio_optimizers_limit_the_turnover(
+    portfolio_module, method, extra
+):
     current = {"AAPL": 0.2, "MSFT": 0.6, "Benchmark": 0.2}
     free = getattr(portfolio_module, method)(
-        current_weights=current, include_benchmark=True, rounding=10
+        current_weights=current, include_benchmark=True, rounding=10, **extra
     )
     capped = getattr(portfolio_module, method)(
         current_weights=current,
         maximum_turnover=0.1,
         include_benchmark=True,
         rounding=10,
+        **extra,
     )
     assert free.loc["Portfolio", "Turnover"] > 0.1  # noqa: PLR2004
     assert capped.loc["Portfolio", "Turnover"] == pytest.approx(0.1, abs=1e-7)
@@ -878,20 +1068,27 @@ def test_the_drawdown_and_ratio_optimizers_limit_the_turnover(portfolio_module, 
 
 
 @pytest.mark.parametrize(
-    ("method", "column"),
+    ("method", "column", "extra"),
     [
-        ("get_maximum_omega_weights", "Omega Ratio"),
-        ("get_maximum_cvar_ratio_weights", "CVaR Ratio"),
-        ("get_nested_clustered_optimization_weights", None),
+        ("get_maximum_omega_weights", "Omega Ratio", {}),
+        (
+            "get_mean_risk_weights",
+            "CVaR Ratio",
+            {"risk_measure": "cvar", "objective": "maximum_ratio"},
+        ),
+        (
+            "get_nested_clustered_optimization_weights",
+            None,
+            {"objective": "maximum_sharpe"},
+        ),
     ],
 )
 def test_the_ratio_optimizers_take_an_expected_return_estimator(
-    portfolio_module, method, column
+    portfolio_module, method, column, extra
 ):
-    extra = {"objective": "maximum_sharpe"} if column is None else {}
     mean = getattr(portfolio_module, method)(include_benchmark=True, **extra)
     shrunk = getattr(portfolio_module, method)(
-        expected_returns="james_stein", include_benchmark=True, **extra
+        expected_returns="bayes_stein", include_benchmark=True, **extra
     )
     assert not np.allclose(mean["Weight"], shrunk["Weight"])
     assert not np.allclose(mean["Expected Return"], shrunk["Expected Return"])
@@ -919,7 +1116,7 @@ def test_get_risk_contributions_of_historical_measures(recorder, portfolio_modul
 def test_get_portfolio_risk_metrics(recorder, portfolio_module):
     recorder.capture(portfolio_module.get_portfolio_risk_metrics())
     metrics = portfolio_module.get_portfolio_risk_metrics(
-        weights={"AAPL": 0.7, "MSFT": 0.3}, period="weekly", confidence_level=0.9
+        weights={"AAPL": 0.7, "MSFT": 0.3}, period="weekly", alpha=0.1
     )
     recorder.capture(metrics)
     assert list(metrics.columns) == ["Portfolio", "Benchmark"]
@@ -938,7 +1135,8 @@ def test_get_discrete_allocation(recorder, portfolio_module):
 
 
 def test_get_discrete_allocation_invalid_method(portfolio_module):
-    assert portfolio_module.get_discrete_allocation(method="round").empty
+    with pytest.raises(InvalidArgumentError, match="method must be one of"):
+        portfolio_module.get_discrete_allocation(method="round")
 
 
 def test_the_ledoit_wolf_targets_shrink_the_sample_covariance(portfolio_module):
@@ -996,7 +1194,8 @@ def test_the_clustering_optimizers_take_a_codependence(portfolio_module, method)
         )["Weight"]
         assert weights.drop("Portfolio").sum() == pytest.approx(1, abs=1e-4)
 
-    assert getattr(portfolio_module, method)(codependence="distance").empty
+    with pytest.raises(InvalidArgumentError, match="codependence must be one of"):
+        getattr(portfolio_module, method)(codependence="euclidean")
 
 
 def test_black_litterman_with_the_market_risk_aversion(portfolio_module):
@@ -1101,3 +1300,809 @@ def test_get_brinson_attribution_keeps_a_sector_whose_fund_starts_later(
         later.loc["Total", "Portfolio Return"] - later.loc["Total", "Benchmark Return"],
         abs=1e-12,
     )
+
+
+def test_get_expected_returns_estimate(recorder, portfolio_module):
+    table = portfolio_module.get_expected_returns_estimate(include_benchmark=True)
+    recorder.capture(table)
+    recorder.capture(
+        portfolio_module.get_expected_returns_estimate(
+            method=["exponential", "exponential_geometric"], span=60, adjust=False
+        )
+    )
+    weights = portfolio_module.get_mean_variance_weights(
+        expected_returns="james_stein", include_benchmark=True
+    )
+    assert np.allclose(
+        weights["Expected Return"].drop("Portfolio"), table["James-Stein"], atol=1e-4
+    )
+
+
+def test_get_covariance_estimate(recorder, portfolio_module):
+    recorder.capture(portfolio_module.get_covariance_estimate(include_benchmark=True))
+    for method in ("shrunk", "gerber", "denoised_shrink", "detoned"):
+        recorder.capture(
+            portfolio_module.get_covariance_estimate(
+                method=method, include_benchmark=True, rounding=6
+            )
+        )
+    correlation = portfolio_module.get_covariance_estimate(
+        method="gerber", gerber_statistic=2, correlation=True, include_benchmark=True
+    )
+    assert np.allclose(np.diag(correlation), 1)
+
+
+def test_get_codependence_matrix(recorder, portfolio_module):
+    recorder.capture(portfolio_module.get_codependence_matrix(include_benchmark=True))
+    for method in ("distance", "mutual_information", "lower_tail"):
+        recorder.capture(
+            portfolio_module.get_codependence_matrix(
+                method=method, include_benchmark=True
+            )
+        )
+    distance = portfolio_module.get_codependence_matrix(
+        method="mutual_information", distance=True, include_benchmark=True
+    )
+    recorder.capture(distance)
+    assert np.allclose(np.diag(distance), 0)
+
+
+def test_get_asset_clusters(recorder, portfolio_module):
+    recorder.capture(portfolio_module.get_asset_clusters(include_benchmark=True))
+    recorder.capture(
+        portfolio_module.get_asset_clusters(
+            method="ftca", threshold=0.7, include_benchmark=True
+        )
+    )
+    recorder.capture(
+        portfolio_module.get_asset_clusters(
+            cluster_criterion="standardized_silhouette", include_benchmark=True
+        )
+    )
+    with pytest.raises(InvalidArgumentError, match="method must be one of"):
+        portfolio_module.get_asset_clusters(method="k_means")
+
+
+def test_get_coskewness_and_cokurtosis_matrix(recorder, portfolio_module):
+    coskewness = portfolio_module.get_coskewness_matrix()
+    recorder.capture(coskewness)
+    recorder.capture(portfolio_module.get_coskewness_matrix(method="exponential"))
+    cokurtosis = portfolio_module.get_cokurtosis_matrix()
+    recorder.capture(cokurtosis)
+    recorder.capture(portfolio_module.get_cokurtosis_matrix(method="semi"))
+    # The diagonal of the standardized matrices is each asset's moment skewness and
+    # (non-excess) kurtosis.
+    returns = portfolio_module._get_returns("daily", False)
+    assert coskewness.loc["AAPL", ("AAPL", "AAPL")] == pytest.approx(
+        returns["AAPL"].skew()
+        * (len(returns) - 2)
+        / np.sqrt(len(returns) * (len(returns) - 1)),
+        abs=1e-4,
+    )
+    assert cokurtosis.shape == (2, 8)
+
+
+def test_get_estimation_uncertainty(recorder, portfolio_module):
+    table = portfolio_module.get_estimation_uncertainty(n_bootstrap=200)
+    recorder.capture(table)
+    assert (table["Lower"] < table["Expected Return"]).all()
+    assert (table["Upper"] > table["Expected Return"]).all()
+    recorder.capture(
+        portfolio_module.get_estimation_uncertainty(
+            method="normal", n_bootstrap=200, output="covariance", rounding=6
+        )
+    )
+
+
+@pytest.mark.parametrize(
+    "expected_returns",
+    ["geometric", "exponential_geometric", "james_stein", "bodnar_okhrin_parolya"],
+)
+def test_the_optimizers_take_the_shrunk_and_compounded_expected_returns(
+    portfolio_module, expected_returns
+):
+    table = portfolio_module.get_mean_variance_weights(
+        expected_returns=expected_returns, include_benchmark=True, rounding=8
+    )
+    assert table["Weight"].drop("Portfolio").sum() == pytest.approx(1, abs=1e-4)
+    assert np.allclose(
+        table["Expected Return"].drop("Portfolio"),
+        portfolio_module.get_expected_returns_estimate(
+            method=expected_returns, include_benchmark=True, rounding=8
+        ).iloc[:, 0],
+    )
+
+
+@pytest.fixture
+def fama_french(monkeypatch, portfolio_module):
+    """
+    Offline daily Fama and French five factors (and the risk free rate) on the days of the
+    test data: the market factor follows the Benchmark, the others are noise.
+    """
+    from financetoolkit.performance import performance_model  # noqa: PLC0415
+
+    returns = portfolio_module._historical_data["daily"]["Return"].fillna(0)
+    rng = np.random.default_rng(11)
+    factors = pd.DataFrame(
+        rng.normal(0.0001, 0.005, (len(returns), 4)),
+        index=returns.index,
+        columns=["SMB", "HML", "RMW", "CMA"],
+    )
+    factors.insert(
+        0, "Mkt-RF", returns["Benchmark"] + rng.normal(0, 0.002, len(returns))
+    )
+    factors["HML"] += 0.3 * returns["MSFT"]
+    factors["RF"] = 0.0001
+    monkeypatch.setattr(
+        performance_model, "obtain_fama_and_french_dataset", lambda **_: factors
+    )
+    portfolio_module._factor_datasets.clear()
+    yield factors.drop(columns="RF")
+    portfolio_module._factor_datasets.clear()
+
+
+def test_get_factor_loadings(recorder, portfolio_module, fama_french):
+    table = portfolio_module.get_factor_loadings(include_benchmark=True, rounding=6)
+    recorder.capture(table)
+    # The Benchmark is the market factor without the noise.
+    assert table.loc["Benchmark", "Mkt-RF"] == pytest.approx(1, abs=0.05)
+    recorder.capture(
+        portfolio_module.get_factor_loadings(
+            selection="forward", period="monthly", rounding=6
+        )
+    )
+    recorder.capture(portfolio_module.get_factor_loadings(selection="pcr", rounding=6))
+
+
+def test_get_covariance_estimate_factor(recorder, portfolio_module, fama_french):
+    covariance = portfolio_module.get_covariance_estimate(method="factor", rounding=8)
+    recorder.capture(covariance)
+    recorder.capture(
+        portfolio_module.get_covariance_estimate(
+            method="factor", factor_selection="backward", rounding=8
+        )
+    )
+    weights = portfolio_module.get_minimum_variance_weights(
+        covariance="factor", rounding=8
+    )
+    assert weights["Weight"].drop("Portfolio").sum() == pytest.approx(1, abs=1e-6)
+
+
+def test_get_covariance_estimate_robust(recorder, portfolio_module):
+    for method in (
+        "minimum_covariance_determinant",
+        "jlogo",
+        "geodesic",
+        "regime_adjusted_ew",
+    ):
+        recorder.capture(
+            portfolio_module.get_covariance_estimate(
+                method=method, include_benchmark=True, rounding=8
+            )
+        )
+    recorder.capture(
+        portfolio_module.get_covariance_estimate(
+            method="regime_adjusted_ew", half_life=20, rounding=8
+        )
+    )
+    # With three assets the TMFG links every pair, so j-LoGo is the sample covariance.
+    assert np.allclose(
+        portfolio_module.get_covariance_estimate(
+            method="jlogo", include_benchmark=True, rounding=10
+        ),
+        portfolio_module.get_covariance_estimate(include_benchmark=True, rounding=10),
+    )
+    # The robust estimate is reproducible and feeds the optimizers.
+    weights = portfolio_module.get_minimum_variance_weights(
+        covariance="minimum_covariance_determinant", period="weekly", rounding=8
+    )
+    assert weights["Weight"].drop("Portfolio").sum() == pytest.approx(1, abs=1e-6)
+
+
+def test_get_risk_contributions_finite_differences(recorder, portfolio_module):
+    for measure in ("maximum_drawdown", "kurtosis", "evar"):
+        table = portfolio_module.get_risk_contributions(
+            weights={"AAPL": 0.7, "MSFT": 0.3}, risk_measure=measure, rounding=8
+        )
+        recorder.capture(table)
+        assert table.loc["Total", "Percentage Contribution"] == pytest.approx(1)
+
+
+def test_get_factor_risk_contributions(recorder, portfolio_module, fama_french):
+    table = portfolio_module.get_factor_risk_contributions(rounding=8)
+    recorder.capture(table)
+    total = portfolio_module.get_risk_contributions(rounding=8)
+    assert table.loc["Total", "Risk Contribution"] == pytest.approx(
+        total.loc["Total", "Risk Contribution"], rel=1e-5
+    )
+    recorder.capture(
+        portfolio_module.get_factor_risk_contributions(
+            weights={"AAPL": 0.7, "MSFT": 0.3}, risk_measure="cvar", rounding=8
+        )
+    )
+
+
+def test_get_factor_attribution(recorder, portfolio_module, fama_french):
+    table = portfolio_module.get_factor_attribution(rounding=8)
+    recorder.capture(table.iloc[:20])
+    assert np.allclose(
+        table["Common Return"] + table["Specific Return"], table["Total Return"]
+    )
+    recorder.capture(
+        portfolio_module.get_factor_attribution(
+            weights={"AAPL": 0.7, "MSFT": 0.3}, period="monthly", rounding=8
+        )
+    )
+
+
+def test_get_entropy_pooling(recorder, portfolio_module):
+    table = portfolio_module.get_entropy_pooling(
+        views={"AAPL": 0.05}, volatility_views={"MSFT": 0.3}, rounding=6
+    )
+    recorder.capture(table)
+    # The posterior covariance is on the basis the views are imposed on, so the volatility
+    # view comes back exactly, on daily as on monthly returns.
+    assert table.loc["MSFT", "Posterior Volatility"] == pytest.approx(0.3, abs=1e-6)
+    monthly = portfolio_module.get_entropy_pooling(
+        volatility_views={"MSFT": 0.3}, period="monthly", rounding=10
+    )
+    assert monthly.loc["MSFT", "Posterior Volatility"] == pytest.approx(0.3, abs=1e-7)
+    recorder.capture(
+        portfolio_module.get_entropy_pooling(
+            views={"AAPL": 0.05}, output="summary", rounding=6
+        )
+    )
+    recorder.capture(
+        portfolio_module.get_entropy_pooling(
+            opinions=[{"views": {"AAPL": 0.05}}, {"views": {"MSFT": (">=", 0.4)}}],
+            pooling="logarithmic",
+            rounding=6,
+        )
+    )
+
+
+def test_get_return_contributions(recorder, portfolio_module):
+    table = portfolio_module.get_return_contributions(period="yearly", rounding=8)
+    recorder.capture(table)
+    assert np.allclose(
+        table.drop(columns="Portfolio").sum(axis=1), table["Portfolio"], atol=1e-7
+    )
+    recorder.capture(
+        portfolio_module.get_return_contributions(
+            weights={"AAPL": 0.7, "MSFT": 0.3}, period="quarterly", rounding=8
+        )
+    )
+
+
+def test_get_black_litterman_weights_with_factor_views(
+    recorder, portfolio_module, fama_french
+):
+    market = {"AAPL": 2.0, "MSFT": 1.5}
+    recorder.capture(
+        portfolio_module.get_black_litterman_weights(
+            market_weights=market,
+            method="augmented",
+            views={"MSFT": 0.2},
+            factor_views={"HML": 0.03},
+        )
+    )
+    recorder.capture(
+        portfolio_module.get_black_litterman_weights(
+            method="bayesian", factor_views={"HML": 0.03, "SMB-HML": 0.01}
+        )
+    )
+    # Factor views need the augmented or Bayesian method.
+    assert portfolio_module.get_black_litterman_weights(
+        market_weights=market, factor_views={"HML": 0.03}
+    ).empty
+
+
+def test_get_critical_line_weights(recorder, portfolio_module):
+    table = portfolio_module.get_critical_line_weights(include_benchmark=True)
+    recorder.capture(table)
+    # The minimum variance portfolio is the last corner and the least volatile one.
+    assert (
+        table.loc["Minimum Variance", "Volatility"] <= table["Volatility"].min() + 1e-4
+    )
+    assert (
+        table.loc["Maximum Sharpe", "Sharpe Ratio"]
+        >= table["Sharpe Ratio"].max() - 1e-4
+    )
+    recorder.capture(
+        portfolio_module.get_critical_line_weights(
+            maximum_weight=0.5, include_benchmark=True
+        )
+    )
+
+
+def test_get_worst_case_mean_variance_weights(recorder, portfolio_module):
+    table = portfolio_module.get_worst_case_mean_variance_weights(
+        confidence_level=0.5, include_benchmark=True
+    )
+    recorder.capture(table)
+    assert (table["Worst-Case Return"] <= table["Expected Return"] + 1e-4).all()
+    recorder.capture(
+        portfolio_module.get_worst_case_mean_variance_weights(
+            uncertainty="ellipsoid", objective="utility", include_benchmark=True
+        )
+    )
+    target = portfolio_module.get_worst_case_mean_variance_weights(
+        objective="minimum_variance", target_return=-0.16, include_benchmark=True
+    )
+    recorder.capture(target)
+    assert target.loc["Portfolio", "Worst-Case Return"] >= -0.16 - 1e-4
+
+
+def test_get_distributionally_robust_cvar_weights(recorder, portfolio_module):
+    table = portfolio_module.get_distributionally_robust_cvar_weights(
+        include_benchmark=True
+    )
+    recorder.capture(table)
+    assert (table["Worst-Case CVaR"] >= table["CVaR"] - 1e-4).all()
+    recorder.capture(
+        portfolio_module.get_distributionally_robust_cvar_weights(
+            wasserstein_radius=0.0, risk_aversion=5.0, include_benchmark=True
+        )
+    )
+
+
+def test_hierarchical_weights_on_the_dbht(recorder, portfolio_module):
+    # Three assets form one bubble of the TMFG, so the DBHT holds a single cluster.
+    herc = portfolio_module.get_hierarchical_equal_risk_contribution_weights(
+        linkage_method="dbht", include_benchmark=True
+    )
+    recorder.capture(herc)
+    assert (herc["Cluster"].drop("Portfolio") == 1).all()
+    recorder.capture(
+        portfolio_module.get_hierarchical_risk_parity_weights(
+            linkage_method="dbht", codependence="spearman", include_benchmark=True
+        )
+    )
+    recorder.capture(
+        portfolio_module.get_nested_clustered_optimization_weights(
+            linkage_method="dbht", include_benchmark=True
+        )
+    )
+    recorder.capture(
+        portfolio_module.get_schur_complementary_weights(
+            linkage_method="dbht", include_benchmark=True
+        )
+    )
+    recorder.capture(
+        portfolio_module.get_asset_clusters(
+            linkage_method="dbht", codependence="distance", include_benchmark=True
+        )
+    )
+
+
+def _synthetic_construction(
+    index: pd.PeriodIndex, assets: int = 3, end_date: str | None = None
+) -> tuple[PortfolioConstruction, pd.DataFrame]:
+    """A Portfolio Construction module on random daily returns and a 3% risk free rate."""
+    rng = np.random.default_rng(5)
+    returns = pd.DataFrame(
+        rng.normal(0.0008, 0.015, (len(index), assets)),
+        index=index,
+        columns=["A", "B", "C"][:assets],
+    )
+    construction = PortfolioConstruction(
+        tickers=returns.columns.tolist(),
+        historical_data={"daily": pd.concat({"Return": returns}, axis=1)},
+        risk_free_rate_data={"daily": pd.Series(0.03, index=index)},
+        rounding=None,
+        end_date=end_date,
+    )
+    return construction, returns
+
+
+def test_without_company_profiles_the_error_names_the_api_key(monkeypatch):
+    monkeypatch.setenv("FINANCETOOLKIT_STRICT_ERRORS", "1")
+    construction, _ = _synthetic_construction(
+        pd.bdate_range("2022-01-03", periods=300).to_period("D")
+    )
+    calls = []
+    construction._profile_function = lambda: calls.append(1)
+    construction._fund_function = lambda by, assets: None
+    cases = [
+        (
+            lambda: construction.get_black_litterman_weights(views={"A": 0.1}),
+            "market_weights",
+        ),
+        (
+            lambda: construction.get_minimum_variance_weights(
+                sector_bounds={"Technology": (0, 0.4)}
+            ),
+            "minimum_weight and maximum_weight",
+        ),
+        (
+            lambda: construction.get_minimum_variance_weights(
+                country_bounds={"US": (0, 0.4)}
+            ),
+            "minimum_weight and maximum_weight",
+        ),
+        (construction.get_look_through_exposure, 'by="holdings"'),
+    ]
+    for call, alternative in cases:
+        with pytest.raises(ValueError, match="API key") as error:
+            call()
+        assert alternative in str(error.value)
+    # Nothing is cached, so every call asks for the profiles again.
+    assert len(calls) == len(cases)
+    assert construction._profile is None
+    # The alternatives work without the profiles.
+    assert not construction.get_black_litterman_weights(
+        views={"A": 0.1}, market_weights={"A": 1, "B": 1, "C": 1}
+    ).empty
+    assert not construction.get_look_through_exposure(by="holdings").empty
+
+
+def test_return_contributions_start_when_every_asset_held_has_a_return():
+    index = pd.bdate_range("2022-01-03", periods=300).to_period("D")
+    construction, returns = _synthetic_construction(index)
+    # C is listed on the 101st day; B has no trade on one day after that.
+    returns.iloc[:100, 2] = np.nan
+    returns.iloc[150, 1] = np.nan
+    construction._historical_data["daily"] = pd.concat({"Return": returns}, axis=1)
+    table = construction.get_return_contributions(
+        weights={"A": 0.5, "B": 0.3, "C": 0.2}, period="daily"
+    )
+    # The days before C's listing are left out instead of counting as returns of 0.
+    assert table.index[0] == returns.index[100]
+    assert len(table) == len(returns) - 100
+    np.testing.assert_allclose(
+        table["Portfolio"], returns.iloc[100:].fillna(0) @ [0.5, 0.3, 0.2]
+    )
+    assert table.loc[returns.index[150], "B"] == 0
+    # Without C the sample is the whole range.
+    assert (
+        len(
+            construction.get_return_contributions(
+                weights={"A": 0.5, "B": 0.5}, period="daily"
+            )
+        )
+        == len(returns) - 1
+    )
+
+
+def test_a_net_exposure_other_than_one_holds_the_rest_in_cash():
+    construction, _ = _synthetic_construction(
+        pd.bdate_range("2022-01-03", periods=300).to_period("D")
+    )
+    assets = ["A", "B", "C"]
+    full = construction.get_maximum_sharpe_weights(maximum_weight=2.0)
+
+    for net_exposure in (0.5, 1.5):
+        table = construction.get_maximum_sharpe_weights(
+            maximum_weight=2.0, net_exposure=net_exposure
+        )
+        weights = table.loc[assets, "Weight"]
+        np.testing.assert_allclose(
+            weights, net_exposure * full.loc[assets, "Weight"], atol=1e-6
+        )
+        assert table.loc["Cash", "Weight"] == pytest.approx(1 - net_exposure)
+        assert table.loc["Cash", "Expected Return"] == pytest.approx(0.03)
+        assert table.loc["Portfolio", "Weight"] == pytest.approx(1)
+        assert table.loc["Portfolio", "Expected Return"] == pytest.approx(
+            weights @ table.loc[assets, "Expected Return"] + (1 - net_exposure) * 0.03
+        )
+        # The same mix of assets has the same Sharpe ratio, the one maximized.
+        assert table.loc["Portfolio", "Sharpe Ratio"] == pytest.approx(
+            full.loc["Portfolio", "Sharpe Ratio"], rel=1e-6
+        )
+    assert "Cash" not in full.index
+
+
+def test_a_market_neutral_minimum_risk_portfolio_holds_nothing():
+    construction, _ = _synthetic_construction(
+        pd.bdate_range("2022-01-03", periods=300).to_period("D")
+    )
+    assets = ["A", "B", "C"]
+    neutral = {"minimum_weight": -1.0, "net_exposure": 0.0, "gross_exposure": 2.0}
+    tables = [
+        construction.get_minimum_variance_weights(**neutral),
+        construction.get_mean_risk_weights(risk_measure="mad", **neutral),
+        construction.get_mean_risk_weights(risk_measure="cvar", **neutral),
+        construction.get_distributionally_robust_cvar_weights(**neutral),
+    ]
+    for table in tables:
+        # The least risky market neutral portfolio holds nothing: it has no volatility to
+        # share out, so the risk contributions and the Sharpe ratio are NaN.
+        np.testing.assert_allclose(table.loc[assets, "Weight"], 0, atol=1e-6)
+        assert table.loc["Cash", "Weight"] == pytest.approx(1)
+        assert table.loc["Portfolio", "Volatility"] == pytest.approx(0, abs=1e-9)
+        assert table["Risk Contribution"].isna().all()
+        assert np.isnan(table.loc["Portfolio", "Sharpe Ratio"])
+
+
+def test_the_transaction_cost_is_shown_and_taken_from_the_expected_return():
+    construction, _ = _synthetic_construction(
+        pd.bdate_range("2022-01-03", periods=300).to_period("D")
+    )
+    current = {"A": 0.6, "B": 0.4}
+    gross = construction.get_maximum_sharpe_weights(current_weights=current)
+    table = construction.get_maximum_sharpe_weights(
+        current_weights=current, transaction_cost=0.02
+    )
+    portfolio = table.loc["Portfolio"]
+    assets = ["A", "B", "C"]
+    cost = 0.02 * portfolio["Turnover"]
+    before_cost = table.loc[assets, "Weight"] @ table.loc[assets, "Expected Return"]
+
+    assert "Transaction Cost" not in gross.columns
+    assert cost > 0
+    assert portfolio["Transaction Cost"] == pytest.approx(cost)
+    np.testing.assert_allclose(
+        table.loc[assets, "Transaction Cost"], 0.02 * table.loc[assets, "Turnover"]
+    )
+    assert portfolio["Expected Return"] == pytest.approx(before_cost - cost)
+    assert portfolio["Sharpe Ratio"] == pytest.approx(
+        (before_cost - cost - 0.03) / portfolio["Volatility"]
+    )
+
+
+def test_returns_on_every_calendar_day_are_annualized_with_365_days():
+    construction, returns = _synthetic_construction(
+        pd.period_range("2023-01-01", "2024-12-31", freq="D"), assets=2
+    )
+    table = construction.get_maximum_sharpe_weights()
+    np.testing.assert_allclose(
+        table.loc[["A", "B"], "Expected Return"], returns.mean() * 365
+    )
+
+    options = {"methods": "equal_weight", "lookback": 20, "rebalancing": "yearly"}
+    path = construction.get_optimization_backtest(output="returns", **options)[
+        "Equal Weight"
+    ].dropna()
+    summary = construction.get_optimization_backtest(**options).loc["Equal Weight"]
+    assert summary["Annualized Return"] == pytest.approx(
+        (1 + path).prod() ** (365 / len(path)) - 1
+    )
+    assert summary["Annualized Volatility"] == pytest.approx(path.std() * np.sqrt(365))
+
+
+def test_the_backtest_runs_to_the_end_of_the_data(caplog):
+    index = pd.bdate_range("2022-01-03", periods=200).to_period("D")
+    construction, returns = _synthetic_construction(index)
+    daily = construction._historical_data["daily"]
+    # One market is closed on the last day, the others are open.
+    daily.loc[index[-1], ("Return", "A")] = np.nan
+    options = {"methods": "equal_weight", "lookback": 40, "output": "returns"}
+
+    path = construction.get_optimization_backtest(**options)["Equal Weight"]
+    assert path.index[-1] == index[-1]
+    # Equal weights from the last month end, drifted, with A at 0% on the last day.
+    held = daily["Return"].loc[path.index[path.index > "2022-09-30"]].fillna(0)
+    value = (1 + held).cumprod().sum(axis=1)
+    assert path.iloc[-1] == pytest.approx(value.iloc[-1] / value.iloc[-2] - 1)
+    assert "has no returns after" not in caplog.text
+
+    # An asset whose returns stop months before the end is held at 0% and said so.
+    daily.loc[index[-80:], ("Return", "C")] = np.nan
+    path = construction.get_optimization_backtest(**options)["Equal Weight"]
+    assert path.index[-1] == index[-1]
+    assert "C has no returns after" in caplog.text
+
+
+def test_a_backtest_strategy_whose_bounds_cannot_be_met_has_no_returns(caplog):
+    construction, _ = _synthetic_construction(
+        pd.bdate_range("2022-01-03", periods=200).to_period("D")
+    )
+    options = {"methods": "minimum_variance", "lookback": 40, "maximum_weight": 0.3}
+
+    summary = construction.get_optimization_backtest(**options)
+    weights = construction.get_optimization_backtest(output="weights", **options)
+
+    assert summary.loc["Minimum Variance"].isna().all()
+    assert weights["Minimum Variance"].isna().all().all()
+    assert summary.loc["Equal Weight"].notna().any()
+    assert "Minimum Variance found no weights on any of the" in caplog.text
+
+
+def test_get_covariance_estimate_split_and_robust(recorder, portfolio_module):
+    for method in ("denoised_detoned", "nercome", "mm", "rocke"):
+        covariance = portfolio_module.get_covariance_estimate(
+            method=method, include_benchmark=True, rounding=8
+        )
+        recorder.capture(covariance)
+        eigenvalues = np.linalg.eigvalsh(covariance.to_numpy())
+        if method == "denoised_detoned":
+            # The market component is removed, so the matrix is singular.
+            assert eigenvalues.min() == pytest.approx(0, abs=1e-6)
+        else:
+            assert eigenvalues.min() > 0
+    # The robust estimates feed the optimizers.
+    weights = portfolio_module.get_minimum_variance_weights(
+        covariance="rocke", include_benchmark=True
+    )
+    assert weights["Weight"].drop("Portfolio").sum() == pytest.approx(1, abs=1e-6)
+
+
+def test_get_covariance_estimate_ccc_garch(recorder, portfolio_module):
+    # Rounded to 6 decimals: the GARCH legs come from a multi-start likelihood fit whose
+    # optimum moves by about 1e-8 (relative) under 1e-12 changes of the returns.
+    covariance = portfolio_module.get_covariance_estimate(
+        method="ccc_garch", rounding=6
+    )
+    recorder.capture(covariance)
+    coskewness = portfolio_module.get_coskewness_matrix(method="ccc_garch", rounding=6)
+    recorder.capture(coskewness)
+    # The constant correlations are those of the standardized residuals, below the
+    # sample correlation of returns that share volatility bursts.
+    correlation = covariance.loc["AAPL", "MSFT"] / np.sqrt(
+        covariance.loc["AAPL", "AAPL"] * covariance.loc["MSFT", "MSFT"]
+    )
+    assert 0 < correlation < 1
+
+
+def test_get_random_matrix_statistics(recorder, portfolio_module):
+    summary = portfolio_module.get_random_matrix_statistics(include_benchmark=True)
+    recorder.capture(summary)
+    eigenvalues = portfolio_module.get_random_matrix_statistics(
+        output="eigenvalues", include_benchmark=True
+    )
+    recorder.capture(eigenvalues)
+    assert eigenvalues["Eigenvalue"].sum() == pytest.approx(3, abs=1e-3)
+    assert summary["Signal Eigenvalues"].iloc[0] == eigenvalues["Signal"].sum()
+    with pytest.raises(InvalidArgumentError, match="output must be one of"):
+        portfolio_module.get_random_matrix_statistics(output="pdf")
+
+
+def test_get_expected_returns_estimate_centroid(recorder, portfolio_module):
+    table = portfolio_module.get_expected_returns_estimate(
+        ranking=["MSFT", "Benchmark", "AAPL"], include_benchmark=True
+    )
+    recorder.capture(table)
+    assert table["Centroid"]["MSFT"] > 0 > table["Centroid"]["AAPL"]
+    assert table["Centroid"]["Benchmark"] == pytest.approx(0)
+    recorder.capture(
+        portfolio_module.get_expected_returns_estimate(
+            method="centroid",
+            ranking={"AAPL": 2.0, "MSFT": 2.0, "Benchmark": 1.0},
+            include_benchmark=True,
+        )
+    )
+    # Without a ranking every other estimator is shown, and the centroid alone is empty.
+    assert "Centroid" not in portfolio_module.get_expected_returns_estimate().columns
+    assert portfolio_module.get_expected_returns_estimate(method="centroid").empty
+
+
+def test_get_codependence_matrix_angular_and_gnpr(recorder, portfolio_module):
+    for method in ("absolute_angular", "squared_angular", "gnpr"):
+        recorder.capture(
+            portfolio_module.get_codependence_matrix(
+                method=method, include_benchmark=True
+            )
+        )
+    distance = portfolio_module.get_codependence_matrix(
+        method="gnpr", gnpr_theta=1.0, distance=True, include_benchmark=True
+    )
+    recorder.capture(distance)
+    assert np.allclose(np.diag(distance), 0)
+
+
+def test_get_asset_clusters_onc(recorder, portfolio_module):
+    clusters = portfolio_module.get_asset_clusters(method="onc", include_benchmark=True)
+    recorder.capture(clusters)
+    for seed in (1, 2):
+        assert clusters.equals(
+            portfolio_module.get_asset_clusters(
+                method="onc", seed=seed, include_benchmark=True
+            )
+        )
+    weights = portfolio_module.get_nested_clustered_optimization_weights(
+        cluster_criterion="onc", include_benchmark=True
+    )
+    recorder.capture(weights)
+    assert (weights["Cluster"].drop("Portfolio") == clusters["Cluster"]).all()
+    assert portfolio_module.get_hierarchical_equal_risk_contribution_weights(
+        cluster_criterion="onc"
+    ).empty
+
+
+def test_get_entropy_pooling_ranking(recorder, portfolio_module):
+    # The history has AAPL above MSFT; the opposite ranking pulls them level.
+    table = portfolio_module.get_entropy_pooling(ranking=["MSFT", "AAPL"], rounding=6)
+    recorder.capture(table)
+    assert (
+        table.loc["MSFT", "Posterior Return"] >= table.loc["AAPL", "Posterior Return"]
+    )
+    unchanged = portfolio_module.get_entropy_pooling(
+        ranking=["AAPL", "MSFT"], output="summary"
+    )
+    assert unchanged["Relative Entropy"].iloc[0] == pytest.approx(0, abs=1e-10)
+    recorder.capture(
+        portfolio_module.get_entropy_pooling(
+            opinions=[{"ranking": ["MSFT", "AAPL"]}, {"views": {"AAPL": 0.3}}],
+            rounding=6,
+        )
+    )
+
+
+@pytest.fixture(scope="module")
+def constant_price_portfolio():
+    """The offline Toolkit's portfolio module with a constant price for MSFT."""
+    from financetoolkit import Toolkit
+
+    historical = pd.read_pickle("tests/datasets/historical_dataset.pickle").drop(
+        columns=["Return", "Cumulative Return"], level=0
+    )
+    for column in ["Open", "High", "Low", "Close", "Adj Close"]:
+        historical[(column, "MSFT")] = 100.0
+    toolkit = Toolkit(
+        tickers=["AAPL", "MSFT"],
+        historical=historical,
+        convert_currency=False,
+        start_date="2019-12-31",
+        end_date="2023-01-01",
+        sleep_timer=False,
+    )
+    toolkit._daily_risk_free_rate = pd.read_pickle(
+        "tests/datasets/risk_free_rate.pickle"
+    )
+    toolkit._daily_treasury_data = pd.read_pickle("tests/datasets/treasury_data.pickle")
+    return toolkit.portfolio
+
+
+@pytest.mark.parametrize(
+    "method",
+    [
+        "get_minimum_variance_weights",
+        "get_mean_variance_weights",
+        "get_mean_risk_weights",
+        "get_distributionally_robust_cvar_weights",
+        "get_optimization_backtest",
+    ],
+)
+def test_an_asset_without_volatility_has_no_sharpe_ratio(
+    constant_price_portfolio, method
+):
+    table = getattr(constant_price_portfolio, method)()
+    numbers = table.select_dtypes("number").to_numpy(float)
+
+    assert not table.empty
+    assert not np.isinf(numbers).any()
+
+
+@pytest.mark.parametrize(
+    ("method", "arguments", "name"),
+    [
+        ("get_minimum_variance_weights", {"covariance": "bogus"}, "covariance"),
+        ("get_optimization_backtest", {"covariance": "bogus"}, "covariance"),
+        ("get_codependence_matrix", {"covariance": "bogus"}, "covariance"),
+        (
+            "get_hierarchical_risk_parity_weights",
+            {"linkage_method": "bogus"},
+            "linkage_method",
+        ),
+        (
+            "get_schur_complementary_weights",
+            {"linkage_method": "bogus"},
+            "linkage_method",
+        ),
+        ("get_stacking_weights", {"final_method": "bogus"}, "final_method"),
+        ("get_stacking_weights", {"methods": "minimum_variance,bogus"}, "methods"),
+        ("get_covariance_estimate", {"factor_selection": "bogus"}, "factor_selection"),
+        ("get_entropy_pooling", {"pooling": "bogus"}, "pooling"),
+        ("get_codependence_matrix", {"bins": "bogus"}, "bins"),
+        ("get_codependence_matrix", {"alpha": 1.5}, "alpha"),
+    ],
+)
+def test_an_unknown_option_raises(portfolio_module, method, arguments, name):
+    with pytest.raises(InvalidArgumentError, match=name):
+        getattr(portfolio_module, method)(**arguments)
+
+
+def test_equal_weights_are_not_reported_as_rescaled(portfolio_module, caplog):
+    with caplog.at_level("INFO"):
+        portfolio_module.get_risk_contributions()
+
+    assert "are scaled to one" not in caplog.text
+
+
+def test_a_missing_api_key_is_reported_once(portfolio_module, caplog):
+    with caplog.at_level("ERROR"):
+        assert portfolio_module.get_look_through_exposure().empty
+
+    errors = [record for record in caplog.records if record.levelname == "ERROR"]
+    assert len(errors) == 1
+    assert "Financial Modeling Prep API key" in errors[0].getMessage()

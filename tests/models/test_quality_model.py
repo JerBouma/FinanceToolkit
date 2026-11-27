@@ -5,6 +5,7 @@ import pandas as pd
 import pytest
 
 from financetoolkit.models.quality import quality_model
+from financetoolkit.utilities.error_model import InvalidArgumentError
 
 PERIODS = ["2021", "2022", "2023"]
 
@@ -373,7 +374,7 @@ def test_modified_jones_cross_section_explains_accruals_that_follow_the_model():
 
 def test_modified_jones_rejects_unknown_methods_and_too_few_observations():
     company = jones_company(6)
-    with pytest.raises(ValueError, match="not supported"):
+    with pytest.raises(InvalidArgumentError, match="method must be one of"):
         quality_model.get_modified_jones_accruals(
             net_income=company["revenue"],
             operating_cash_flow=company["revenue"],
@@ -512,3 +513,99 @@ def test_modified_jones_with_an_intercept_matches_statsmodels_with_a_constant():
             intercept=True,
             **statements,
         )
+
+
+def long_frame(values) -> pd.DataFrame:
+    return pd.DataFrame([list(values)], index=["A"], columns=range(len(values)))
+
+
+def test_get_accrual_quality_is_the_residual_deviation_of_the_regression():
+    rng = np.random.default_rng(3)
+    cash_flow = rng.normal(0.1, 0.03, 12)
+    # Accruals that the cash flows explain exactly have no estimation error.
+    accruals = (
+        0.01
+        + 0.2 * np.roll(cash_flow, 1)
+        - 0.6 * cash_flow
+        + 0.3 * np.roll(cash_flow, -1)
+    )
+    accruals[0] = accruals[-1] = np.nan
+    exact = quality_model.get_accrual_quality(
+        long_frame(accruals), long_frame(cash_flow), window=8
+    )
+    assert exact.iloc[0, 9:].max() == pytest.approx(0, abs=1e-12)
+    assert exact.iloc[0, :9].isna().all()
+
+    # With noise, the value equals the standard deviation of the least squares residuals
+    # over the eight years before the period (computed here with numpy's polyfit-free OLS).
+    noisy = accruals + rng.normal(0, 0.01, 12)
+    quality = quality_model.get_accrual_quality(
+        long_frame(noisy), long_frame(cash_flow), window=8
+    )
+    years = np.arange(2, 10)
+    design = np.column_stack(
+        [np.ones(8), cash_flow[years - 1], cash_flow[years], cash_flow[years + 1]]
+    )
+    coefficients = np.linalg.lstsq(design, noisy[years], rcond=None)[0]
+    expected = np.std(noisy[years] - design @ coefficients, ddof=1)
+    assert quality.iloc[0, 10] == pytest.approx(expected)
+
+    with pytest.raises(ValueError):
+        quality_model.get_accrual_quality(
+            long_frame(noisy), long_frame(cash_flow), window=4
+        )
+
+
+def test_get_earnings_attributes():
+    rng = np.random.default_rng(5)
+    earnings = 1 + np.cumsum(rng.normal(0.05, 0.2, 14))
+    income = rng.normal(0.08, 0.02, 14)
+    cash = rng.normal(0.1, 0.04, 14)
+    result = quality_model.get_earnings_attributes(
+        long_frame(earnings), long_frame(income), long_frame(cash), window=10
+    )
+    years = np.arange(4, 14)
+    slope, intercept = np.polyfit(earnings[years - 1], earnings[years], 1)
+    residuals = earnings[years] - (intercept + slope * earnings[years - 1])
+    assert result["Persistence"].iloc[0, 13] == pytest.approx(slope)
+    assert result["Predictability"].iloc[0, 13] == pytest.approx(
+        np.sqrt((residuals**2).sum() / 8)
+    )
+    assert result["Smoothness"].iloc[0, 13] == pytest.approx(
+        np.std(income[years], ddof=1) / np.std(cash[years], ddof=1)
+    )
+    # Ten years and the year before are needed for the persistence regression.
+    assert result["Persistence"].iloc[0, :10].isna().all()
+
+
+def test_get_graham_criteria():
+    years = 25
+    ones = np.ones(years)
+    criteria = quality_model.get_graham_criteria(
+        revenue=long_frame(1e9 * ones),
+        total_current_assets=long_frame(500 * ones),
+        total_current_liabilities=long_frame(200 * ones),
+        long_term_debt=long_frame(250 * ones),
+        net_income=long_frame(np.r_[-1.0, 10 * ones[1:]]),
+        dividends_paid=long_frame(-5 * ones),
+        earnings_per_share=long_frame(np.linspace(1, 3, years)),
+        share_price=long_frame(30 * ones),
+        book_value_per_share=long_frame(20 * ones),
+    )
+    last = {name: frame.iloc[0, -1] for name, frame in criteria.items()}
+    assert last["Adequate Size"] == 1
+    # Current ratio 2.5 and long-term debt 250 below the net current assets of 300.
+    assert last["Strong Financial Condition"] == 1
+    assert last["Earnings Stability"] == 1
+    assert last["Dividend Record"] == 1
+    assert last["Earnings Growth"] == 1
+    # The price of 30 over the average EPS of the last three years (about 2.92) is above 10
+    # but below 15, and that P/E times the P/B of 1.5 is about 15.4, below 22.5.
+    assert last["Moderate Price to Earnings"] == 1
+    assert last["Moderate Price to Assets"] == 1
+    # The loss of the first year fails the stability test until it leaves the ten years,
+    # and there are fewer than 20 years of dividends before year 19.
+    assert criteria["Earnings Stability"].iloc[0, 9] == 0
+    assert criteria["Earnings Stability"].iloc[0, 10] == 1
+    assert pd.isna(criteria["Dividend Record"].iloc[0, 18])
+    assert criteria["Dividend Record"].iloc[0, 19] == 1

@@ -6,6 +6,7 @@ import pandas as pd
 import pytest
 
 from financetoolkit import Portfolio, Toolkit, historical_model
+from financetoolkit.utilities.error_model import InvalidArgumentError
 
 historical = pd.read_pickle("tests/datasets/portfolio_historical_dataset.pickle")
 benchmark = pd.read_pickle("tests/datasets/portfolio_benchmark_dataset.pickle")
@@ -103,6 +104,51 @@ def test_get_transactions_performance(recorder):
 
 def test_get_money_weighted_return(recorder):
     recorder.capture(portfolio.get_money_weighted_return())
+
+
+def test_get_turnover(recorder):
+    daily = portfolio.get_turnover(rounding=8)
+    recorder.capture(daily[daily["Traded Value"] > 0])
+    # The first purchase is a turnover of 2: the gross value of the empty day before
+    # halves the average (up to the difference between the trade price and the close).
+    assert daily["Turnover"].iloc[0] == pytest.approx(2, rel=1e-4)
+    recorder.capture(portfolio.get_turnover(denominator="net_value", period="yearly"))
+
+
+def test_get_gross_leverage(recorder):
+    table = portfolio.get_gross_leverage(period="yearly")
+    recorder.capture(table)
+    # The portfolio holds no short positions.
+    assert np.allclose(table["Gross Leverage"].dropna(), 1)
+
+
+def test_get_trades(recorder):
+    trades = portfolio.get_trades(rounding=8)
+    recorder.capture(trades)
+    recorder.capture(portfolio.get_trades(method="LIFO"))
+    # The gross PnL of the closed trades of a ticker is its realized PnL with the same method.
+    overview = portfolio.get_transactions_overview(exclude_sold_positions=False)
+    realized = overview.groupby(level=1)["PnL"].sum()
+    closed = trades[trades["Status"] == "Closed"].groupby("Ticker")["Gross PnL"].sum()
+    assert np.allclose(closed, realized.reindex(closed.index), atol=1e-4)
+
+
+def test_get_trade_statistics(recorder):
+    recorder.capture(portfolio.get_trade_statistics())
+    recorder.capture(portfolio.get_trade_statistics(by="ticker"))
+    recorder.capture(portfolio.get_trade_statistics(method="LIFO", by="direction"))
+
+
+def test_get_position_timing(recorder):
+    recorder.capture(portfolio.get_position_timing())
+
+
+def test_get_return_contributions(recorder):
+    table = portfolio.get_return_contributions(period="yearly", rounding=8)
+    recorder.capture(table)
+    assert np.allclose(
+        table.drop(columns="Portfolio").sum(axis=1), table["Portfolio"], atol=1e-7
+    )
 
 
 def _offline_price_toolkit(self, tickers, start_date):  # noqa: ARG001
@@ -1153,3 +1199,236 @@ def test_the_weekly_data_converts_each_day_at_its_own_rate(monkeypatch):
         / 100
         / float(pounds_per_dollar.loc[first_day.to_timestamp(), "USDGBP=X"])
     )
+
+
+def _offline_portfolio():
+    """A Portfolio of the test dataset on copies of the offline prices, set up as the shared one above."""
+    held = Portfolio(portfolio_dataset="tests/datasets/portfolio_test.xlsx")
+    held._daily_historical_data = historical.copy()
+    held._daily_benchmark_data = benchmark.copy()
+    held._currency_column = None  # type: ignore # noqa
+    held._benchmark_tickers = dict.fromkeys(
+        held._original_tickers, held._cfg["general"]["benchmark_ticker"]
+    )
+    held._benchmark_toolkit = Toolkit(
+        tickers=list(set(held._benchmark_tickers.values())),
+        historical=held._daily_benchmark_data,
+        benchmark_ticker=None,
+        start_date=held._start_date,
+        sleep_timer=False,
+    )
+    held._toolkit = Toolkit(
+        tickers=held._tickers,
+        benchmark_ticker=None,
+        start_date=held._start_date,
+        historical=held._daily_historical_data,
+        sleep_timer=False,
+    )
+    held.collect_historical_data()
+    return held
+
+
+def test_the_toolkit_leaves_the_portfolio_data_untouched():
+    untouched = _offline_portfolio()
+    touched = _offline_portfolio()
+    daily_historical_data = touched._daily_historical_data.copy()
+
+    assert isinstance(touched.toolkit, Toolkit)
+    # The Toolkit holds the benchmark next to the tickers; the Portfolio's own data does not.
+    pd.testing.assert_frame_equal(touched._daily_historical_data, daily_historical_data)
+
+    for method, kwargs in [
+        ("get_portfolio_overview", {}),
+        ("get_positions_overview", {}),
+        ("get_portfolio_performance", {"period": "yearly"}),
+        ("get_transactions_overview", {}),
+        ("get_transactions_performance", {"period": "yearly"}),
+        ("get_money_weighted_return", {}),
+        ("get_turnover", {"period": "yearly"}),
+        ("get_gross_leverage", {"period": "yearly"}),
+        ("get_return_contributions", {"period": "yearly"}),
+        ("get_trades", {}),
+        ("get_trade_statistics", {}),
+        ("get_position_timing", {}),
+    ]:
+        pd.testing.assert_frame_equal(
+            getattr(touched, method)(**kwargs),
+            getattr(untouched, method)(**kwargs),
+            obj=method,
+        )
+
+
+def test_the_portfolio_in_its_toolkit_has_its_own_return_series():
+    held = _offline_portfolio()
+    toolkit = held.toolkit
+    returns = toolkit.get_historical_data()["Return"]
+
+    # Every day each position earns its return with its weight at the previous close.
+    weights = held._positions_overview["Current Weight"].astype(float)
+    expected = (
+        (
+            weights.shift(1)
+            * held._daily_historical_data["Return"][weights.columns].fillna(0.0)
+        )
+        .sum(axis=1, min_count=1)
+        .where(weights.shift(1).fillna(0.0).sum(axis=1) > 0)
+    )
+    # The Toolkit rounds to the four decimals of the Portfolio.
+    pd.testing.assert_series_equal(
+        returns["Portfolio"], expected, check_names=False, check_freq=False, atol=5e-5
+    )
+
+    # The volatility of the Portfolio is that of its returns, not a weighted average of the holdings' volatilities.
+    volatility = toolkit.risk.get_volatility(period="yearly")
+    last_year = volatility.index[-1]
+    assert volatility.loc[last_year, "Portfolio"] == pytest.approx(
+        returns["Portfolio"].loc[str(last_year)].std() * np.sqrt(252), abs=1e-3
+    )
+    holdings = volatility.loc[last_year].drop(["Portfolio", "Benchmark"])
+    assert volatility.loc[last_year, "Portfolio"] < holdings.max()
+
+
+def test_another_benchmark_replaces_the_one_collected(monkeypatch):
+    from financetoolkit.portfolio import portfolio_controller  # noqa: PLC0415
+
+    held = _offline_portfolio()
+    held.get_portfolio_overview()
+    assert not held._portfolio_volatilities.empty
+
+    monkeypatch.setattr(portfolio_controller, "Toolkit", _EmptyToolkit)
+    held.collect_benchmark_historical_data(benchmark_ticker="TLT")
+
+    # The benchmark collected before and what was calculated from it are gone.
+    assert _EmptyToolkit.tickers == ["TLT"]
+    assert held._benchmark_ticker == "TLT"
+    assert held._portfolio_volatilities.empty
+    assert held._daily_benchmark_data.empty
+    assert held._toolkit_instance is None
+
+    # Asking for the current benchmark, by name or by leaving it out, keeps what was collected.
+    _EmptyToolkit.tickers = []
+    held.collect_benchmark_historical_data()
+    held.collect_benchmark_historical_data(benchmark_ticker="TLT")
+    assert held._benchmark_ticker == "TLT"
+    assert _EmptyToolkit.tickers == []
+
+
+def test_reading_the_transactions_again_starts_over():
+    held = _offline_portfolio()
+    held.get_portfolio_overview()
+    transactions = held.read_portfolio_dataset()
+
+    assert held._daily_historical_data.empty
+    assert held._weekly_benchmark_data.empty
+    assert held._positions_overview.empty
+    assert held._toolkit is None
+    pd.testing.assert_frame_equal(
+        transactions,
+        Portfolio(
+            portfolio_dataset="tests/datasets/portfolio_test.xlsx"
+        )._portfolio_dataset,
+    )
+
+
+def test_the_money_weighted_return_does_not_take_the_rounding_of_the_portfolio():
+    rounded = _offline_portfolio()
+    rounded._rounding = 0
+    unrounded = _offline_portfolio()
+
+    pd.testing.assert_frame_equal(
+        rounded.get_money_weighted_return(rounding=6),
+        unrounded.get_money_weighted_return(rounding=6),
+    )
+
+
+def test_a_purchase_from_before_a_split_is_restated(monkeypatch):
+    from financetoolkit.portfolio import portfolio_controller  # noqa: PLC0415
+
+    held = _offline_portfolio()
+    ticker = held._tickers[0]
+    first = held._portfolio_dataset.index[
+        held._portfolio_dataset.index.get_level_values(1) == ticker
+    ][0]
+    volume = held._portfolio_dataset.loc[first, held._volume_column]
+    price = held._portfolio_dataset.loc[first, held._price_column]
+    # The purchase as confirmed before a four for one split the day after it.
+    held._portfolio_dataset.loc[first, held._volume_column] = volume / 4
+    held._portfolio_dataset.loc[first, held._price_column] = price * 4
+    split_date = first[0].to_timestamp() + pd.Timedelta(days=1)
+
+    class _SplitToolkit:
+        def __init__(self, tickers, **kwargs):  # noqa: ARG002
+            self.tickers = list(tickers)
+
+        def get_stock_splits(self):
+            assert self.tickers == [ticker]
+            return pd.DataFrame(
+                {"Numerator": [4], "Denominator": [1]},
+                index=pd.Index([split_date], name="Date"),
+            )
+
+    monkeypatch.setattr(portfolio_controller, "Toolkit", _SplitToolkit)
+    held._api_key = "KEY"
+    held._restate_split_transactions()
+
+    assert held._portfolio_dataset.loc[first, held._volume_column] == pytest.approx(
+        volume
+    )
+    assert held._portfolio_dataset.loc[first, held._price_column] == pytest.approx(
+        price
+    )
+
+
+def test_the_performance_of_the_portfolio_in_its_toolkit_comes_from_its_own_returns():
+    toolkit = _offline_portfolio().toolkit
+    performance = toolkit.performance
+    performance._rounding = None
+    returns = performance._historical_data["daily"]["Return"]
+
+    # The Portfolio is listed once, next to the tickers whose returns it combines.
+    assert performance._tickers.count("Portfolio") == 1
+
+    # The excess returns over a trading day of the annualized risk free rate quoted on each date.
+    rate = risk_free_rate["Adj Close"].copy()
+    rate.index = pd.PeriodIndex(rate.index, freq="D")
+    rate = rate.reindex(rate.index.union(returns.index)).ffill().reindex(returns.index)
+    last_year = str(returns.index[-1].year)
+    portfolio = returns["Portfolio"].loc[last_year].dropna()
+    benchmark = returns["Benchmark"].loc[last_year].reindex(portfolio.index)
+    excess_return = portfolio - ((1 + rate.loc[portfolio.index]) ** (1 / 252) - 1)
+
+    sharpe_ratio = performance.get_sharpe_ratio(period="yearly")
+    assert sharpe_ratio.iloc[-1]["Portfolio"] == pytest.approx(
+        excess_return.mean() / excess_return.std()
+    )
+    assert performance.get_beta(period="yearly").iloc[-1]["Portfolio"] == pytest.approx(
+        np.cov(portfolio, benchmark)[0, 1] / benchmark.var()
+    )
+
+
+def test_a_fully_sold_portfolio_says_why_its_overview_is_empty(monkeypatch, caplog):
+    trades = pd.DataFrame(
+        {
+            "Date": ["2021-01-11", "2021-06-01"],
+            "Ticker": ["AAPL", "AAPL"],
+            "Volume": [10, -10],
+            "Costs": [0.0, 0.0],
+        }
+    )
+    sold, _ = _self_benchmarked_portfolio(monkeypatch, trades)
+
+    with caplog.at_level("WARNING"):
+        assert sold.get_portfolio_overview().empty
+        assert sold.get_portfolio_performance(period="yearly").empty
+
+    assert "the overview without sold positions is empty" in caplog.text
+    assert "the performance without sold positions is empty" in caplog.text
+    assert not sold.get_portfolio_overview(exclude_sold_positions=False).empty
+
+
+@pytest.mark.parametrize(
+    "method", ["get_portfolio_performance", "get_transactions_performance"]
+)
+def test_an_unknown_portfolio_period_raises(method):
+    with pytest.raises(InvalidArgumentError, match="period must be one of"):
+        getattr(portfolio, method)(period="hourly")

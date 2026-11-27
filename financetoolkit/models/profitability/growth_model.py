@@ -17,9 +17,11 @@ def get_present_value_of_growth_opportunities(
     period_end_dates: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """
-    The Present Value of Growth Opportunities (PVGO) is the net present value of all future investments a company is
-    expected to make. It is calculated as the difference between the Close Price and the Earnings Per Share divided by
-    the Cost of Equity.
+    The Present Value of Growth Opportunities (PVGO) is the net present value of all future
+    investments a company is expected to make.
+
+    It is calculated as the difference between the Close Price and the Earnings Per Share
+    divided by the Cost of Equity.
 
     It is meant to be used as relative valuation metric and therefore doesn't necessarily have a meaning when used
     for one company.
@@ -86,8 +88,9 @@ def get_sustainable_growth_rate(
 ) -> float | pd.Series | pd.DataFrame:
     """
     The Sustainable Growth Rate (SGR) is the maximum rate at which a company can grow its
-    revenue, using internally generated funds only, without having to raise additional equity
-    or increase its financial leverage.
+    revenue without new equity or more leverage.
+
+    It uses internally generated funds only.
 
     The formula is as follows:
 
@@ -118,8 +121,9 @@ def get_internal_growth_rate(
 ) -> float | pd.Series | pd.DataFrame:
     """
     The Internal Growth Rate (IGR) is the maximum rate at which a company can grow its
-    revenue using only its retained earnings, without raising any external financing
-    (neither debt nor equity).
+    revenue using only its retained earnings.
+
+    It raises no external financing, neither debt nor equity.
 
     The formula is as follows:
 
@@ -155,9 +159,10 @@ def get_return_decomposition(
     logarithmic: bool = False,
 ) -> pd.DataFrame:
     """
-    Splits the share price return over a window into the growth of the Earnings per Share and
-    the change of the Price-to-Earnings ratio, and adds the dividends paid over the window for
-    the total return.
+    Splits the share price return over a window into the growth of the Earnings per Share
+    and the change of the Price-to-Earnings ratio.
+
+    It adds the dividends paid over the window for the total return.
 
     Since the share price equals the Earnings per Share times the P/E ratio, the price relative
     over a window is the product of the earnings relative and the multiple relative:
@@ -232,3 +237,119 @@ def get_return_decomposition(
     return decomposition.swaplevel().reindex(
         pd.MultiIndex.from_product([close_prices.index, list(parts)])
     )
+
+
+def get_reinvestment_rate(
+    net_capital_expenditure: pd.Series | pd.DataFrame,
+    change_in_working_capital: pd.Series | pd.DataFrame,
+    net_operating_profit_after_taxes: pd.Series | pd.DataFrame,
+) -> pd.Series | pd.DataFrame:
+    """
+    Damodaran's reinvestment rate.
+
+    It is the share of the after-tax operating income that a company reinvests in its
+    operations, in capital expenditure beyond its depreciation and in working capital.
+
+    The formula is as follows:
+
+        - Reinvestment Rate = (Net Capital Expenditure + Change in Working Capital) / NOPAT
+
+    Args:
+        net_capital_expenditure (pd.Series | pd.DataFrame): The capital expenditure minus the
+            depreciation and amortization.
+        change_in_working_capital (pd.Series | pd.DataFrame): The increase in (non-cash)
+            working capital, positive when working capital grows.
+        net_operating_profit_after_taxes (pd.Series | pd.DataFrame): EBIT * (1 - tax rate).
+
+    Returns:
+        pd.Series | pd.DataFrame: The reinvestment rate as a decimal, NaN where the NOPAT is
+        not positive (the rate has no meaning there).
+
+    References:
+    - Damodaran, A. (2012). "Investment Valuation." Wiley, 3rd edition, chapter 11.
+    """
+    return (net_capital_expenditure + change_in_working_capital) / (
+        net_operating_profit_after_taxes.where(net_operating_profit_after_taxes > 0)
+    )
+
+
+def get_fundamental_growth_rate(
+    reinvestment_rate: pd.Series | pd.DataFrame,
+    return_on_invested_capital: pd.Series | pd.DataFrame,
+) -> pd.Series | pd.DataFrame:
+    """
+    Damodaran's fundamental growth rate of operating income: the growth that the reinvestment
+    of a company produces at its return on capital.
+
+    The formula is as follows:
+
+        - Expected Growth in EBIT = Reinvestment Rate * Return on Invested Capital
+
+    Args:
+        reinvestment_rate (pd.Series | pd.DataFrame): The reinvestment rate.
+        return_on_invested_capital (pd.Series | pd.DataFrame): The return on invested capital,
+            NOPAT over the invested capital at the beginning of the period.
+
+    Returns:
+        pd.Series | pd.DataFrame: The expected growth rate of the operating income per period
+        as a decimal.
+
+    References:
+    - Damodaran, A. (2012). "Investment Valuation." Wiley, 3rd edition, chapter 11.
+    """
+    return reinvestment_rate * return_on_invested_capital
+
+
+def get_sales_to_capital_ratio(
+    revenue: pd.Series | pd.DataFrame,
+    invested_capital: pd.Series | pd.DataFrame,
+) -> pd.Series | pd.DataFrame:
+    """
+    Damodaran's sales-to-capital ratio.
+
+    It is the revenue every unit of invested capital generates, which turns revenue growth
+    into the reinvestment it requires (Reinvestment = Change in Revenue / Sales to Capital).
+
+    The formula is as follows:
+
+        - Sales to Capital = Revenue / Invested Capital
+
+    Args:
+        revenue (pd.Series | pd.DataFrame): The revenue.
+        invested_capital (pd.Series | pd.DataFrame): The invested capital.
+
+    Returns:
+        pd.Series | pd.DataFrame: The sales-to-capital ratio, NaN where the invested capital is
+        not positive.
+
+    References:
+    - Damodaran, A. (2012). "Investment Valuation." Wiley, 3rd edition, chapter 11.
+    """
+    return revenue / invested_capital.where(invested_capital > 0)
+
+
+def get_rule_of_40(
+    revenue_growth: pd.Series | pd.DataFrame,
+    profit_margin: pd.Series | pd.DataFrame,
+) -> pd.Series | pd.DataFrame:
+    """
+    The Rule of 40 score of software and other subscription companies: the revenue growth
+    plus a profit margin (the free cash flow margin or the EBITDA margin).
+
+    A score of 0.40 (40%) or more is seen as a healthy balance between growth and
+    profitability.
+
+    The formula is as follows:
+
+        - Rule of 40 Score = Revenue Growth + Profit Margin
+
+    Args:
+        revenue_growth (pd.Series | pd.DataFrame): The year-over-year revenue growth as a
+            decimal.
+        profit_margin (pd.Series | pd.DataFrame): The free cash flow or EBITDA margin as a
+            decimal.
+
+    Returns:
+        pd.Series | pd.DataFrame: The Rule of 40 score as a decimal (0.40 is the threshold).
+    """
+    return revenue_growth + profit_margin

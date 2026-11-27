@@ -1,0 +1,3 @@
+Metric,Horizon,Mean IC,IC Standard Deviation,IC Information Ratio,t-Statistic,P-Value,IC Skewness,IC Kurtosis,Positive Share,Observations,Top Minus Bottom,Annualized Alpha,Beta,Quantile Turnover,Rank Autocorrelation
+factor,1 Month,-0.02901354,0.295586,-0.098156,-0.67292365,0.5043626,0.28493127,0.53066932,0.46808511,47.0,-0.0024625,0.00835183,0.00050288,0.39361702,0.73605118
+factor,3 Months,0.01662782,0.28168923,0.05902894,0.39597817,0.69403483,-0.43606603,0.11599576,0.62222222,45.0,-0.00233272,-0.03722851,0.15855639,0.39361702,0.73605118

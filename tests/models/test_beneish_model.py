@@ -125,3 +125,26 @@ def test_get_beneish_m_score(recorder):
             total_accruals_to_total_assets=pd.Series([0.02, -0.01, 0.03, 0.05]),
         )
     )
+
+
+def test_get_beneish_five_variable_m_score_uses_the_1997_coefficients():
+    import pytest  # noqa: PLC0415
+
+    # Beneish (1997): -6.065 + 0.823 DSRI + 0.906 GMI + 0.593 AQI + 0.717 SGI + 0.107 DEPI.
+    score = beneish_model.get_beneish_five_variable_m_score(
+        days_sales_in_receivables_index=pd.Series([1.0, 1.465]),
+        gross_margin_index=pd.Series([1.0, 1.193]),
+        asset_quality_index=pd.Series([1.0, 1.254]),
+        sales_growth_index=pd.Series([1.0, 1.607]),
+        depreciation_index=pd.Series([1.0, 1.077]),
+    )
+    # All indices at 1 (nothing changed): -6.065 + 3.146 = -2.919.
+    assert score[0] == pytest.approx(-2.919)
+    assert score[1] == pytest.approx(
+        -6.065
+        + 0.823 * 1.465
+        + 0.906 * 1.193
+        + 0.593 * 1.254
+        + 0.717 * 1.607
+        + 0.107 * 1.077
+    )

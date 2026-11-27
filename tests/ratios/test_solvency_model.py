@@ -250,3 +250,17 @@ def test_get_net_debt_to_equity_ratio():
     assert ratio.iloc[:2].tolist() == [0.5, -0.2]
     # Without positive equity the ratio does not measure leverage.
     assert ratio.iloc[2:].isna().all()
+
+
+def test_long_term_debt_to_capitalization_debt_to_market_cap_and_solvency_ratio():
+    # Apple 2022 (millions): 98,959 / (98,959 + 50,672).
+    assert solvency_model.get_long_term_debt_to_capitalization_ratio(
+        98959.0, 50672.0
+    ) == pytest.approx(0.661354, abs=1e-6)
+    assert solvency_model.get_debt_to_market_cap_ratio(
+        132480.0, 2121.2e3
+    ) == pytest.approx(132480.0 / 2121.2e3)
+    # (99,803 + 11,104) / 302,083.
+    assert solvency_model.get_solvency_ratio(
+        99803.0, 11104.0, 302083.0
+    ) == pytest.approx(0.367141, abs=1e-6)

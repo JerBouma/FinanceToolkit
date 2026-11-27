@@ -3,18 +3,21 @@
 __docformat__ = "google"
 
 import warnings
-from typing import Literal, cast
 
 import numpy as np
 import pandas as pd
-import statsmodels.api as sm
-from statsmodels.tools.sm_exceptions import IterationLimitWarning
+
+from financetoolkit.econometrics.helpers import import_optional
+from financetoolkit.econometrics.least_squares_model import (
+    COVARIANCE_TYPES,
+    fit_least_squares,
+)
+from financetoolkit.utilities.error_model import InvalidArgumentError, check_option
+from financetoolkit.utilities.logger_model import get_logger
+
+logger = get_logger()
 
 TWO_DIMENSIONAL = 2
-COV_TYPES = ("nonrobust", "HC0", "HC1", "HC2", "HC3", "cluster", "HAC")
-# The subset of statsmodels' cov_type literals this module exposes; typed so the
-# validated string can be handed to `.fit(cov_type=...)` as the literal it expects.
-StatsmodelsCovType = Literal["nonrobust", "HC0", "HC1", "HC2", "HC3", "cluster", "HAC"]
 
 # Cluster-robust standard errors require at least 2 distinct clusters.
 MINIMUM_CLUSTERS = 2
@@ -35,7 +38,7 @@ def _to_design_matrix(
     Shared by every regression function in this module so all of them accept the
     same flexible input types (a single `pd.Series`, a `pd.DataFrame` of multiple
     regressors, or a raw `np.ndarray`) and label their output consistently before
-    handing it to `statsmodels`.
+    fitting.
     """
     if isinstance(x, pd.DataFrame):
         feature_names = [str(column) for column in x.columns]
@@ -89,8 +92,10 @@ def _validate_design(x: np.ndarray, y: np.ndarray) -> None:
 
 def default_hac_maxlags(observations: int) -> int:
     """
-    The Newey & West (1994) rule of thumb for the HAC truncation lag with Bartlett weights:
-    floor(4 * (n / 100)^(2/9)), e.g. 4 lags for 100 observations and 5 for 250.
+    Calculate the HAC truncation lag with the Newey & West (1994) rule of thumb for Bartlett
+    weights.
+
+    The rule is floor(4 * (n / 100)^(2/9)), e.g. 4 lags for 100 observations and 5 for 250.
 
     Args:
         observations (int): The number of observations in the regression.
@@ -101,30 +106,32 @@ def default_hac_maxlags(observations: int) -> int:
     return int(np.floor(4 * (observations / 100) ** (2 / 9)))
 
 
-def _cov_type_and_kwds(
+def _validate_cov_type(
     cov_type: str,
     clusters: np.ndarray | None,
-    maxlags: int | None = None,
+    lags: int | None = None,
     observations: int | None = None,
-) -> tuple[StatsmodelsCovType, dict]:
-    if cov_type not in COV_TYPES:
-        raise ValueError(f"cov_type must be one of {COV_TYPES}, received {cov_type!r}.")
+) -> int | None:
+    """
+    Validates the covariance options and returns the HAC truncation lag (None for the other
+    estimators), the Newey & West (1994) rule of thumb when `lags` is not given.
+    """
+    check_option("cov_type", cov_type, COVARIANCE_TYPES)
 
     if cov_type == "HAC":
-        if maxlags is None:
+        if lags is None:
             if observations is None:
-                raise ValueError("maxlags must be provided when cov_type='HAC'.")
-            maxlags = default_hac_maxlags(observations)
-        if maxlags < 0:
-            raise ValueError(f"maxlags must be non-negative, received {maxlags}.")
-        return "HAC", {"maxlags": maxlags}
+                raise InvalidArgumentError("lags must be provided when cov_type='HAC'.")
+            lags = default_hac_maxlags(observations)
+        if lags < 0:
+            raise ValueError(f"lags must be non-negative, received {lags}.")
+        return lags
 
     if cov_type != "cluster":
-        # Validated against COV_TYPES above, which is exactly the literal set.
-        return cast(StatsmodelsCovType, cov_type), {}
+        return None
 
     if clusters is None:
-        raise ValueError("clusters must be provided when cov_type='cluster'.")
+        raise InvalidArgumentError("clusters must be provided when cov_type='cluster'.")
 
     unique_clusters = np.unique(clusters)
     if len(unique_clusters) < MINIMUM_CLUSTERS:
@@ -132,14 +139,16 @@ def _cov_type_and_kwds(
             "cluster-robust standard errors require at least 2 distinct clusters."
         )
 
-    return "cluster", {"groups": clusters}
+    return None
 
 
 def regression_summary_table(result: dict) -> pd.DataFrame:
     """
-    Builds the standard coefficient table (Coefficient, Std. Error, t-Statistic,
-    P-Value) from a `get_ols`/`get_wls`/`get_gls` result dict, indexed by
-    `result["feature_names"]`.
+    Build the coefficient table of a least squares fit: the Coefficient, Standard Error,
+    t-Statistic and P-Value of every regressor.
+
+    The table takes a `get_ols`, `get_wls` or `get_gls` result dict and is indexed by its
+    feature names.
 
     Args:
         result (dict): A fitted regression result dict, as returned by `get_ols`,
@@ -151,7 +160,7 @@ def regression_summary_table(result: dict) -> pd.DataFrame:
     return pd.DataFrame(
         {
             "Coefficient": result["coefficients"],
-            "Std. Error": result["standard_errors"],
+            "Standard Error": result["standard_errors"],
             "t-Statistic": result["t_statistics"],
             "P-Value": result["p_values"],
         },
@@ -159,63 +168,23 @@ def regression_summary_table(result: dict) -> pd.DataFrame:
     )
 
 
-def _coefficient_of_determination(sm_result) -> tuple[float, float]:
-    """
-    Returns R-squared and adjusted R-squared, or NaN where they are not defined.
-
-    R-squared is the share of the total sum of squares that the model explains, so
-    it has no meaning when that total is zero -- an outcome with no variation left
-    to explain. `statsmodels` computes it as a bare division and lets NumPy produce
-    a NaN through a `0/0`, which is the right value but arrives with a runtime
-    warning attached. The case is real rather than pathological: a cross-sectional
-    Fama-MacBeth regression through the origin hits it whenever every asset in one
-    period returned exactly zero.
-
-    Which total applies depends on the model. With an intercept it is the total sum
-    of squares about the mean; a regression through the origin instead compares
-    against the uncentered total, since there is no fitted mean to deviate from.
-
-    Args:
-        sm_result: A fitted `statsmodels` OLS/WLS/GLS results object.
-
-    Returns:
-        tuple[float, float]: `(r_squared, adjusted_r_squared)`, both NaN when the
-        total sum of squares is zero or the residual degrees of freedom are
-        exhausted.
-    """
-    total_sum_of_squares = (
-        sm_result.centered_tss if sm_result.k_constant else sm_result.uncentered_tss
-    )
-
-    if not np.isfinite(total_sum_of_squares) or total_sum_of_squares == 0:
-        return float("nan"), float("nan")
-
-    r_squared = float(sm_result.rsquared)
-
-    if sm_result.df_resid <= 0:
-        return r_squared, float("nan")
-
-    return r_squared, float(sm_result.rsquared_adj)
-
-
-def _from_statsmodels_ols(
-    sm_result, feature_names: list[str], design_matrix: np.ndarray, cov_type: str
+def _to_regression_result(
+    fit: dict, feature_names: list[str], design_matrix: np.ndarray, cov_type: str
 ) -> dict:
     """
-    Translates a fitted `statsmodels` OLS/WLS/GLS results object into the shared
-    regression result dict returned by `get_ols`/`get_wls`/`get_gls` -- one shared,
-    reusable shape since every OLS-family estimator produces the same set of
-    quantities (coefficients, their standard errors, residuals, fit statistics), just
-    via a different weighting of the observations before `statsmodels` solves the
-    normal equations. This is deliberately NOT the final, user-facing return value in
-    most cases -- controller methods extract the specific piece(s) a caller needs
-    (e.g. just the coefficient table, via `regression_summary_table`) into a plain
-    `pd.DataFrame`/`pd.Series`, matching the rest of this codebase's convention -- but
-    is the shared internal contract that `panel_data_model`, `specification_tests_model`,
-    `hypothesis_testing_model` and `causal_inference_model` build their diagnostics and
-    tests on top of, so that a Breusch-Pagan test, a VIF, or a Wald test all operate on
-    an identical notion of "a fitted linear regression" regardless of which of the
-    three estimators produced it.
+    Builds the shared regression result dict returned by `get_ols`/`get_wls`/`get_gls`
+    from a `least_squares_model.fit_least_squares` fit -- one shared, reusable shape
+    since every OLS-family estimator produces the same set of quantities (coefficients,
+    their standard errors, residuals, fit statistics), just via a different weighting
+    of the observations before the normal equations are solved. This is deliberately
+    NOT the final, user-facing return value in most cases -- controller methods extract
+    the specific piece(s) a caller needs (e.g. just the coefficient table, via
+    `regression_summary_table`) into a plain `pd.DataFrame`/`pd.Series`, matching the
+    rest of this codebase's convention -- but is the shared internal contract that
+    `panel_data_model`, `specification_tests_model`, `hypothesis_testing_model` and
+    `causal_inference_model` build their diagnostics and tests on top of, so that a
+    Breusch-Pagan test, a VIF, or a Wald test all operate on an identical notion of "a
+    fitted linear regression" regardless of which of the three estimators produced it.
 
     Keys:
         coefficients (np.ndarray): The estimated coefficients, shape `(k,)`.
@@ -223,14 +192,13 @@ def _from_statsmodels_ols(
         t_statistics (np.ndarray): The coefficients divided by their standard errors.
         p_values (np.ndarray): Two-sided p-values for those ratios. `cov_type="nonrobust"`
         reads them off the Student-T(n - k) distribution; every robust estimator
-        ("HC0".."HC3", "cluster", "HAC") is an asymptotic result, so `statsmodels`
-        switches to the standard normal for those and `t_statistics` are then Wald
+        ("HC0".."HC3", "cluster", "HAC") is an asymptotic result, so they come from
+        the standard normal for those and `t_statistics` are then Wald
         z-statistics rather than exact finite-sample t-statistics.
         residuals (np.ndarray): The residuals `y - X @ coefficients`, in `y`'s
-        original (unweighted) scale for every estimator including WLS/GLS --
-        `statsmodels` reserves its (internal, whitened-scale) `wresid` attribute for
-        the weighted residuals actually used to solve the normal equations, which is
-        NOT what is stored here. Shape `(n,)`.
+        original (unweighted) scale for every estimator including WLS/GLS -- the
+        whitened residuals the normal equations are solved with are NOT what is stored
+        here. Shape `(n,)`.
         fitted_values (np.ndarray): The fitted values `X @ coefficients`, shape `(n,)`.
         covariance_matrix (np.ndarray): The estimated covariance matrix of the
         coefficients, shape `(k, k)`.
@@ -241,10 +209,15 @@ def _from_statsmodels_ols(
         are exhausted (`n == k`), which leaves the adjustment itself undefined.
         residual_variance (float): The estimated residual variance,
         `sigma^2 = SSR / (n - k)` for OLS -- for WLS/GLS this is the WEIGHTED
-        residual sum of squares divided by `(n - k)` (`statsmodels`' `mse_resid`),
-        consistent with `standard_errors`/`covariance_matrix` also being computed
-        on the weighted scale.
+        residual sum of squares divided by `(n - k)`, consistent with
+        `standard_errors`/`covariance_matrix` also being computed on the weighted scale.
+        sum_of_squared_residuals (float): The residual sum of squares on the whitened
+        (weighted) scale, which the nested F-test compares.
+        log_likelihood (float): The Gaussian log-likelihood, which the likelihood ratio
+        test compares (see `least_squares_model.fit_least_squares` for its formula).
         degrees_of_freedom (int): `n - k`, the residual degrees of freedom.
+        inference_degrees_of_freedom (int): The denominator degrees of freedom of a Wald
+        F-test, `n - k`, or the number of clusters minus one for a "cluster" fit.
         n_observations (int): The number of observations used, `n`.
         n_parameters (int): The number of estimated parameters (including the
         intercept, if any), `k`.
@@ -254,30 +227,29 @@ def _from_statsmodels_ols(
         cov_type (str): Which covariance estimator was used to compute
         `standard_errors`/`t_statistics`/`p_values`/`covariance_matrix` -- one of
         "nonrobust" (classical, assumes homoskedastic errors), "HC0"/"HC1"/"HC2"/"HC3"
-        (heteroskedasticity-robust) or "cluster" (cluster-robust). See `get_ols`'s
-        `cov_type` argument.
+        (heteroskedasticity-robust), "cluster" (cluster-robust) or "HAC" (Newey-West).
+        See `get_ols`'s `cov_type` argument.
     """
-    r_squared, adjusted_r_squared = _coefficient_of_determination(sm_result)
-
     return {
-        "coefficients": np.asarray(sm_result.params),
-        "standard_errors": np.asarray(sm_result.bse),
-        "t_statistics": np.asarray(sm_result.tvalues),
-        "p_values": np.asarray(sm_result.pvalues),
-        "residuals": np.asarray(sm_result.resid),
-        "fitted_values": np.asarray(sm_result.fittedvalues),
-        "covariance_matrix": np.asarray(sm_result.cov_params()),
-        "r_squared": r_squared,
-        "adjusted_r_squared": adjusted_r_squared,
-        "residual_variance": float(sm_result.mse_resid),
-        "degrees_of_freedom": int(sm_result.df_resid),
-        "n_observations": int(sm_result.nobs),
+        "coefficients": fit["coefficients"],
+        "standard_errors": fit["standard_errors"],
+        "t_statistics": fit["t_statistics"],
+        "p_values": fit["p_values"],
+        "residuals": fit["residuals"],
+        "fitted_values": fit["fitted_values"],
+        "covariance_matrix": fit["covariance_matrix"],
+        "r_squared": fit["r_squared"],
+        "adjusted_r_squared": fit["adjusted_r_squared"],
+        "residual_variance": fit["residual_variance"],
+        "sum_of_squared_residuals": fit["sum_of_squared_residuals"],
+        "log_likelihood": fit["log_likelihood"],
+        "degrees_of_freedom": fit["degrees_of_freedom"],
+        "inference_degrees_of_freedom": fit["inference_degrees_of_freedom"],
+        "n_observations": fit["n_observations"],
         "n_parameters": len(feature_names),
         "feature_names": feature_names,
         "design_matrix": design_matrix,
         "cov_type": cov_type,
-        # The fitted statsmodels object is carried along so that the nested-model tests can delegate to its own machinery without refitting. Refitting from the design matrix alone would silently drop the covariance type and the WLS/GLS weights.  # noqa: E501
-        "statsmodels_result": sm_result,
     }
 
 
@@ -287,11 +259,13 @@ def get_ols(
     add_constant: bool = True,
     cov_type: str = "nonrobust",
     clusters: pd.Series | np.ndarray | None = None,
-    maxlags: int | None = None,
+    lags: int | None = None,
 ) -> dict:
     """
-    Fit an Ordinary Least Squares (OLS) linear regression of `y` on `x`, via
-    `statsmodels.api.OLS`.
+    Fit an Ordinary Least Squares (OLS) regression: how a series moves with one or more
+    regressors, by minimizing the squared residuals.
+
+    The fit uses `least_squares_model.fit_least_squares`.
 
     Also known as: linear regression, least squares regression.
 
@@ -304,10 +278,13 @@ def get_ols(
     homoskedastic and uncorrelated errors), this is the Best Linear Unbiased
     Estimator (BLUE, the Gauss-Markov theorem). The coefficients themselves stay
     unbiased even when errors are heteroskedastic -- what breaks is the classical
-    ("nonrobust") standard errors, which is why `cov_type` exists: use
+    (non-robust) standard errors, which is why a robust covariance can be chosen: use
     `specification_tests_model.get_breusch_pagan_test`/`get_white_test` to check for
-    heteroskedasticity first, then refit with `cov_type="HC1"` (or "HC3" for small/
+    heteroskedasticity first, then refit with an HC1 covariance (or HC3 for small or
     moderate samples) if it's present, rather than switching estimator entirely.
+
+    Referenced against:
+    - statsmodels, OLS: https://www.statsmodels.org/stable/generated/statsmodels.regression.linear_model.OLS.html
 
     Args:
         y (pd.Series | np.ndarray): The dependent variable, shape `(n,)`.
@@ -332,8 +309,9 @@ def get_ols(
           standard errors -- valid under both heteroskedastic AND
           serially-correlated errors, the standard choice for time-series
           regressions in finance (HC-robust alone corrects for heteroskedasticity
-          but assumes no autocorrelation). Uses `maxlags`, with Bartlett weights and
-          without a small-sample degrees-of-freedom correction (statsmodels' default).
+          but assumes no autocorrelation). Uses `lags`, with Bartlett weights and
+          without a small-sample degrees-of-freedom correction (statsmodels' default,
+          which the values are referenced against).
 
         The p-values come from the Student-T(n - k) distribution for "nonrobust" and
         from the standard normal distribution for every robust estimator, which are
@@ -342,7 +320,7 @@ def get_ols(
         clusters (pd.Series | np.ndarray | None, optional): The cluster label for each
         observation, required (and only used) when `cov_type="cluster"`. Defaults to
         None.
-        maxlags (int | None, optional): The maximum lag to include when estimating the
+        lags (int | None, optional): The maximum lag to include when estimating the
         HAC (Newey-West) covariance matrix, only used when `cov_type="HAC"`. Defaults
         to None, meaning the Newey & West (1994) rule of thumb
         `floor(4 * (n / 100)^(2/9))` with `n` the number of observations.
@@ -350,7 +328,7 @@ def get_ols(
     Returns:
         dict: The fitted coefficients, their standard errors/t-statistics/
         p-values, residuals, fitted values, R-squared and related fit statistics -- see
-        `_from_statsmodels_ols` for the full key list. Call `regression_summary_table`
+        `_to_regression_result` for the full key list. Call `regression_summary_table`
         for a coefficient table.
 
     Raises:
@@ -358,7 +336,7 @@ def get_ols(
         ValueError: If there are not more observations than parameters, `x` is
         rank-deficient (perfectly collinear regressors), `cov_type` is not a
         recognized value, `cov_type="cluster"` without `clusters` (or with fewer
-        than 2 distinct clusters), or `cov_type="HAC"` with a negative `maxlags`.
+        than 2 distinct clusters), or HAC standard errors with a negative `lags`.
 
     Notes:
         Reference: Newey, W.K. & West, K.D. (1987). "A Simple, Positive
@@ -384,7 +362,7 @@ def get_ols(
 
     Which returns:
 
-    |               |   Coefficient |   Std. Error |   t-Statistic |   P-Value |
+    |               |   Coefficient |   Standard Error |   t-Statistic |   P-Value |
     |:--------------|--------------:|-------------:|--------------:|----------:|
     | Intercept     |        0.0198 |       0.0049 |        4.0254 |    0.0001 |
     | Market Return |        1.206  |       0.0063 |      190.175  |    0      |
@@ -396,13 +374,19 @@ def get_ols(
     )
 
     _validate_design(x_values, y_values)
-    sm_cov_type, cov_kwds = _cov_type_and_kwds(
-        cov_type, cluster_values, maxlags, observations=len(y_values)
+    hac_maxlags = _validate_cov_type(
+        cov_type, cluster_values, lags, observations=len(y_values)
     )
 
-    sm_result = sm.OLS(y_values, x_values).fit(cov_type=sm_cov_type, cov_kwds=cov_kwds)
+    fit = fit_least_squares(
+        y_values,
+        x_values,
+        cov_type=cov_type,
+        clusters=cluster_values,
+        lags=hac_maxlags,
+    )
 
-    return _from_statsmodels_ols(sm_result, feature_names, x_values, cov_type)
+    return _to_regression_result(fit, feature_names, x_values, cov_type)
 
 
 def get_wls(
@@ -412,11 +396,13 @@ def get_wls(
     add_constant: bool = True,
     cov_type: str = "nonrobust",
     clusters: pd.Series | np.ndarray | None = None,
-    maxlags: int | None = None,
+    lags: int | None = None,
 ) -> dict:
     """
-    Fit a Weighted Least Squares (WLS) regression of `y` on `x`, via
-    `statsmodels.api.WLS`.
+    Fit a Weighted Least Squares (WLS) regression: OLS that gives noisier observations less
+    weight.
+
+    The fit uses `least_squares_model.fit_least_squares`.
 
     Also known as: weighted regression.
 
@@ -426,6 +412,9 @@ def get_wls(
     less weight to noisier observations:
 
     - beta_hat = (X'WX)^-1 X'Wy,  W = diag(weights)
+
+    Referenced against:
+    - statsmodels, WLS: https://www.statsmodels.org/stable/generated/statsmodels.regression.linear_model.WLS.html
 
     Args:
         y (pd.Series | np.ndarray): The dependent variable, shape `(n,)`.
@@ -440,14 +429,14 @@ def get_wls(
         the HAC estimator without a small-sample correction. Defaults to "nonrobust".
         clusters (pd.Series | np.ndarray | None, optional): The cluster label for each
         observation, required when `cov_type="cluster"`. Defaults to None.
-        maxlags (int | None, optional): The maximum lag to include when estimating the
+        lags (int | None, optional): The maximum lag to include when estimating the
         HAC (Newey-West) covariance matrix, only used when `cov_type="HAC"`. Defaults
         to None, meaning the Newey & West (1994) rule of thumb (see `get_ols`).
 
     Returns:
         dict: The fitted coefficients, their standard errors/t-statistics/
         p-values, residuals, fitted values, R-squared and related fit statistics -- see
-        `_from_statsmodels_ols` for the full key list. Call `regression_summary_table`
+        `_to_regression_result` for the full key list. Call `regression_summary_table`
         for a coefficient table.
 
     Raises:
@@ -470,15 +459,20 @@ def get_wls(
         raise ValueError("All weights must be strictly positive.")
 
     _validate_design(x_values, y_values)
-    sm_cov_type, cov_kwds = _cov_type_and_kwds(
-        cov_type, cluster_values, maxlags, observations=len(y_values)
+    hac_maxlags = _validate_cov_type(
+        cov_type, cluster_values, lags, observations=len(y_values)
     )
 
-    sm_result = sm.WLS(y_values, x_values, weights=weight_values).fit(
-        cov_type=sm_cov_type, cov_kwds=cov_kwds
+    fit = fit_least_squares(
+        y_values,
+        x_values,
+        weights=weight_values,
+        cov_type=cov_type,
+        clusters=cluster_values,
+        lags=hac_maxlags,
     )
 
-    return _from_statsmodels_ols(sm_result, feature_names, x_values, cov_type)
+    return _to_regression_result(fit, feature_names, x_values, cov_type)
 
 
 def get_feasible_weights(
@@ -487,8 +481,10 @@ def get_feasible_weights(
     add_constant: bool = True,
 ) -> np.ndarray:
     """
-    Estimate the Weighted Least Squares weights of a regression of `y` on `x` from its own
-    residuals, with the feasible GLS procedure for heteroskedasticity of Wooldridge (2016):
+    Estimate the Weighted Least Squares weights of a regression from its own residuals: the
+    inverse of every observation's estimated error variance.
+
+    The weights follow the feasible GLS procedure for heteroskedasticity of Wooldridge (2016):
 
     - ûₜ = the OLS residuals of `y` on `x`
     - ĝₜ = the fitted values of the OLS regression of log(ûₜ²) on `x` and a constant
@@ -514,13 +510,15 @@ def get_feasible_weights(
     x_values, _ = _to_design_matrix(x, add_constant)
     _validate_design(x_values, y_values)
 
-    squared_residuals = sm.OLS(y_values, x_values).fit().resid ** 2
+    squared_residuals = fit_least_squares(y_values, x_values)["residuals"] ** 2
     # An exact zero residual has no logarithm; the smallest positive one stands in for it.
     squared_residuals = np.maximum(
         squared_residuals, squared_residuals[squared_residuals > 0].min()
     )
     variance_design, _ = _to_design_matrix(x, add_constant=True)
-    fitted = sm.OLS(np.log(squared_residuals), variance_design).fit().fittedvalues
+    fitted = fit_least_squares(np.log(squared_residuals), variance_design)[
+        "fitted_values"
+    ]
 
     return 1 / np.exp(fitted)
 
@@ -531,8 +529,11 @@ def get_ar1_covariance(
     add_constant: bool = True,
 ) -> np.ndarray:
     """
-    Estimate the error covariance structure of a regression of `y` on `x` with first-order
-    autocorrelated (AR(1)) errors, eₜ = ρ·eₜ₋₁ + uₜ, from its own residuals:
+    Estimate the error covariance structure of a regression with first-order autocorrelated
+    (AR(1)) errors, eₜ = ρ·eₜ₋₁ + uₜ: how strongly the errors of every pair of observations
+    are correlated.
+
+    The structure follows from the regression's own residuals:
 
     - ρ̂ = Σ ûₜ·ûₜ₋₁ / Σ ûₜ₋₁², the slope of the OLS residuals on their own lag
     - Ωᵢⱼ = ρ̂^|i - j|, the correlation of the errors of observations i and j
@@ -564,7 +565,7 @@ def get_ar1_covariance(
     x_values, _ = _to_design_matrix(x, add_constant)
     _validate_design(x_values, y_values)
 
-    residuals = sm.OLS(y_values, x_values).fit().resid
+    residuals = fit_least_squares(y_values, x_values)["residuals"]
     rho = float(residuals[1:] @ residuals[:-1] / (residuals[:-1] @ residuals[:-1]))
 
     if not -1 < rho < 1:
@@ -584,8 +585,10 @@ def get_gls(
     add_constant: bool = True,
 ) -> dict:
     """
-    Fit a Generalized Least Squares (GLS) regression of `y` on `x`, given a known
-    error covariance structure `omega`, via `statsmodels.api.GLS`.
+    Fit a Generalized Least Squares (GLS) regression: least squares that accounts for errors
+    that are heteroskedastic or correlated with each other, given their covariance structure.
+
+    The fit uses `least_squares_model.fit_least_squares`.
 
     Also known as: GLS.
 
@@ -600,6 +603,9 @@ def get_gls(
     estimation step itself, not the (separate, model-specific) problem of estimating
     `Omega` in the first place (Feasible GLS).
 
+    Referenced against:
+    - statsmodels, GLS: https://www.statsmodels.org/stable/generated/statsmodels.regression.linear_model.GLS.html
+
     Args:
         y (pd.Series | np.ndarray): The dependent variable, shape `(n,)`.
         x (pd.DataFrame | pd.Series | np.ndarray): The independent variable(s)/regressor(s).
@@ -611,7 +617,7 @@ def get_gls(
     Returns:
         dict: The fitted coefficients, their standard errors/t-statistics/
         p-values, residuals, fitted values, R-squared and related fit statistics -- see
-        `_from_statsmodels_ols` for the full key list. Call `regression_summary_table`
+        `_to_regression_result` for the full key list. Call `regression_summary_table`
         for a coefficient table.
 
     Raises:
@@ -640,16 +646,18 @@ def get_gls(
 
     _validate_design(x_values, y_values)
 
-    sm_result = sm.GLS(y_values, x_values, sigma=omega).fit()
+    fit = fit_least_squares(y_values, x_values, omega=omega)
 
-    return _from_statsmodels_ols(sm_result, feature_names, x_values, "nonrobust")
+    return _to_regression_result(fit, feature_names, x_values, "nonrobust")
 
 
 def binary_regression_summary_table(result: dict) -> pd.DataFrame:
     """
-    Builds the standard coefficient table (Coefficient, Std. Error, z-Statistic,
-    P-Value) from a `get_logistic_regression`/`get_probit_regression` result dict,
-    indexed by `result["feature_names"]`.
+    Build the coefficient table of a binary choice fit: the Coefficient, Standard Error,
+    z-Statistic and P-Value of every regressor.
+
+    The table takes a `get_logistic_regression` or `get_probit_regression` result dict and
+    is indexed by its feature names.
 
     Args:
         result (dict): A fitted binary regression result dict, as returned by
@@ -661,7 +669,7 @@ def binary_regression_summary_table(result: dict) -> pd.DataFrame:
     return pd.DataFrame(
         {
             "Coefficient": result["coefficients"],
-            "Std. Error": result["standard_errors"],
+            "Standard Error": result["standard_errors"],
             "z-Statistic": result["z_statistics"],
             "P-Value": result["p_values"],
         },
@@ -713,26 +721,58 @@ def _fit_binary_glm(
             f"strictly more observations than parameters."
         )
 
-    model_cls = sm.Logit if link == "logit" else sm.Probit
-    sm_result = model_cls(y, x).fit(
-        disp=0, maxiter=max_iterations, tol=tolerance, warn_convergence=False
+    sm = import_optional(
+        "statsmodels.api",
+        f"The {'Logistic' if link == 'logit' else 'Probit'} regression",
     )
+    model_cls = sm.Logit if link == "logit" else sm.Probit
+    perfect_separation_warning = import_optional(
+        "statsmodels.tools.sm_exceptions", "The binary regression"
+    ).PerfectSeparationWarning
+    # Under perfect separation the coefficients run off to infinity: statsmodels warns on every
+    # iteration and its logistic function overflows in the fit and the statistics derived from
+    # it, so the warnings are collected and reported once.
+    with (
+        warnings.catch_warnings(record=True) as raised,
+        np.errstate(over="ignore", divide="ignore", invalid="ignore"),
+    ):
+        warnings.simplefilter("always", perfect_separation_warning)
+        sm_result = model_cls(y, x).fit(
+            disp=0, maxiter=max_iterations, tol=tolerance, warn_convergence=False
+        )
+        result = {
+            "coefficients": np.asarray(sm_result.params),
+            "standard_errors": np.asarray(sm_result.bse),
+            "z_statistics": np.asarray(sm_result.tvalues),
+            "p_values": np.asarray(sm_result.pvalues),
+            "fitted_probabilities": np.asarray(sm_result.predict()),
+            "log_likelihood": float(sm_result.llf),
+            "null_log_likelihood": float(sm_result.llnull),
+            "pseudo_r_squared": float(sm_result.prsquared),
+            "n_observations": int(sm_result.nobs),
+            "n_parameters": k,
+            "n_iterations": int(sm_result.mle_retvals.get("iterations", 0)),
+            "converged": bool(sm_result.mle_retvals.get("converged", False)),
+            "feature_names": feature_names,
+        }
 
-    return {
-        "coefficients": np.asarray(sm_result.params),
-        "standard_errors": np.asarray(sm_result.bse),
-        "z_statistics": np.asarray(sm_result.tvalues),
-        "p_values": np.asarray(sm_result.pvalues),
-        "fitted_probabilities": np.asarray(sm_result.predict()),
-        "log_likelihood": float(sm_result.llf),
-        "null_log_likelihood": float(sm_result.llnull),
-        "pseudo_r_squared": float(sm_result.prsquared),
-        "n_observations": int(sm_result.nobs),
-        "n_parameters": k,
-        "n_iterations": int(sm_result.mle_retvals.get("iterations", 0)),
-        "converged": bool(sm_result.mle_retvals.get("converged", False)),
-        "feature_names": feature_names,
-    }
+    separated = False
+    for entry in raised:
+        if entry.category is perfect_separation_warning:
+            separated = True
+        else:
+            # Re-emitted: recording captures every category, not just this one.
+            warnings.warn_explicit(
+                entry.message, entry.category, entry.filename, entry.lineno
+            )
+    if separated:
+        logger.warning(
+            "The %s regression separates the outcomes perfectly (or nearly so), so its "
+            "coefficients are not identified and their size and p-values are not meaningful.",
+            "Logistic" if link == "logit" else "Probit",
+        )
+
+    return result
 
 
 def get_logistic_regression(
@@ -743,8 +783,10 @@ def get_logistic_regression(
     tolerance: float = 1e-8,
 ) -> dict:
     """
-    Fit a Logistic Regression (Logit model) of a binary outcome `y` on `x`, via
-    `statsmodels.api.Logit`.
+    Fit a Logistic Regression (Logit model): how the probability of a binary outcome, such as
+    a positive return, depends on a set of regressors.
+
+    The model is fitted with statsmodels' Logit.
 
     Also known as: logit model, logit regression.
 
@@ -797,8 +839,10 @@ def get_probit_regression(
     tolerance: float = 1e-8,
 ) -> dict:
     """
-    Fit a Probit Regression of a binary outcome `y` on `x`, via
-    `statsmodels.api.Probit`.
+    Fit a Probit Regression: how the probability of a binary outcome, such as a positive
+    return, depends on a set of regressors, through the normal distribution.
+
+    The model is fitted with statsmodels' Probit.
 
     Also known as: probit model.
 
@@ -849,9 +893,11 @@ def get_probit_regression(
 
 def quantile_regression_summary_table(result: dict) -> pd.DataFrame:
     """
-    Builds the coefficient table (Coefficient, Std. Error) from a
-    `get_quantile_regression` result dict, indexed by `result["feature_names"]`. The
-    standard errors are `statsmodels`' analytic (kernel density-based) ones unless
+    Build the coefficient table of a quantile regression: the Coefficient and Standard Error
+    of every regressor.
+
+    The table takes a `get_quantile_regression` result dict and is indexed by its feature
+    names. The standard errors are `statsmodels`' analytic (kernel density-based) ones unless
     the fit requested bootstrap replicates, in which case they are the bootstrap
     ones -- either way they are always present.
 
@@ -864,7 +910,7 @@ def quantile_regression_summary_table(result: dict) -> pd.DataFrame:
     """
     data = {"Coefficient": result["coefficients"]}
     if result["standard_errors"] is not None:
-        data["Std. Error"] = result["standard_errors"]
+        data["Standard Error"] = result["standard_errors"]
     return pd.DataFrame(data, index=result["feature_names"])
 
 
@@ -877,8 +923,10 @@ def get_quantile_regression(
     seed: int | None = None,
 ) -> dict:
     """
-    Fit a (multi-predictor) linear Quantile Regression of `y` on `x` at quantile
-    `tau`, via `statsmodels.api.QuantReg`.
+    Fit a linear Quantile Regression: how a quantile of a series, such as its median or its
+    lower tail, depends on one or more regressors.
+
+    The model is fitted with statsmodels' QuantReg.
 
     Also known as: QR.
 
@@ -935,6 +983,10 @@ def get_quantile_regression(
 
     _validate_design(x_values, y_values)
 
+    sm = import_optional("statsmodels.api", "The Quantile regression")
+    iteration_limit_warning = import_optional(
+        "statsmodels.tools.sm_exceptions", "The Quantile regression"
+    ).IterationLimitWarning
     sm_result = sm.QuantReg(y_values, x_values).fit(q=tau)
 
     standard_errors = np.asarray(sm_result.bse)
@@ -946,7 +998,7 @@ def get_quantile_regression(
             sample_indices = rng.integers(0, n, size=n)
 
             with warnings.catch_warnings(record=True) as raised:
-                warnings.simplefilter("always", IterationLimitWarning)
+                warnings.simplefilter("always", iteration_limit_warning)
                 replicate = sm.QuantReg(
                     y_values[sample_indices], x_values[sample_indices]
                 ).fit(q=tau, max_iter=BOOTSTRAP_MAX_ITERATIONS)
@@ -954,7 +1006,7 @@ def get_quantile_regression(
             hit_iteration_limit = False
 
             for entry in raised:
-                if entry.category is IterationLimitWarning:
+                if entry.category is iteration_limit_warning:
                     hit_iteration_limit = True
                 else:
                     # Re-emitted: recording captures every category, not just this one.

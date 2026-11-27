@@ -74,8 +74,8 @@ def test_a_forecast_starting_today_is_not_noted(monkeypatch):
     text = asyncio.run(
         mcp_controller.mcp.call_tool(
             "risk",
-            {"indicator": "get_garch_forecast", "tickers": "AAPL", "time_steps": 1},
+            {"indicator": "get_garch_forecast", "tickers": "AAPL", "forecast_steps": 1},
         )
-    )[0][0].text
+    )[0].text
 
     assert "has not closed yet" not in text

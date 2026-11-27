@@ -36,8 +36,10 @@ class CausalEconometrics:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Fit an Instrumental Variables regression via Two-Stage Least Squares (2SLS) of
-        `dependent_ticker` on `endogenous_ticker`, instrumented by `instrument_tickers`.
+        Fit an Instrumental Variables regression by Two-Stage Least Squares (2SLS): the effect of
+        an endogenous ticker on the dependent ticker, isolated with instrument tickers.
+
+        The model is fitted with linearmodels' IV2SLS.
 
         Also known as: IV, 2SLS, IV-2SLS.
 
@@ -58,11 +60,11 @@ class CausalEconometrics:
         The formula is as follows:
 
         - Z = [1, exogenous tickers, instruments] and X = [1, exogenous tickers, endogenous tickers], all
-          in `column` (Return by default), the constant only with add_constant=True
+          in `column` (Return by default), the constant only when one is added
         - Stage 1: X̂ = Z(Z'Z)⁻¹Z'X, the fitted values of each endogenous ticker regressed on Z
         - Stage 2: β̂ = (X̂'X)⁻¹X̂'y
-        - Cov(β̂) = σ̂²·(X̂'X̂)⁻¹, with σ̂² = Σ(yₜ - xₜ'β̂)² / (n - k) (linearmodels IV2SLS with
-          cov_type="unadjusted" and debiased=True)
+        - Cov(β̂) = σ̂²·(X̂'X̂)⁻¹, with σ̂² = Σ(yₜ - xₜ'β̂)² / (n - k) (linearmodels IV2SLS with the
+          unadjusted covariance and the small-sample correction)
 
         Args:
             dependent_ticker (str): The dependent (predicted) asset.
@@ -86,10 +88,13 @@ class CausalEconometrics:
                 exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
-            pd.DataFrame: A coefficient table (Coefficient, CORRECTED Std. Error, t-Statistic,
+            pd.DataFrame: A coefficient table (Coefficient, CORRECTED Standard Error, t-Statistic,
             P-Value), indexed by regressor name -- see `causal_inference_model.get_iv_2sls` for
             why these standard errors differ from (and correct) what a naive two-OLS-calls
             approach would report.
+
+        Notes:
+        - Requires linearmodels (`pip install financetoolkit[econometrics]`).
 
         As an example:
 
@@ -110,10 +115,10 @@ class CausalEconometrics:
 
         Which returns:
 
-        |           |   Coefficient |   Std. Error |   t-Statistic |   P-Value |
-        |:----------|--------------:|-------------:|--------------:|----------:|
-        | Intercept |       -0.0008 |       0.0027 |       -0.2931 |    0.7697 |
-        | NVDA      |        1.2518 |       0.1094 |       11.441  |    0      |
+        |           |   Coefficient |   Standard Error |   t-Statistic |   P-Value |
+        |:----------|--------------:|-----------------:|--------------:|----------:|
+        | Intercept |       -0.0008 |           0.0027 |       -0.2929 |    0.7699 |
+        | NVDA      |        1.2516 |           0.1094 |       11.4393 |    0      |
         """
         period = period if period else "daily"
         endogenous_ticker = (
@@ -169,8 +174,8 @@ class CausalEconometrics:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Fit a Difference-in-Differences (DiD) regression estimating the effect of some
-        event on `treatment_date` for `treated_tickers`, relative to `control_tickers`.
+        Fit a Difference-in-Differences (DiD) regression: the effect of an event on the treated
+        tickers, as their change in return beyond that of the control tickers.
 
         Also known as: DiD, DD, difference-in-differences estimator.
 
@@ -228,7 +233,7 @@ class CausalEconometrics:
                 exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
-            pd.DataFrame: A coefficient table (Coefficient, Std. Error, t-Statistic, P-Value)
+            pd.DataFrame: A coefficient table (Coefficient, Standard Error, t-Statistic, P-Value)
             with rows `Intercept`, `Treated`, `Post` and `Treated x Post` -- the last of
             which is the DiD treatment-effect estimate.
 
@@ -254,12 +259,12 @@ class CausalEconometrics:
 
         Which returns:
 
-        |                |   Coefficient |   Std. Error |   t-Statistic |   P-Value |
-        |:---------------|--------------:|-------------:|--------------:|----------:|
-        | Intercept      |       -0.0126 |       0.0262 |       -0.4796 |    0.6324 |
-        | Treated        |        0.0669 |       0.0371 |        1.8059 |    0.0736 |
-        | Post           |        0.0291 |       0.0362 |        0.8043 |    0.4229 |
-        | Treated x Post |       -0.0246 |       0.0511 |       -0.4813 |    0.6312 |
+        |                |   Coefficient |   Standard Error |   t-Statistic |   P-Value |
+        |:---------------|--------------:|-----------------:|--------------:|----------:|
+        | Intercept      |       -0.0126 |           0.0262 |       -0.4796 |    0.6324 |
+        | Treated        |        0.0669 |           0.0371 |        1.8059 |    0.0736 |
+        | Post           |        0.0291 |           0.0362 |        0.8043 |    0.4229 |
+        | Treated x Post |       -0.0246 |           0.0511 |       -0.4813 |    0.6312 |
         """
         period = period if period else "daily"
         returns = self._get_series_column(period, column)
@@ -343,8 +348,8 @@ class CausalEconometrics:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Estimate a Sharp Regression Discontinuity (RDD): the jump in `dependent_ticker`
-        exactly where `running_variable_ticker` crosses `cutoff`.
+        Estimate a Sharp Regression Discontinuity (RDD): the jump in the dependent ticker exactly
+        where the running variable ticker crosses a cutoff.
 
         Also known as: RDD, sharp RD.
 
@@ -365,8 +370,8 @@ class CausalEconometrics:
 
         - x̃ₜ = xₜ - cutoff, keeping the observations with |x̃ₜ| < h, where xₜ is the running ticker's
           `column` (Return by default) and h = `bandwidth`, or half the range of xₜ by default
-        - Each side (x̃ₜ < 0 and x̃ₜ ≥ 0): yₜ = a + b·x̃ₜ + eₜ, fitted by OLS (kernel="uniform", the
-          default) or by WLS with weights 1 - |x̃ₜ| / h (kernel="triangular")
+        - Each side (x̃ₜ < 0 and x̃ₜ ≥ 0): yₜ = a + b·x̃ₜ + eₜ, fitted by OLS (the uniform kernel, the
+          default) or by WLS with weights 1 - |x̃ₜ| / h (the triangular kernel)
         - Discontinuity = a_right - a_left, with SE = √(SE(a_right)² + SE(a_left)²)
         - t = Discontinuity / SE, with a Student-t distribution on the two sides' residual degrees of
           freedom combined
@@ -386,7 +391,9 @@ class CausalEconometrics:
             None, which uses half of the running variable's observed range -- see
             `causal_inference_model.get_regression_discontinuity` for why this is a
             deliberately naive default.
-            kernel (str, optional): One of "uniform" or "triangular". Defaults to "uniform".
+            kernel (str, optional): How to weight observations by distance to the cutoff.
+            Options are: "uniform" (equal weight, OLS), "triangular" (linearly decaying weight,
+            WLS). Defaults to "uniform".
             rounding (int | None, optional): The number of decimals to round the results to.
             Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -420,14 +427,13 @@ class CausalEconometrics:
 
         |               |    Value |
         |:--------------|---------:|
-        | Discontinuity |   0.0031 |
-        | Std. Error    |   0.0027 |
-        | t-Statistic   |   1.1191 |
-        | P-Value       |   0.2633 |
+        | Discontinuity |   0.0086 |
+        | t-Statistic   |   2.0056 |
+        | P-Value       |   0.0452 |
         | Cutoff        |   0      |
         | Bandwidth     |   0.1497 |
-        | N Left        | 729      |
-        | N Right       | 728      |
+        | N Left        | 512      |
+        | N Right       | 489      |
         """
         period = period if period else "daily"
         returns = self._get_series_column(
@@ -462,18 +468,20 @@ class CausalEconometrics:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series:
         """
-        Estimate the Average Treatment effect on the Treated (ATT) of `treatment_ticker`
-        exceeding `treatment_threshold` on `dependent_ticker`'s return, via Propensity
-        Score Matching (PSM) on `covariate_tickers`.
+        Estimate the Average Treatment effect on the Treated (ATT) by Propensity Score Matching
+        (PSM): how the dependent ticker's return differs in periods where the treatment ticker
+        moves past a threshold, compared with similar periods where it does not.
+
+        The periods are matched on the covariate tickers.
 
         Also known as: PSM, nearest-neighbor propensity matching.
 
         For more information about the method, see
         `causal_inference_model.get_propensity_score_matching`.
 
-        Derives a binary "treatment" indicator the same way `get_logistic_regression`
+        Derives a binary "treatment" indicator the same way `get_binary_choice_regression`
         derives its binary outcome: 1 if `treatment_ticker`'s return in a given period
-        exceeds `treatment_threshold` (0.0, i.e. a positive return, by default), else 0.
+        exceeds the treatment threshold (0.0, i.e. a positive return, by default), else 0.
         This lets PSM answer e.g. "on periods where `treatment_ticker` has an
         outsized/positive move, is `dependent_ticker`'s return different than it would
         otherwise be -- comparing only periods that LOOK similar on `covariate_tickers`
@@ -520,6 +528,9 @@ class CausalEconometrics:
             pd.Series: The ATT estimate, its standard error/t-statistic/p-value, and the
             number of matched pairs/treated/control observations.
 
+        Notes:
+        - Requires statsmodels (`pip install financetoolkit[econometrics]`).
+
         As an example:
 
         ```python
@@ -545,13 +556,12 @@ class CausalEconometrics:
 
         |               |     Value |
         |:--------------|----------:|
-        | ATT           |    0.0163 |
-        | Std. Error    |    0.0016 |
-        | t-Statistic   |    9.9366 |
+        | ATT           |    0.016  |
+        | t-Statistic   |   10.9445 |
         | P-Value       |    0      |
-        | Matched Pairs |  181      |
-        | N Treated     |  185      |
-        | N Control     | 1069      |
+        | Matched Pairs |  182      |
+        | N Treated     |  186      |
+        | N Control     | 1068      |
         """
         period = period if period else "daily"
         covariate_tickers = (
@@ -591,10 +601,9 @@ class CausalEconometrics:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series:
         """
-        Construct a Synthetic Control for `treated_ticker` from a weighted combination of
-        `donor_tickers` (Abadie, Diamond & Hainmueller, 2010), and estimate the effect of an
-        event/intervention as the post-`treatment_period` gap between `treated_ticker`'s
-        actual and synthetic counterfactual return path.
+        Construct a Synthetic Control (Abadie, Diamond & Hainmueller, 2010): a weighted combination
+        of donor tickers that tracks the treated ticker before an event, with the effect of the
+        event as the gap between the two after it.
 
         When a single company or market experiences an event (an acquisition, a regulatory
         change, an index inclusion) and there is no single obvious comparison, the synthetic
@@ -739,8 +748,10 @@ class CausalEconometrics:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series:
         """
-        Perform a market-model event study around a single event date, following the
-        methodology in MacKinlay, A.C. (1997), "Event Studies in Economics and
+        Perform a market-model event study around a single event date: the return of a stock
+        around an event beyond what its relation with the market explains (the abnormal return).
+
+        The method follows MacKinlay, A.C. (1997), "Event Studies in Economics and
         Finance," Journal of Economic Literature, 35(1), 13-39 -- the canonical
         reference and still the dominant approach used to measure the stock-price
         impact of corporate events (earnings announcements, M&A deals, index

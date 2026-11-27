@@ -4,6 +4,7 @@ import pandas as pd
 import pytest
 
 from financetoolkit.discovery import discovery_model
+from financetoolkit.utilities.error_model import InvalidArgumentError
 
 
 @pytest.fixture(name="responses")
@@ -52,7 +53,7 @@ def test_an_isin_is_searched_as_an_isin_and_its_primary_listing_comes_first(resp
 
 
 def test_an_unknown_search_method_is_refused(responses):
-    with pytest.raises(ValueError, match="not valid"):
+    with pytest.raises(InvalidArgumentError, match="search_method must be one of"):
         discovery_model.get_instruments(
             api_key="KEY", query="X", search_method="ticker"
         )
@@ -289,7 +290,7 @@ def test_index_constituents(monkeypatch):
 
     assert "dowjones-constituent" in requested[0]
     assert list(constituents.index) == ["AAPL", "MSFT"]
-    with pytest.raises(ValueError, match="not available"):
+    with pytest.raises(InvalidArgumentError, match="index must be one of"):
         discovery_model.get_index_constituents(api_key="KEY", index="DAX")
 
 
@@ -1067,3 +1068,116 @@ def test_a_truncated_country_screen_points_to_the_calendars_own_parameters(
 
     assert "set a (higher) min_market_cap" in caplog.text
     assert "raise the limit" not in caplog.text
+
+
+@pytest.mark.parametrize(
+    ("frame", "message"),
+    [
+        ("NO ERRORS", "Could not reach Financial Modeling Prep for sector-pe-snapshot"),
+        ("LIMIT REACH", "rate limit of Financial Modeling Prep was reached"),
+        ("EXCLUSIVE ENDPOINT", "not available in your plan"),
+    ],
+)
+def test_an_error_frame_is_an_empty_answer_with_its_reason(
+    monkeypatch, caplog, frame, message
+):
+    monkeypatch.setattr(
+        discovery_model,
+        "get_financial_data",
+        lambda **_: pd.DataFrame(columns=[frame]),
+    )
+
+    with caplog.at_level("ERROR"):
+        answer = discovery_model.get_cached_financial_data(
+            "https://financialmodelingprep.com/stable/sector-pe-snapshot?date=2025-01-02&apikey=K"
+        )
+
+    # The error's name is never passed on as a column (and so as an option to choose from).
+    assert answer.empty and list(answer.columns) == []
+    assert message in caplog.text
+
+
+def test_a_failing_sector_stops_the_other_sectors(monkeypatch):
+    requested = []
+
+    def unreachable(url, user_subscription="Free"):  # noqa: ARG001
+        requested.append(url)
+        discovery_model.error_model.report_request_failure()
+        return pd.DataFrame()
+
+    monkeypatch.setattr(discovery_model, "get_cached_financial_data", unreachable)
+
+    assert discovery_model.get_sectors_performance(api_key="KEY").empty
+    assert len(requested) == 1
+
+
+def test_a_failing_earnings_calendar_range_stops_the_others(monkeypatch):
+    requested = []
+
+    def unreachable(url, user_subscription="Free"):  # noqa: ARG001
+        requested.append(url)
+        discovery_model.error_model.report_request_failure()
+        return pd.DataFrame()
+
+    monkeypatch.setattr(discovery_model, "get_cached_financial_data", unreachable)
+
+    assert discovery_model.get_earnings_calendar(api_key="KEY").empty
+    assert len(requested) == 1
+
+
+def test_news_paging_stops_at_the_first_failed_page(monkeypatch):
+    requested = []
+
+    def first_page_only(url, user_subscription="Free"):  # noqa: ARG001
+        requested.append(url)
+        if "page=0" in url:
+            return pd.DataFrame({"title": ["One"]})
+        discovery_model.error_model.report_request_failure()
+        return pd.DataFrame()
+
+    monkeypatch.setattr(discovery_model, "get_cached_financial_data", first_page_only)
+
+    news = discovery_model._get_news_pages(
+        "https://financialmodelingprep.com/stable/news/stock-latest?limit=10&apikey=K",
+        5,
+    )
+
+    # The pages after a failed one would fail alike, each after its own retries.
+    assert len(requested) == 2  # noqa: PLR2004
+    assert news["title"].tolist() == ["One"]
+
+
+def test_a_failed_request_is_not_logged_twice(monkeypatch, caplog):
+    monkeypatch.setattr(
+        discovery_model,
+        "get_financial_data",
+        lambda **_: pd.DataFrame(columns=["REQUEST FAILED"]),
+    )
+
+    with caplog.at_level("WARNING"):
+        answer = discovery_model.get_cached_financial_data(
+            "https://financialmodelingprep.com/stable/sector-pe-snapshot?date=2025-01-02&apikey=K"
+        )
+
+    # fmp_model logged the server error or the unreadable answer where it failed.
+    assert answer.empty
+    assert caplog.text == ""
+
+
+def test_an_error_names_the_endpoint_and_symbol_it_asked_for(monkeypatch, caplog):
+    monkeypatch.setattr(
+        discovery_model,
+        "get_financial_data",
+        lambda **_: pd.DataFrame(columns=["NO ERRORS"]),
+    )
+
+    with caplog.at_level("ERROR"):
+        discovery_model.get_cached_financial_data(
+            "https://financialmodelingprep.com/stable/historical-price-eod/light"
+            "?symbol=%5EMOVE&from=2026-01-01&to=2026-02-01&apikey=K"
+        )
+
+    assert (
+        "Could not reach Financial Modeling Prep for historical-price-eod/light (^MOVE)"
+        in caplog.text
+    )

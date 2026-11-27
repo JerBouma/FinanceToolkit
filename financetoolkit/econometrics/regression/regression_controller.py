@@ -2,6 +2,8 @@
 
 __docformat__ = "google"
 
+from typing import Literal
+
 import pandas as pd
 
 from financetoolkit.econometrics.helpers import BENCHMARK_TICKER
@@ -11,7 +13,12 @@ from financetoolkit.econometrics.regression import (
     regression_model,
 )
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
-from financetoolkit.utilities.error_model import handle_errors
+from financetoolkit.utilities.error_model import (
+    InvalidArgumentError,
+    check_option,
+    check_period,
+    handle_errors,
+)
 from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import apply_rounding
 
@@ -36,13 +43,13 @@ class RegressionEconometrics:
         add_constant: bool = True,
         cov_type: str = "nonrobust",
         clusters: pd.Series | None = None,
-        maxlags: int | None = None,
+        lags: int | None = None,
         rounding: int | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Fit an Ordinary Least Squares (OLS) regression of `dependent_ticker` on
-        `independent_tickers`, using the selected `column` (returns by default) of each ticker.
+        Fit an Ordinary Least Squares (OLS) regression: how the dependent ticker moves with the
+        independent tickers, such as a beta against an index, on the returns by default.
 
         OLS estimates the coefficients that minimise the sum of squared residuals, i.e. the
         line (or plane) that best explains the dependent ticker from the independent tickers.
@@ -50,15 +57,19 @@ class RegressionEconometrics:
         The formula is as follows:
 
         - β̂ = (X'X)⁻¹X'y, with y the dependent ticker's `column` (Return by default) and X the
-          independent tickers' `column` plus a constant column (add_constant=True)
-        - Cov(β̂) = σ̂²·(X'X)⁻¹, with σ̂² = e'e / (n - k) (cov_type="nonrobust"); "HC0" to "HC3",
-          "cluster" and "HAC" (Newey-West with `maxlags`) use statsmodels' sandwich estimators
+          independent tickers' `column` plus a constant column (when a constant is added)
+        - Cov(β̂) = σ̂²·(X'X)⁻¹, with σ̂² = e'e / (n - k) (non-robust)
+        - Cov(β̂) = (X'X)⁻¹·(Σ ωₜ·xₜxₜ')·(X'X)⁻¹ for HC0 to HC3, with ωₜ = eₜ² (HC0),
+          eₜ²·n / (n - k) (HC1), eₜ² / (1 - hₜ) (HC2) or eₜ² / (1 - hₜ)² (HC3) and hₜ = xₜ'(X'X)⁻¹xₜ
+        - Cov(β̂) = (X'X)⁻¹·(Σₜ gₜgₜ' + Σⱼ (1 - j / (L + 1))·Σₜ (gₜgₜ₋ⱼ' + gₜ₋ⱼgₜ'))·(X'X)⁻¹ for HAC,
+          with gₜ = xₜeₜ and L = `lags`; the cluster-robust covariance sums gₜ within each cluster and scales the
+          sandwich by G / (G - 1)·(n - 1) / (n - k), with G the number of clusters
         - t = β̂ⱼ / SE(β̂ⱼ), with p-values from a Student-t distribution with n - k degrees of freedom
-          for cov_type="nonrobust" and from the standard normal distribution for the robust
-          estimators ("HC0" to "HC3", "cluster" and "HAC"), which are asymptotic results
+          for the non-robust covariance and from the standard normal distribution for the robust
+          estimators (HC0 to HC3, cluster-robust and HAC), which are asymptotic results
         - R² = 1 - e'e / Σ(yₜ - mean(y))²
 
-        The "HAC" covariance is the Newey-West (Bartlett) estimator without a small-sample
+        The HAC covariance is the Newey-West (Bartlett) estimator without a small-sample
         degrees-of-freedom correction (statsmodels' default), so its standard errors are
         slightly smaller than those of software that scales them by n / (n - k).
 
@@ -70,9 +81,9 @@ class RegressionEconometrics:
         Under the classical assumptions (linearity, no perfect multicollinearity, homoskedastic
         and uncorrelated errors) OLS is the Best Linear Unbiased Estimator (Gauss-Markov). The
         coefficients stay unbiased when the errors are heteroskedastic, but the classical
-        standard errors do not: check with `get_breusch_pagan_test` or `get_white_test` and,
-        if needed, refit with a robust `cov_type` such as "HC1" (or "HC3" for small samples),
-        or "HAC" when the errors are also autocorrelated.
+        standard errors do not: check with `get_heteroskedasticity_test` and,
+        if needed, refit with a robust covariance such as HC1 (or HC3 for small samples), or
+        HAC when the errors are also autocorrelated.
 
         For more information about the HAC covariance, see the following paper:
 
@@ -81,6 +92,9 @@ class RegressionEconometrics:
         55(3), 703-708.
 
         Also known as: linear regression, least squares regression.
+
+        Referenced against:
+        - statsmodels, OLS: https://www.statsmodels.org/stable/generated/statsmodels.regression.linear_model.OLS.html
 
         Args:
             dependent_ticker (str | None, optional): The dependent (predicted) asset.
@@ -95,11 +109,12 @@ class RegressionEconometrics:
                 "daily".
             column (str, optional): The historical data column to regress on. Defaults to "Return".
             add_constant (bool, optional): Whether to include an intercept. Defaults to True.
-            cov_type (str, optional): Which covariance estimator to use for the standard errors --
-            one of "nonrobust" (classical, assumes homoskedastic errors), "HC0"/"HC1"/"HC2"/"HC3"
-            (heteroskedasticity-robust), "cluster" (cluster-robust, requires `clusters`) or "HAC"
-            (Newey-West, heteroskedasticity-and-autocorrelation-consistent, uses `maxlags`).
-            Use `get_breusch_pagan_test`/`get_white_test` to check for heteroskedasticity and
+            cov_type (str, optional): Which covariance estimator to use for the standard errors.
+            Options are: "nonrobust" (classical, assumes homoskedastic errors), "HC0", "HC1",
+            "HC2", "HC3" (heteroskedasticity-robust), "cluster" (cluster-robust, requires
+            `clusters`), "HAC" (Newey-West, heteroskedasticity-and-autocorrelation-consistent,
+            uses `lags`).
+            Use `get_heteroskedasticity_test` to check for heteroskedasticity and
             `get_ljung_box_test` to check for autocorrelation first. Defaults to "nonrobust".
             clusters (pd.Series | None, optional): The cluster label for each observation
             (e.g. a coarser time bucket derived from the return index, to correct for
@@ -107,7 +122,7 @@ class RegressionEconometrics:
             regression's own index before use, so it may be indexed by the full period
             index even though the regression drops periods with missing data. Defaults
             to None.
-            maxlags (int | None, optional): The maximum lag to include when estimating the
+            lags (int | None, optional): The maximum lag to include when estimating the
             HAC (Newey-West) covariance matrix, only used when `cov_type="HAC"`. Defaults to
             None, meaning the Newey & West (1994) rule of thumb `floor(4 * (n / 100)^(2/9))`
             with `n` the number of observations.
@@ -119,7 +134,7 @@ class RegressionEconometrics:
                 exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
-            pd.DataFrame: A coefficient table (Coefficient, Std. Error, t-Statistic, P-Value),
+            pd.DataFrame: A coefficient table (Coefficient, Standard Error, t-Statistic, P-Value),
             indexed by regressor name.
 
         As an example:
@@ -136,17 +151,17 @@ class RegressionEconometrics:
 
         # XOM (the first ticker) is dependent; USO and the Benchmark are independent.
         # dependent_ticker and independent_tickers choose others, cov_type='HC1' gives
-        # heteroskedasticity-robust and cov_type='HAC' (with maxlags) Newey-West standard errors.
+        # heteroskedasticity-robust and cov_type='HAC' (with lags) Newey-West standard errors.
         toolkit.econometrics.get_ols(include_benchmark=True)
         ```
 
         Which returns:
 
-        |           |   Coefficient |   Std. Error |   t-Statistic |   P-Value |
-        |:----------|--------------:|-------------:|--------------:|----------:|
-        | Intercept |        0.0005 |       0.0004 |        1.5047 |    0.1327 |
-        | USO       |        0.4878 |       0.0172 |       28.4214 |    0      |
-        | Benchmark |        0.366  |       0.0333 |       10.9991 |    0      |
+        |           |   Coefficient |   Standard Error |   t-Statistic |   P-Value |
+        |:----------|--------------:|-----------------:|--------------:|----------:|
+        | Intercept |        0.0005 |           0.0004 |        1.5073 |     0.132 |
+        | USO       |        0.4877 |           0.0172 |       28.4182 |     0     |
+        | Benchmark |        0.3659 |           0.0333 |       10.9953 |     0     |
         """
         period = period if period else "daily"
         dependent_ticker, independent_tickers = self._resolve_dependent_independent(
@@ -158,7 +173,7 @@ class RegressionEconometrics:
             period, column, [dependent_ticker, *independent_tickers]
         )
 
-        # Positionally aligned by statsmodels, so it has to be reindexed onto the regression's own index first -- `returns` has already dropped any period with missing data, which a caller-supplied cluster label will not have.  # noqa: E501
+        # Positionally aligned by the fit, so it has to be reindexed onto the regression's own index first -- `returns` has already dropped any period with missing data, which a caller-supplied cluster label will not have.  # noqa: E501
         aligned_clusters = (
             clusters.reindex(returns.index) if clusters is not None else None
         )
@@ -169,7 +184,7 @@ class RegressionEconometrics:
             add_constant=add_constant,
             cov_type=cov_type,
             clusters=aligned_clusters,
-            maxlags=maxlags,
+            lags=lags,
         )
 
         return apply_rounding(
@@ -189,13 +204,13 @@ class RegressionEconometrics:
         add_constant: bool = True,
         cov_type: str = "nonrobust",
         clusters: pd.Series | None = None,
-        maxlags: int | None = None,
+        lags: int | None = None,
         rounding: int | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Fit a Weighted Least Squares (WLS) regression of `dependent_ticker` on
-        `independent_tickers`.
+        Fit a Weighted Least Squares (WLS) regression: OLS of the dependent ticker on the
+        independent tickers that gives noisier periods less weight.
 
         When the error variance differs across observations (heteroskedasticity) with a known
         or estimable structure, `Var(e_i) = sigma^2 / w_i`, OLS remains unbiased but is no
@@ -206,20 +221,20 @@ class RegressionEconometrics:
         The formula is as follows:
 
         - β̂ = (X'WX)⁻¹X'Wy, with W = diag(weights), the same as OLS of √wₜ·yₜ on √wₜ·xₜ
-        - Cov(β̂) = σ̂²·(X'WX)⁻¹, with σ̂² = Σwₜ·eₜ² / (n - k) (cov_type="nonrobust")
+        - Cov(β̂) = σ̂²·(X'WX)⁻¹, with σ̂² = Σwₜ·eₜ² / (n - k) (non-robust)
         - t = β̂ⱼ / SE(β̂ⱼ), with p-values from a Student-t distribution with n - k degrees of freedom
-          for cov_type="nonrobust" and from the standard normal distribution for the robust
-          estimators; "HAC" is the Newey-West estimator without a small-sample correction
+          for the non-robust covariance and from the standard normal distribution for the robust
+          estimators; HAC is the Newey-West estimator without a small-sample correction
         - y is the dependent ticker's `column` (Return by default) and X the independent tickers'
           `column` plus a constant, on the dates where the returns and `weights` all have data
 
         With equal weights WLS reduces to OLS. A typical use is down-weighting periods of
         high volatility, so that a few turbulent periods do not dominate the estimated
-        relationship. By default (weights="feasible") the weights are estimated from the
+        relationship. By default the weights are estimated from the
         regression itself with the feasible GLS procedure of Wooldridge (2016): the
         logarithm of the squared OLS residuals is regressed on the independent tickers, and
         each period's weight is 1 / exp(fitted value), the inverse of its estimated error
-        variance. Use `get_breusch_pagan_test` or `get_white_test` to establish whether
+        variance. Use `get_heteroskedasticity_test` to establish whether
         heteroskedasticity is present before choosing WLS over OLS.
 
         For more information about the feasible weights, see the following book:
@@ -228,6 +243,9 @@ class RegressionEconometrics:
         edition, Section 8.4. Cengage Learning.
 
         Also known as: weighted regression, feasible WLS.
+
+        Referenced against:
+        - statsmodels, WLS: https://www.statsmodels.org/stable/generated/statsmodels.regression.linear_model.WLS.html
 
         Args:
             weights (pd.Series | str, optional): The (positive) weight of each observation,
@@ -251,7 +269,7 @@ class RegressionEconometrics:
             Defaults to "nonrobust".
             clusters (pd.Series | None, optional): The cluster label for each observation,
             required when `cov_type="cluster"`. Defaults to None.
-            maxlags (int | None, optional): The maximum lag to include when estimating the
+            lags (int | None, optional): The maximum lag to include when estimating the
             HAC (Newey-West) covariance matrix, only used when `cov_type="HAC"`. Defaults to
             None, meaning the Newey & West (1994) rule of thumb (see `get_ols`).
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to
@@ -262,7 +280,7 @@ class RegressionEconometrics:
                 exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
-            pd.DataFrame: A coefficient table (Coefficient, Std. Error, t-Statistic, P-Value),
+            pd.DataFrame: A coefficient table (Coefficient, Standard Error, t-Statistic, P-Value),
             indexed by regressor name.
 
         As an example:
@@ -283,10 +301,10 @@ class RegressionEconometrics:
 
         Which returns:
 
-        |           |   Coefficient |   Std. Error |   t-Statistic |   P-Value |
-        |:----------|--------------:|-------------:|--------------:|----------:|
-        | Intercept |        0.0012 |       0.0019 |        0.6263 |    0.5317 |
-        | MSFT      |        0.6356 |       0.0596 |       10.6643 |    0      |
+        |           |   Coefficient |   Standard Error |   t-Statistic |   P-Value |
+        |:----------|--------------:|-----------------:|--------------:|----------:|
+        | Intercept |        0.0012 |           0.0019 |        0.6252 |    0.5324 |
+        | MSFT      |        0.636  |           0.0597 |       10.6573 |    0      |
         """
         period = period if period else "daily"
         dependent_ticker, independent_tickers = self._resolve_dependent_independent(
@@ -300,7 +318,7 @@ class RegressionEconometrics:
 
         estimate_weights = isinstance(weights, str)
         if estimate_weights and weights != "feasible":
-            raise ValueError(
+            raise InvalidArgumentError(
                 f"weights must be a Series of weights or 'feasible', received '{weights}'."
             )
 
@@ -328,7 +346,7 @@ class RegressionEconometrics:
             add_constant=add_constant,
             cov_type=cov_type,
             clusters=aligned_clusters,
-            maxlags=maxlags,
+            lags=lags,
         )
 
         return apply_rounding(
@@ -350,8 +368,8 @@ class RegressionEconometrics:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Fit a Generalized Least Squares (GLS) regression of `dependent_ticker` on
-        `independent_tickers`, given a known error covariance structure `omega`.
+        Fit a Generalized Least Squares (GLS) regression: least squares of the dependent ticker
+        on the independent tickers that accounts for errors that are correlated over time.
 
         GLS generalises WLS to an arbitrary error covariance matrix `Var(e) = sigma^2 * Omega`.
         Where WLS only corrects for heteroskedasticity (a diagonal `Omega`), GLS also
@@ -363,10 +381,10 @@ class RegressionEconometrics:
         - β̂ = (X'Ω⁻¹X)⁻¹X'Ω⁻¹y
         - Cov(β̂) = σ̂²·(X'Ω⁻¹X)⁻¹, with σ̂² = e'Ω⁻¹e / (n - k)
         - y is the dependent ticker's `column` (Return by default) and X the independent tickers'
-          `column` plus a constant (add_constant=True)
+          `column` plus a constant (when a constant is added)
 
         Under a correctly specified `Omega` this is the most efficient linear unbiased
-        estimator. By default (omega="ar1") `Omega` is estimated from the regression itself
+        estimator. By default `Omega` is estimated from the regression itself
         as an AR(1) error structure, eₜ = ρ·eₜ₋₁ + uₜ: ρ is the slope of the OLS residuals on
         their own lag and Ωᵢⱼ = ρ^|i - j|, which makes this the Prais-Winsten estimator. Any
         other structure can be supplied as `omega`. `get_durbin_watson_test` helps establish
@@ -380,6 +398,9 @@ class RegressionEconometrics:
         Cowles Commission Discussion Paper No. 383.
 
         Also known as: GLS, Prais-Winsten.
+
+        Referenced against:
+        - statsmodels, GLS: https://www.statsmodels.org/stable/generated/statsmodels.regression.linear_model.GLS.html
 
         Args:
             omega (pd.DataFrame | str, optional): The (symmetric, positive-definite) error
@@ -406,7 +427,7 @@ class RegressionEconometrics:
                 exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
-            pd.DataFrame: A coefficient table (Coefficient, Std. Error, t-Statistic, P-Value),
+            pd.DataFrame: A coefficient table (Coefficient, Standard Error, t-Statistic, P-Value),
             indexed by regressor name.
 
         As an example:
@@ -427,10 +448,10 @@ class RegressionEconometrics:
 
         Which returns:
 
-        |           |   Coefficient |   Std. Error |   t-Statistic |   P-Value |
-        |:----------|--------------:|-------------:|--------------:|----------:|
-        | Intercept |        0.0012 |       0.0017 |        0.7282 |    0.4671 |
-        | MSFT      |        0.6312 |       0.0576 |       10.9557 |    0      |
+        |           |   Coefficient |   Standard Error |   t-Statistic |   P-Value |
+        |:----------|--------------:|-----------------:|--------------:|----------:|
+        | Intercept |        0.0012 |           0.0017 |        0.7273 |    0.4677 |
+        | MSFT      |        0.6313 |           0.0576 |       10.9572 |    0      |
         """
         period = period if period else "daily"
         dependent_ticker, independent_tickers = self._resolve_dependent_independent(
@@ -444,7 +465,7 @@ class RegressionEconometrics:
 
         if isinstance(omega, str):
             if omega != "ar1":
-                raise ValueError(
+                raise InvalidArgumentError(
                     f"omega must be a DataFrame or 'ar1', received '{omega}'."
                 )
             omega_values = regression_model.get_ar1_covariance(
@@ -466,7 +487,7 @@ class RegressionEconometrics:
         )
 
     @handle_errors
-    def get_logistic_regression(
+    def get_binary_choice_regression(
         self,
         dependent_ticker: str | None = None,
         independent_tickers: str | list[str] | None = None,
@@ -474,18 +495,21 @@ class RegressionEconometrics:
         period: str | None = None,
         column: str = "Return",
         add_constant: bool = True,
+        method: Literal["logit", "probit"] = "logit",
         rounding: int | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Fit a Logistic Regression (Logit model) of whether `dependent_ticker`'s return is
-        positive on `independent_tickers`.
+        Fit a binary choice regression: how the probability that the dependent ticker's return is
+        positive depends on the independent tickers, with the Logistic or the Probit Regression.
 
         The dependent variable is turned into a binary outcome (1 when the return is
         positive, 0 otherwise) and the model estimates the probability of that outcome
-        through the logistic (sigmoid) function, which maps any value onto the 0 to 1 range.
+        through a link function that maps any value onto the 0 to 1 range: the logistic
+        (sigmoid) function for the Logit model and the standard normal cumulative
+        distribution function for the Probit model.
 
-        The formula is as follows:
+        The formula for the Logistic Regression is as follows:
 
         - yₜ = 1 if the dependent ticker's `column` (Return by default) is above 0, else 0
         - P(yₜ = 1 | xₜ) = 1 / (1 + exp(-xₜ'β)), with xₜ the independent tickers' `column` plus a
@@ -493,27 +517,38 @@ class RegressionEconometrics:
         - β̂ = argmax Σ[yₜ·ln(pₜ) + (1 - yₜ)·ln(1 - pₜ)], solved by Newton-Raphson (statsmodels Logit)
         - Pseudo R² = 1 - ln L(β̂) / ln L₀ (McFadden), with L₀ the likelihood of a constant-only model
 
-        The model is fitted by Maximum Likelihood. Coefficients are log-odds: a one-unit
-        increase in an independent ticker changes the log-odds of a positive return by that
-        coefficient, holding the others fixed, so a positive coefficient means a higher
-        probability of a positive return. This answers "does this asset tend to be up when
-        the others move this way" rather than "by how much", which is what `get_ols`
-        estimates. `get_probit_regression` is the closely related alternative with a normal
-        instead of a logistic link.
+        The formula for the Probit Regression is as follows:
+
+        - yₜ = 1 if the dependent ticker's `column` (Return by default) is above 0, else 0
+        - P(yₜ = 1 | xₜ) = Φ(xₜ'β), with xₜ the independent tickers' `column` plus a constant
+        - β̂ = argmax Σ[yₜ·ln(pₜ) + (1 - yₜ)·ln(1 - pₜ)], solved by Newton-Raphson (statsmodels Probit)
+        - Pseudo R² = 1 - ln L(β̂) / ln L₀ (McFadden), with L₀ the likelihood of a constant-only model
+
+        Where `Φ` is the standard normal CDF. Both models are fitted by Maximum Likelihood. Logit
+        coefficients are log-odds: a one-unit increase in an independent ticker changes the
+        log-odds of a positive return by that coefficient, holding the others fixed, so a positive
+        coefficient means a higher probability of a positive return. A positive Probit coefficient
+        also means a higher probability of a positive return, but its size is not a log-odds
+        ratio. In practice Probit and Logit give very similar fitted probabilities; Probit is the
+        convention in parts of the econometrics literature and underlies two-step estimators such
+        as the Heckman selection correction. Both answer "does this asset tend to be up when the
+        others move this way" rather than "by how much", which is what `get_ols` estimates.
 
         The coefficients are per unit of the independent ticker's return, and a unit is a
-        return of 100%: a coefficient of 90 on the benchmark means the log-odds of an up
+        return of 100%: a Logit coefficient of 90 on the benchmark means the log-odds of an up
         period rise by about 0.9 for every 1% the benchmark moves. With returns of the same
         period as regressors the model describes co-movement and predicts nothing; a
         forecast needs regressors known in advance, such as the returns of the previous
         period.
 
-        For more information about the method, see the following paper:
+        For more information about the methods, see the following papers:
 
         - Berkson, J. (1944). "Application of the Logistic Function to Bio-Assay." Journal of
         the American Statistical Association, 39(227), 357-365.
+        - Bliss, C.I. (1934). "The Method of Probits." Science, 79(2037), 38-39.
 
-        Also known as: logit model, logit regression.
+        Also known as: logistic regression, logit model, logit regression, probit regression,
+        probit model, binary response model.
 
         Args:
             dependent_ticker (str | None, optional): The dependent asset (whose
@@ -530,6 +565,8 @@ class RegressionEconometrics:
             column (str, optional): The historical data column to derive returns from. Defaults to
             "Return".
             add_constant (bool, optional): Whether to include an intercept. Defaults to True.
+            method (str, optional): The link function. Options are: "logit" (Logistic
+            Regression), "probit" (Probit Regression). Defaults to "logit".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to
             None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -538,13 +575,14 @@ class RegressionEconometrics:
                 exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
-            pd.DataFrame: A coefficient table (Coefficient, Std. Error, z-Statistic, P-Value),
+            pd.DataFrame: A coefficient table (Coefficient, Standard Error, z-Statistic, P-Value),
             indexed by regressor name.
 
         Notes:
         - The dependent variable is derived as `1` if the dependent ticker's return in the given
         period is positive, `0` otherwise -- this method predicts the *direction*, not the
         magnitude, of the dependent asset's return.
+        - Requires statsmodels (`pip install financetoolkit[econometrics]`).
 
         As an example:
 
@@ -559,16 +597,18 @@ class RegressionEconometrics:
         )
 
         # AAPL (the first ticker) is dependent; the Benchmark is independent
-        toolkit.econometrics.get_logistic_regression(include_benchmark=True)
+        toolkit.econometrics.get_binary_choice_regression(include_benchmark=True)
         ```
 
         Which returns:
 
-        |           |   Coefficient |   Std. Error |   z-Statistic |   P-Value |
-        |:----------|--------------:|-------------:|--------------:|----------:|
-        | Intercept |       -0.0275 |       0.15   |       -0.1836 |    0.8543 |
-        | Benchmark |      164.846  |      25.4127 |        6.4868 |    0      |
+        |           |   Coefficient |   Standard Error |   z-Statistic |   P-Value |
+        |:----------|--------------:|-----------------:|--------------:|----------:|
+        | Intercept |       -0.0273 |           0.15   |       -0.1819 |    0.8556 |
+        | Benchmark |      164.812  |          25.4105 |        6.486  |    0      |
         """
+        check_option("method", method, ("logit", "probit"))
+
         period = period if period else "daily"
         dependent_ticker, independent_tickers = self._resolve_dependent_independent(
             dependent_ticker=dependent_ticker,
@@ -581,123 +621,12 @@ class RegressionEconometrics:
 
         direction = (returns[dependent_ticker] > 0).astype(float)
 
-        result = regression_model.get_logistic_regression(
-            direction, returns[independent_tickers], add_constant=add_constant
+        model = (
+            regression_model.get_probit_regression
+            if method == "probit"
+            else regression_model.get_logistic_regression
         )
-
-        return apply_rounding(
-            regression_model.binary_regression_summary_table(result),
-            rounding if rounding is not None else self._rounding,
-        )
-
-    @handle_errors
-    def get_probit_regression(
-        self,
-        dependent_ticker: str | None = None,
-        independent_tickers: str | list[str] | None = None,
-        include_benchmark: bool = False,
-        period: str | None = None,
-        column: str = "Return",
-        add_constant: bool = True,
-        rounding: int | None = None,
-        show_columns: str | list[str] | None = None,
-    ) -> pd.DataFrame:
-        """
-        Fit a Probit Regression of whether `dependent_ticker`'s return is positive on
-        `independent_tickers`.
-
-        As with `get_logistic_regression`, the dependent variable is turned into a binary
-        outcome (1 when the return is positive, 0 otherwise). The probability of that outcome
-        is modelled through the standard normal cumulative distribution function instead of
-        the logistic function.
-
-        The formula is as follows:
-
-        - yₜ = 1 if the dependent ticker's `column` (Return by default) is above 0, else 0
-        - P(yₜ = 1 | xₜ) = Φ(xₜ'β), with xₜ the independent tickers' `column` plus a constant
-        - β̂ = argmax Σ[yₜ·ln(pₜ) + (1 - yₜ)·ln(1 - pₜ)], solved by Newton-Raphson (statsmodels Probit)
-        - Pseudo R² = 1 - ln L(β̂) / ln L₀ (McFadden), with L₀ the likelihood of a constant-only model
-
-        Where `Phi` is the standard normal CDF. The model is fitted by Maximum Likelihood. A
-        positive coefficient means a higher probability of a positive return, but the size of
-        a coefficient is not a log-odds ratio as in the Logit model. In practice Probit and
-        Logit give very similar fitted probabilities; Probit is the convention in parts of the
-        econometrics literature and underlies two-step estimators such as the Heckman
-        selection correction.
-
-        For more information about the method, see the following paper:
-
-        - Bliss, C.I. (1934). "The Method of Probits." Science, 79(2037), 38-39.
-
-        Also known as: probit model.
-
-        Args:
-            dependent_ticker (str | None, optional): The dependent asset (whose
-            up/down direction is predicted). Defaults to None, meaning the Toolkit
-            instance's first ticker.
-            independent_tickers (str | list[str] | None, optional): The independent
-            (predictor) asset(s). Defaults to None, meaning every other ticker in
-            the Toolkit instance besides `dependent_ticker`.
-            include_benchmark (bool, optional): Whether to include "Benchmark" in the
-            default independent ticker(s) (has no effect when independent_tickers is given
-            explicitly). Defaults to False.
-            period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly). Defaults to
-                "daily".
-            column (str, optional): The historical data column to derive returns from. Defaults to
-            "Return".
-            add_constant (bool, optional): Whether to include an intercept. Defaults to True.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to
-            None.
-            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
-                on every column level, or the rows when no column has those names (such as the line
-                items of a financial statement). Names that do not exist are logged, and when none
-                exist the result is returned in full. Defaults to None, which keeps every column.
-
-        Returns:
-            pd.DataFrame: A coefficient table (Coefficient, Std. Error, z-Statistic, P-Value),
-            indexed by regressor name.
-
-        Notes:
-        - The dependent variable is derived as `1` if the dependent ticker's return in the given
-        period is positive, `0` otherwise -- this method predicts the *direction*, not the
-        magnitude, of the dependent asset's return.
-
-        As an example:
-
-        ```python
-        from financetoolkit import Toolkit
-
-        toolkit = Toolkit(
-            ["TSLA", "QQQ"],
-            api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2025-01-01",
-            end_date="2025-12-31",
-        )
-
-        # TSLA (the first ticker) is dependent; QQQ is independent
-        toolkit.econometrics.get_probit_regression()
-        ```
-
-        Which returns:
-
-        |           |   Coefficient |   Std. Error |   z-Statistic |   P-Value |
-        |:----------|--------------:|-------------:|--------------:|----------:|
-        | Intercept |       -0.0848 |       0.0913 |       -0.9294 |    0.3527 |
-        | QQQ       |       78.1324 |      11.1444 |        7.0109 |    0      |
-        """
-        period = period if period else "daily"
-        dependent_ticker, independent_tickers = self._resolve_dependent_independent(
-            dependent_ticker=dependent_ticker,
-            independent_tickers=independent_tickers,
-            include_benchmark=include_benchmark,
-        )
-        returns = self._get_series_column(
-            period, column, [dependent_ticker, *independent_tickers]
-        )
-
-        direction = (returns[dependent_ticker] > 0).astype(float)
-
-        result = regression_model.get_probit_regression(
+        result = model(
             direction, returns[independent_tickers], add_constant=add_constant
         )
 
@@ -721,8 +650,8 @@ class RegressionEconometrics:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Fit a Quantile Regression of `dependent_ticker` on `independent_tickers` at quantile
-        `tau`.
+        Fit a Quantile Regression: how a quantile of the dependent ticker, such as its worst 5% of
+        returns, depends on the independent tickers.
 
         Where OLS estimates how the average (conditional mean) of the dependent ticker depends
         on the independent tickers, Quantile Regression estimates how a chosen quantile of it
@@ -734,18 +663,18 @@ class RegressionEconometrics:
         - β̂(τ) = argmin Σ(τ·max(uₜ, 0) + (1 - τ)·max(-uₜ, 0)), with uₜ = yₜ - xₜ'β and τ = `tau` (0.5
           by default)
         - y is the dependent ticker's `column` (Return by default) and X the independent tickers'
-          `column` plus a constant (add_constant=True)
+          `column` plus a constant (when a constant is added)
         - SE(β̂): statsmodels' kernel sandwich estimator (Epanechnikov kernel, Hall-Sheather bandwidth),
-          or, when `n_bootstrap` > 0, the standard deviation (ddof=1) of β̂ over `n_bootstrap`
+          or, with bootstrap replicates, the standard deviation (ddof=1) of β̂ over the B
           resampled-pairs fits
 
-        With `tau = 0.5` this is the median regression, which is far less sensitive to
+        At the median (a quantile of 0.5) this is the median regression, which is far less sensitive to
         outliers than OLS. Fitting at several quantiles (e.g. 0.05, 0.5 and 0.95) shows how
         the whole distribution of returns responds to the independent tickers, for example
         whether an asset's sensitivity to the market is larger in sell-offs (low quantiles)
         than in normal periods, which is directly relevant for downside risk.
 
-        Comparing the coefficients at a low `tau` with those at `tau=0.5`, or with the
+        Comparing the coefficients at a low quantile with those at the median, or with the
         betas from `get_ols`, shows whether the sensitivity to the market rises in
         sell-offs. The table has no p-values: a coefficient more than about two standard
         errors from zero is significant at the 5% level.
@@ -782,7 +711,10 @@ class RegressionEconometrics:
                 exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
-            pd.DataFrame: A coefficient table (Coefficient, Std. Error), indexed by regressor name.
+            pd.DataFrame: A coefficient table (Coefficient, Standard Error), indexed by regressor name.
+
+        Notes:
+        - Requires statsmodels (`pip install financetoolkit[econometrics]`).
 
         As an example:
 
@@ -803,11 +735,11 @@ class RegressionEconometrics:
 
         Which returns:
 
-        |           |   Coefficient |   Std. Error |
-        |:----------|--------------:|-------------:|
-        | Intercept |       -0.0146 |       0.0006 |
-        | KRE       |        0.5271 |       0.0484 |
-        | Benchmark |        0.3965 |       0.1133 |
+        |           |   Coefficient |   Standard Error |
+        |:----------|--------------:|-----------------:|
+        | Intercept |       -0.0146 |           0.0006 |
+        | KRE       |        0.5291 |           0.0485 |
+        | Benchmark |        0.3949 |           0.1133 |
         """
         period = period if period else "daily"
         dependent_ticker, independent_tickers = self._resolve_dependent_independent(
@@ -844,10 +776,11 @@ class RegressionEconometrics:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Fit a Fama-MacBeth (1973) two-pass cross-sectional regression: `asset_tickers` is
-        treated as the cross-section of test assets, `factor_tickers` as the risk factor(s)
-        whose risk premia are estimated -- the standard procedure for testing whether a
-        proposed risk factor is actually priced.
+        Fit a Fama-MacBeth (1973) two-pass cross-sectional regression: the risk premium of every
+        factor ticker, and whether it is priced across the asset tickers.
+
+        The asset tickers are the cross-section of test assets and the factor tickers the risk
+        factors whose risk premia are estimated.
 
         The method runs in two passes:
 
@@ -860,7 +793,7 @@ class RegressionEconometrics:
 
         - First pass: R_i,t = alpha_i + beta_i' * F_t + e_i,t, for each asset i, over the full sample
         - Second pass: R_i,t = gamma_0,t + gamma_t' * beta_i + u_i,t, for each period t (gamma_0,t only
-          with add_constant=True)
+          when a constant is added)
         - Risk premium: gamma_hat = mean_t(gamma_t)
         - Standard error: SE(gamma_hat) = std_t(gamma_t) / sqrt(T), with ddof=1
         - t = gamma_hat / SE(gamma_hat), with p-values from a Student-t distribution with T - 1 degrees
@@ -910,13 +843,13 @@ class RegressionEconometrics:
                 exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
-            pd.DataFrame: A coefficient table (Risk Premium, Std. Error, t-Statistic,
+            pd.DataFrame: A coefficient table (Risk Premium, Standard Error, t-Statistic,
             P-Value), indexed by factor name (plus "Intercept" if present).
 
         Notes:
         - The cross-sectional second pass needs strictly more assets than factors
-        (plus an intercept, if `add_constant=True`) to be identified -- with only a
-        couple of Toolkit tickers loaded, either pass `add_constant=False` or (better)
+        (plus an intercept, when a constant is added) to be identified -- with only a
+        couple of Toolkit tickers loaded, either leave out the constant or (better)
         construct the Toolkit with many tickers, since Fama-MacBeth is fundamentally a
         many-asset cross-sectional technique (dozens of assets is typical in practice),
         not a limitation of this method's implementation.
@@ -940,10 +873,10 @@ class RegressionEconometrics:
 
         Which returns:
 
-        |           |   Risk Premium |   Std. Error |   t-Statistic |   P-Value |
-        |:----------|---------------:|-------------:|--------------:|----------:|
-        | Intercept |         0.0066 |       0.0058 |        1.1505 |    0.2547 |
-        | Benchmark |         0.0101 |       0.008  |        1.2668 |    0.2103 |
+        |           |   Risk Premium |   Standard Error |   t-Statistic |   P-Value |
+        |:----------|---------------:|-----------------:|--------------:|----------:|
+        | Intercept |         0.0066 |           0.0058 |        1.1514 |    0.2543 |
+        | Benchmark |         0.0101 |           0.008  |        1.2661 |    0.2105 |
         """
         period = period if period else "daily"
         factor_tickers = (
@@ -1040,19 +973,31 @@ class RegressionEconometrics:
             `independent_column` are given, the period is invalid, or no dependent
             (entity) tickers remain.
         """
-        if (independent_tickers is None) == (independent_column is None):
-            raise ValueError(
+        if independent_tickers is not None and independent_column is not None:
+            raise InvalidArgumentError(
                 "Provide exactly one of independent_tickers (a common factor "
                 "broadcast to every entity) or independent_column (a per-entity "
                 "regressor taken from each dependent ticker's own data)."
             )
+        if independent_tickers is None and independent_column is None:
+            raise InvalidArgumentError(
+                "Random Effects and the Hausman test need a regressor that differs between the "
+                "tickers, so they have no default: a common factor such as the Benchmark is the "
+                "same for every ticker and leaves the between-ticker regression without a slope. "
+                "Please pass independent_column (each ticker's own column, such as 'Volume') or "
+                "independent_tickers."
+            )
 
         period = period if period else "daily"
 
-        if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
-            raise ValueError(
-                "Period must be daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(period, ["daily", "weekly", "monthly", "quarterly", "yearly"])
+
+        columns = list(
+            self._historical_data[period].columns.get_level_values(0).unique()
+        )
+        check_option("column", column, columns)
+        if independent_column is not None:
+            check_option("independent_column", independent_column, columns)
 
         # The raw slice: panel methods need each entity's own NaN pattern on the full date index.
         prices = self._historical_data[period][column].loc[
@@ -1147,9 +1092,8 @@ class RegressionEconometrics:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Fit a Fixed Effects ("within") estimator explaining a panel of
-        `dependent_tickers` (the entities) by a regressor `x`, controlling for
-        entity-specific (and/or time-specific) fixed effects.
+        Fit a Fixed Effects ("within") estimator: how a panel of dependent tickers moves with a
+        regressor within every ticker, after removing what is specific to each ticker or date.
 
         Also known as: within estimator, FE, least squares dummy variable (LSDV)
         estimator.
@@ -1165,8 +1109,8 @@ class RegressionEconometrics:
         to every entity at each date (e.g. a market benchmark, mirroring a
         Fama-French-style factor regression).
         - `independent_column`: a PER-ENTITY regressor -- each entity's own value
-        of a *different* historical data column (e.g. does `"Volume"` explain
-        `"Return"`, across the panel).
+        of a *different* historical data column (e.g. does the volume explain the
+        return, across the panel).
 
         Fixed Effects removes any purely entity-specific, time-invariant
         characteristic (e.g. a stock's typical risk premium) before estimating the
@@ -1176,8 +1120,8 @@ class RegressionEconometrics:
 
         The formula is as follows:
 
-        - ỹᵢₜ = yᵢₜ - mean_t(yᵢₜ) and x̃ᵢₜ = xᵢₜ - mean_t(xᵢₜ) (entity_effects=True, the default);
-          time_effects=True also removes each date's mean (two-way fixed effects)
+        - ỹᵢₜ = yᵢₜ - mean_t(yᵢₜ) and x̃ᵢₜ = xᵢₜ - mean_t(xᵢₜ) (entity effects, the default); time
+          effects also remove each date's mean (two-way fixed effects)
         - β̂_FE = (X̃'X̃)⁻¹X̃'ỹ, without a separate constant (linearmodels PanelOLS, unadjusted covariance)
         - Entity Effect: αᵢ = mean_t(yᵢₜ - xᵢₜ'β̂_FE); Time Effect: λₜ = mean_i(yᵢₜ - xᵢₜ'β̂_FE)
         - yᵢₜ is each dependent ticker's `column` (Return by default)
@@ -1185,10 +1129,11 @@ class RegressionEconometrics:
         Args:
             independent_tickers (str | list[str] | None, optional): The factor
             ticker(s), whose `column` values are broadcast identically to every
-            entity at each date. Mutually exclusive with `independent_column`.
+            entity at each date. Mutually exclusive with `independent_column`. Defaults to None,
+            which uses the Benchmark unless `independent_column` is given.
             independent_column (str | None, optional): A different historical data
             column, taken per-entity from each of `dependent_tickers`' own data, to
-            use as the regressor. Mutually exclusive with `independent_tickers`.
+            use as the regressor. Mutually exclusive with `independent_tickers`. Defaults to None.
             dependent_tickers (str | list[str] | None, optional): The panel of
             entity tickers to explain. Defaults to None, meaning every ticker in
             the `Toolkit` instance (other than `independent_tickers`, if given).
@@ -1210,18 +1155,21 @@ class RegressionEconometrics:
                 exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
-            pd.DataFrame: A coefficient table (Coefficient, Std. Error,
+            pd.DataFrame: A coefficient table (Coefficient, Standard Error,
             t-Statistic, P-Value) for the regressor(s), indexed by name, with the
             recovered entity (and/or time) fixed-effect intercepts appended as
             additional rows (only the Coefficient column is populated for those).
 
         Raises:
-            ValueError: If both or neither of `independent_tickers`/
-            `independent_column` are given, or (see `panel_data_model.
+            ValueError: If both `independent_tickers` and `independent_column` are
+            given, or (see `panel_data_model.
             get_fixed_effects`) if there are not enough observations for the
             requested fixed effects, or the fixed effects absorb the regressor: the
             common factor of `independent_tickers` is identical for every entity at
             each date, so it cannot be combined with `time_effects=True`.
+
+        Notes:
+        - Requires linearmodels (`pip install financetoolkit[econometrics]`).
 
         As an example:
 
@@ -1240,15 +1188,19 @@ class RegressionEconometrics:
 
         Which returns:
 
-        |                     |   Coefficient |   Std. Error |   t-Statistic |   P-Value |
-        |:--------------------|--------------:|-------------:|--------------:|----------:|
-        | Benchmark           |        0.5795 |       0.0183 |       31.7272 |         0 |
-        | Entity Effect: BP   |        0.0004 |     nan      |      nan      |       nan |
-        | Entity Effect: CVX  |        0.0004 |     nan      |      nan      |       nan |
-        | Entity Effect: SHEL |        0.0005 |     nan      |      nan      |       nan |
-        | Entity Effect: TTE  |        0.0004 |     nan      |      nan      |       nan |
-        | Entity Effect: XOM  |        0.0008 |     nan      |      nan      |       nan |
+        |                     |   Coefficient |   Standard Error |   t-Statistic |   P-Value |
+        |:--------------------|--------------:|-----------------:|--------------:|----------:|
+        | Benchmark           |        0.5798 |           0.0183 |       31.6869 |         0 |
+        | Entity Effect: BP   |        0.0004 |         nan      |      nan      |       nan |
+        | Entity Effect: CVX  |        0.0004 |         nan      |      nan      |       nan |
+        | Entity Effect: SHEL |        0.0005 |         nan      |      nan      |       nan |
+        | Entity Effect: TTE  |        0.0004 |         nan      |      nan      |       nan |
+        | Entity Effect: XOM  |        0.0008 |         nan      |      nan      |       nan |
         """
+        # The market factor, as in the other regressions, unless a regressor is given.
+        if independent_tickers is None and independent_column is None:
+            independent_tickers = [BENCHMARK_TICKER]
+
         y_panel, x_panel, dependent_tickers = self._get_panel_data(
             independent_tickers,
             independent_column,
@@ -1292,9 +1244,9 @@ class RegressionEconometrics:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Fit a Random Effects estimator explaining a panel of `dependent_tickers`
-        (the entities) by a regressor `x`, via Swamy-Arora feasible Generalized
-        Least Squares.
+        Fit a Random Effects estimator: how a panel of dependent tickers moves with a regressor
+        when every ticker's own effect is random and unrelated to it, by Swamy-Arora feasible
+        Generalized Least Squares.
 
         Also known as: RE, GLS panel estimator, Swamy-Arora estimator.
 
@@ -1318,7 +1270,7 @@ class RegressionEconometrics:
         Args:
             independent_tickers (str | list[str] | None, optional): The factor
                 ticker(s), whose `column` values are broadcast identically to every
-                entity at each date. Mutually exclusive with `independent_column`.
+                entity at each date. Mutually exclusive with `independent_column`, one of the two is required. Defaults to None.
                 Since this `Toolkit` instance's historical data is aligned onto a
                 common calendar across tickers, a broadcast factor's entity mean is
                 identical for every entity, leaving no between-entity variation to
@@ -1327,7 +1279,7 @@ class RegressionEconometrics:
                 in their date coverage (e.g. different listing histories).
             independent_column (str | None, optional): A different historical data
                 column, taken per-entity from each of `dependent_tickers`' own data, to
-                use as the regressor. Mutually exclusive with `independent_tickers`.
+                use as the regressor. Mutually exclusive with `independent_tickers`, one of the two is required. Defaults to None.
             dependent_tickers (str | list[str] | None, optional): The panel of
                 entity tickers to explain. Defaults to None, meaning every ticker in
                 the `Toolkit` instance (other than `independent_tickers`, if given).
@@ -1345,7 +1297,7 @@ class RegressionEconometrics:
                 exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
-            pd.DataFrame: A coefficient table (Coefficient, Std. Error,
+            pd.DataFrame: A coefficient table (Coefficient, Standard Error,
             t-Statistic, P-Value), indexed by regressor name plus "Intercept".
 
         Raises:
@@ -1353,6 +1305,9 @@ class RegressionEconometrics:
             `independent_column` are given, or (see `panel_data_model.
             get_random_effects`) if there are not enough entities or observations
             to estimate the model.
+
+        Notes:
+        - Requires linearmodels (`pip install financetoolkit[econometrics]`).
 
         As an example:
 
@@ -1371,10 +1326,10 @@ class RegressionEconometrics:
 
         Which returns:
 
-        |           |   Coefficient |   Std. Error |   t-Statistic |   P-Value |
-        |:----------|--------------:|-------------:|--------------:|----------:|
-        | Intercept |        0.0003 |       0.0002 |        1.7192 |    0.0856 |
-        | Benchmark |        0.9788 |       0.0183 |       53.4931 |    0      |
+        |           |   Coefficient |   Standard Error |   t-Statistic |   P-Value |
+        |:----------|--------------:|-----------------:|--------------:|----------:|
+        | Intercept |        0.0003 |           0.0002 |        1.7193 |    0.0856 |
+        | Benchmark |        0.9788 |           0.0183 |       53.4928 |    0      |
         """
         y_panel, x_panel, dependent_tickers = self._get_panel_data(
             independent_tickers,
@@ -1401,13 +1356,14 @@ class RegressionEconometrics:
         period: str | None = None,
         column: str = "Return",
         include_benchmark: bool = False,
+        variance: str = "separate",
         rounding: int | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.Series:
         """
-        Calculate the Hausman specification test comparing a Fixed Effects and a
-        Random Effects fit of `dependent_tickers` (the panel of entities) on a
-        regressor `x`.
+        Calculate the Hausman specification test: whether the Fixed Effects and Random Effects
+        fits of a panel of dependent tickers differ by more than chance, so that Random Effects is
+        inconsistent.
 
         Also known as: Hausman specification test, fixed versus random effects test.
 
@@ -1423,18 +1379,24 @@ class RegressionEconometrics:
         The formula is as follows:
 
         - H = (β̂_FE - β̂_RE)'·[Var(β̂_FE) - Var(β̂_RE)]⁻¹·(β̂_FE - β̂_RE), over the k slope coefficients
-          the two models share (a pseudo-inverse when the difference is singular, and H floored at 0)
+          the two models share (a pseudo-inverse when the difference is singular)
+        - With the efficient variance Var(β̂_FE) is scaled by s²_RE / s²_FE, with the consistent
+          variance Var(β̂_RE) by s²_FE / s²_RE, so both rest on one disturbance variance (Stata's sigmamore and
+          sigmaless)
         - H is chi-squared with k degrees of freedom; Random Effects is rejected when the p-value is
           below 0.05
+        - A negative H means that Var(β̂_FE) - Var(β̂_RE) is not positive definite in the sample: the
+          P-Value and the preference are then NaN, and the efficient or consistent variance gives a
+          statistic
         - β̂_FE comes from `get_fixed_effects` with entity effects only and β̂_RE from `get_random_effects`
 
         Args:
             independent_tickers (str | list[str] | None, optional): The factor
             ticker(s), whose `column` values are broadcast identically to every
-            entity at each date. Mutually exclusive with `independent_column`.
+            entity at each date. Mutually exclusive with `independent_column`, one of the two is required. Defaults to None.
             independent_column (str | None, optional): A different historical data
             column, taken per-entity from each of `dependent_tickers`' own data, to
-            use as the regressor. Mutually exclusive with `independent_tickers`.
+            use as the regressor. Mutually exclusive with `independent_tickers`, one of the two is required. Defaults to None.
             dependent_tickers (str | list[str] | None, optional): The panel of
             entity tickers to explain. Defaults to None, meaning every ticker in
             the `Toolkit` instance (other than `independent_tickers`, if given).
@@ -1444,6 +1406,10 @@ class RegressionEconometrics:
             column. Defaults to "Return".
             include_benchmark (bool, optional): Whether to include "Benchmark" among the
             entities. Defaults to False.
+            variance (str, optional): The variances compared. Options are: "separate" (each
+            model's own), "efficient" (both based on the residual variance of Random Effects),
+            "consistent" (both based on the residual variance of Fixed Effects). Defaults to
+            "separate".
             rounding (int | None, optional): The number of decimals to round the
             results to. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -1454,7 +1420,7 @@ class RegressionEconometrics:
         Returns:
             pd.Series: The Hausman statistic, its degrees of freedom, its p-value,
             and whether Fixed Effects is preferred over Random Effects at the 5%
-            level.
+            level (NaN with the P-Value when the statistic is negative).
 
         Raises:
             ValueError: If both or neither of `independent_tickers`/
@@ -1462,6 +1428,9 @@ class RegressionEconometrics:
             get_hausman_test`) if there are not enough observations or entities to
             fit either model, or the two estimators share no common regressors to
             compare.
+
+        Notes:
+        - Requires linearmodels (`pip install financetoolkit[econometrics]`).
 
         As an example:
 
@@ -1496,7 +1465,7 @@ class RegressionEconometrics:
             include_benchmark=include_benchmark,
         )
 
-        result = panel_data_model.get_hausman_test(y_panel, x_panel)
+        result = panel_data_model.get_hausman_test(y_panel, x_panel, variance=variance)
 
         return apply_rounding(
             result, rounding if rounding is not None else self._rounding

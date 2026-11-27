@@ -403,14 +403,14 @@ def _format_oecd_period(date: str, period_code: str, buffer_periods: int = 0) ->
 
 def name_euro_area(data: pd.DataFrame) -> pd.DataFrame:
     """
-    Names the euro area column of an OECD dataset "Euro Area", as every other source
-    does. Most OECD datasets (financial market statistics, consumer prices, share
-    prices, exchange rates, confidence indicators) publish the euro area in its current
-    composition under the code EA20, which CODE_TO_COUNTRY keeps apart from the fixed
-    compositions of other datasets. Those fixed compositions keep their own names
-    ("Euro Area 17", "Euro Area 19"), so a dataset that publishes EA19 next to EA20
-    returns both, with the current composition as "Euro Area". A dataset that already
-    publishes a column named "Euro Area" (the code EA) keeps it and leaves EA20 as is.
+    Names the euro area column of an OECD dataset "Euro Area", as every other source does.
+
+    Most OECD datasets (financial market statistics, consumer prices, share prices, exchange rates, confidence
+    indicators) publish the euro area in its current composition under the code EA20, which CODE_TO_COUNTRY keeps
+    apart from the fixed compositions of other datasets. Those fixed compositions keep their own names ("Euro Area
+    17", "Euro Area 19"), so a dataset that publishes EA19 next to EA20 returns both, with the current composition as
+    "Euro Area". A dataset that already publishes a column named "Euro Area" (the code EA) keeps it and leaves EA20 as
+    is.
 
     Args:
         data (pd.DataFrame): The data, a column per country.
@@ -431,8 +431,7 @@ def collect_oecd_data(
     end_date: str | None = None,
 ) -> pd.DataFrame:
     """
-    Collect the data from the OECD API and return it as a DataFrame. This is
-    a helper function for the other functions in this module.
+    Collect the data of an OECD dataset from the OECD API as a DataFrame, for the other functions of this module.
 
     Args:
         oecd_data_string (str): The string that is appended to the base URL to
@@ -537,7 +536,24 @@ def collect_oecd_data(
                 "Please wait a moment before retrying."
             )
             return pd.DataFrame()
-        raise
+
+        # A server error (5xx) or a refusal (403) says nothing about the query either, so the
+        # cached copy is served as on a connection failure, or nothing.
+        if cached_data is not None and not cached_data.empty:
+            logger.warning(
+                "OECD API returned HTTP %s for '%s' -- serving the most recently cached "
+                "response for this query instead; this may not be the most up-to-date data.",
+                status_code,
+                oecd_data_string,
+            )
+            return cached_data
+
+        logger.error(
+            "OECD API returned HTTP %s for '%s'. No data is returned for this indicator.",
+            status_code,
+            oecd_data_string,
+        )
+        return pd.DataFrame()
     except requests.exceptions.RequestException as error:
         # A connection failure, timeout or DNS error. The cache fallback applies for the same reason it does on a rate limit: the query is fine, the network is not.  # noqa: E501
         if cached_data is not None and not cached_data.empty:
@@ -559,6 +575,9 @@ def collect_oecd_data(
 
     try:
         oecd_data = pd.read_csv(StringIO(response.text))
+    except pd.errors.EmptyDataError:
+        # An empty body is an empty response, reported below, rather than unreadable CSV.
+        oecd_data = pd.DataFrame()
     except pd.errors.ParserError as error:
         raise ValueError(
             f"The OECD response for the query '{oecd_data_string}' is not readable as "
@@ -633,9 +652,8 @@ def get_annual_gross_domestic_product(
     start_date: str | None = None, end_date: str | None = None
 ) -> pd.DataFrame:
     """
-    Get the Gross Domestic Product for a variety of countries over
-    time from the OECD. The Gross Domestic Product is the total value
-    of goods produced and services provided in a country during one year.
+    Get the Gross Domestic Product (GDP) of a variety of countries from the OECD: the total value of the goods and
+    services an economy produces in a year.
 
     The data is displayed as per capita which is the GDP divided by the
     population of the country, expressed in US dollars per person at current
@@ -667,11 +685,10 @@ def get_consumer_confidence_index(
     start_date: str | None = None, end_date: str | None = None
 ):
     """
-    Get the Consumer Confidence Index for a variety of countries over
-    time from the OECD. The Consumer Confidence Index is an indicator
-    that measures the degree of optimism that consumers feel about
-    the overall state of the economy and their personal financial
-    situation. Data is defined in months.
+    Get the Consumer Confidence Index of a variety of countries from the OECD: how optimistic consumers are about the
+    economy and their own finances.
+
+    Data is defined in months.
 
     The series returned is the OECD-harmonised, amplitude-adjusted index, which
     oscillates around a long-run average of 100: a value above 100 signals consumer
@@ -698,11 +715,10 @@ def get_business_confidence_index(
     start_date: str | None = None, end_date: str | None = None
 ):
     """
-    Get the Business Confidence Index for a variety of countries over
-    time from the OECD. The Business Confidence Index is an indicator
-    that measures the degree of optimism that businesses feel about
-    the overall state of the economy and their personal financial
-    situation. Data is defined in months.
+    Get the Business Confidence Index of a variety of countries from the OECD: how optimistic businesses are about the
+    economy.
+
+    Data is defined in months.
 
     The series returned is the OECD-harmonised, amplitude-adjusted index, which
     oscillates around a long-run average of 100: a value above 100 signals business
@@ -729,9 +745,9 @@ def get_composite_leading_indicator(
     start_date: str | None = None, end_date: str | None = None
 ):
     """
-    Get the Composite Leading Indicator for a variety of countries over
-    time from the OECD. The Composite Leading Indicator is an indicator
-    that tries to determine the turning points in business cycles.
+    Get the Composite Leading Indicator of a variety of countries from the OECD: early signals of turning points in
+    the business cycle.
+
     Data is defined in months.
 
     The series returned is the OECD-harmonised, amplitude-adjusted index, which
@@ -762,12 +778,13 @@ def get_house_prices(
     end_date: str | None = None,
 ):
     """
-    Residential Property Prices Indices (RPPIs), also named House price indices (HPIs),
-    are index numbers that measure the prices of residential properties over time. RPPIs
-    are key statistics not only for citizens and households across the world, but also
-    for economic and monetary policy makers. They can help, for example, to monitor
-    potential macroeconomic imbalances and the risk exposure of the household
-    and financial sectors.
+    Get the house price index of a variety of countries from the OECD: how the prices of residential property move
+    over time.
+
+    Residential Property Prices Indices (RPPIs), also named House price indices (HPIs), are index numbers that measure
+    the prices of residential properties over time. RPPIs are key statistics not only for citizens and households
+    across the world, but also for economic and monetary policy makers. They can help, for example, to monitor
+    potential macroeconomic imbalances and the risk exposure of the household and financial sectors.
 
     The series returned is seasonally adjusted and expressed as an index with
     2015 = 100 for every country.
@@ -803,9 +820,11 @@ def get_rent_prices(
     end_date: str | None = None,
 ):
     """
-    Covers the Rent Prices as an index number that measures the prices of residential
-    properties over time. Rent Prices are key statistics not only for citizens and
-    households across the world, but also for economic and monetary policy makers.
+    Get the rent price index of a variety of countries from the OECD: how the prices paid for renting residential
+    property move over time.
+
+    Rent Prices are key statistics not only for citizens and households across the world, but also for economic and
+    monetary policy makers.
 
     The series returned is seasonally adjusted and expressed as an index with
     2015 = 100 for every country.
@@ -832,13 +851,14 @@ def get_unemployment_rate(
     period: str, start_date: str | None = None, end_date: str | None = None
 ):
     """
-    Get the unemployment rate for a variety of countries over time from the OECD.
-    The unemployment rate is the share of the total labour force aged 15 and over
-    that is unemployed. The series is calendar and seasonally adjusted, and covers
-    both sexes.
+    Get the unemployment rate of a variety of countries from the OECD: the share of the labour force aged 15 and over
+    that is unemployed.
+
+    The series is calendar and seasonally adjusted, and covers both sexes.
 
     Args:
-        period (str): The period of the data. Can be 'monthly', 'quarterly' or 'yearly'.
+        period (str): The period of the data. Options are: "monthly" (monthly data), "quarterly" (quarterly data),
+            "yearly" (yearly data).
         start_date (str | None): Restrict the query to this start date (YYYY-MM-DD).
         end_date (str | None): Restrict the query to this end date (YYYY-MM-DD).
 
@@ -876,14 +896,15 @@ def get_long_term_interest_rate(
     period: str, start_date: str | None = None, end_date: str | None = None
 ):
     """
-    Get the long term interest rate for a variety of countries over time from the OECD.
-    The long term interest rate is defined as the yield on government bonds with a
-    residual maturity of about 10 years, measured on the national definition, and
-    quoted as a percent per annum. The euro area, in its current composition, is
-    returned as "Euro Area".
+    Get the long-term interest rate of a variety of countries from the OECD: the yield on 10-year government bonds.
+
+    The long term interest rate is defined as the yield on government bonds with a residual maturity of about 10
+    years, measured on the national definition, and quoted as a percent per annum. The euro area, in its current
+    composition, is returned as "Euro Area".
 
     Args:
-        period (str): The period of the data. Can be 'monthly', 'quarterly' or 'yearly'.
+        period (str): The period of the data. Options are: "monthly" (monthly data), "quarterly" (quarterly data),
+            "yearly" (yearly data).
         start_date (str | None): Restrict the query to this start date (YYYY-MM-DD).
         end_date (str | None): Restrict the query to this end date (YYYY-MM-DD).
 
@@ -919,15 +940,16 @@ def get_short_term_interest_rate(
     period: str, start_date: str | None = None, end_date: str | None = None
 ):
     """
-    Get the short term interest rate for a variety of countries over time from the OECD.
-    The short term interest rate returned here is the 3-month interbank offered rate
-    (the rate at which banks lend to one another for three months, e.g. EURIBOR for the
-    euro area), on the national definition and quoted as a percent per annum. It is not
-    a government bill yield, and for most countries it tracks the central bank's policy
-    rate closely. The euro area, in its current composition, is returned as "Euro Area".
+    Get the short-term interest rate of a variety of countries from the OECD: the 3-month interbank rate.
+
+    The short term interest rate returned here is the 3-month interbank offered rate (the rate at which banks lend to
+    one another for three months, e.g. EURIBOR for the euro area), on the national definition and quoted as a percent
+    per annum. It is not a government bill yield, and for most countries it tracks the central bank's policy rate
+    closely. The euro area, in its current composition, is returned as "Euro Area".
 
     Args:
-        period (str): The period of the data. Can be 'monthly', 'quarterly' or 'yearly'.
+        period (str): The period of the data. Options are: "monthly" (monthly data), "quarterly" (quarterly data),
+            "yearly" (yearly data).
         start_date (str | None): Restrict the query to this start date (YYYY-MM-DD).
         end_date (str | None): Restrict the query to this end date (YYYY-MM-DD).
 
@@ -965,11 +987,12 @@ def get_gross_domestic_product_growth(
     end_date: str | None = None,
 ) -> pd.DataFrame:
     """
-    Get the quarterly growth of real gross domestic product (GDP) for a variety of
-    countries from the OECD's Quarterly National Accounts. The growth is measured in
-    chain-linked volumes and is seasonally and calendar adjusted. The quarter-on-quarter
-    growth is not annualized, so it is about a quarter of the annualized rate some
-    statistical offices, such as the U.S. Bureau of Economic Analysis, headline.
+    Get the quarterly growth of real gross domestic product (GDP) of a variety of countries from the OECD's Quarterly
+    National Accounts: how fast each economy grows.
+
+    The growth is measured in chain-linked volumes and is seasonally and calendar adjusted. The quarter-on-quarter
+    growth is not annualized, so it is about a quarter of the annualized rate some statistical offices, such as the
+    U.S. Bureau of Economic Analysis, headline.
 
     Args:
         year_over_year (bool): Whether to return the change on the same quarter a year
@@ -1000,9 +1023,8 @@ def get_consumer_price_index(
     period: str, start_date: str | None = None, end_date: str | None = None
 ):
     """
-    Get the Consumer Price Index (CPI) for a variety of countries over time from the OECD.
-    The CPI measures the average change over time in the prices paid by consumers for a
-    basket of goods and services, and is the standard measure of inflation.
+    Get the Consumer Price Index (CPI) of a variety of countries from the OECD: the average change in the prices
+    consumers pay, the standard measure of inflation.
 
     Unlike the Global Macro Database CPI, which is annual-only, this OECD source also
     supports monthly and quarterly frequency, useful for tracking inflation more closely
@@ -1012,7 +1034,8 @@ def get_consumer_price_index(
     all items and is not seasonally adjusted.
 
     Args:
-        period (str): The period of the data. Can be 'monthly', 'quarterly' or 'yearly'.
+        period (str): The period of the data. Options are: "monthly" (monthly data), "quarterly" (quarterly data),
+            "yearly" (yearly data).
         start_date (str | None): Restrict the query to this start date (YYYY-MM-DD).
         end_date (str | None): Restrict the query to this end date (YYYY-MM-DD).
 
@@ -1045,10 +1068,8 @@ def get_household_savings_rate(
     end_date: str | None = None,
 ):
     """
-    Get the Gross Household Savings Rate for a variety of countries over time from the
-    OECD's Household Dashboard. The household savings rate is the share of household
-    gross disposable income (adjusted for the net change in pension entitlements) that
-    is saved rather than spent on final consumption.
+    Get the gross household savings rate of a variety of countries from the OECD's Household Dashboard: the share of
+    disposable income households save rather than spend.
 
     It is a key input to consumption-smoothing and life-cycle/permanent-income theories
     of household behaviour, and a closely watched signal of both near-term consumption
@@ -1090,9 +1111,11 @@ def get_household_debt_to_income_ratio(
     end_date: str | None = None,
 ):
     """
-    Get the Household Debt to Disposable Income Ratio for a variety of countries over
-    time from the OECD's Household Dashboard. This expresses total household gross debt
-    (loans and debt securities) as a percentage of household gross disposable income.
+    Get the household debt to disposable income ratio of a variety of countries from the OECD's Household Dashboard:
+    how indebted households are against what they earn.
+
+    This expresses total household gross debt (loans and debt securities) as a percentage of household gross
+    disposable income.
 
     It is a standard household-leverage indicator used in financial-stability analysis:
     a high or rapidly rising ratio signals households are more exposed to income shocks
@@ -1133,12 +1156,12 @@ def get_exchange_rates(
     period: str, start_date: str | None = None, end_date: str | None = None
 ):
     """
-    Get the exchange rates for a variety of countries over time from the OECD.
-    The exchange rate is defined as the number of units of the national currency
-    that are needed to purchase one unit of US dollars.
+    Get the exchange rates of a variety of countries from the OECD: the units of national currency needed to buy one
+    US dollar.
 
     Args:
-        period (str): The period of the data. Can be 'monthly', 'quarterly' or 'yearly'.
+        period (str): The period of the data. Options are: "monthly" (monthly data), "quarterly" (quarterly data),
+            "yearly" (yearly data).
         start_date (str | None): Restrict the query to this start date (YYYY-MM-DD).
         end_date (str | None): Restrict the query to this end date (YYYY-MM-DD).
 
@@ -1172,18 +1195,20 @@ def get_share_prices(
     period: str, start_date: str | None = None, end_date: str | None = None
 ):
     """
-    Share price indices are calculated from the prices of common shares of
-    companies traded on national or foreign stock exchanges. They are usually
-    determined by the stock exchange, using the closing daily values for the
-    monthly data, and normally expressed as simple arithmetic averages of
-    the daily data.
+    Get the share price index of a variety of countries from the OECD: how the prices of the shares traded on each
+    country's stock exchanges move.
+
+    Share price indices are calculated from the prices of common shares of companies traded on national or foreign
+    stock exchanges. They are usually determined by the stock exchange, using the closing daily values for the monthly
+    data, and normally expressed as simple arithmetic averages of the daily data.
 
     The series is a price index (it excludes dividends) with 2015 = 100 for every
     country, so a level shows the change since 2015 and is not comparable across
     countries as a price; growth rates are.
 
     Args:
-        period (str): The period of the data. Can be 'monthly', 'quarterly' or 'yearly'.
+        period (str): The period of the data. Options are: "monthly" (monthly data), "quarterly" (quarterly data),
+            "yearly" (yearly data).
         start_date (str | None): Restrict the query to this start date (YYYY-MM-DD).
         end_date (str | None): Restrict the query to this end date (YYYY-MM-DD).
 
@@ -1214,12 +1239,12 @@ def get_share_prices(
 
 def get_labour_productivity(start_date: str | None = None, end_date: str | None = None):
     """
-    GDP per hour worked is a measure of labour productivity. It measures
-    how efficiently labour input is combined with other factors of production
-    and used in the production process. Labour input is defined as total hours
-    worked of all persons engaged in production. Labour productivity only partially
-    reflects the productivity of labour in terms of the personal capacities of
-    workers or the intensity of their effort.
+    Get the labour productivity of a variety of countries from the OECD: the GDP produced per hour worked.
+
+    GDP per hour worked is a measure of labour productivity. It measures how efficiently labour input is combined with
+    other factors of production and used in the production process. Labour input is defined as total hours worked of
+    all persons engaged in production. Labour productivity only partially reflects the productivity of labour in terms
+    of the personal capacities of workers or the intensity of their effort.
 
     The level is expressed in US dollars per hour worked at constant prices, converted
     with Purchasing Power Parities (PPPs) so that it is comparable across countries,
@@ -1244,10 +1269,11 @@ def get_labour_productivity(start_date: str | None = None, end_date: str | None 
 
 def get_unit_labour_costs(start_date: str | None = None, end_date: str | None = None):
     """
-    Unit labour costs (employment based) for the total economy from the OECD
-    Productivity Database: the compensation of employees per employee divided by real GDP
-    per person employed, the average cost of labour per unit of output. The OECD
-    publishes them quarterly, seasonally adjusted, as an index with 2015 = 100.
+    Get the unit labour costs (employment based) of the total economy from the OECD Productivity Database: the average
+    cost of labour per unit of output.
+
+    They are the compensation of employees per employee divided by real GDP per person employed. The OECD publishes
+    them quarterly, seasonally adjusted, as an index with 2015 = 100.
 
     Args:
         start_date (str | None): Restrict the query to this start date (YYYY-MM-DD).
@@ -1264,11 +1290,11 @@ def get_unit_labour_costs(start_date: str | None = None, end_date: str | None = 
 
 def get_output_gap(start_date: str | None = None, end_date: str | None = None):
     """
-    Get the Output Gap for a variety of countries over time from the OECD Economic Outlook.
-    The output gap is the difference between actual Gross Domestic Product (GDP) and estimated
-    potential GDP, expressed as a percentage of potential GDP. Potential GDP is the level of
-    output an economy can sustain over the long term without generating excess inflationary or
-    disinflationary pressure, based on the full, non-inflationary use of its productive resources
+    Get the output gap of a variety of countries from the OECD Economic Outlook: how far actual GDP lies above or
+    below its potential, as a percentage of potential GDP.
+
+    Potential GDP is the level of output an economy can sustain over the long term without generating excess
+    inflationary or disinflationary pressure, based on the full, non-inflationary use of its productive resources
     (labour, capital and technology).
 
     A positive output gap indicates the economy is running above its long-run potential (a
@@ -1307,16 +1333,18 @@ def get_population(
     end_date: str | None = None,
 ):
     """
-    Population is defined as all nationals present in, or temporarily absent
-    from a country, and aliens permanently settled in a country.
+    Get the population of a variety of countries from the OECD: the number of people who usually live in each country.
+
+    Population is defined as all nationals present in, or temporarily absent from a country, and aliens permanently
+    settled in a country.
 
     The total across all age groups is returned, as a count of persons, on an
     annual basis. The historical (observed) series is used rather than the OECD's
     demographic projections.
 
     Args:
-        gender (str): specify the population based on gender.
-            Defaults to None which returns the total population.
+        gender (str): The population by gender. Options are: "men" (men), "women" (women). Defaults to None, which
+            returns the total population.
         start_date (str | None): Restrict the query to this start date (YYYY-MM-DD).
         end_date (str | None): Restrict the query to this end date (YYYY-MM-DD).
 
@@ -1340,10 +1368,12 @@ def get_population(
 
 def get_income_inequality(start_date: str | None = None, end_date: str | None = None):
     """
-    Income is defined as household disposable income in a particular year.
-    It consists of earnings, self-employment and capital income and public
-    cash transfers; income taxes and social security contributions paid by
-    households are deducted.
+    Get the income inequality of a variety of countries from the OECD: how unevenly household disposable income is
+    spread.
+
+    Income is defined as household disposable income in a particular year. It consists of earnings, self-employment
+    and capital income and public cash transfers; income taxes and social security contributions paid by households
+    are deducted.
 
     This uses the GINI coefficient which is a measure of statistical dispersion
     intended to represent the income inequality or wealth inequality within
@@ -1373,8 +1403,10 @@ def get_income_inequality(start_date: str | None = None, end_date: str | None = 
 
 def get_poverty_rate(start_date: str | None = None, end_date: str | None = None):
     """
-    The poverty rate is the ratio of the number of people whose income falls
-    below the poverty line.
+    Get the poverty rate of a variety of countries from the OECD: the share of people whose income falls below the
+    poverty line.
+
+    The poverty rate is the ratio of the number of people whose income falls below the poverty line.
 
     The poverty line used is the OECD's headline definition, 50% of the national
     median disposable income, applied to the total population and on the OECD's
@@ -1405,8 +1437,10 @@ def get_poverty_rate(start_date: str | None = None, end_date: str | None = None)
 
 def get_trust_in_government(start_date: str | None = None, end_date: str | None = None):
     """
-    Trust in government refers to the share of people who report
-    having confidence in the national government.
+    Get the trust in government of a variety of countries from the OECD: the share of people who have confidence in
+    their national government.
+
+    Trust in government refers to the share of people who report having confidence in the national government.
 
     The population-wide figure is returned: both sexes, all education levels, aged 15
     and over. The dataflow also publishes the same indicator broken down by sex and by
@@ -1437,8 +1471,10 @@ def get_trust_in_government(start_date: str | None = None, end_date: str | None 
 
 def get_renewable_energy(start_date: str | None = None, end_date: str | None = None):
     """
-    Renewable energy is defined as the contribution of renewables
-    to total primary energy supply (TPES).
+    Get the renewable energy share of a variety of countries from the OECD: how much of their primary energy supply
+    comes from renewable sources.
+
+    Renewable energy is defined as the contribution of renewables to total primary energy supply (TPES).
 
     Args:
         start_date (str | None): Restrict the query to this start date (YYYY-MM-DD).
@@ -1463,9 +1499,11 @@ def get_renewable_energy(start_date: str | None = None, end_date: str | None = N
 
 def get_carbon_footprint(start_date: str | None = None, end_date: str | None = None):
     """
-    The carbon footprint is a measure of the total amount of greenhouse gases
-    produced to directly and indirectly support human activities, usually
-    expressed in equivalent tons of carbon dioxide (CO2) per capita.
+    Get the carbon footprint of a variety of countries from the OECD: the greenhouse gases emitted to support human
+    activities, per person.
+
+    The carbon footprint is a measure of the total amount of greenhouse gases produced to directly and indirectly
+    support human activities, usually expressed in equivalent tons of carbon dioxide (CO2) per capita.
 
     The series is annual and currently ends in 2020, so a date range that starts after
     that point returns an empty DataFrame.

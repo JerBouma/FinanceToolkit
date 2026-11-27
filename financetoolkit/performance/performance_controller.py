@@ -1026,22 +1026,6 @@ class Performance:
         | 2023   | 2.0217 | 2.247  | 0.8723 |
         | 2024   | 2.6583 | 2.38   | 0.8006 |
         | 2025   | 1.8727 | 2.2342 | 0.9481 |
-
-        The downside Beta shows how the same stocks moved on the days the S&P 500 fell:
-
-        ```python
-        toolkit.performance.get_beta(method="downside")
-        ```
-
-        Which returns:
-
-        | Date   |   NVDA |   TSLA |    JPM |
-        |:-------|-------:|-------:|-------:|
-        | 2021   | 2.0938 | 1.6149 | 0.7877 |
-        | 2022   | 1.9875 | 1.5848 | 0.7921 |
-        | 2023   | 2.1135 | 2.5952 | 1.048  |
-        | 2024   | 2.0508 | 2.6545 | 0.9306 |
-        | 2025   | 1.8311 | 1.9833 | 0.9638 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
         check_rolling(rolling, self._historical_data, period)
@@ -9480,6 +9464,8 @@ class Performance:
         - The method retrieves historical data and performs the regression for each asset
         in the Toolkit instance, within each period.
         - With growth, the method calculates the growth of the ratio values using the specified `lag`.
+        - The example shows the Treynor-Mazuy model; the Henriksson-Merton model returns Up Market Beta in
+        place of Gamma.
 
         As an example:
 
@@ -9505,31 +9491,6 @@ class Performance:
         | 2023 |  0.0015 | 2.2614 | -14.8854 |      0.529  |
         | 2024 | -0.001  | 2.1368 |  -3.1566 |      0.5658 |
         | 2025 |  0.0006 | 1.8994 |  -1.3437 |      0.6767 |
-
-        With the Henriksson-Merton model:
-
-        ```python
-        from financetoolkit import Toolkit
-
-        toolkit = Toolkit(
-            ["BRK-B", "FBCG"],
-            api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2021-01-01",
-            end_date="2025-12-31",
-        )
-
-        toolkit.performance.get_market_timing_model(method="henriksson_merton").xs("FBCG", level=0, axis=1)
-        ```
-
-        Which returns:
-
-        |      |   Alpha |   Beta |   Up Market Beta |   R Squared |
-        |:-----|--------:|-------:|-----------------:|------------:|
-        | 2021 | -0.0004 | 1.4217 |          -0.064  |      0.7204 |
-        | 2022 | -0.0009 | 1.4208 |           0.0312 |      0.885  |
-        | 2023 |  0.0004 | 1.359  |           0.0602 |      0.8342 |
-        | 2024 |  0      | 1.4674 |           0.0496 |      0.8536 |
-        | 2025 |  0.0002 | 1.3907 |          -0.0759 |      0.8893 |
         """
         check_option("method", method, ("treynor_mazuy", "henriksson_merton"))
 

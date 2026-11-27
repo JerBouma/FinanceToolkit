@@ -125,8 +125,8 @@ class DiagnosticsEconometrics:
 
         |                   |   BTCUSD |   ^GSPC |   EURUSD |
         |:------------------|---------:|--------:|---------:|
-        | ARCH-LM Statistic |  55.2071 | 165.389 |  67.7588 |
-        | P-Value           |   0      |   0     |   0      |
+        | ARCH-LM Statistic |  55.2237 | 143.561 |    82.99 |
+        | P-Value           |   0      |   0     |     0    |
         """
         period = period if period else "daily"
 
@@ -232,8 +232,8 @@ class DiagnosticsEconometrics:
 
         |                       |   ^GSPC |   BTCUSD |    TLT |
         |:----------------------|--------:|---------:|-------:|
-        | Jarque-Bera Statistic |  2.6001 |   1.0834 | 0.6166 |
-        | P-Value               |  0.2725 |   0.5818 | 0.7347 |
+        | Jarque-Bera Statistic |  2.7207 |   1.0825 | 0.7939 |
+        | P-Value               |  0.2566 |   0.582  | 0.6724 |
         """
         period = period if period else "daily"
 
@@ -356,8 +356,8 @@ class DiagnosticsEconometrics:
 
         |                     |     WMT |    COST |     TGT |
         |:--------------------|--------:|--------:|--------:|
-        | Ljung-Box Statistic | 12.8794 | 10.9863 | 11.9887 |
-        | P-Value             |  0.2305 |  0.3586 |  0.2858 |
+        | Ljung-Box Statistic | 12.9146 | 10.9639 | 12.0004 |
+        | P-Value             |  0.2285 |  0.3603 |  0.285  |
         """
         period = period if period else "daily"
 
@@ -478,11 +478,11 @@ class DiagnosticsEconometrics:
 
         |                                 |    XLE |    XLF |     XLK |
         |:--------------------------------|-------:|-------:|--------:|
-        | Variance Ratio                  | 1.0249 | 1.0249 |  0.9611 |
-        | Variance Ratio Statistic        | 0.8815 | 0.8805 | -1.3774 |
-        | P-Value                         | 0.3781 | 0.3786 |  0.1684 |
-        | Robust Variance Ratio Statistic | 0.6193 | 0.6256 | -0.9679 |
-        | Robust P-Value                  | 0.5358 | 0.5316 |  0.3331 |
+        | Variance Ratio                  | 1.0251 | 1.0249 |  0.961  |
+        | Variance Ratio Statistic        | 0.8888 | 0.8803 | -1.3798 |
+        | P-Value                         | 0.3741 | 0.3787 |  0.1677 |
+        | Robust Variance Ratio Statistic | 0.6243 | 0.6249 | -0.9691 |
+        | Robust P-Value                  | 0.5325 | 0.532  |  0.3325 |
         """
         period = period if period else "daily"
 
@@ -786,13 +786,13 @@ class DiagnosticsEconometrics:
 
         |                                |     ^GSPC |       GLD |
         |:-------------------------------|----------:|----------:|
-        | Sign Bias t-Statistic          |    3.9418 |    0.6116 |
+        | Sign Bias t-Statistic          |    3.9432 |    0.6116 |
         | Sign Bias P-Value              |    0.0001 |    0.5409 |
-        | Negative Size Bias t-Statistic |   -0.0432 |    1.864  |
-        | Negative Size Bias P-Value     |    0.9656 |    0.0624 |
-        | Positive Size Bias t-Statistic |   -0.0972 |    0.066  |
-        | Positive Size Bias P-Value     |    0.9225 |    0.9474 |
-        | Joint Statistic                |   27.0353 |    3.8098 |
+        | Negative Size Bias t-Statistic |   -0.0422 |    1.864  |
+        | Negative Size Bias P-Value     |    0.9663 |    0.0624 |
+        | Positive Size Bias t-Statistic |   -0.0965 |    0.066  |
+        | Positive Size Bias P-Value     |    0.9231 |    0.9474 |
+        | Joint Statistic                |   27.044  |    3.8098 |
         | Joint P-Value                  |    0      |    0.2827 |
         | Observations                   | 2512      | 2512      |
         """
@@ -917,7 +917,7 @@ class DiagnosticsEconometrics:
 
         |                   |     ^GSPC |       GLD |
         |:------------------|----------:|----------:|
-        | Pearson Statistic |   82.4238 |   44.302  |
+        | Pearson Statistic |   82.1532 |   44.302  |
         | P-Value           |    0      |    0.0009 |
         | Bins              |   20      |   20      |
         | Observations      | 2513      | 2513      |
@@ -1198,8 +1198,9 @@ class DiagnosticsEconometrics:
           normal innovations its joint test at 5% rejects about 20% of the time at 2,500 observations, against
           about 5% here (7% at 1,000).
         - The Kurtosis condition needs a finite 8th moment of the innovations (a Student-t with a Shape above
-          8); with a fitted Shape of 8 or less its variance is the sample one, and its test and the joint test
-          reject too often.
+          8). With a fitted Shape of 8 or less the covariance of the four moments is their sample covariance
+          (taking only the missing entries from the sample would leave a matrix that is not positive
+          semi-definite, with a negative joint statistic), and the tests reject too often.
         - On the residuals of a fitted GARCH(1, 1) with normal innovations, the Variance condition is close to
           zero by construction (the score of Omega is a weighted sum of zₜ² - 1), so its test, and the Kurtosis
           test that moves with it, hardly ever reject.
@@ -1225,10 +1226,10 @@ class DiagnosticsEconometrics:
 
         |                      |     ^GSPC |       GLD |
         |:---------------------|----------:|----------:|
-        | Mean t-Statistic     |    2.8645 |    3.1991 |
-        | Mean P-Value         |    0.0042 |    0.0014 |
-        | Variance t-Statistic |    0.0518 |   -0.2087 |
-        | Variance P-Value     |    0.9587 |    0.8347 |
+        | Mean t-Statistic     |    2.8649 |    3.2207 |
+        | Mean P-Value         |    0.0042 |    0.0013 |
+        | Variance t-Statistic |    0.0566 |   -0.2472 |
+        | Variance P-Value     |    0.9548 |    0.8048 |
         | Skewness t-Statistic |   -3.1211 |   -0.0336 |
         | Skewness P-Value     |    0.0018 |    0.9732 |
         | Kurtosis t-Statistic |   -0.9237 |   -2.5345 |
@@ -1239,8 +1240,8 @@ class DiagnosticsEconometrics:
         | Q3 P-Value           |    0.8138 |    0.8522 |
         | Q4 Statistic         |    0.0295 |    0.0019 |
         | Q4 P-Value           |    0.8635 |    0.9654 |
-        | Joint Statistic      |  -26.0374 |  386.094  |
-        | Joint P-Value        |    1      |    0      |
+        | Joint Statistic      |  223.192  |   44.4134 |
+        | Joint P-Value        |    0      |    0      |
         | Lags                 |    1      |    1      |
         | Observations         | 2512      | 2512      |
         """

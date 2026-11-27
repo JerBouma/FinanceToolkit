@@ -1524,6 +1524,11 @@ class BondsFixedIncome(MarketsFixedIncome):
             From Date before the Price and Price Date, followed by the Yield Change, Price Change
             and Realised Price Change, all decimals.
 
+        Notes:
+        - With a from_date, each benchmark Treasury gets its own yield change between the two days,
+        and the Realised Price Change next to the estimated Price Change shows how well the Taylor
+        expansion tracked the actual move.
+
         As an example:
 
         ```python
@@ -1547,31 +1552,6 @@ class BondsFixedIncome(MarketsFixedIncome):
         | 91282CRF0 | Note            |   0.0462 | 2036-08-15 |  98.4375 |        -0.0733 |
         | 912810RU4 | Bond            |   0.0288 | 2046-11-15 |  70.0312 |        -0.1242 |
         | 912810UW6 | Bond            |   0.0512 | 2056-08-15 |  98.125  |        -0.1321 |
-
-        The price changes of the benchmark Treasuries from 28 October to 6 November 2026, each
-        for its own yield change:
-
-        ```python
-        from financetoolkit import FixedIncome
-
-        fixedincome = FixedIncome()
-
-        price_changes = fixedincome.get_taylor_price_change(from_date="2026-10-28", date="2026-11-06")
-
-        price_changes.loc[:, "Maturity":].drop(columns=["From Date", "Price Date"])
-        ```
-
-        Which returns:
-
-        |           | Maturity   |   From Price |   Price |   Yield Change |   Price Change |   Realised Price Change |
-        |:----------|:-----------|-------------:|--------:|---------------:|---------------:|------------------------:|
-        | 91282CDF5 | 2028-10-31 |      93.6562 | 94.0938 |        -0.002  |         0.0039 |                  0.0047 |
-        | 91282CLR0 | 2029-10-31 |      98.0938 | 98.7188 |        -0.0022 |         0.0061 |                  0.0064 |
-        | 91282CLU3 | 2031-10-31 |      96.6562 | 97.6562 |        -0.0023 |         0.01   |                  0.0103 |
-        | 91282CJJ1 | 2033-11-15 |      97.3438 | 98.5312 |        -0.002  |         0.0119 |                  0.0122 |
-        | 91282CRF0 | 2036-08-15 |      96.7812 | 98.2188 |        -0.0019 |         0.0147 |                  0.0149 |
-        | 912810RU4 | 2046-11-15 |      68.6875 | 69.9062 |        -0.0012 |         0.0171 |                  0.0177 |
-        | 912810UW6 | 2056-08-15 |      96.375  | 97.9688 |        -0.0011 |         0.0164 |                  0.0165 |
         """
         if yield_change is not None and from_date is not None:
             raise ValueError(

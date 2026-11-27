@@ -6,6 +6,7 @@ import pytest
 from scipy import stats
 
 from financetoolkit.econometrics.diagnostics import diagnostics_model
+from financetoolkit.risk.volatility import garch_model
 
 # Thresholds for asserting significance, or the lack of it, in the tests below.
 HIGH_P_VALUE_THRESHOLD = 0.05
@@ -967,6 +968,36 @@ def test_gmm_moment_test_takes_the_moment_covariance_from_the_distribution():
     # A series without variation has nothing to test.
     constant = diagnostics_model.get_gmm_moment_test(pd.Series(np.full(300, 0.3)))
     assert constant.drop(["Lags", "Observations"]).isna().all()
+
+
+def test_gmm_moment_test_keeps_the_joint_statistic_positive_without_the_moments():
+    # Returns with heavier tails than the Student-t with a Shape of 4.5 they are tested
+    # against: the distribution has no 6th and 8th moment, and filling only those entries from
+    # the sample gave a covariance that was not positive semi-definite and a joint statistic
+    # of -89.4.
+    rng = np.random.default_rng(0)
+    z = rng.standard_t(4, 2500)
+    z = (z - z.mean()) / z.std()
+
+    result = diagnostics_model.get_gmm_moment_test(pd.Series(z), 1, "t", (4.5,))
+
+    # The covariance of the four moments is then their sample covariance as a whole.
+    raw_moments = garch_model.get_standardized_raw_moments("t", (4.5,), 4)
+    centred = np.column_stack(
+        [z, z**2 - 1, z**3 - raw_moments[3], z**4 - raw_moments[4]]
+    )
+    conditions = np.column_stack([centred[1:], centred[1:, 1:] * centred[:-1, 1:]])
+    products = centred[1:, 1:].T @ centred[1:, 1:] / 2499
+    covariance = np.zeros((7, 7))
+    covariance[:4, :4] = np.cov(centred[1:], rowvar=False)
+    covariance[4:, 4:] = products**2
+    average = conditions.mean(axis=0)
+
+    assert result["Joint Statistic"] > 0
+    assert result["Joint Statistic"] == pytest.approx(
+        2499 * average @ np.linalg.solve(covariance, average), rel=1e-10
+    )
+    assert result["Joint P-Value"] < 1
 
 
 def test_gmm_moment_test_keeps_its_size_under_the_null():

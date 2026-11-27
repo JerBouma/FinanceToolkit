@@ -1385,10 +1385,24 @@ def test_get_bubble_test(recorder, econometrics_module):
     )
 
 
-def test_get_bubble_episodes(recorder, econometrics_module):
-    recorder.capture(
-        econometrics_module.get_bubble_episodes(period="weekly", simulations=100)
-    )
+def test_get_bubble_episodes(recorder, econometrics_module, caplog):
+    # No asset has an episode of the default duration: the table is empty, with its columns,
+    # and a warning names each asset as without an episode rather than without data.
+    with caplog.at_level("WARNING", logger="financetoolkit"):
+        episodes = econometrics_module.get_bubble_episodes(
+            period="weekly", simulations=100
+        )
+    recorder.capture(episodes)
+    assert episodes.empty
+    assert list(episodes.columns) == [
+        "Start",
+        "End",
+        "Duration",
+        "Peak Date",
+        "Peak Statistic",
+    ]
+    for ticker in ("AAPL", "MSFT"):
+        assert f"No bubble episode is found for {ticker} from " in caplog.text
     recorder.capture(
         econometrics_module.get_bubble_episodes(
             period="weekly", simulations=100, time_series=True

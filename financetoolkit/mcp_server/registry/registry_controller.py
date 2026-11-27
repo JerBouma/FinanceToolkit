@@ -15,6 +15,7 @@ import importlib
 import inspect
 import json
 import math
+import operator
 import os
 import re
 import time
@@ -58,6 +59,7 @@ from financetoolkit.mcp_server.registry.coercion_model import (
     validate_date,
 )
 from financetoolkit.mcp_server.registry.diagnostics_model import (
+    EMPTY_ANSWER_PATTERN,
     FMP_KEY_HINT,
     FRED_KEY_HINT,
     call_input_info,
@@ -85,9 +87,9 @@ from financetoolkit.mcp_server.registry.formatting_model import (
     skipped_periods_note,
 )
 from financetoolkit.mcp_server.registry.provider_model import (
-    FALLBACK_BENCHMARKS,
     ToolkitProvider,
     resolve_benchmark_ticker,
+    substitute_benchmark,
 )
 from financetoolkit.utilities import validation_model
 from financetoolkit.utilities.dataframe_model import filter_columns as _filter_columns
@@ -152,7 +154,7 @@ _PARAM_DESCRIPTIONS: dict[str, str] = {
     "quarterly": "Return quarterly data instead of annual when True.",
     "benchmark_ticker": (
         "Ticker used as the market benchmark, e.g. 'SPY' or '^GSPC'; 'None' for no benchmark. "
-        "Left empty, SPY, or QQQ when SPY is one of the tickers."
+        "Left empty, SPY, or ^GSPC when SPY is one of the tickers."
     ),
     "risk_free_rate": (
         "The US Treasury yield used as the risk-free rate: '13w' (the 13-week bill), '5y', '10y' (default) or '30y'."
@@ -466,6 +468,9 @@ _SCHEMA_PARAM_DESCRIPTIONS: dict[str, str] = {
     "portfolio.region": "The region of the Fama-French factors, e.g. 'Developed'.",
     "performance.region": "The region of the Fama-French factors, e.g. 'Developed'.",
     "rates.maturity": "true per maturity, false per rating.",
+    "views": "Per ticker or pair ('XOM-JNJ'): a number, or [\">=\", 0.02] for an inequality (entropy pooling).",
+    "volatility_views": 'Volatility per ticker: a number, or ["<=", 0.25] for an inequality.',
+    "correlation_views": "Correlation per pair ('XOM-JNJ'): a number, or [\">=\", 0.5].",
     "rank": "true ranks the tickers or countries per period.",
     "rebase_to": "Index to 100 at a base period, e.g. '2020' or '2019-2021'.",
     "show_columns": "Comma-separated fields to keep, e.g. 'Close,Volume'.",
@@ -1630,6 +1635,41 @@ def _readable_value(value: Any) -> str:
         return str(value)
 
 
+def _server_default_text(value: Any) -> str:
+    """A server default as named in the schema and notes, with the condition it applies under."""
+    if isinstance(value, dict) and "only_with" in value:
+        condition = " and ".join(
+            f"{other}={_readable_value(wanted)}"
+            for other, wanted in value["only_with"].items()
+        )
+        return f"{_readable_value(value['value'])} (with {condition})"
+    return _readable_value(value)
+
+
+def _python_default(method: Any, name: str) -> str:
+    """
+    The default of a parameter as the package applies it: the signature's default, or for a
+    default of None the value the docstring says it stands for ("Defaults to None, which is
+    1e-5 ..." gives "1e-5 ...").
+
+    Args:
+        method (Any): The controller method.
+        name (str): The parameter.
+
+    Returns:
+        str: The default as a caller reads it.
+    """
+    default = inspect.signature(method).parameters[name].default
+    if default is not None:
+        return _readable_value(default)
+    documented = _docstring_arguments(
+        inspect.getdoc(method) or "", maximum_characters=None, keep_defaults=True
+    ).get(name, "")
+    match = re.search(r"Defaults to (?:None, which (?:is|uses) )?(.*?)\.?$", documented)
+
+    return match.group(1).replace('"', "'") if match else "None"
+
+
 def _formula_variants(method: Any) -> tuple[Any, ...]:
     """
     Return the formula variants of an indicator: the values of its ``method`` parameter
@@ -1789,16 +1829,18 @@ def _simplify_annotation(ann: Any) -> Any:
             labels = list[str] | dict[str, float]
             return labels | None if has_none else labels
         # A mapping without a single-value form (portfolio weights per ticker) stays one,
-        # so a caller can pass {"AAPL": 0.6, "MSFT": 0.4}.
-        mapping = next(
-            (
-                (a if typing.get_args(a) else dict[str, float])
-                for a in args
-                if typing.get_origin(a) is dict or a is dict
-            ),
-            None,
-        )
-        if mapping is not None:
+        # so a caller can pass {"AAPL": 0.6, "MSFT": 0.4}. The values take every form an
+        # indicator of the tool takes: a number for the Black-Litterman views, also a pair
+        # [">=", 0.02] for those of entropy pooling.
+        values = [
+            typing.get_args(a)[1] if typing.get_args(a) else float
+            for a in args
+            if typing.get_origin(a) is dict or a is dict
+        ]
+        if values:
+            mapping = types.GenericAlias(
+                dict, (str, functools.reduce(operator.or_, values))
+            )
             return mapping | None if has_none else mapping
         return str | None if has_none else str
 
@@ -2176,6 +2218,7 @@ class ToolRegistry:
         tool_groups: list[dict[str, Any]],
         blocked_periods: dict[str, list[str]] | None = None,
         method_defaults: dict[str, dict[str, Any]] | None = None,
+        noted_defaults: list[str] | None = None,
         countries_optional: list[str] | None = None,
         analytics: UsageAnalytics | None = None,
         max_response_characters: int | None = None,
@@ -2209,6 +2252,9 @@ class ToolRegistry:
             method_defaults (dict[str, dict[str, Any]] | None): Per method, MCP-only defaults applied
                 when the caller leaves a parameter unset, plus an optional lookback_days and
                 lookahead_days window used when the caller leaves the dates at the tool default.
+            noted_defaults (list[str] | None): The parameters of method_defaults whose server
+                default changes the calculation itself; an answer that used one names it with
+                the Python default. Defaults to None.
             countries_optional (list[str] | None): Methods that accept countries but may be
                 called without them; every other method that accepts countries requires them.
             analytics (UsageAnalytics | None): Counts the calls of every tool when the
@@ -2249,6 +2295,7 @@ class ToolRegistry:
             for tool, periods in (blocked_periods or {}).items()
         }
         self._method_defaults: dict[str, dict[str, Any]] = method_defaults or {}
+        self._noted_defaults: frozenset[str] = frozenset(noted_defaults or [])
         self._countries_optional: frozenset[str] = frozenset(countries_optional or [])
         self._analytics = analytics
         self._max_response_characters = max_response_characters
@@ -2379,7 +2426,7 @@ class ToolRegistry:
                 )
             if name in server_defaults:
                 parts.append(
-                    f"Default on this server: {_readable_value(server_defaults[name])}."
+                    f"Default on this server: {_server_default_text(server_defaults[name])}."
                 )
             elif parameter.default is inspect.Parameter.empty:
                 parts.append("Required.")
@@ -2764,11 +2811,28 @@ class ToolRegistry:
                 f"{tool_name}.{method_name}", self._method_defaults.get(method_name, {})
             ).items():
                 if method_name in parameter_defaults.get(pname, {}):
-                    parameter_defaults[pname][method_name] = value
+                    # A conditional default leaves the indicator's own one in place for the
+                    # other cases, which the call resolves.
+                    if not (isinstance(value, dict) and "only_with" in value):
+                        parameter_defaults[pname][method_name] = value
                     mcp_default_params.add(pname)
         disputed_params = (
             inspector.find_disputed_parameters(parameter_defaults) | mcp_default_params
         )
+        # A server default that changes the calculation itself (config.yaml noted_defaults) is named in the answer with the Python default, so a figure that differs from the package's is explained.  # noqa: E501
+        default_notes = {
+            (method_name, pname): (
+                f"{pname}={_server_default_text(value)} is this server's default (the Python "
+                f"default is {_python_default(getattr(owning_class(method_name), method_name), pname)}); "
+                f"pass {pname} to change it."
+            )
+            for method_name in group_methods
+            for pname, value in self._method_defaults.get(
+                f"{tool_name}.{method_name}", self._method_defaults.get(method_name, {})
+            ).items()
+            if pname in self._noted_defaults
+            and pname in method_param_names[method_name]
+        }
 
         def wrapper(**kwargs):
             """
@@ -3112,18 +3176,11 @@ class ToolRegistry:
                 and tickers
                 and benchmark_ticker.upper() in tickers
             ):
-                fallback = next(
-                    (
-                        candidate
-                        for candidate in FALLBACK_BENCHMARKS
-                        if candidate.upper() not in tickers
-                    ),
-                    None,
-                )
+                fallback, rule = substitute_benchmark(tickers)
                 benchmark_swap_note = (
                     f"{benchmark_ticker} is one of the tickers, so "
                     + (
-                        f"{fallback} is the benchmark: 'Benchmark' refers to {fallback}."
+                        f"{fallback} is the benchmark: 'Benchmark' refers to {fallback}. {rule}"
                         if fallback
                         else "the results are calculated without a benchmark."
                     )
@@ -3313,7 +3370,25 @@ class ToolRegistry:
                     f"{abs(row_selection)} {'row' if abs(row_selection) == 1 else 'rows'}); "
                     "limit=0 gives every row, start_date/end_date another range."
                 )
-            for pname, value in method_defaults.items():
+            server_default_notes: list[str] = []
+            for pname, configured in method_defaults.items():
+                value = configured
+                # A default written as {"value": ..., "only_with": {parameter: value}} applies
+                # only while those parameters (given or by their own default) have those values:
+                # the fixed-width threshold of the fractional difference means something else
+                # for the expanding window.
+                if isinstance(configured, dict) and "only_with" in configured:
+                    if any(
+                        (
+                            method_kwargs.get(other)
+                            if method_kwargs.get(other) not in (None, "")
+                            else parameter_defaults.get(other, {}).get(method_name)
+                        )
+                        != wanted
+                        for other, wanted in configured["only_with"].items()
+                    ):
+                        continue
+                    value = configured["value"]
                 if (
                     pname not in ("lookback_days", "lookahead_days")
                     and not (pname == "limit" and every_row)
@@ -3321,6 +3396,8 @@ class ToolRegistry:
                     and method_kwargs.get(pname) in (None, "")
                 ):
                     method_kwargs[pname] = value
+                    if (method_name, pname) in default_notes:
+                        server_default_notes.append(default_notes[method_name, pname])
 
             # A call that would simulate or download more than the server can hold is
             # refused before anything is collected. The number of tickers and the years of
@@ -3630,6 +3707,7 @@ class ToolRegistry:
                     notes.append(benchmark_swap_note)
                 if default_limit_note:
                     notes.append(default_limit_note)
+                notes.extend(server_default_notes)
                 # A ticker the sources do not know is dropped from the answer; when the
                 # others are there, say which one is missing rather than leave it out quietly.
                 if (
@@ -4139,6 +4217,9 @@ class ToolRegistry:
                     or _short_window_reason(dispatch_category, start_date, end_date),
                     max_characters=None if full_text else answer_size,
                     outcome=answer_outcome,
+                    empty_is_answer=any(
+                        EMPTY_ANSWER_PATTERN.search(note) for note in notes
+                    ),
                 )
                 # An answer without data for want of an API key is a call that could not
                 # be made, not a request without data.

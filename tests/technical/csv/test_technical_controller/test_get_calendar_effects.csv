@@ -1,0 +1,8 @@
+,Average Return,Standard Error,Test Statistic,p-Value,Observations,Average Return,Standard Error,Test Statistic,p-Value,Observations,Average Return,Standard Error,Test Statistic,p-Value,Observations
+,AAPL,AAPL,AAPL,AAPL,AAPL,MSFT,MSFT,MSFT,MSFT,MSFT,Benchmark,Benchmark,Benchmark,Benchmark,Benchmark
+Monday,0.0033,0.0023,1.4798,0.1389,140,0.0007,0.0021,0.3075,0.7585,140,0.0003,0.0016,0.1975,0.8434,140
+Tuesday,0.0027,0.0017,1.5942,0.1109,156,0.0004,0.0017,0.211,0.8329,156,0.0013,0.0012,1.0577,0.2902,156
+Wednesday,0.0014,0.0016,0.8458,0.3977,156,0.003,0.0018,1.7298,0.0837,156,0.0008,0.0011,0.7339,0.463,156
+Thursday,-0.0015,0.002,-0.7618,0.4462,154,-0.0004,0.0018,-0.2356,0.8137,154,-0.0004,0.0014,-0.3237,0.7462,154
+Friday,-0.0005,0.0019,-0.2759,0.7826,150,0.0005,0.0016,0.2937,0.769,150,0.0001,0.0012,0.0535,0.9573,150
+Equal Means,,,1.377,0.2401,756,,,0.4823,0.7488,756,,,0.3123,0.8698,756

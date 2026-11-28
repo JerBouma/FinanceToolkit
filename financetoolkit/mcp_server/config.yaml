@@ -503,6 +503,10 @@ module_class_map:
 # ──────────────────────────────────────────────────────────────────────────────
 skip_methods:
   - "get_normalization_files"
+  # The realized measures and the jump test are calculated from intraday bars, which the
+  # server never fetches (and the hosted server shares no FinancialModelingPrep data).
+  - "get_realized_variance"
+  - "get_jump_test"
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Parameters removed from individual method signatures during inspection
@@ -874,7 +878,7 @@ tool_groups:
 
   - tool_name:      "momentum"
     display_name:   "Momentum Indicators"
-    description:    "Momentum indicators on prices, fetched automatically: RSI and its variants (Connors, Laguerre, dynamic, intraday), stochastics (slow, RSI, KDJ, premier, SMI), MACD and PPO, Williams %R, Aroon, ADX and directional movement, CCI, MFI, force index, rate of change, Ichimoku, awesome, ultimate and Chande oscillators, TSI, vortex, KST, Coppock, Fisher transforms, Schaff, WaveTrend, QQE, Ehlers' Hilbert transform cycle indicators and filters, and more. Also get_relative_strength against the benchmark, get_seasonality per month or weekday, get_signals (crossovers, RSI zones, breakouts, 52-week highs and lows: 1 up, -1 down; signals_only=true for the periods with one), get_indicator_summary (one row per ticker: an indicator's latest value against its own history and the returns after crossing below= or above=; use it rather than the full series for 'how low is the RSI compared with the last five years'), get_factor_analysis (predictive power of indicators across ten or more tickers: the information coefficient per metric and horizon; metrics='momentum', 'overlap', 'volatility', 'breadth', 'cycle' or 'all') and López de Prado's labels for machine learning (CUSUM events, triple-barrier, fixed-horizon, trend-scanning and tail-set labels, uniqueness, sample weights, bet sizes), which look forward by construction. Requires tickers='AAPL,MSFT'. Each indicator needs its window of history first, so the first periods after start_date can be empty: start earlier to warm up. The Coppock Curve is defined on monthly closes (period='monthly'); the DV intermediate oscillator needs about 360 periods of history. search_metrics with an indicator's name gives its parameters, options and defaults."
+    description:    "Momentum indicators on prices, fetched automatically: RSI and its variants (Connors, Laguerre, dynamic, intraday), stochastics (slow, RSI, KDJ, premier, SMI), MACD and PPO, Williams %R, Aroon, ADX and directional movement, CCI, MFI, force index, rate of change, Ichimoku, awesome, ultimate and Chande oscillators, TSI, vortex, KST, Coppock, Fisher transforms, Schaff, WaveTrend, QQE, Ehlers' Hilbert transform cycle indicators and filters, and more. Also get_relative_strength against the benchmark, get_seasonality per month or weekday, get_calendar_effects (day-of-week, turn-of-the-month or pre-holiday effect, tested with Newey-West standard errors), get_signals (crossovers, RSI zones, breakouts, 52-week highs and lows: 1 up, -1 down; signals_only=true for the periods with one), get_indicator_summary (one row per ticker: an indicator's latest value against its own history and the returns after crossing below= or above=; use it rather than the full series for 'how low is the RSI compared with the last five years'), get_factor_analysis (predictive power of indicators across ten or more tickers: the information coefficient per metric and horizon; metrics='momentum', 'overlap', 'volatility', 'breadth', 'cycle' or 'all') and López de Prado's labels for machine learning (CUSUM events, triple-barrier, fixed-horizon, trend-scanning and tail-set labels, uniqueness, sample weights, bet sizes), which look forward by construction. Requires tickers='AAPL,MSFT'. Each indicator needs its window of history first, so the first periods after start_date can be empty: start earlier to warm up. The Coppock Curve is defined on monthly closes (period='monthly'); the DV intermediate oscillator needs about 360 periods of history. search_metrics with an indicator's name gives its parameters, options and defaults."
     module_name:    "technicals"
     category:       "ticker"
     # Listed explicitly, as the market-wide and relative measures are not part of the
@@ -944,6 +948,7 @@ tool_groups:
       - "get_dv_intermediate_oscillator"
       - "get_relative_strength"
       - "get_seasonality"
+      - "get_calendar_effects"
       - "get_factor_analysis"
       - "get_signals"
       - "get_indicator_summary"

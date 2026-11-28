@@ -2541,3 +2541,14 @@ def test_the_factor_analysis_of_a_short_history_reports_its_windows_once(caplog)
     # One message for the windows of every indicator, counted in the daily periods they use.
     assert caplog.text.count("get_factor_analysis over 2 daily periods of data") == 1
     assert "A window of" not in caplog.text
+
+
+def test_get_calendar_effects(recorder, technical_module):
+    recorder.capture(technical_module.get_calendar_effects())
+    recorder.capture(technical_module.get_calendar_effects(effect="turn_of_month"))
+    recorder.capture(
+        technical_module.get_calendar_effects(
+            effect="turn_of_month", days_before=1, days_after=9, lags=0
+        )
+    )
+    recorder.capture(technical_module.get_calendar_effects(effect="pre_holiday"))

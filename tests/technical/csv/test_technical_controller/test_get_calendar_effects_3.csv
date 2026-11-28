@@ -1,0 +1,5 @@
+,Average Return,Standard Error,Test Statistic,p-Value,Observations,Average Return,Standard Error,Test Statistic,p-Value,Observations,Average Return,Standard Error,Test Statistic,p-Value,Observations
+,AAPL,AAPL,AAPL,AAPL,AAPL,MSFT,MSFT,MSFT,MSFT,MSFT,Benchmark,Benchmark,Benchmark,Benchmark,Benchmark
+Pre-Holiday,0.003,0.0025,1.2068,0.2275,26,0.004,0.0024,1.6594,0.097,26,0.0028,0.0015,1.8422,0.0654,26
+Other Days,0.001,0.0007,1.3167,0.1879,729,0.0007,0.0006,1.1206,0.2625,729,0.0003,0.0005,0.6598,0.5094,729
+Difference,0.002,0.0025,0.7916,0.4286,755,0.0032,0.0024,1.3429,0.1793,755,0.0025,0.0015,1.6165,0.106,755

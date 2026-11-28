@@ -2,6 +2,8 @@
 
 __docformat__ = "google"
 
+import calendar
+
 import pandas as pd
 
 from financetoolkit.helpers import get_non_trading_days
@@ -16,6 +18,7 @@ from financetoolkit.utilities.error_model import (
     InvalidArgumentError,
     check_option,
     handle_errors,
+    validate_window,
 )
 from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import (
@@ -31,7 +34,8 @@ from financetoolkit.utilities.statistics_model import (
 @track_sources
 class SeasonalityTechnicals:
     """
-    Seasonality and relative strength: the average return per calendar month or weekday, and the price relative to the benchmark with the Mansfield relative strength and the relative strength rating.
+    Seasonality and relative strength: the average return per calendar month or weekday, the day-of-week,
+    turn-of-the-month and pre-holiday effects with Newey-West tests, and the price relative to the benchmark with the Mansfield relative strength and the relative strength rating.
     """
 
     @handle_errors
@@ -138,6 +142,179 @@ class SeasonalityTechnicals:
 
         return apply_rounding(
             seasonality, rounding if rounding is not None else self._rounding
+        )
+
+    @handle_errors
+    def get_calendar_effects(
+        self,
+        effect: str = "day_of_week",
+        close_column: str = "Adj Close",
+        days_before: int = 1,
+        days_after: int = 3,
+        lags: int | None = None,
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the calendar effects in every ticker's daily returns: whether returns differ by weekday, around
+        the turn of the month or before holidays, tested with standard errors that allow for volatility clustering
+        and autocorrelation.
+
+        Each effect is a regression of the daily returns on calendar dummies, with Newey-West (1987) standard
+        errors, as the plain t-statistics of `get_seasonality` assume independent returns of equal variance.
+
+        - Day-of-week effect: the average return per weekday from a regression on a dummy per weekday, and the
+          joint test of whether all weekdays share one average (French, 1980; Gibbons and Hess, 1981). The
+          Monday effect, a lower return over the weekend, was strong in US stocks until the 1980s.
+        - Turn-of-the-month effect: the average return of the last trading day of a month and the first three of
+          the next against the other days (Ariel, 1987; Lakonishok and Smidt, 1988), which once held most of the
+          month's return.
+        - Pre-holiday effect: the average return of the trading day before an exchange holiday against the other
+          days (Lakonishok and Smidt, 1988; Ariel, 1990). The holidays are read from each ticker's own dates: a
+          day of the week it regularly trades on without trading counts as a holiday.
+
+        The formula for the day-of-week effect is as follows:
+
+        - Return_t = b_Monday * D_Monday,t + ... + b_Friday * D_Friday,t + e_t, with b_d the Average Return of weekday d
+        - Equal Means = W / q, the Wald statistic of b_Monday = ... = b_Friday under the Newey-West covariance over
+          the number of restrictions q, against the F(q, n - k) distribution
+
+        The formula for the turn-of-the-month and the pre-holiday effect is as follows:
+
+        - Return_t = a + b * D_t + e_t, with D_t = 1 on the turn-of-the-month (or pre-holiday) days and 0 on the others
+        - Other Days = a, Turn of Month (or Pre-Holiday) = a + b and Difference = b
+
+        Every Test Statistic is the estimate over its Newey-West standard error with a two-sided p-value from the
+        standard normal, apart from the F-statistic of the Equal Means row. The Newey-West covariance uses
+        Bartlett weights over `lags` lags, by default floor(4 * (n / 100)^(2/9)) for n returns (Newey and West,
+        1994).
+
+        For more information, see the following papers:
+
+        - French, K.R. (1980). "Stock Returns and the Weekend Effect." Journal of Financial Economics, 8(1),
+          55-69.
+        - Gibbons, M.R. and Hess, P. (1981). "Day of the Week Effects and Asset Returns." The Journal of
+          Business, 54(4), 579-596.
+        - Ariel, R.A. (1987). "A Monthly Effect in Stock Returns." Journal of Financial Economics, 18(1),
+          161-174.
+        - Lakonishok, J. and Smidt, S. (1988). "Are Seasonal Anomalies Real? A Ninety-Year Perspective." The
+          Review of Financial Studies, 1(4), 403-425.
+        - Ariel, R.A. (1990). "High Stock Returns before Holidays: Existence and Evidence on Possible Causes."
+          The Journal of Finance, 45(5), 1611-1626.
+        - Newey, W.K. and West, K.D. (1987). "A Simple, Positive Semi-Definite, Heteroskedasticity and
+          Autocorrelation Consistent Covariance Matrix." Econometrica, 55(3), 703-708.
+
+        Referenced against:
+        - statsmodels, OLS (HAC covariance and f_test): https://www.statsmodels.org/stable/generated/statsmodels.regression.linear_model.OLS.html
+
+        Also known as: calendar anomalies, day of the week effect, weekend effect, Monday effect, turn of the
+        month effect, pre-holiday effect, holiday effect.
+
+        Args:
+            effect (str, optional): The calendar effect to test. Options are: "day_of_week" (the day-of-week
+                effect), "turn_of_month" (the turn-of-the-month effect), "pre_holiday" (the pre-holiday effect).
+                Defaults to "day_of_week".
+            close_column (str, optional): The name of the column containing the close prices.
+                Defaults to "Adj Close".
+            days_before (int, optional): The last trading days of a month in the turn of the month. Defaults to 1.
+            days_after (int, optional): The first trading days of a month in the turn of the month. Defaults to 3.
+            lags (int | None, optional): The number of lags of the Newey-West covariance. Defaults to None, which
+                uses floor(4 * (n / 100)^(2/9)) for n returns.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Toolkit.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: The Average Return, Standard Error, Test Statistic, p-Value and Observations, with a
+            column per statistic and ticker: per weekday and an Equal Means row for the day-of-week effect, and
+            for the Turn of Month (or Pre-Holiday) days, the Other Days and the Difference for the other effects.
+
+        Notes:
+        - The returns are the daily returns of each ticker on the days it traded. The Benchmark is included as a
+          ticker; a Portfolio is left out.
+        - The turn of the month needs whole months: a first month whose returns start after its first business
+          day, or a last month that ends before its last business day, is left out of that effect.
+        - The pre-holiday effect takes every missing regular trading day as a holiday, so a gap in a ticker's
+          data counts as one too. A ticker that trades on weekends, such as a cryptocurrency, has no holidays
+          and no pre-holiday effect.
+        - Calendar effects are found by searching many calendars in the same data, so a p-value just below 0.05
+          says little; an effect should hold in other periods and markets too.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["AAPL", "MSFT"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2000-01-01",
+            end_date="2025-12-31",
+        )
+
+        calendar_effects = toolkit.technicals.get_calendar_effects(effect="turn_of_month")
+
+        calendar_effects.xs("AAPL", level=1, axis="columns")
+        ```
+
+        Which returns:
+
+        |               |   Average Return |   Standard Error |   Test Statistic |   p-Value |   Observations |
+        |:--------------|-----------------:|-----------------:|-----------------:|----------:|---------------:|
+        | Turn of Month |           0.0011 |           0.0008 |           1.4347 |    0.1514 |           1248 |
+        | Other Days    |           0.0012 |           0.0003 |           4.0196 |    0.0001 |           5291 |
+        | Difference    |          -0.0001 |           0.0008 |          -0.108  |    0.914  |           6539 |
+        """
+        self._check_arguments("daily", close_column)
+        check_option("effect", effect, ("day_of_week", "turn_of_month", "pre_holiday"))
+        validate_window("days_before", days_before, 0)
+        validate_window("days_after", days_after, 0)
+        validate_window("lags", lags, 0)
+        # Per ticker over the days it traded, so the calendar is each ticker's own.
+        returns = calculate_per_ticker(
+            self._historical_data["daily"],
+            [close_column],
+            lambda prices: prices.pct_change(fill_method=None),
+        ).loc[self._start_date : self._end_date]
+
+        effects = {}
+        for ticker in returns.columns:
+            if ticker == "Portfolio":
+                continue
+            values = returns[ticker].dropna()
+            if effect == "day_of_week":
+                effects[ticker] = seasonality_model.get_day_of_week_effect(values, lags)
+            elif effect == "turn_of_month":
+                effects[ticker] = seasonality_model.get_calendar_effect(
+                    values,
+                    seasonality_model.get_turn_of_month_days(
+                        values.index, days_before, days_after
+                    ),
+                    "Turn of Month",
+                    lags,
+                )
+            else:
+                effects[ticker] = seasonality_model.get_calendar_effect(
+                    values,
+                    seasonality_model.get_pre_holiday_days(values.index),
+                    "Pre-Holiday",
+                    lags,
+                )
+
+        calendar_effects = pd.concat(effects, axis=1).swaplevel(0, 1, axis=1)
+
+        if effect == "day_of_week":
+            # The weekdays in calendar order, then the joint test, whichever ticker trades on which days.
+            calendar_effects = calendar_effects.reindex(
+                [day for day in calendar.day_name if day in calendar_effects.index]
+                + ["Equal Means"]
+            )
+
+        return apply_rounding(
+            calendar_effects, rounding if rounding is not None else self._rounding
         )
 
     @handle_errors

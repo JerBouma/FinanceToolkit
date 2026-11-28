@@ -17,6 +17,7 @@ from financetoolkit.utilities.error_model import (
     check_option,
     check_period,
     handle_errors,
+    validate_alpha,
 )
 from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import (
@@ -56,7 +57,7 @@ class VolatilityRisk:
     """
     Volatility: GARCH-family fits (GARCH, GJR-GARCH, EGARCH, IGARCH, APARCH, the family GARCH sub-models, component GARCH,
     FIGARCH and realized GARCH, with Student-t, skewed-t, GED and Johnson SU innovations and constant, ARMA, in-mean and ARFIMA
-    mean models), their forecasts, diagnostics, news impact curve, simulation and bootstrap forecast density, realized and EWMA volatility, the HAR-RV forecast, excess volatility, the downside and upside deviation and the volatility skewness.
+    mean models), their forecasts, diagnostics, news impact curve, simulation and bootstrap forecast density, realized and EWMA volatility, the HAR-RV forecast, the realized variance, semivariance and bipower variation of intraday returns with the jump test, excess volatility, the downside and upside deviation and the volatility skewness.
     """
 
     def _get_realized_measure(
@@ -1666,6 +1667,257 @@ class VolatilityRisk:
             standardize=standardize,
             axis="rows",
             apply_slice=False,
+        )
+
+    def _get_realized_measures_per_ticker(self) -> pd.DataFrame:
+        """
+        The realized measures of every ticker and the Benchmark per day, from the intraday bars
+        of the Toolkit's intraday_period (see `realized_volatility_model.get_realized_measures`),
+        with a column per measure and ticker. Each ticker is measured on the bars it traded.
+        """
+        if self._historical_data["intraday"].empty:
+            raise InvalidArgumentError(
+                "The realized measures are calculated from intraday returns. Initialise the "
+                "Toolkit with an intraday_period, such as intraday_period='5min'."
+            )
+
+        open_prices = self._get_prices("Open", "intraday")
+        close_prices = self._get_prices("Close", "intraday")
+
+        measures = pd.concat(
+            {
+                ticker: realized_volatility_model.get_realized_measures(
+                    realized_volatility_model.get_intraday_returns(
+                        open_prices[ticker], close_prices[ticker]
+                    )
+                )
+                for ticker in close_prices.columns
+                if ticker != "Portfolio"
+            },
+            axis=1,
+        ).swaplevel(0, 1, axis=1)
+
+        return measures.loc[self._start_date : self._end_date]
+
+    @handle_errors
+    def get_realized_variance(
+        self,
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the Realized Variance of every day from its intraday returns: how much the price moved within the
+        day, split into the upside and downside semivariance and into the continuous part and the jumps.
+
+        The realized variance sums the squared intraday returns of a day and converges to its integrated variance
+        plus its squared jumps as the bars get shorter (Andersen, Bollerslev, Diebold and Labys, 2003). It measures
+        each day's volatility on its own, where the close-to-close Volatility (see `get_volatility`) needs many days.
+
+        - Realized Variance and Realized Volatility: the sum of the squared intraday returns and its square root.
+        - Positive and Negative Semivariance: the part of the realized variance from the rises and from the falls
+          (Barndorff-Nielsen, Kinnebrock and Shephard, 2010). The downside semivariance tells most about the
+          volatility to come.
+        - Bipower Variation: the integrated variance without the jumps, from the products of neighbouring absolute
+          returns, as a single jump only enters next to an ordinary return (Barndorff-Nielsen and Shephard, 2004).
+        - Jump Variation: the part of the realized variance the bipower variation leaves out. See `get_jump_test`
+          for whether it is significant.
+
+        The formula is as follows, with r_j the M intraday log returns of a day:
+
+        - r_1 = ln(Close_1 / Open_1) and r_j = ln(Close_j / Close_(j-1)) for the later bars, so the overnight return is left out
+        - Realized Variance = SUM(r_j^2) and Realized Volatility = SQRT(Realized Variance)
+        - Positive Semivariance = SUM(r_j^2 * 1(r_j > 0)) and Negative Semivariance = SUM(r_j^2 * 1(r_j < 0))
+        - Bipower Variation = mu_1^-2 * (M / (M - 1)) * SUM_(j=2..M)(|r_j| * |r_(j-1)|)
+        - Jump Variation = MAX(Realized Variance - Bipower Variation, 0)
+
+        Where mu_1 = SQRT(2 / pi) is the mean absolute value of a standard normal and M / (M - 1) the small-sample
+        factor of Huang and Tauchen (2005), which matters for hourly bars with M = 7.
+
+        For more information, see the following papers:
+
+        - Andersen, T.G., Bollerslev, T., Diebold, F.X. and Labys, P. (2003). "Modeling and Forecasting
+          Realized Volatility." Econometrica, 71(2), 579-625.
+        - Barndorff-Nielsen, O.E. and Shephard, N. (2004). "Power and Bipower Variation with Stochastic
+          Volatility and Jumps." Journal of Financial Econometrics, 2(1), 1-37.
+        - Barndorff-Nielsen, O.E., Kinnebrock, S. and Shephard, N. (2010). "Measuring Downside Risk:
+          Realised Semivariance." In Volatility and Time Series Econometrics: Essays in Honor of Robert F.
+          Engle, Oxford University Press, 117-136.
+        - Huang, X. and Tauchen, G. (2005). "The Relative Contribution of Jumps to Total Price Variance."
+          Journal of Financial Econometrics, 3(4), 456-499.
+
+        Also known as: realized variance, realized volatility, realised variance, realized semivariance, good and
+        bad volatility, bipower variation, jump variation, intraday volatility.
+
+        Args:
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: The Realized Variance, Realized Volatility, Positive Semivariance, Negative Semivariance,
+            Bipower Variation, Jump Variation and Observations (M) per day, with a column per measure and ticker, as
+            daily (not annualized) decimals.
+
+        Notes:
+        - The intraday bars are those of the Toolkit's intraday_period, so a Toolkit without one raises. Shorter
+          bars measure more precisely, until the bid-ask bounce of bars of a minute or less biases the realized
+          variance upwards; five minutes is the usual compromise.
+        - Each ticker is measured on the bars it traded. A day with a single return has no Bipower Variation and
+          one with two returns no Tripower Quarticity.
+        - The measures are per day; multiply the Realized Variance by 252 (and the Realized Volatility by
+          SQRT(252)) for a yearly figure that leaves the overnight moves out. A daily variance is small (1e-4 is a
+          daily volatility of 1%), so pass a higher rounding to read the variances.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["AAPL", "MSFT"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2025-12-22",
+            end_date="2025-12-31",
+            intraday_period="5min",
+        )
+
+        toolkit.risk.get_realized_variance()["Realized Volatility"]
+        ```
+
+        Which returns:
+
+        | Date       |   AAPL |   MSFT |   Benchmark |
+        |:-----------|-------:|-------:|------------:|
+        | 2025-12-22 | 0.0068 | 0.0071 |      0.0029 |
+        | 2025-12-23 | 0.0069 | 0.0039 |      0.0028 |
+        | 2025-12-24 | 0.0079 | 0.0038 |      0.0014 |
+        | 2025-12-26 | 0.0057 | 0.0041 |      0.0027 |
+        | 2025-12-29 | 0.006  | 0.0059 |      0.0029 |
+        | 2025-12-30 | 0.0044 | 0.0065 |      0.0026 |
+        | 2025-12-31 | 0.0064 | 0.0055 |      0.0039 |
+        """
+        # The tripower quarticity (about 1e-8 a day) only scales the jump test.
+        measures = self._get_realized_measures_per_ticker().drop(
+            columns="Tripower Quarticity", level=0
+        )
+
+        return apply_rounding(
+            measures, rounding if rounding is not None else self._rounding
+        )
+
+    @handle_errors
+    def get_jump_test(
+        self,
+        alpha: float = 0.05,
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the jump test of every day from its intraday returns: whether the price jumped within the day,
+        from how far its realized variance exceeds its bipower variation.
+
+        Without jumps the realized variance and the bipower variation (see `get_realized_variance`) estimate the
+        same integrated variance, and their relative gap is asymptotically normal (Barndorff-Nielsen and Shephard,
+        2006). The test uses the ratio statistic with the tripower quarticity, bounded below as in the formula,
+        which Huang and Tauchen (2005) found to keep its size best on finite samples. A day with a significant
+        statistic has its jump variation as its jump component (Andersen, Bollerslev and Diebold, 2007), such as
+        the day of an earnings announcement or a macroeconomic release.
+
+        The formula is as follows, with M the number of intraday returns of the day:
+
+        - Relative Jump = (Realized Variance - Bipower Variation) / Realized Variance
+        - Tripower Quarticity = M * mu_(4/3)^-3 * (M / (M - 2)) * SUM_(j=3..M)(|r_j|^(4/3) * |r_(j-1)|^(4/3) * |r_(j-2)|^(4/3))
+        - z-Statistic = Relative Jump / SQRT(((pi / 2)^2 + pi - 5) * (1 / M) * MAX(1, Tripower Quarticity / Bipower Variation^2))
+        - p-Value = 1 - N(z-Statistic), one-sided, with N the standard normal distribution
+        - Significant Jump Variation = MAX(Realized Variance - Bipower Variation, 0) when the z-Statistic exceeds N^-1(1 - alpha), else 0
+
+        Where r_j are the intraday log returns and the Realized Variance and Bipower Variation those of
+        `get_realized_variance`, and mu_(4/3) = 2^(2/3) * Gamma(7/6) / Gamma(1/2) = E|Z|^(4/3) of a standard normal Z.
+        The tripower quarticity estimates the integrated quarticity, which sets the variance of the statistic.
+
+        For more information, see the following papers:
+
+        - Barndorff-Nielsen, O.E. and Shephard, N. (2006). "Econometrics of Testing for Jumps in Financial
+          Economics Using Bipower Variation." Journal of Financial Econometrics, 4(1), 1-30.
+        - Huang, X. and Tauchen, G. (2005). "The Relative Contribution of Jumps to Total Price Variance."
+          Journal of Financial Econometrics, 3(4), 456-499.
+        - Andersen, T.G., Bollerslev, T. and Diebold, F.X. (2007). "Roughing It Up: Including Jump
+          Components in the Measurement, Modeling, and Forecasting of Return Volatility." The Review of
+          Economics and Statistics, 89(4), 701-720.
+
+        Also known as: BNS jump test, Barndorff-Nielsen Shephard jump test, Huang-Tauchen test, ratio jump
+        statistic, intraday jump detection, jump component.
+
+        Args:
+            alpha (float, optional): The significance level of the one-sided test. Defaults to 0.05.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: The Relative Jump, z-Statistic, p-Value and Significant Jump Variation per day, with a
+            column per measure and ticker.
+
+        Notes:
+        - The intraday bars are those of the Toolkit's intraday_period, so a Toolkit without one raises. The
+          asymptotics need many returns a day: with hourly bars (M = 7) the test has little power.
+        - A day without movement or with fewer than three returns has no statistic.
+        - Testing many days flags about alpha of the days without a jump by chance; Andersen, Bollerslev and
+          Diebold (2007) use alpha = 0.001 for that reason.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["AAPL", "MSFT"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2025-12-22",
+            end_date="2025-12-31",
+            intraday_period="5min",
+        )
+
+        toolkit.risk.get_jump_test()["p-Value"]
+        ```
+
+        Which returns:
+
+        | Date       |   AAPL |   MSFT |   Benchmark |
+        |:-----------|-------:|-------:|------------:|
+        | 2025-12-22 | 0.7609 | 0.0001 |      0.3991 |
+        | 2025-12-23 | 0.8155 | 0.2146 |      0.1185 |
+        | 2025-12-24 | 0.0321 | 0.7255 |      0.5802 |
+        | 2025-12-26 | 0.588  | 0.1077 |      0.7052 |
+        | 2025-12-29 | 0.8087 | 0.2618 |      0.6111 |
+        | 2025-12-30 | 0.4424 | 0      |      0.0444 |
+        | 2025-12-31 | 0.2173 | 0.7474 |      0.5194 |
+        """
+        validate_alpha(alpha)
+        measures = self._get_realized_measures_per_ticker()
+
+        jump_test = pd.concat(
+            {
+                ticker: realized_volatility_model.get_jump_test(
+                    measures["Realized Variance"][ticker],
+                    measures["Bipower Variation"][ticker],
+                    measures["Tripower Quarticity"][ticker],
+                    measures["Observations"][ticker],
+                    alpha,
+                )
+                for ticker in measures["Realized Variance"].columns
+            },
+            axis=1,
+        ).swaplevel(0, 1, axis=1)
+
+        return apply_rounding(
+            jump_test, rounding if rounding is not None else self._rounding
         )
 
     @handle_portfolio

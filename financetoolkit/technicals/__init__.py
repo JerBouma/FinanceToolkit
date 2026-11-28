@@ -207,11 +207,15 @@ _MODULES = {
         "get_williams_fractal",
     ],
     "financetoolkit.technicals.seasonality.seasonality_model": [
+        "get_calendar_effect",
+        "get_day_of_week_effect",
         "get_period_relative_strength",
+        "get_pre_holiday_days",
         "get_relative_strength",
         "get_relative_strength_rating",
         "get_relative_strength_score",
         "get_seasonality",
+        "get_turn_of_month_days",
     ],
     "financetoolkit.technicals.volatility.volatility_model": [
         "get_aberration",
@@ -271,6 +275,7 @@ __all__ = [
     "get_brar",
     "get_budget_bet_size",
     "get_buying_selling_pressure",
+    "get_calendar_effect",
     "get_candle_features",
     "get_candlestick_patterns",
     "get_center_of_gravity_oscillator",
@@ -290,6 +295,7 @@ __all__ = [
     "get_cumulative_force_index",
     "get_cusum_events",
     "get_daily_volatility",
+    "get_day_of_week_effect",
     "get_derivative_oscillator",
     "get_detrended_price_oscillator",
     "get_detrended_synthetic_price",
@@ -374,6 +380,7 @@ __all__ = [
     "get_pivot_points",
     "get_positive_volume_index",
     "get_power_width",
+    "get_pre_holiday_days",
     "get_premier_stochastic_oscillator",
     "get_pretty_good_oscillator",
     "get_price_bands",
@@ -432,6 +439,7 @@ __all__ = [
     "get_true_range",
     "get_true_strength_index",
     "get_ttm_trend",
+    "get_turn_of_month_days",
     "get_twiggs_money_flow",
     "get_ultimate_oscillator",
     "get_variable_index_dynamic_average",
@@ -653,11 +661,15 @@ if TYPE_CHECKING:
         get_williams_fractal,
     )
     from financetoolkit.technicals.seasonality.seasonality_model import (
+        get_calendar_effect,
+        get_day_of_week_effect,
         get_period_relative_strength,
+        get_pre_holiday_days,
         get_relative_strength,
         get_relative_strength_rating,
         get_relative_strength_score,
         get_seasonality,
+        get_turn_of_month_days,
     )
     from financetoolkit.technicals.volatility.volatility_model import (
         get_aberration,

@@ -1,0 +1,5 @@
+,Average Return,Standard Error,Test Statistic,p-Value,Observations,Average Return,Standard Error,Test Statistic,p-Value,Observations,Average Return,Standard Error,Test Statistic,p-Value,Observations
+,AAPL,AAPL,AAPL,AAPL,AAPL,MSFT,MSFT,MSFT,MSFT,MSFT,Benchmark,Benchmark,Benchmark,Benchmark,Benchmark
+Turn of Month,0.0025,0.002,1.2587,0.2081,140,0.0012,0.0017,0.7169,0.4734,140,0.0012,0.001,1.1854,0.2359,140
+Other Days,0.0007,0.0009,0.7788,0.4361,595,0.0006,0.0008,0.8222,0.411,595,0.0002,0.0006,0.3707,0.7109,595
+Difference,0.0018,0.0022,0.8069,0.4197,735,0.0005,0.002,0.2783,0.7807,735,0.001,0.0014,0.727,0.4672,735

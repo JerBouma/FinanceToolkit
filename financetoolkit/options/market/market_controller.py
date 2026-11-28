@@ -628,34 +628,50 @@ class MarketOptions:
         self,
         expiration_dates: list[str] | None = None,
         number_of_expirations: int = 6,
+        deltas: list[float] | None = None,
         rounding: int | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the volatility skew of every expiry: how much more the market pays for
-        downside than for upside protection, from the 25-delta options, the standard way
-        to compare skew across underlyings and dates:
+        downside than for upside protection (the risk reversal) and how much both tails cost
+        relative to the centre (the butterfly), from the 25-delta and 10-delta options, the
+        standard way to compare skew across underlyings and dates.
 
-            - 25-Delta Risk Reversal = IV(25-delta call) - IV(25-delta put)
-            - 25-Delta Butterfly = (IV(25-delta call) + IV(25-delta put)) / 2 - ATM IV
+        The formula for each delta Δ (25 for 0.25) is as follows:
+
+        - Δ-Delta Risk Reversal = IV(Δ-delta call) - IV(Δ-delta put)
+        - Δ-Delta Butterfly = (IV(Δ-delta call) + IV(Δ-delta put)) / 2 - ATM IV
 
         For equities the risk reversal is usually negative: out-of-the-money puts are
         dearer than calls because investors pay for crash protection. A more negative risk
         reversal means more fear of a fall; the butterfly measures how much both tails cost
-        relative to the centre. The deltas follow from each option's implied volatility, and
-        the volatility at exactly 25 delta is interpolated.
+        relative to the centre. The 10-delta options lie further in the tails, so their risk
+        reversal and butterfly show the price of crash and tail protection that the
+        25-delta options only partly reflect.
 
-        For more information, see the following book:
+        The delta of each option is its Black-Scholes spot delta, e^(-qT) N(d1) for a call
+        and -e^(-qT) N(-d1) for a put, from the option's own implied volatility with the
+        continuously compounded risk free rate and dividend yield, and the volatility at
+        exactly the delta is interpolated linearly in delta between the quoted strikes
+        around it (not from a fitted smile). The at-the-money volatility is that of calls
+        and puts interpolated at the stock price and averaged.
+
+        For more information, see the following books:
 
         - Gatheral, J. (2006). "The Volatility Surface: A Practitioner's Guide." Wiley.
+        - Clark, I. J. (2011). "Foreign Exchange Option Pricing: A Practitioner's Guide." Wiley.
 
-        Also known as: risk reversal, volatility smile, skew, butterfly spread volatility.
+        Also known as: risk reversal, volatility smile, skew, butterfly spread volatility,
+        25-delta skew, 10-delta skew, smile strangle.
 
         Args:
             expiration_dates (list[str] | None, optional): The expiries to use. Defaults to
                 None, the nearest `number_of_expirations` expiries.
             number_of_expirations (int, optional): The number of nearest expiries to use when
                 no dates are given, at least 1. Defaults to 6.
+            deltas (list[float] | None, optional): The absolute deltas of the wings, each
+                between 0 and 0.5. Defaults to None, which uses 0.25 and 0.10.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -664,9 +680,10 @@ class MarketOptions:
                 exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
-            pd.DataFrame: Per ticker and expiry the Days to Expiration, the 25-Delta Put,
-            At-the-Money and 25-Delta Call Volatility, the 25-Delta Risk Reversal and the
-            25-Delta Butterfly.
+            pd.DataFrame: Per ticker and expiry the Days to Expiration, per delta the Put
+            Volatility, the At-the-Money Volatility, per delta the Call Volatility, and per
+            delta the Risk Reversal and Butterfly (decimals), such as "25-Delta Risk
+            Reversal" and "10-Delta Butterfly".
 
         Notes:
         - The stock price is the price of the underlying quoted with the live option chain
@@ -675,6 +692,8 @@ class MarketOptions:
           risk free rate and dividend yield come from the historical data as well, so
           leave end_date at today: a warning is logged when the history ends more than 5
           days before today.
+        - A delta that the quoted strikes of an expiry do not reach (often 10 delta on the
+          nearest expiries, which list few far out-of-the-money strikes) is NaN.
 
         As an example:
 
@@ -683,22 +702,25 @@ class MarketOptions:
 
         toolkit = Toolkit(["QQQ", "AAPL"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
-        toolkit.options.get_volatility_skew(number_of_expirations=3)
+        toolkit.options.get_volatility_skew(
+            number_of_expirations=3,
+            show_columns=["At-the-Money Volatility", "25-Delta Risk Reversal", "10-Delta Risk Reversal"],
+        )
         ```
 
         Which returns:
 
-        |                        |   Days to Expiration |   25-Delta Put Volatility |   At-the-Money Volatility |   25-Delta Call Volatility |   25-Delta Risk Reversal |   25-Delta Butterfly |
-        |:-----------------------|---------------------:|--------------------------:|--------------------------:|---------------------------:|-------------------------:|---------------------:|
-        | ('QQQ', '2026-11-17')  |                    1 |                    0.4167 |                    0.3999 |                     0.3738 |                  -0.0429 |              -0.0047 |
-        | ('QQQ', '2026-11-18')  |                    2 |                    0.4336 |                    0.4161 |                     0.3949 |                  -0.0387 |              -0.0019 |
-        | ('QQQ', '2026-11-19')  |                    3 |                    0.4302 |                    0.4128 |                     0.3904 |                  -0.0398 |              -0.0025 |
-        | ('AAPL', '2026-11-18') |                    2 |                    0.3172 |                    0.2889 |                     0.2724 |                  -0.0448 |               0.0059 |
-        | ('AAPL', '2026-11-20') |                    4 |                    0.3142 |                    0.2983 |                     0.2728 |                  -0.0414 |              -0.0048 |
-        | ('AAPL', '2026-11-23') |                    7 |                    0.27   |                    0.2516 |                     0.2324 |                  -0.0376 |              -0.0004 |
+        |                        |   At-the-Money Volatility |   25-Delta Risk Reversal |   10-Delta Risk Reversal |
+        |:-----------------------|--------------------------:|-------------------------:|-------------------------:|
+        | ('QQQ', '2026-11-30')  |                    0.2527 |                  -0.0857 |                  -0.1086 |
+        | ('QQQ', '2026-12-01')  |                    0.2909 |                  -0.0836 |                  -0.1236 |
+        | ('QQQ', '2026-12-02')  |                    0.306  |                  -0.0859 |                  -0.1427 |
+        | ('AAPL', '2026-11-30') |                    0.1754 |                  -0.025  |                  -0.051  |
+        | ('AAPL', '2026-12-02') |                    0.2144 |                  -0.0378 |                  -0.0858 |
+        | ('AAPL', '2026-12-04') |                    0.2292 |                  -0.0373 |                  -0.0947 |
         """
         return self._per_expiry(
-            market_metrics_model.get_volatility_skew,
+            partial(market_metrics_model.get_volatility_skew, deltas=deltas),
             expiration_dates,
             number_of_expirations,
             rounding,

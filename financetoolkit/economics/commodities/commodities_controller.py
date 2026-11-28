@@ -274,7 +274,8 @@ class CommoditiesEconomics:
     ) -> pd.DataFrame:
         """
         Get the term structure of a commodity futures curve per day: whether the curve is in backwardation, contango
-        or flat, with the 12-month calendar spread and the annualised roll yield.
+        or flat, with the 12-month calendar spread, the annualised roll yield and the return of rolling the front into
+        the next contract.
 
         Next to the front contract, the calendar spread compares it with the last contract of the 12-month strip that
         starts with it, in price and in percent.
@@ -289,6 +290,7 @@ class CommoditiesEconomics:
             Spread = Front - Far
             Slope = Far / Front - 1
             Roll Yield = ln(Front / Far) x 12 / Months
+            Roll Return = Front / Next - 1
 
         The spread follows the exchange quote of a calendar spread, nearby minus deferred,
         so it is positive in backwardation, and its widest backwardation is its maximum.
@@ -297,18 +299,32 @@ class CommoditiesEconomics:
         (1987) and Szymanowska, De Roon, Nijman and Van den Goorbergh (2014): the
         continuously compounded yearly return a long position earns from the shape of the
         curve alone, positive in backwardation and negative in contango, with Months the
-        months between both delivery months.
+        months between both delivery months. The roll return is the simple return of one
+        roll, not annualised (Erb and Harvey, 2006): what a long position earns by selling
+        the front and buying the next contract when the curve keeps its shape until the next
+        contract becomes the front, positive in backwardation and negative in contango. It
+        covers the months between the front and the next contract (one for crude oil, two or
+        three for corn and the other grains).
+
+        For more information, see the following papers:
+
+        - Fama, E. F., and French, K. R. (1987). "Commodity Futures Prices: Some Evidence on
+          Forecast Power, Premiums, and the Theory of Storage." Journal of Business, 60(1), 55-73.
+        - Erb, C. B., and Harvey, C. R. (2006). "The Strategic and Tactical Value of Commodity
+          Futures." Financial Analysts Journal, 62(2), 69-97.
+        - Szymanowska, M., De Roon, F., Nijman, T., and Van den Goorbergh, R. (2014). "An
+          Anatomy of Commodity Futures Risk Premia." Journal of Finance, 69(1), 453-482.
 
         By default the front of each day is the nearest contract that had not expired on
         that day (see the generic curve of get_commodity_forward_curve), so the
         spread is a time series of the curve as it stood each day. Yahoo Finance drops a
         contract once it expires, so on the days whose front has expired since, Front, the
-        Spread, Slope and Roll Yield are NaN while Front Contract names the contract.
+        Spread, Slope, Roll Yield and Roll Return are NaN while Front Contract names the contract.
         Without the generic curve, today's front and far contract are taken on every day
         (e.g. December 2026 against November 2027 for crude oil): a fixed calendar spread
         with its full history.
 
-        Also known as: calendar spread, roll yield, carry, basis, backwardation, contango.
+        Also known as: calendar spread, roll yield, roll return, carry, basis, backwardation, contango.
 
         Args:
             commodity (str | list[str] | None, optional): The commodity, or a list of them. Options are: "Crude Oil"
@@ -328,9 +344,9 @@ class CommoditiesEconomics:
             InvalidArgumentError: If the commodity is not one of the supported names.
 
         Returns:
-            pd.DataFrame: Per date the Front Contract and Far Contract (delivery months),
-            their prices Front and Far, the Months between them, the Spread, Slope and Roll
-            Yield (decimals) and the Structure ("Backwardation", "Contango" or "Flat" when
+            pd.DataFrame: Per date the Front Contract, Next Contract and Far Contract
+            (delivery months), their prices Front, Next and Far, the Months between the front
+            and far contract, the Spread, Slope, Roll Yield and Roll Return (decimals) and the Structure ("Backwardation", "Contango" or "Flat" when
             the front and far contract trade at the same price). With a list
             of commodities (or none given), the columns are the commodity and the field.
 
@@ -339,25 +355,19 @@ class CommoditiesEconomics:
         ```python
         from financetoolkit import Economics
 
-        economics = Economics(start_date='2026-10-26', end_date='2026-11-06')
+        economics = Economics(start_date='2026-11-23', end_date='2026-11-27')
 
         economics.get_commodity_term_structure("Crude Oil")
         ```
 
         Which returns:
 
-        | Date       | Front Contract   |   Front | Far Contract   |   Far |   Months |   Spread |   Slope |   Roll Yield | Structure     |
-        |:-----------|:-----------------|--------:|:---------------|------:|---------:|---------:|--------:|-------------:|:--------------|
-        | 2026-10-26 | 2026-12          |  101.76 | 2027-11        | 81.98 |       11 |    19.78 | -0.1944 |       0.2358 | Backwardation |
-        | 2026-10-27 | 2026-12          |   99.9  | 2027-11        | 82.07 |       11 |    17.83 | -0.1785 |       0.2145 | Backwardation |
-        | 2026-10-28 | 2026-12          |  102.78 | 2027-11        | 83.15 |       11 |    19.63 | -0.191  |       0.2312 | Backwardation |
-        | 2026-10-29 | 2026-12          |  102    | 2027-11        | 82.54 |       11 |    19.46 | -0.1908 |       0.2309 | Backwardation |
-        | 2026-10-30 | 2026-12          |  104.12 | 2027-11        | 83.01 |       11 |    21.11 | -0.2027 |       0.2472 | Backwardation |
-        | 2026-11-02 | 2026-12          |   96.46 | 2027-11        | 80.05 |       11 |    16.41 | -0.1701 |       0.2034 | Backwardation |
-        | 2026-11-03 | 2026-12          |   96.09 | 2027-11        | 80.31 |       11 |    15.78 | -0.1642 |       0.1957 | Backwardation |
-        | 2026-11-04 | 2026-12          |   88.12 | 2027-11        | 75.32 |       11 |    12.8  | -0.1453 |       0.1712 | Backwardation |
-        | 2026-11-05 | 2026-12          |   90.52 | 2027-11        | 75.11 |       11 |    15.41 | -0.1702 |       0.2036 | Backwardation |
-        | 2026-11-06 | 2026-12          |   90.83 | 2027-11        | 76.42 |       11 |    14.41 | -0.1586 |       0.1884 | Backwardation |
+        | Date       | Front Contract   |   Front | Next Contract   |   Next | Far Contract   |   Far |   Months |   Spread |   Slope |   Roll Yield |   Roll Return | Structure     |
+        |:-----------|:-----------------|--------:|:----------------|-------:|:---------------|------:|---------:|---------:|--------:|-------------:|--------------:|:--------------|
+        | 2026-11-23 | 2027-01          |   80.17 | 2027-02         |  79.07 | 2027-12        | 70.47 |       11 |     9.7  | -0.121  |       0.1407 |        0.0139 | Backwardation |
+        | 2026-11-24 | 2027-01          |   82.05 | 2027-02         |  81.07 | 2027-12        | 71.71 |       11 |    10.34 | -0.126  |       0.1469 |        0.0121 | Backwardation |
+        | 2026-11-25 | 2027-01          |   83.68 | 2027-02         |  82.35 | 2027-12        | 72.06 |       11 |    11.62 | -0.1389 |       0.1631 |        0.0162 | Backwardation |
+        | 2026-11-27 | 2027-01          |   83.08 | 2027-02         |  81.96 | 2027-12        | 72.08 |       11 |    11    | -0.1324 |       0.1549 |        0.0137 | Backwardation |
         """
         curves = self._get_commodity_curves(commodity, 12, generic, self._start_date)
 

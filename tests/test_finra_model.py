@@ -1,8 +1,10 @@
 """Tests for the FINRA short sale volume model and the Toolkit method built on it."""
 
+import json
 import logging
 from types import SimpleNamespace
 
+import numpy as np
 import pandas as pd
 import pytest
 import requests
@@ -214,3 +216,197 @@ def test_a_toolkit_without_covered_tickers_returns_nothing(monkeypatch):
     monkeypatch.setattr(finra_model, "get_request", fake_finra([]))
 
     assert Toolkit.get_short_volume(toolkit(["ASML.AS"])).empty
+
+
+# Two settlement dates of FINRA's short interest as its Query API returns them in JSON; the
+# GME figures and FINRA's own days to cover (6.87 and 4.29) are those it published.
+SHORT_INTEREST_RECORDS = [
+    {
+        "symbolCode": "GME",
+        "settlementDate": "2026-11-13",
+        "currentShortPositionQuantity": 41054446,
+        "averageDailyVolumeQuantity": 5977827,
+        "daysToCoverQuantity": 6.87,
+    },
+    {
+        "symbolCode": "GME",
+        "settlementDate": "2026-09-15",
+        "currentShortPositionQuantity": 39069126,
+        "averageDailyVolumeQuantity": 9105968,
+        "daysToCoverQuantity": 4.29,
+    },
+    {
+        "symbolCode": "BRKB",
+        "settlementDate": "2026-11-13",
+        "currentShortPositionQuantity": 16584564,
+        "averageDailyVolumeQuantity": 0,
+        "daysToCoverQuantity": 0,
+    },
+]
+
+
+class FakeJsonResponse:
+    def __init__(self, records, total):
+        self.records = records
+        self.text = "[]" if records else ""
+        self.headers = {"record-total": str(total)}
+
+    def json(self):
+        return self.records
+
+
+def fake_short_interest(requests_made, records=SHORT_INTEREST_RECORDS, page=None):
+    """A get_request that answers the short interest query with records, page by page."""
+
+    def get_request(url, timeout=60, extra_headers=None, data=None):  # noqa: ARG001
+        payload = json.loads(data)
+        requests_made.append(payload)
+        size = page or payload["limit"]
+        start = payload["offset"] // payload["limit"] * size
+        return FakeJsonResponse(records[start : start + size], len(records))
+
+    return get_request
+
+
+@pytest.mark.parametrize(
+    "ticker, symbol", [("AAPL", "AAPL"), ("BRK-B", "BRKB"), ("ASML.AS", None)]
+)
+def test_short_interest_symbols_have_no_share_class_separator(ticker, symbol):
+    assert finra_model.to_finra_symbol(ticker, separator="") == symbol
+
+
+def test_the_short_interest_records_are_read_per_symbol():
+    positions = finra_model.read_short_interest(SHORT_INTEREST_RECORDS)
+
+    assert sorted(positions) == ["BRKB", "GME"]
+    assert positions["GME"].index.astype(str).tolist() == ["2026-09-15", "2026-11-13"]
+    assert positions["GME"]["Short Interest"].tolist() == [39069126.0, 41054446.0]
+    assert finra_model.read_short_interest([]) == {}
+
+    with pytest.raises(ValueError, match="averageDailyVolumeQuantity"):
+        finra_model.read_short_interest([{"symbolCode": "GME"}])
+
+
+def test_the_days_to_cover_match_finras_own_figures():
+    positions = finra_model.read_short_interest(SHORT_INTEREST_RECORDS)["GME"]
+
+    days_to_cover = finra_model.get_days_to_cover(
+        positions["Short Interest"], positions["Average Daily Volume"]
+    )
+
+    # FINRA rounds its days to cover to two decimals.
+    assert days_to_cover.round(2).tolist() == [4.29, 6.87]
+    assert np.isnan(finra_model.get_days_to_cover(100.0, 0.0))
+    assert finra_model.get_short_interest_to_float(25.0, 100.0) == 0.25
+    assert np.isnan(finra_model.get_short_interest_to_float(25.0, 0.0))
+
+
+def test_the_short_interest_is_requested_once_for_all_symbols(monkeypatch):
+    requests_made = []
+    monkeypatch.setattr(finra_model, "get_request", fake_short_interest(requests_made))
+
+    positions = finra_model.collect_short_interest(
+        ["GME", "BRKB", "NOTATICKER"], "2026-09-01", "2026-11-27"
+    )
+
+    assert len(requests_made) == 1
+    assert requests_made[0]["domainFilters"][0]["values"] == [
+        "GME",
+        "BRKB",
+        "NOTATICKER",
+    ]
+    assert requests_made[0]["dateRangeFilters"][0]["startDate"] == "2026-09-01"
+    assert positions["NOTATICKER"].empty
+    assert positions["GME"]["Short Interest"].tolist() == [39069126.0, 41054446.0]
+
+
+def test_the_short_interest_is_read_page_by_page(monkeypatch):
+    requests_made = []
+    monkeypatch.setattr(
+        finra_model, "get_request", fake_short_interest(requests_made, page=2)
+    )
+    monkeypatch.setattr(finra_model, "SHORT_INTEREST_PAGE", 2)
+
+    positions = finra_model.collect_short_interest(
+        ["GME", "BRKB"], "2026-09-01", "2026-11-27"
+    )
+
+    assert [payload["offset"] for payload in requests_made] == [0, 2]
+    assert len(positions["GME"]) == 2
+    assert len(positions["BRKB"]) == 1
+
+
+def test_short_interest_that_cannot_be_retrieved_is_not_cached(monkeypatch, caplog):
+    stored = []
+    cache = SimpleNamespace(
+        plan=lambda **kwargs: SimpleNamespace(
+            cached_frame=lambda symbol: None,
+            get_fetch_span=lambda symbol: (
+                pd.Timestamp("2026-09-01"),
+                pd.Timestamp("2026-11-27"),
+            ),
+        ),
+        store=lambda **kwargs: stored.append(kwargs),
+    )
+
+    def offline(*args, **kwargs):
+        raise requests.exceptions.ConnectionError("offline")
+
+    monkeypatch.setattr(finra_model, "get_active_cache", lambda: cache)
+    monkeypatch.setattr(finra_model, "get_request", offline)
+
+    with caplog.at_level(logging.WARNING):
+        positions = finra_model.collect_short_interest(
+            ["GME"], "2026-09-01", "2026-11-27"
+        )
+
+    assert positions["GME"].empty
+    assert stored == []
+    assert "short interest" in caplog.text
+
+
+def test_the_toolkit_gives_each_ticker_its_short_interest(monkeypatch, caplog):
+    monkeypatch.setattr(finra_model, "get_request", fake_short_interest([]))
+    instance = SimpleNamespace(
+        _tickers=["GME", "BRK-B", "ASML.AS"],
+        _start_date="2026-09-01",
+        _end_date="2026-11-27",
+        _rounding=4,
+        _api_key="KEY",
+        get_shares_float=lambda: pd.DataFrame(
+            {"GME": [400_000_000.0], "BRK-B": [1_300_000_000.0]},
+            index=["Float Shares"],
+        ),
+    )
+
+    with caplog.at_level(logging.WARNING):
+        short_interest = Toolkit.get_short_interest(instance)
+
+    assert short_interest.columns.get_level_values(0).unique().tolist() == [
+        "Short Interest",
+        "Average Daily Volume",
+        "Days to Cover",
+        "Short Interest to Float",
+    ]
+    november = short_interest.loc[pd.Period("2026-11-13", freq="D")]
+    assert november[("Days to Cover", "GME")] == pytest.approx(6.8678)
+    assert november[("Short Interest to Float", "GME")] == pytest.approx(0.1026)
+    # A cycle without volume has no days to cover.
+    assert np.isnan(november[("Days to Cover", "BRK-B")])
+    assert "ASML.AS" in caplog.text
+
+
+def test_the_short_interest_to_float_is_empty_without_an_api_key(monkeypatch):
+    monkeypatch.setattr(finra_model, "get_request", fake_short_interest([]))
+    instance = SimpleNamespace(
+        _tickers=["GME"],
+        _start_date="2026-09-01",
+        _end_date="2026-11-27",
+        _rounding=4,
+        _api_key="",
+    )
+
+    short_interest = Toolkit.get_short_interest(instance)
+
+    assert short_interest["Short Interest to Float"].isna().all()
+    assert short_interest["Days to Cover"].tolist() == [4.2905, 6.8678]

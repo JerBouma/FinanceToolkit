@@ -816,6 +816,8 @@ def test_get_volatility_skew(recorder, option_market):
     recorder.capture(stable(skew, labels))
     # Puts carry the higher volatility in the simulated skew.
     assert (skew["25-Delta Risk Reversal"] < 0).all()
+    assert (skew["10-Delta Risk Reversal"] < skew["25-Delta Risk Reversal"]).all()
+    recorder.capture(stable(module.get_volatility_skew(deltas=[0.25]), labels))
 
 
 def test_get_implied_move(recorder, option_market):

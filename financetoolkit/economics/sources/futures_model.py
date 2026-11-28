@@ -182,8 +182,8 @@ def get_term_structure(
     months: int = 12,
 ) -> pd.DataFrame:
     """
-    Summarise the term structure of a futures curve per day: the 12-month calendar spread, the annualised roll yield
-    and whether the curve is in backwardation, contango or flat.
+    Summarise the term structure of a futures curve per day: the 12-month calendar spread, the annualised roll yield,
+    the return of rolling the front into the next contract and whether the curve is in backwardation, contango or flat.
 
     The calendar spread compares the front contract with the last contract of the 12-month strip that starts with it:
     the furthest contract delivering less than the given number of months after the front, e.g. November 2027 for a
@@ -194,6 +194,7 @@ def get_term_structure(
         Spread = Front - Far
         Slope = Far / Front - 1
         Roll Yield = ln(Front / Far) x 12 / Months
+        Roll Return = Front / Next - 1
 
     The spread follows the exchange quote of a calendar spread, nearby minus deferred, so
     that it is positive in backwardation. The slope is the percentage the far contract lies
@@ -201,9 +202,23 @@ def get_term_structure(
     of Fama and French (1987) and Szymanowska, De Roon, Nijman and Van den Goorbergh (2014):
     the continuously compounded yearly return a long position earns from the curve alone as
     the far contract rolls up (backwardation, positive) or down (contango, negative) to the
-    front's price, with Months the months between both delivery months. The curve is in
-    Backwardation when the front is above the far contract, in Contango when it is below
-    and Flat when both trade at the same price.
+    front's price, with Months the months between both delivery months. The roll return is
+    the simple return of one roll, not annualised: what a long position earns by selling the
+    front and buying the next contract (the second position on the curve) when the curve
+    keeps its shape until the next contract becomes the front, so that it converges to the
+    front's price. It is positive in backwardation and negative in contango, and it covers
+    the months between the front and the next contract (one for crude oil, two or three for
+    corn and the other grains). The curve is in Backwardation when the front is above the
+    far contract, in Contango when it is below and Flat when both trade at the same price.
+
+    For more information, see the following papers:
+
+    - Fama, E. F., and French, K. R. (1987). "Commodity Futures Prices: Some Evidence on
+      Forecast Power, Premiums, and the Theory of Storage." Journal of Business, 60(1), 55-73.
+    - Erb, C. B., and Harvey, C. R. (2006). "The Strategic and Tactical Value of Commodity
+      Futures." Financial Analysts Journal, 62(2), 69-97.
+    - Szymanowska, M., De Roon, F., Nijman, T., and Van den Goorbergh, R. (2014). "An
+      Anatomy of Commodity Futures Risk Premia." Journal of Finance, 69(1), 453-482.
 
     Args:
         position_prices (pd.DataFrame): The price in each position of the curve per date,
@@ -213,9 +228,9 @@ def get_term_structure(
         months (int, optional): The length of the strip in months. Defaults to 12.
 
     Returns:
-        pd.DataFrame: Per date the Front Contract, Front, Far Contract, Far, Months,
-            Spread, Slope, Roll Yield (decimals) and Structure ("Backwardation", "Contango"
-            or "Flat").
+        pd.DataFrame: Per date the Front Contract, Front, Next Contract, Next, Far Contract,
+            Far, Months, Spread, Slope, Roll Yield, Roll Return (decimals) and Structure
+            ("Backwardation", "Contango" or "Flat").
     """
     delivery = position_labels.map(
         lambda label: (
@@ -246,6 +261,18 @@ def get_term_structure(
         dtype=object,
     )
 
+    has_next = position_prices.shape[1] > 1
+    next_price = (
+        position_prices.iloc[:, 1]
+        if has_next
+        else pd.Series(np.nan, index=position_prices.index)
+    )
+    next_contract = (
+        position_labels.iloc[:, 1]
+        if has_next
+        else pd.Series(np.nan, index=position_prices.index, dtype=object)
+    )
+
     structure = pd.Series(np.nan, index=position_prices.index, dtype=object)
     structure[front > far] = "Backwardation"
     structure[front < far] = "Contango"
@@ -255,12 +282,15 @@ def get_term_structure(
         {
             "Front Contract": position_labels.iloc[:, 0],
             "Front": front,
+            "Next Contract": next_contract,
+            "Next": next_price,
             "Far Contract": far_contract,
             "Far": far,
             "Months": months_between,
             "Spread": front - far,
             "Slope": far / front - 1,
             "Roll Yield": np.log(front / far) * 12 / months_between,
+            "Roll Return": front / next_price - 1,
             "Structure": structure,
         }
     )

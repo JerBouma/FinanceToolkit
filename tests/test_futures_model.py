@@ -358,3 +358,31 @@ def test_a_curve_whose_front_and_far_contract_trade_at_one_price_is_flat():
 
     assert term_structure["Structure"] == "Flat"
     assert term_structure["Spread"] == 0
+
+
+def test_the_roll_return_is_that_of_rolling_the_front_into_the_next_contract():
+    labels = pd.DataFrame(
+        [["2027-01", "2027-02", "2027-12"], ["2026-12", "2027-03", "2027-09"]],
+        index=pd.PeriodIndex(["2026-11-23", "2026-11-24"], freq="D"),
+        columns=["Front", "+1", "+2"],
+    )
+    prices = pd.DataFrame(
+        [[80.17, 79.07, 70.47], [450.0, 460.0, 470.0]],
+        index=labels.index,
+        columns=labels.columns,
+    )
+
+    term_structure = futures_model.get_term_structure(prices, labels)
+
+    crude_oil, corn = term_structure.iloc[0], term_structure.iloc[1]
+    assert crude_oil["Next Contract"] == "2027-02"
+    assert crude_oil["Roll Return"] == pytest.approx(80.17 / 79.07 - 1)
+    assert crude_oil["Roll Yield"] == pytest.approx(np.log(80.17 / 70.47) * 12 / 11)
+    # Corn's next contract delivers three months after the front, in contango.
+    assert corn["Next Contract"] == "2027-03"
+    assert corn["Roll Return"] == pytest.approx(450 / 460 - 1)
+    assert corn["Roll Return"] < 0
+    assert corn["Structure"] == "Contango"
+
+    front_only = futures_model.get_term_structure(prices[["Front"]], labels[["Front"]])
+    assert front_only["Roll Return"].isna().all()

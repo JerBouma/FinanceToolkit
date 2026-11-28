@@ -2,7 +2,7 @@
 
 import numpy as np
 import pandas as pd
-from scipy import stats
+from scipy import optimize, stats
 from scipy.optimize import brentq
 
 from financetoolkit.risk import risk_model
@@ -28,6 +28,25 @@ ALPHA_TOLERANCE = 1e-12
 # The losses above the threshold a GPD fit needs: its shape and scale are unstable on a
 # handful of points, so with fewer the EVT VaR and CVaR are NaN rather than a random value.
 MINIMUM_NUMBER_OF_EXCEEDANCES = 10
+
+# The asymptotic standard errors of the GPD fit (the inverse Fisher information) exist for xi > -0.5.
+MINIMUM_GPD_STANDARD_ERROR_SHAPE = -0.5
+
+# The values of theta * max(excess) the GPD profile likelihood is first searched on (theta = xi / beta):
+# fine just above -1, where the support ends at the largest excess, and on both sides of 0, the
+# exponential limit, up to 10,000 for a very heavy tail.
+GPD_PROFILE_GRID = np.sort(
+    np.concatenate(
+        [
+            -1 + np.logspace(-8, -1, 30),
+            -np.logspace(-6, 0, 80, endpoint=False),
+            np.logspace(-6, 4, 120),
+        ]
+    )
+)
+
+# The loss quantiles the Mean Excess Function is calculated at by default: 0.80, 0.81, ..., 0.99.
+DEFAULT_MEAN_EXCESS_QUANTILES = np.round(np.arange(0.80, 0.995, 0.01), 2)
 
 # The standard deviation of the spreads needs two of them (ddof=1).
 MINIMUM_SPREAD_OBSERVATIONS = 2
@@ -242,6 +261,273 @@ def get_var_kernel(
     )
 
 
+def get_gpd_profile_log_likelihood(
+    excesses: np.ndarray, theta: np.ndarray
+) -> np.ndarray:
+    """
+    Calculate the profile log-likelihood of a Generalized Pareto Distribution (GPD): the highest
+    log-likelihood of the excesses for each value of theta = xi / beta.
+
+    For a fixed theta the likelihood equations of the GPD solve in closed form (Davison and Smith
+    1990, Grimshaw 1993), which reduces the two-parameter Maximum Likelihood fit to a search over
+    theta alone:
+
+    - xi(theta) = (1 / n) * Σ ln(1 + theta * y_i)
+    - beta(theta) = xi(theta) / theta
+    - l(theta) = -n * ln(beta(theta)) - n * (1 + xi(theta))
+
+    Where y_i are the n excesses over the threshold. Theta lies above -1 / max(y_i), where every
+    1 + theta * y_i is positive; a theta with xi(theta) <= -1 gets a log-likelihood of minus infinity,
+    since the likelihood is unbounded there (the GPD then has no Maximum Likelihood estimate).
+
+    For more information about the method, see the following papers:
+
+    - Davison, A.C. and Smith, R.L. (1990). "Models for Exceedances over High Thresholds." Journal of
+    the Royal Statistical Society, Series B, 52(3), 393-442.
+    - Grimshaw, S.D. (1993). "Computing Maximum Likelihood Estimates for the Generalized Pareto
+    Distribution." Technometrics, 35(2), 185-191.
+
+    Args:
+        excesses (np.ndarray): The losses above the threshold minus the threshold, all positive.
+        theta (np.ndarray): The values of theta = xi / beta, each above -1 / max(excesses) and not 0.
+
+    Returns:
+        np.ndarray: The profile log-likelihood for each theta.
+
+    As an example:
+
+    ```python
+    import numpy as np
+    from financetoolkit.risk.value_at_risk import var_model
+
+    excesses = np.array([0.002, 0.004, 0.005, 0.009, 0.012, 0.015, 0.021, 0.03, 0.041, 0.07])
+
+    print(var_model.get_gpd_profile_log_likelihood(excesses, np.array([-5.0, 10.0, 30.0])).round(4))
+    ```
+
+    Which returns:
+
+    ```
+    [28.6818 28.5434 28.1741]
+    ```
+    """
+    theta = np.atleast_1d(np.asarray(theta, dtype=float))
+    number_of_excesses = len(excesses)
+
+    shape = np.log1p(np.outer(theta, excesses)).mean(axis=1)
+    scale = shape / theta
+
+    with np.errstate(invalid="ignore", divide="ignore"):
+        log_likelihood = -number_of_excesses * np.log(scale) - number_of_excesses * (
+            1 + shape
+        )
+
+    return np.where((shape > -1) & (scale > 0), log_likelihood, -np.inf)
+
+
+def fit_generalized_pareto(excesses: np.ndarray | pd.Series) -> tuple[float, float]:
+    """
+    Fit a Generalized Pareto Distribution (GPD) to excesses over a threshold by Maximum Likelihood:
+    the shape xi and scale beta of the tail.
+
+    The fit maximizes the profile log-likelihood of `get_gpd_profile_log_likelihood` over theta =
+    xi / beta: first on a grid of theta * max(excesses) from just above -1 to 10,000 (fine near -1 and
+    near 0), then with a bounded Brent search between the grid points around the best one. The
+    exponential distribution (xi = 0) is the limit as theta goes to 0, which the grid approaches
+    from both sides. The log-density of the GPD is:
+
+    - ln f(y) = -ln(beta) - (1 + 1 / xi) * ln(1 + xi * y / beta) for xi ≠ 0
+    - ln f(y) = -ln(beta) - y / beta for xi = 0
+
+    For more information about the method, see the following papers:
+
+    - Davison, A.C. and Smith, R.L. (1990). "Models for Exceedances over High Thresholds." Journal of
+    the Royal Statistical Society, Series B, 52(3), 393-442.
+    - Grimshaw, S.D. (1993). "Computing Maximum Likelihood Estimates for the Generalized Pareto
+    Distribution." Technometrics, 35(2), 185-191.
+
+    Referenced against:
+    - scipy, genpareto: https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.genpareto.html
+
+    Args:
+        excesses (np.ndarray | pd.Series): The losses above the threshold minus the threshold, all
+        positive.
+
+    Returns:
+        tuple[float, float]: The fitted shape (xi) and scale (beta).
+
+    Notes:
+    - scipy's genpareto.fit with the location fixed at 0 maximizes the same likelihood with a
+    Nelder-Mead search; its estimates agree to about four significant digits and its log-likelihood
+    is never higher.
+
+    As an example:
+
+    ```python
+    import numpy as np
+    from financetoolkit.risk.value_at_risk import var_model
+
+    excesses = np.array([0.002, 0.004, 0.005, 0.009, 0.012, 0.015, 0.021, 0.03, 0.041, 0.07])
+
+    shape, scale = var_model.fit_generalized_pareto(excesses)
+    print(round(shape, 4), round(scale, 4))
+    ```
+
+    Which returns:
+
+    ```
+    -0.0628 0.0222
+    ```
+    """
+    excesses = np.asarray(excesses, dtype=float)
+    theta_grid = GPD_PROFILE_GRID / excesses.max()
+    log_likelihood = get_gpd_profile_log_likelihood(excesses, theta_grid)
+
+    best = int(np.argmax(log_likelihood))
+    refined = optimize.minimize_scalar(
+        lambda theta: -get_gpd_profile_log_likelihood(excesses, theta)[0],
+        bounds=(
+            theta_grid[max(best - 1, 0)],
+            theta_grid[min(best + 1, len(theta_grid) - 1)],
+        ),
+        method="bounded",
+        options={"xatol": 1e-12 / excesses.max()},
+    )
+    theta = refined.x if -refined.fun >= log_likelihood[best] else theta_grid[best]
+
+    shape = float(np.mean(np.log1p(theta * excesses)))
+
+    return shape, shape / theta
+
+
+def get_generalized_pareto_fit(
+    returns: pd.Series | pd.DataFrame,
+    threshold_percentile: float = 0.95,
+    threshold: float | None = None,
+) -> pd.Series | pd.DataFrame:
+    """
+    Fit a Generalized Pareto Distribution (GPD) to the losses above a threshold (Peak-over-Threshold):
+    the shape and scale of the extreme losses with their standard errors.
+
+    By the Pickands-Balkema-de Haan theorem, the losses above a high threshold u follow a GPD for a wide
+    class of distributions. The shape xi says how heavy the tail is: xi > 0 is a power-law tail (as
+    Student-t returns, with tail index 1 / xi), xi = 0 an exponential tail (as normal returns) and
+    xi < 0 a tail with a finite end point. The fit is the base of the Extreme Value Theory VaR and
+    Expected Shortfall (`get_var_evt`, `cvar_model.get_cvar_evt`).
+
+    The formula is as follows:
+
+    - Losses = -Returns, Excesses y_i = Loss_i - u for every Loss_i > u
+    - (xi, beta) maximize Σ ln f(y_i) with ln f(y) = -ln(beta) - (1 + 1 / xi) * ln(1 + xi * y / beta)
+    - Shape Standard Error = (1 + xi) / √Nu
+    - Scale Standard Error = beta * √(2 * (1 + xi) / Nu)
+    - Exceedance Probability = Nu / n
+
+    Where u is the `threshold_percentile` percentile of the losses (linear interpolation) or the given
+    `threshold`, Nu the number of losses above u and n the number of losses. The standard errors are
+    the asymptotic ones of the Maximum Likelihood estimator (the inverse Fisher information), which hold
+    for xi > -0.5; below that they are NaN.
+
+    For more information about the method, see the following sources:
+
+    - Smith, R.L. (1987). "Estimating Tails of Probability Distributions." The Annals of Statistics,
+    15(3), 1174-1207.
+    - McNeil, A.J. and Frey, R. (2000). "Estimation of Tail-Related Risk Measures for Heteroscedastic
+    Financial Time Series: An Extreme Value Approach." Journal of Empirical Finance, 7(3-4), 271-300.
+    - McNeil, A.J., Frey, R. and Embrechts, P. (2015). "Quantitative Risk Management: Concepts,
+    Techniques and Tools." Revised Edition, Princeton University Press, Section 5.2.
+
+    Referenced against:
+    - scipy, genpareto: https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.genpareto.html
+
+    Args:
+        returns (pd.Series | pd.DataFrame): A Series or Dataframe of returns.
+        threshold_percentile (float, optional): The percentile of losses above which the GPD is fitted
+        (e.g. 0.95 fits the GPD on the worst 5% of losses). Defaults to 0.95.
+        threshold (float | None, optional): A loss threshold as a positive decimal (0.03 fits the GPD to
+        the losses beyond 3%), which replaces `threshold_percentile`. Defaults to None.
+
+    Returns:
+        pd.Series | pd.DataFrame: The threshold, the number of exceedances, the exceedance probability,
+        the shape, the scale and their standard errors, as a pd.Series if returns is a pd.Series,
+        otherwise as a pd.DataFrame with one column per asset. The shape, scale and standard errors are
+        NaN with fewer than 10 exceedances (MINIMUM_NUMBER_OF_EXCEEDANCES).
+
+    As an example:
+
+    ```python
+    import numpy as np
+    import pandas as pd
+    from financetoolkit.risk.value_at_risk import var_model
+
+    returns = pd.Series(np.random.default_rng(1).standard_t(4, 1000) * 0.01)
+
+    print(var_model.get_generalized_pareto_fit(returns).round(4))
+    ```
+
+    Which returns:
+
+    ```
+    Threshold                  0.0207
+    Exceedances               50.0000
+    Exceedance Probability     0.0500
+    Shape (xi)                 0.3211
+    Scale (beta)               0.0077
+    Shape Standard Error       0.1868
+    Scale Standard Error       0.0018
+    dtype: float64
+    ```
+    """
+    if isinstance(returns, pd.DataFrame):
+        return pd.DataFrame(
+            {
+                column: get_generalized_pareto_fit(
+                    returns[column], threshold_percentile, threshold
+                )
+                for column in returns.columns
+            }
+        )
+
+    losses = -returns.dropna()
+
+    shape = scale = shape_error = scale_error = np.nan
+    column_threshold = np.nan
+    number_of_exceedances = 0
+
+    # A ticker without observations (e.g. a period before the listing) has no tail to fit.
+    if not losses.empty:
+        column_threshold = (
+            threshold
+            if threshold is not None
+            else np.percentile(losses, threshold_percentile * 100)
+        )
+        excesses = losses[losses > column_threshold] - column_threshold
+        number_of_exceedances = len(excesses)
+
+        if number_of_exceedances >= MINIMUM_NUMBER_OF_EXCEEDANCES:
+            shape, scale = fit_generalized_pareto(excesses)
+
+            # The inverse Fisher information of the GPD (Smith 1987) exists for xi > -0.5.
+            if shape > MINIMUM_GPD_STANDARD_ERROR_SHAPE:
+                shape_error = (1 + shape) / np.sqrt(number_of_exceedances)
+                scale_error = scale * np.sqrt(2 * (1 + shape) / number_of_exceedances)
+
+    return pd.Series(
+        {
+            "Threshold": column_threshold,
+            "Exceedances": number_of_exceedances,
+            "Exceedance Probability": (
+                number_of_exceedances / len(losses) if len(losses) else np.nan
+            ),
+            "Shape (xi)": shape,
+            "Scale (beta)": scale,
+            "Shape Standard Error": shape_error,
+            "Scale Standard Error": scale_error,
+        },
+        name=returns.name,
+    )
+
+
 def fit_gpd_tail(
     returns: pd.DataFrame, threshold_percentile: float
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
@@ -251,7 +537,7 @@ def fit_gpd_tail(
 
     This is the shared fitting routine behind both `get_var_evt` (below) and
     `cvar_model.get_cvar_evt`, since both need the same shape, scale and threshold
-    parameters of the fitted GPD tail.
+    parameters of the fitted GPD tail; the fit itself is `get_generalized_pareto_fit`.
 
     Args:
         returns (pd.DataFrame): A Dataframe of returns, one column per asset.
@@ -267,41 +553,164 @@ def fit_gpd_tail(
         for the shape, scale and exceedance probability of that column, see
         `warn_too_few_exceedances`.
     """
-    shape, scale, threshold, exceedance_probability = [], [], [], []
-    for column in returns.columns:
-        losses = -returns[column].dropna()
-
-        # A column without observations (e.g. a period before the listing) has no tail to fit.
-        if losses.empty:
-            shape.append(np.nan)
-            scale.append(np.nan)
-            threshold.append(np.nan)
-            exceedance_probability.append(np.nan)
-            continue
-
-        column_threshold = np.percentile(losses, threshold_percentile * 100)
-        exceedances = losses[losses > column_threshold] - column_threshold
-
-        if len(exceedances) < MINIMUM_NUMBER_OF_EXCEEDANCES:
-            shape.append(np.nan)
-            scale.append(np.nan)
-            threshold.append(column_threshold)
-            exceedance_probability.append(np.nan)
-            continue
-
-        column_shape, _, column_scale = stats.genpareto.fit(exceedances, floc=0)
-
-        shape.append(column_shape)
-        scale.append(column_scale)
-        threshold.append(column_threshold)
-        exceedance_probability.append(len(exceedances) / len(losses))
+    fit = get_generalized_pareto_fit(returns, threshold_percentile)
+    shape = fit.loc["Shape (xi)"].to_numpy(dtype=float)
 
     return (
-        np.array(shape),
-        np.array(scale),
-        np.array(threshold),
-        np.array(exceedance_probability),
+        shape,
+        fit.loc["Scale (beta)"].to_numpy(dtype=float),
+        fit.loc["Threshold"].to_numpy(dtype=float),
+        np.where(
+            np.isnan(shape), np.nan, fit.loc["Exceedance Probability"].to_numpy(float)
+        ),
     )
+
+
+def get_gpd_tail_loss(
+    threshold: np.ndarray,
+    shape: np.ndarray,
+    scale: np.ndarray,
+    exceedance_probability: np.ndarray,
+    alpha: float,
+) -> np.ndarray:
+    """
+    Calculate the loss that a Generalized Pareto tail exceeds with probability alpha: the
+    Peak-over-Threshold VaR as a positive loss.
+
+    The tail estimator of Smith (1987) and McNeil and Frey (2000) is:
+
+    - VaR_loss = u + (beta / xi) * ((alpha / p)^(-xi) - 1) for xi ≠ 0
+    - VaR_loss = u - beta * ln(alpha / p) for xi = 0
+
+    Where u is the threshold, xi and beta the fitted shape and scale and p the exceedance probability.
+    The term ((alpha / p)^(-xi) - 1) / xi is evaluated as expm1(-xi * ln(alpha / p)) / xi, which stays
+    exact as xi approaches 0 and meets the exponential limit there.
+
+    Args:
+        threshold (np.ndarray): The loss threshold u per asset.
+        shape (np.ndarray): The fitted shape xi per asset.
+        scale (np.ndarray): The fitted scale beta per asset.
+        exceedance_probability (np.ndarray): The fraction of losses above the threshold per asset.
+        alpha (float): The tail probability (e.g., 0.01 for the 99% confidence level).
+
+    Returns:
+        np.ndarray: The VaR as a positive loss per asset.
+
+    As an example:
+
+    ```python
+    import numpy as np
+    from financetoolkit.risk.value_at_risk import var_model
+
+    print(
+        var_model.get_gpd_tail_loss(
+            np.array([0.02, 0.02]), np.array([0.2, 0.0]), np.array([0.01, 0.01]), np.array([0.05, 0.05]), 0.01
+        ).round(4)
+    )
+    ```
+
+    Which returns:
+
+    ```
+    [0.039  0.0361]
+    ```
+    """
+    log_ratio = np.log(alpha / np.asarray(exceedance_probability, dtype=float))
+    shape = np.asarray(shape, dtype=float)
+
+    with np.errstate(invalid="ignore", divide="ignore"):
+        growth = np.where(shape == 0, -log_ratio, np.expm1(-shape * log_ratio) / shape)
+
+    return threshold + scale * growth
+
+
+def get_mean_excess_function(
+    returns: pd.Series | pd.DataFrame,
+    quantiles: list[float] | np.ndarray | None = None,
+) -> pd.DataFrame:
+    """
+    Calculate the empirical Mean Excess Function of the losses: the average amount by which the losses
+    exceed each of a range of thresholds, used to choose the threshold of a Generalized Pareto fit.
+
+    Above a threshold where the losses follow a Generalized Pareto Distribution, the mean excess is a
+    straight line in the threshold with slope xi / (1 - xi): rising for a heavy (power-law) tail, flat for
+    an exponential tail and falling for a tail with an end point. A good threshold is the lowest one above
+    which the plot is close to linear (Davison and Smith 1990).
+
+    The formula is as follows:
+
+    - Losses = -Returns
+    - e(u) = Σ (Loss_i - u) * 1{Loss_i > u} / Σ 1{Loss_i > u}
+
+    Where u is the quantile of the losses at each of `quantiles` (linear interpolation).
+
+    For more information about the method, see the following sources:
+
+    - Davison, A.C. and Smith, R.L. (1990). "Models for Exceedances over High Thresholds." Journal of
+    the Royal Statistical Society, Series B, 52(3), 393-442.
+    - McNeil, A.J., Frey, R. and Embrechts, P. (2015). "Quantitative Risk Management: Concepts,
+    Techniques and Tools." Revised Edition, Princeton University Press, Section 5.2.
+
+    Args:
+        returns (pd.Series | pd.DataFrame): A Series or Dataframe of returns.
+        quantiles (list[float] | np.ndarray | None, optional): The quantiles of the losses to use as
+        thresholds. Defaults to None, which uses 0.80, 0.81, ..., 0.99.
+
+    Returns:
+        pd.DataFrame: The threshold, the mean excess and the number of exceedances for each quantile,
+        with a top-level column per asset when returns is a pd.DataFrame.
+
+    As an example:
+
+    ```python
+    import numpy as np
+    import pandas as pd
+    from financetoolkit.risk.value_at_risk import var_model
+
+    returns = pd.Series(np.random.default_rng(1).standard_t(4, 1000) * 0.01)
+
+    print(var_model.get_mean_excess_function(returns, quantiles=[0.9, 0.95, 0.99]).round(4))
+    ```
+
+    Which returns:
+
+    ```
+              Threshold  Mean Excess  Exceedances
+    Quantile
+    0.90         0.0155       0.0092        100.0
+    0.95         0.0207       0.0111         50.0
+    0.99         0.0387       0.0155         10.0
+    ```
+    """
+    quantiles = np.asarray(
+        quantiles if quantiles is not None else DEFAULT_MEAN_EXCESS_QUANTILES,
+        dtype=float,
+    )
+
+    if isinstance(returns, pd.DataFrame):
+        return pd.concat(
+            {
+                column: get_mean_excess_function(returns[column], quantiles)
+                for column in returns.columns
+            },
+            axis=1,
+        )
+
+    losses = -returns.dropna().to_numpy()
+    rows = []
+
+    for quantile in quantiles:
+        threshold = np.percentile(losses, quantile * 100) if len(losses) else np.nan
+        excesses = losses[losses > threshold] - threshold
+        rows.append(
+            {
+                "Threshold": threshold,
+                "Mean Excess": excesses.mean() if len(excesses) else np.nan,
+                "Exceedances": float(len(excesses)),
+            }
+        )
+
+    return pd.DataFrame(rows, index=pd.Index(quantiles, name="Quantile"))
 
 
 def get_number_of_exceedances(
@@ -405,10 +814,12 @@ def get_var_evt(
     The formula is as follows:
 
     - VaR = -(u + (sigma / xi) * ((alpha / p)^(-xi) - 1))
+    - VaR = -(u - sigma * ln(alpha / p)) for xi = 0 (the exponential limit)
 
-    Where `u` is the loss threshold, `xi` and `sigma` the fitted GPD shape and scale and
-    `p` the fraction of losses above the threshold. The formula extrapolates the tail
-    beyond the threshold, so it only holds for `alpha <= 1 - threshold_percentile`.
+    Where `u` is the loss threshold, `xi` and `sigma` the fitted GPD shape and scale (see
+    `get_generalized_pareto_fit`) and `p` the fraction of losses above the threshold. The
+    formula extrapolates the tail beyond the threshold, so it only holds for
+    `alpha <= 1 - threshold_percentile`.
 
     For more information see:
 
@@ -469,8 +880,8 @@ def get_var_evt(
         returns, threshold_percentile
     )
 
-    value_at_risk = -(
-        threshold + (scale / shape) * ((alpha / exceedance_probability) ** (-shape) - 1)
+    value_at_risk = -get_gpd_tail_loss(
+        threshold, shape, scale, exceedance_probability, alpha
     )
 
     return pd.Series(value_at_risk, index=returns.columns)

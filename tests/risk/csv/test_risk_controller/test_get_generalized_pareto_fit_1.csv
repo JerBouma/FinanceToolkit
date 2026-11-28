@@ -1,0 +1,8 @@
+,AAPL,MSFT,Benchmark
+Threshold,0.03,0.03,0.03
+Exceedances,30.0,30.0,17.0
+Exceedance Probability,0.1923,0.1923,0.109
+Shape (xi),0.1138,0.0467,0.3398
+Scale (beta),0.0242,0.0199,0.0178
+Shape Standard Error,0.2034,0.1911,0.3249
+Scale Standard Error,0.0066,0.0052,0.0071

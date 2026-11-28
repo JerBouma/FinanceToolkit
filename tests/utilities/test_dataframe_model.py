@@ -279,3 +279,33 @@ def test_every_public_method_takes_show_columns():
     ]
 
     assert not missing
+
+
+def test_filter_columns_a_ticker_and_a_field_give_that_tickers_field():
+    columns = pd.MultiIndex.from_tuples(
+        [
+            ("AAPL", "On-Balance Volume"),
+            ("AAPL", "Maximum"),
+            ("MSFT", "On-Balance Volume"),
+            ("MSFT", "Maximum"),
+        ]
+    )
+    df = pd.DataFrame([[1.0, 2.0, 3.0, 4.0]], columns=columns)
+
+    one = dataframe_model.filter_columns(df, ["AAPL", "On-Balance Volume"])
+    both = dataframe_model.filter_columns(df, ["AAPL", "MSFT", "On-Balance Volume"])
+
+    assert one.to_numpy().tolist() == [[1.0]]
+    assert both.to_numpy().tolist() == [[1.0, 3.0]]
+
+
+def test_filter_columns_names_on_different_columns_give_an_empty_table(caplog):
+    columns = pd.MultiIndex.from_tuples(
+        [("AAPL", "On-Balance Volume"), ("MSFT", "Maximum")]
+    )
+    df = pd.DataFrame([[1.0, 2.0]], columns=columns)
+
+    result = dataframe_model.filter_columns(df, ["AAPL", "Maximum"])
+
+    assert result.shape[1] == 0
+    assert "No column combines" in caplog.text

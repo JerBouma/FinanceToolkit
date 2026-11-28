@@ -2140,3 +2140,25 @@ def test_get_jump_test(recorder):
 def test_realized_measures_need_intraday_data(risk_module):
     with pytest.raises(InvalidArgumentError, match="intraday_period"):
         risk_module.get_realized_variance()
+
+
+def test_get_generalized_pareto_fit(recorder, risk_module):
+    recorder.capture(risk_module.get_generalized_pareto_fit())
+    recorder.capture(
+        risk_module.get_generalized_pareto_fit(period="weekly", threshold=0.03)
+    )
+
+
+def test_get_generalized_pareto_fit_invalid_threshold(risk_module):
+    with pytest.raises(InvalidArgumentError, match="threshold_percentile"):
+        risk_module.get_generalized_pareto_fit(threshold_percentile=95)
+    with pytest.raises(InvalidArgumentError, match="positive decimal"):
+        risk_module.get_generalized_pareto_fit(threshold=-0.03)
+
+
+def test_get_mean_excess_function(recorder, risk_module):
+    recorder.capture(risk_module.get_mean_excess_function())
+    recorder.capture(risk_module.get_mean_excess_function(quantiles=[0.9, 0.95]))
+
+    with pytest.raises(InvalidArgumentError, match="quantiles"):
+        risk_module.get_mean_excess_function(quantiles=[90])

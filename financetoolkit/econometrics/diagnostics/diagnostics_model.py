@@ -1307,7 +1307,8 @@ def get_gmm_moment_test(
     - g_t the moment conditions of observation t, over the T observations t = p + 1, ..., n, and ḡ
       their average
     - S their covariance under the null of independent innovations: Cov(z^a - m_a, z^b - m_b) =
-      m_(a+b) - m_a m_b between the four moments, from the innovation distribution;
+      m_(a+b) - m_a m_b between the four moments, from the innovation distribution (the sample
+      covariance when it lacks one of these moments);
       Cov(a_t b_(t-j), c_t d_(t-k)) = E[a c] E[b d] for j = k and 0 otherwise between the lagged
       products, with E[a c] the average of the products of the centred moments; and 0 between the
       moments and the lagged products
@@ -1326,10 +1327,11 @@ def get_gmm_moment_test(
     6.6% of the time at 1,000 observations and 5.3% at 2,500, against 10.5% and 8.2% with the
     sample covariance of the moments. On simulated Student-t innovations with a Shape of 10 (and
     the same distribution assumed) the joint test rejects about 5% of the time and the Kurtosis
-    test about 3% at 1,000 and 2,500 observations. A moment the distribution does not have (m_6
-    or m_8 of a Student-t with a Shape of 6 or 8 or less) takes its sample counterpart, which
-    rests on moments that do not exist: the tests of the conditions it enters are then
-    unreliable.
+    test about 3% at 1,000 and 2,500 observations. When the distribution lacks a moment the
+    covariance of the four moments needs (a Student-t, skewed or not, with a Shape of 8 or
+    less), their covariance is the sample covariance instead, which keeps it positive
+    semi-definite (and the statistics at or above 0) but rests on moments that do not exist:
+    the tests are then unreliable.
 
     For more information about the method, see the following paper:
 
@@ -1417,11 +1419,15 @@ def get_gmm_moment_test(
         # The covariance of the conditions under the null of independent innovations. Between
         # the four moments it is the one the distribution implies, m_(a+b) - m_a m_b: their
         # sample covariance rests on 8th sample moments of z_t and gives the joint test at 5%
-        # a size of about 10% at 1,000 normal observations. A moment the distribution does not
-        # have takes the sample covariance instead. For the lagged products (centred moments
-        # a and b at lags j and k) Cov = δ_jk E[a b]², uncorrelated with the moments: the
-        # sample covariance of the products themselves rests on 16th moments of z_t and on
-        # cross-products that are only zero in expectation.
+        # a size of about 10% at 1,000 normal observations. When the distribution lacks a moment
+        # an entry needs, the whole block is the sample covariance: filling only the missing
+        # entries from the sample mixes two estimates into a matrix that need not be positive
+        # semi-definite, which turned the joint statistic negative (a Student-t with a Shape of
+        # 4.5 on returns with heavier tails). Both the implied and the sample covariance are
+        # positive semi-definite on their own, as Hansen's (1982) weighting matrix must be.
+        # For the lagged products (centred moments a and b at lags j and k) Cov = δ_jk E[a b]²,
+        # uncorrelated with the moments: the sample covariance of the products themselves rests
+        # on 16th moments of z_t and on cross-products that are only zero in expectation.
         base = [name for name in centred if name in conditions]
         moments = np.column_stack([centred[name][lags:] for name in base])
         products = np.atleast_2d(moments.T @ moments / observations)
@@ -1431,10 +1437,10 @@ def get_gmm_moment_test(
         )
         covariance = np.zeros((len(names), len(names)))
         size = len(base)
-        covariance[:size, :size] = np.where(
-            np.isfinite(implied),
-            implied,
-            np.atleast_2d(np.cov(moments, rowvar=False)),
+        covariance[:size, :size] = (
+            implied
+            if np.isfinite(implied).all()
+            else np.atleast_2d(np.cov(moments, rowvar=False))
         )
         for row, first in enumerate(names[size:], size):
             for column, second in enumerate(names[size:], size):

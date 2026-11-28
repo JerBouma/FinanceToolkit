@@ -1385,10 +1385,24 @@ def test_get_bubble_test(recorder, econometrics_module):
     )
 
 
-def test_get_bubble_episodes(recorder, econometrics_module):
-    recorder.capture(
-        econometrics_module.get_bubble_episodes(period="weekly", simulations=100)
-    )
+def test_get_bubble_episodes(recorder, econometrics_module, caplog):
+    # No asset has an episode of the default duration: the table is empty, with its columns,
+    # and a warning names each asset as without an episode rather than without data.
+    with caplog.at_level("WARNING", logger="financetoolkit"):
+        episodes = econometrics_module.get_bubble_episodes(
+            period="weekly", simulations=100
+        )
+    recorder.capture(episodes)
+    assert episodes.empty
+    assert list(episodes.columns) == [
+        "Start",
+        "End",
+        "Duration",
+        "Peak Date",
+        "Peak Statistic",
+    ]
+    for ticker in ("AAPL", "MSFT"):
+        assert f"No bubble episode is found for {ticker} from " in caplog.text
     recorder.capture(
         econometrics_module.get_bubble_episodes(
             period="weekly", simulations=100, time_series=True
@@ -1910,3 +1924,18 @@ def test_a_rolling_sample_entropy_without_values_is_logged(econometrics_module, 
 
     assert entropy.notna().any().any()
     assert "NaN throughout" not in caplog.text
+
+
+def test_get_connectedness(recorder, econometrics_module):
+    recorder.capture(econometrics_module.get_connectedness())
+    recorder.capture(
+        econometrics_module.get_connectedness(
+            period="weekly", lags=2, periods=5, include_benchmark=True
+        )
+    )
+
+
+def test_get_rolling_connectedness(recorder, econometrics_module):
+    recorder.capture(
+        econometrics_module.get_rolling_connectedness(period="weekly", window=52)
+    )

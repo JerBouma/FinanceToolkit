@@ -47,6 +47,7 @@ def test_the_tools_offer_signals_only():
     [
         ("momentum", "get_signals", {}),
         ("overlap", "get_candlestick_patterns", {"patterns": "Engulfing"}),
+        ("momentum", "get_event_filter", {}),
     ],
 )
 def test_signals_only_is_passed_on(answered_by, tool, indicator, extra):

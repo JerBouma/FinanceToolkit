@@ -2258,6 +2258,17 @@ def test_get_event_filter(recorder, technical_module):
     recorder.capture(technical_module.get_event_filter(method="z_score", threshold=2))
 
 
+def test_get_event_filter_signals_only(technical_module):
+    events = technical_module.get_event_filter(method="z_score", threshold=2)
+    signals = technical_module.get_event_filter(
+        method="z_score", threshold=2, signals_only=True
+    )
+
+    # The dates on which a ticker has an event, and only those.
+    pd.testing.assert_frame_equal(signals, events[events.abs().gt(0).any(axis=1)])
+    assert 0 < len(signals) < len(events)
+
+
 def test_get_triple_barrier_labels(recorder, technical_module):
     recorder.capture(technical_module.get_triple_barrier_labels())
     recorder.capture(

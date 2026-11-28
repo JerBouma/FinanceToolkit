@@ -3,6 +3,7 @@
 __docformat__ = "google"
 
 import math
+import numbers
 from collections.abc import Callable
 from typing import NamedTuple
 
@@ -6533,6 +6534,12 @@ def get_black_litterman_returns(
     if views:
         pick, targets, uncertainty = [], [], []
         for view, value in views.items():
+            # An inequality (">=", 0.02) is a view of entropy pooling; Black-Litterman blends numbers only.
+            if isinstance(value, bool) or not isinstance(value, numbers.Real):
+                raise ValueError(
+                    f"A Black-Litterman view is a number, not {value!r} ({view}); "
+                    "get_entropy_pooling takes inequality views."
+                )
             row = get_view_vector(view, assets)
             variance = tau * row @ sigma @ row
             confidence = (view_confidences or {}).get(view)

@@ -42,6 +42,7 @@ from financetoolkit.utilities.error_model import (
 )
 from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import apply_rounding, finalize_dataset
+from financetoolkit.utilities.transform_model import transform_result
 
 # ruff: noqa: E501
 
@@ -1032,6 +1033,7 @@ class CurvesFixedIncome:
         lag: int = 1,
         rounding: int | None = None,
         standardize: bool = False,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ):
         """
@@ -1078,6 +1080,11 @@ class CurvesFixedIncome:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -1138,6 +1145,7 @@ class CurvesFixedIncome:
             standardize=standardize,
             axis="rows",
             row_slice=True,
+            transform=transform,
         )
 
     @handle_errors
@@ -1149,6 +1157,7 @@ class CurvesFixedIncome:
         growth: bool = False,
         lag: int = 1,
         standardize: bool = False,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ):
         """
@@ -1218,6 +1227,11 @@ class CurvesFixedIncome:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -1337,6 +1351,7 @@ class CurvesFixedIncome:
             axis="rows",
             row_slice=True,
             dropna=True,
+            transform=transform,
         )
 
     def _get_keyless_treasury_rates(self) -> pd.DataFrame:
@@ -1384,6 +1399,7 @@ class CurvesFixedIncome:
         growth: bool = False,
         lag: int = 1,
         standardize: bool = False,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ):
         """
@@ -1417,6 +1433,11 @@ class CurvesFixedIncome:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -1527,6 +1548,7 @@ class CurvesFixedIncome:
             standardize=standardize,
             axis="rows",
             row_slice=True,
+            transform=transform,
         )
 
     def _latest_yield_curve(self, country: str, date: str | None = None) -> pd.Series:
@@ -1695,6 +1717,7 @@ class CurvesFixedIncome:
         )
 
     @handle_errors
+    @transform_result
     def get_zero_coupon_curve(
         self,
         countries: list[str] | str = "United States",
@@ -1702,6 +1725,7 @@ class CurvesFixedIncome:
         interpolation: str = "linear_par",
         maturities: float | str | list | None = None,
         rounding: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ):
         """
@@ -1792,6 +1816,11 @@ class CurvesFixedIncome:
                 zero rates of, in years or as labels such as '4Y' (a list or a
                 comma-separated string). Defaults to None, the maturities the curve quotes.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            transform (str | list[str] | None, optional): Time series steps applied to the result in order,
+                such as "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), along the dates of each series. A window needs that many
+                periods of the result, so its first periods are empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -1851,6 +1880,7 @@ class CurvesFixedIncome:
         )
 
     @handle_errors
+    @transform_result
     def get_nelson_siegel_svensson(
         self,
         countries: list[str] | str = "United States",
@@ -1858,6 +1888,7 @@ class CurvesFixedIncome:
         method: str = "svensson",
         maturities: list[float | str] | str | None = None,
         rounding: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ):
         """
@@ -1921,6 +1952,11 @@ class CurvesFixedIncome:
                 return the fitted zero-coupon yields at instead of the parameters. Defaults
                 to None, which returns the parameters.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            transform (str | list[str] | None, optional): Time series steps applied to the result in order,
+                such as "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), along the dates of each series. A window needs that many
+                periods of the result, so its first periods are empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -2027,6 +2063,7 @@ class CurvesFixedIncome:
         )
 
     @handle_errors
+    @transform_result
     def get_carry_and_roll_down(
         self,
         countries: list[str] | str = "United States",
@@ -2034,6 +2071,7 @@ class CurvesFixedIncome:
         horizon: float | str = 0.25,
         maturities: list[float | str] | str | None = None,
         rounding: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ):
         """
@@ -2104,6 +2142,11 @@ class CurvesFixedIncome:
                 string), at least one longer than the horizon; a maturity shorter than the horizon
                 is NaN. Defaults to None, every maturity of the curve longer than the horizon.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            transform (str | list[str] | None, optional): Time series steps applied to the result in order,
+                such as "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), along the dates of each series. A window needs that many
+                periods of the result, so its first periods are empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -2349,6 +2392,7 @@ class CurvesFixedIncome:
         growth: bool = False,
         lag: int = 1,
         standardize: bool = False,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ):
         """
@@ -2396,6 +2440,11 @@ class CurvesFixedIncome:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -2458,6 +2507,7 @@ class CurvesFixedIncome:
             standardize=standardize,
             axis="rows",
             row_slice=True,
+            transform=transform,
         )
 
     @handle_errors
@@ -2470,6 +2520,7 @@ class CurvesFixedIncome:
         lag: int = 1,
         standardize: bool = False,
         maturity_years: list[int] | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ):
         """
@@ -2526,6 +2577,11 @@ class CurvesFixedIncome:
             maturity_years (list[int] | None, optional): The maturities in years to keep, e.g.
                 [1, 2, 5, 10, 20, 30] (or "1,2,5,10,20,30") for the key points of the curve. Defaults to None, which
                 keeps every maturity from 1 to 150 years.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -2610,6 +2666,7 @@ class CurvesFixedIncome:
             axis="rows",
             row_slice=True,
             dropna=True,
+            transform=transform,
         )
 
     @handle_errors
@@ -2620,6 +2677,7 @@ class CurvesFixedIncome:
         growth: bool = False,
         lag: int = 1,
         standardize: bool = False,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ):
         """
@@ -2653,6 +2711,11 @@ class CurvesFixedIncome:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -2705,6 +2768,7 @@ class CurvesFixedIncome:
             axis="rows",
             row_slice=True,
             dropna=True,
+            transform=transform,
         )
 
     @handle_errors
@@ -2716,6 +2780,7 @@ class CurvesFixedIncome:
         growth: bool = False,
         lag: int = 1,
         standardize: bool = False,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ):
         """
@@ -2751,6 +2816,11 @@ class CurvesFixedIncome:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -2818,4 +2888,5 @@ class CurvesFixedIncome:
             axis="rows",
             row_slice=True,
             dropna=True,
+            transform=transform,
         )

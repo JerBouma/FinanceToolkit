@@ -18,6 +18,7 @@ from financetoolkit.utilities.error_model import (
 )
 from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.sources_model import track_sources
+from financetoolkit.utilities.transform_model import transform_result
 
 # ruff: noqa: E501
 
@@ -36,9 +37,11 @@ class QualityModels:
     """
 
     @handle_errors
+    @transform_result
     def get_piotroski_score(
         self,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -118,6 +121,11 @@ class QualityModels:
                 counts calendar periods, so a period without a report makes it NaN. Defaults to None, which
                 is 4 on quarterly data (a trailing twelve months), as the score was estimated on yearly
                 statements.
+            transform (str | list[str] | None, optional): Time series steps applied to the result in order,
+                such as "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), along the dates of each series. A window needs that many
+                periods of the result, so its first periods are empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -310,6 +318,7 @@ class QualityModels:
         lag: int | list[int] = 1,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -366,6 +375,11 @@ class QualityModels:
                 counts calendar periods, so a period without a report makes it NaN. Defaults to None, which
                 is 4 on quarterly data (a trailing twelve months), as the score was estimated on yearly
                 statements.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -542,7 +556,12 @@ class QualityModels:
                 )
             )
             return self._finalize_components(
-                five_variables, rounding, growth, lag, standardize
+                five_variables,
+                rounding,
+                growth,
+                lag,
+                standardize,
+                transform=transform,
             )
 
         beneish_m_score["Beneish M-Score"] = beneish_model.get_beneish_m_score(
@@ -563,7 +582,12 @@ class QualityModels:
         )
 
         return self._finalize_components(
-            beneish_m_score, rounding, growth, lag, standardize
+            beneish_m_score,
+            rounding,
+            growth,
+            lag,
+            standardize,
+            transform=transform,
         )
 
     def _score_inputs(self, trailing: int | None) -> dict[str, pd.DataFrame]:
@@ -624,11 +648,13 @@ class QualityModels:
         return inputs
 
     @handle_errors
+    @transform_result
     def get_magic_formula(
         self,
         diluted: bool = True,
         trailing: int | None = None,
         rounding: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -662,6 +688,11 @@ class QualityModels:
                 quarterly data (a year of operating income) and 1 otherwise.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
+            transform (str | list[str] | None, optional): Time series steps applied to the result in order,
+                such as "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), along the dates of each series. A window needs that many
+                periods of the result, so its first periods are empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -741,11 +772,13 @@ class QualityModels:
         )
 
     @handle_errors
+    @transform_result
     def get_mohanram_g_score(
         self,
         variance_periods: int = 5,
         trailing: int | None = None,
         rounding: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -796,6 +829,11 @@ class QualityModels:
                 to compare quarter over quarter.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
+            transform (str | list[str] | None, optional): Time series steps applied to the result in order,
+                such as "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), along the dates of each series. A window needs that many
+                periods of the result, so its first periods are empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -882,10 +920,12 @@ class QualityModels:
         )
 
     @handle_errors
+    @transform_result
     def get_dechow_f_score(
         self,
         trailing: int | None = None,
         rounding: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -927,6 +967,11 @@ class QualityModels:
                 to compare quarter over quarter.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
+            transform (str | list[str] | None, optional): Time series steps applied to the result in order,
+                such as "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), along the dates of each series. A window needs that many
+                periods of the result, so its first periods are empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -1010,10 +1055,12 @@ class QualityModels:
         )
 
     @handle_errors
+    @transform_result
     def get_montier_c_score(
         self,
         trailing: int | None = None,
         rounding: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -1049,6 +1096,11 @@ class QualityModels:
                 to compare quarter over quarter.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
+            transform (str | list[str] | None, optional): Time series steps applied to the result in order,
+                such as "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), along the dates of each series. A window needs that many
+                periods of the result, so its first periods are empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -1126,11 +1178,13 @@ class QualityModels:
         )
 
     @handle_errors
+    @transform_result
     def get_quality_score(
         self,
         growth_years: int = 5,
         trailing: int | None = None,
         rounding: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -1171,6 +1225,11 @@ class QualityModels:
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the rounding of the Toolkit (4 unless set
                 otherwise).
+            transform (str | list[str] | None, optional): Time series steps applied to the result in order,
+                such as "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), along the dates of each series. A window needs that many
+                periods of the result, so its first periods are empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -1336,11 +1395,13 @@ class QualityModels:
         )
 
     @handle_errors
+    @transform_result
     def get_accrual_quality(
         self,
         method: Literal["dechow_dichev", "mcnichols"] = "dechow_dichev",
         window: int = 8,
         rounding: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -1386,6 +1447,11 @@ class QualityModels:
                 per company. Defaults to 8.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
+            transform (str | list[str] | None, optional): Time series steps applied to the result in order,
+                such as "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), along the dates of each series. A window needs that many
+                periods of the result, so its first periods are empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -1497,10 +1563,12 @@ class QualityModels:
         )
 
     @handle_errors
+    @transform_result
     def get_earnings_attributes(
         self,
         window: int = 10,
         rounding: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -1539,6 +1607,11 @@ class QualityModels:
                 regression; the paper uses 10. Defaults to 10.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
+            transform (str | list[str] | None, optional): Time series steps applied to the result in order,
+                such as "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), along the dates of each series. A window needs that many
+                periods of the result, so its first periods are empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -1743,10 +1816,12 @@ class QualityModels:
         return self._finish_score(criteria, rounding, first_columns=0)
 
     @handle_errors
+    @transform_result
     def get_accruals_ratio(
         self,
         trailing: int | None = None,
         rounding: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -1794,6 +1869,11 @@ class QualityModels:
                 to compare quarter over quarter.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
+            transform (str | list[str] | None, optional): Time series steps applied to the result in order,
+                such as "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), along the dates of each series. A window needs that many
+                periods of the result, so its first periods are empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -1849,6 +1929,7 @@ class QualityModels:
         return self._finish_score(results, rounding, first_columns=trailing or 1)
 
     @handle_errors
+    @transform_result
     def get_discretionary_accruals(
         self,
         method: str = "time_series",
@@ -1856,6 +1937,7 @@ class QualityModels:
         intercept: bool = False,
         trailing: int | None = None,
         rounding: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -1929,6 +2011,11 @@ class QualityModels:
                 to compare quarter over quarter.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
+            transform (str | list[str] | None, optional): Time series steps applied to the result in order,
+                such as "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), along the dates of each series. A window needs that many
+                periods of the result, so its first periods are empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none

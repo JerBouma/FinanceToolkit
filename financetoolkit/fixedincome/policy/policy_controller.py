@@ -34,6 +34,7 @@ class PolicyFixedIncome:
         nominal: bool = True,
         rounding: int | None = None,
         standardize: bool = False,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ):
         """
@@ -61,6 +62,11 @@ class PolicyFixedIncome:
                 silently answering them with a nominal rate. Defaults to True.
             rounding (int | None, optional): Rounding precision for the rates. Defaults to None.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. Defaults to False.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -165,6 +171,7 @@ class PolicyFixedIncome:
             standardize=standardize,
             axis="rows",
             row_slice=True,
+            transform=transform,
         )
 
     @handle_errors
@@ -174,6 +181,7 @@ class PolicyFixedIncome:
         period: str = "daily",
         rounding: int | None = None,
         standardize: bool = False,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ):
         """
@@ -220,6 +228,11 @@ class PolicyFixedIncome:
                 "quarterly", "yearly". Defaults to "daily".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. Defaults to False.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -288,6 +301,7 @@ class PolicyFixedIncome:
             standardize=standardize,
             axis="rows",
             row_slice=True,
+            transform=transform,
         )
 
     @handle_errors
@@ -296,6 +310,7 @@ class PolicyFixedIncome:
         rate: str = "EFFR",
         rounding: int | None = None,
         standardize: bool = False,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ):
         """
@@ -356,6 +371,11 @@ class PolicyFixedIncome:
                 Rate), "SOFR" (Secured Overnight Financing Rate). Defaults to "EFFR".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. Defaults to False.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -418,4 +438,5 @@ class PolicyFixedIncome:
             standardize=standardize,
             axis="rows",
             row_slice=True,
+            transform=transform,
         )

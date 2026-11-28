@@ -2,6 +2,12 @@
 
 __docformat__ = "google"
 
+import functools
+import inspect
+import re
+from collections.abc import Callable
+from typing import Any
+
 import numpy as np
 import pandas as pd
 from scipy import sparse
@@ -449,3 +455,147 @@ def apply_transform(
         return frame.iloc[:, 0].rename(dataset.name)
 
     return frame.T if by_columns else frame
+
+
+# Labels that are dates or periods: 2024, 2024Q3, 2024-05, 2024-05-31 (with a time), or a
+# week such as 2024-05-27/2024-06-02.
+DATE_LABEL = re.compile(
+    r"^\d{4}(Q[1-4]|-\d{2}(-\d{2}([ T]\d{2}:\d{2}(:\d{2})?)?)?)?(/\d{4}-\d{2}-\d{2})?$"
+)
+
+
+def is_date_index(index: pd.Index) -> bool:
+    """
+    Whether every label of an index is a date or period, as a datetime or period index or as
+    labels such as 2024, 2024Q3 or 2024-05-31.
+
+    Args:
+        index (pd.Index): The index, not a MultiIndex.
+
+    Returns:
+        bool: True when it has labels and all of them are dates.
+    """
+    if isinstance(index, pd.DatetimeIndex | pd.PeriodIndex):
+        return len(index) > 0
+
+    return len(index) > 0 and all(DATE_LABEL.match(str(label)) for label in index)
+
+
+def transform_by_date_level(
+    dataset: pd.DataFrame, transform: str | list[str], level: int
+) -> pd.DataFrame:
+    """
+    Apply the transform to a dataset whose rows combine dates with another label, such as a
+    period and a ticker, along the dates of each label on its own.
+
+    Args:
+        dataset (pd.DataFrame): The numeric values, a MultiIndex as the rows.
+        transform (str | list[str]): The steps.
+        level (int): The position of the date level.
+
+    Returns:
+        pd.DataFrame: The transformed values, in the order of the dataset.
+    """
+    others = [
+        position for position in range(dataset.index.nlevels) if position != level
+    ]
+    wide = dataset.unstack(others)
+    transformed = apply_transform(wide, transform).stack(
+        list(range(wide.columns.nlevels))[-len(others) :], future_stack=True
+    )
+    # The stacked rows are the date and then the other labels; put the date back in place.
+    transformed = transformed.reorder_levels(
+        [
+            0 if position == level else 1 + others.index(position)
+            for position in range(dataset.index.nlevels)
+        ]
+    )
+
+    return transformed.reindex(dataset.index)[dataset.columns]
+
+
+def transform_time_series(
+    result: pd.Series | pd.DataFrame, transform: str | list[str] | None
+) -> pd.Series | pd.DataFrame:
+    """
+    Apply the transform to the dates of a result, wherever they are: the rows (prices), a level
+    of the rows (a period and a ticker) or the columns (the periods of a financial statement).
+    Only the numeric columns change; text and dates stay as they are.
+
+    Args:
+        result (pd.Series | pd.DataFrame): The result of a method.
+        transform (str | list[str] | None): The steps, see apply_transform.
+
+    Returns:
+        pd.Series | pd.DataFrame: The transformed result.
+
+    Raises:
+        InvalidArgumentError: When the result has no dates to run the steps along.
+    """
+    if not parse_transform(transform) or not isinstance(
+        result, pd.Series | pd.DataFrame
+    ):
+        return result
+    if result.empty:
+        return result
+
+    frame = result.to_frame() if isinstance(result, pd.Series) else result.copy()
+    rows = frame.index
+    date_levels = (
+        [level for level in range(rows.nlevels) if is_date_index(rows.levels[level])]
+        if isinstance(rows, pd.MultiIndex)
+        else []
+    )
+    by_columns = not isinstance(frame.columns, pd.MultiIndex) and is_date_index(
+        frame.columns
+    )
+
+    if not isinstance(rows, pd.MultiIndex) and is_date_index(rows):
+        numeric = frame.select_dtypes("number").columns
+        frame[numeric] = apply_transform(frame[numeric], transform)
+    elif date_levels:
+        numeric = frame.select_dtypes("number").columns
+        frame[numeric] = transform_by_date_level(
+            frame[numeric], transform, date_levels[0]
+        )
+    elif by_columns:
+        frame = apply_transform(
+            frame.apply(pd.to_numeric, errors="coerce"), transform, "columns"
+        )
+    else:
+        raise InvalidArgumentError(
+            "transform runs along dates, and this result has none in its rows or columns. "
+            "Leave transform out for it."
+        )
+
+    return (
+        frame.iloc[:, 0].rename(result.name) if isinstance(result, pd.Series) else frame
+    )
+
+
+def transform_result(function: Callable) -> Callable:
+    """
+    Wrap a method so that its transform argument is applied to its result, see
+    transform_time_series, rounded to the method's rounding (or that of its class).
+
+    Args:
+        function (Callable): The method, with a transform parameter.
+
+    Returns:
+        Callable: The wrapped method.
+    """
+    signature = inspect.signature(function)
+
+    @functools.wraps(function)
+    def wrapper(*args: Any, **kwargs: Any) -> Any:
+        arguments = signature.bind_partial(*args, **kwargs).arguments
+        result = function(*args, **kwargs)
+        if not parse_transform(arguments.get("transform")):
+            return result
+        transformed = transform_time_series(result, arguments["transform"])
+        rounding = arguments.get("rounding")
+        if rounding is None:
+            rounding = getattr(arguments.get("self"), "_rounding", None)
+        return transformed.round(rounding) if rounding is not None else transformed
+
+    return wrapper

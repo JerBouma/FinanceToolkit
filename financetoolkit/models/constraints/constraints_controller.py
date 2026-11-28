@@ -139,6 +139,7 @@ class ConstraintsModels:
         lag: int | list[int] = 1,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -208,6 +209,11 @@ class ConstraintsModels:
                 window counts calendar periods, so a period without a report makes it NaN.
                 Defaults to None, which is 4 on quarterly data (a trailing twelve months), as
                 the index was estimated on yearly statements.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -330,7 +336,12 @@ class ConstraintsModels:
         )
 
         return self._finalize_components(
-            kaplan_zingales, rounding, growth, lag, standardize
+            kaplan_zingales,
+            rounding,
+            growth,
+            lag,
+            standardize,
+            transform=transform,
         )
 
     @handle_errors
@@ -341,6 +352,7 @@ class ConstraintsModels:
         lag: int | list[int] = 1,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -406,6 +418,11 @@ class ConstraintsModels:
                 The window counts calendar periods, so a period without a report makes it NaN.
                 Defaults to None, which is a single period: the quarter on quarterly data, as the
                 index was estimated on quarterly statements.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -511,7 +528,9 @@ class ConstraintsModels:
             sales_growth=whited_wu["Sales Growth"],
         )
 
-        return self._finalize_components(whited_wu, rounding, growth, lag, standardize)
+        return self._finalize_components(
+            whited_wu, rounding, growth, lag, standardize, transform=transform
+        )
 
     @handle_errors
     def get_size_age_index(
@@ -520,6 +539,7 @@ class ConstraintsModels:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -571,6 +591,11 @@ class ConstraintsModels:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -651,4 +676,6 @@ class ConstraintsModels:
             size=size_age["Size"], age=size_age["Age"]
         )
 
-        return self._finalize_components(size_age, rounding, growth, lag, standardize)
+        return self._finalize_components(
+            size_age, rounding, growth, lag, standardize, transform=transform
+        )

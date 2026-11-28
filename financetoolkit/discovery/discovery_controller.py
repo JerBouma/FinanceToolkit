@@ -21,6 +21,7 @@ from financetoolkit.utilities.error_model import (
     handle_errors,
 )
 from financetoolkit.utilities.sources_model import track_sources
+from financetoolkit.utilities.transform_model import transform_result
 
 # ruff: noqa: E501
 
@@ -636,11 +637,13 @@ class Discovery:
 
         return stock_shares_float
 
+    @transform_result
     def get_sectors_performance(
         self,
         start_date: str | None = None,
         end_date: str | None = None,
         exchange: str = "NASDAQ",
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -660,6 +663,11 @@ class Discovery:
                 Defaults to None, which uses today.
             exchange (str, optional): The exchange whose companies are averaged. Options are: "NASDAQ" (Nasdaq),
                 "NYSE" (New York Stock Exchange), "AMEX" (NYSE American). Defaults to "NASDAQ".
+            transform (str | list[str] | None, optional): Time series steps applied to the result in order,
+                such as "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), along the dates of each series. A window needs that many
+                periods of the result, so its first periods are empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -2180,6 +2188,7 @@ class Discovery:
 
         return splits_calendar
 
+    @transform_result
     def get_sector_performance(
         self,
         date: str | None = None,
@@ -2187,6 +2196,7 @@ class Discovery:
         start_date: str | None = None,
         end_date: str | None = None,
         exchange: str = "NASDAQ",
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -2211,6 +2221,11 @@ class Discovery:
                 uses today.
             exchange (str, optional): The exchange whose companies are averaged. Options are: "NASDAQ" (Nasdaq),
                 "NYSE" (New York Stock Exchange), "AMEX" (NYSE American). Defaults to "NASDAQ".
+            transform (str | list[str] | None, optional): Time series steps applied to the result in order,
+                such as "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), along the dates of each series. A window needs that many
+                periods of the result, so its first periods are empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -2265,6 +2280,7 @@ class Discovery:
 
         return sector_performance
 
+    @transform_result
     def get_industry_performance(
         self,
         date: str | None = None,
@@ -2272,6 +2288,7 @@ class Discovery:
         start_date: str | None = None,
         end_date: str | None = None,
         exchange: str = "NASDAQ",
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -2294,6 +2311,11 @@ class Discovery:
                 uses today.
             exchange (str, optional): The exchange whose companies are averaged. Options are: "NASDAQ" (Nasdaq),
                 "NYSE" (New York Stock Exchange), "AMEX" (NYSE American). Defaults to "NASDAQ".
+            transform (str | list[str] | None, optional): Time series steps applied to the result in order,
+                such as "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), along the dates of each series. A window needs that many
+                periods of the result, so its first periods are empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -2348,6 +2370,7 @@ class Discovery:
 
         return industry_performance
 
+    @transform_result
     def get_sector_pe(
         self,
         date: str | None = None,
@@ -2355,6 +2378,7 @@ class Discovery:
         start_date: str | None = None,
         end_date: str | None = None,
         exchange: str = "NASDAQ",
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -2379,6 +2403,11 @@ class Discovery:
                 uses today.
             exchange (str, optional): The exchange whose companies are averaged. Options are: "NASDAQ" (Nasdaq),
                 "NYSE" (New York Stock Exchange), "AMEX" (NYSE American). Defaults to "NASDAQ".
+            transform (str | list[str] | None, optional): Time series steps applied to the result in order,
+                such as "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), along the dates of each series. A window needs that many
+                periods of the result, so its first periods are empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -2433,6 +2462,7 @@ class Discovery:
 
         return sector_pe
 
+    @transform_result
     def get_industry_pe(
         self,
         date: str | None = None,
@@ -2440,6 +2470,7 @@ class Discovery:
         start_date: str | None = None,
         end_date: str | None = None,
         exchange: str = "NASDAQ",
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -2462,6 +2493,11 @@ class Discovery:
                 uses today.
             exchange (str, optional): The exchange whose companies are averaged. Options are: "NASDAQ" (Nasdaq),
                 "NYSE" (New York Stock Exchange), "AMEX" (NYSE American). Defaults to "NASDAQ".
+            transform (str | list[str] | None, optional): Time series steps applied to the result in order,
+                such as "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), along the dates of each series. A window needs that many
+                periods of the result, so its first periods are empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none

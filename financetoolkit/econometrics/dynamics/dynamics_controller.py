@@ -20,6 +20,7 @@ from financetoolkit.utilities.error_model import (
 from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import apply_rounding
+from financetoolkit.utilities.transform_model import transform_result
 
 logger = get_logger()
 
@@ -471,6 +472,7 @@ class DynamicsEconometrics:
         )
 
     @handle_errors
+    @transform_result
     def get_time_varying_beta(
         self,
         dependent_tickers: str | list[str] | None = None,
@@ -478,6 +480,7 @@ class DynamicsEconometrics:
         period: str | None = None,
         column: str = "Return",
         rounding: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -529,6 +532,11 @@ class DynamicsEconometrics:
             column (str, optional): The historical data column to use. Defaults to "Return".
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None.
+            transform (str | list[str] | None, optional): Time series steps applied to the result in order,
+                such as "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), along the dates of each series. A window needs that many
+                periods of the result, so its first periods are empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -618,6 +626,7 @@ class DynamicsEconometrics:
         )
 
     @handle_errors
+    @transform_result
     def get_dcc_garch(
         self,
         period: str | None = None,
@@ -625,6 +634,7 @@ class DynamicsEconometrics:
         parameters: bool = False,
         include_benchmark: bool = False,
         rounding: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -669,6 +679,11 @@ class DynamicsEconometrics:
                 assets. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None.
+            transform (str | list[str] | None, optional): Time series steps applied to the result in order,
+                such as "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), along the dates of each series. A window needs that many
+                periods of the result, so its first periods are empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none

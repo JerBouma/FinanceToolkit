@@ -70,6 +70,7 @@ class CreditFixedIncome:
         maturity: bool = True,
         rounding: int | None = None,
         standardize: bool = False,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ):
         """
@@ -97,6 +98,11 @@ class CreditFixedIncome:
                 Defaults to True (by maturity).
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. Defaults to False.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -163,6 +169,7 @@ class CreditFixedIncome:
             standardize=standardize,
             axis="rows",
             row_slice=True,
+            transform=transform,
         )
 
     @handle_errors
@@ -171,6 +178,7 @@ class CreditFixedIncome:
         maturity: bool = True,
         rounding: int | None = None,
         standardize: bool = False,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ):
         """
@@ -202,6 +210,11 @@ class CreditFixedIncome:
                 Defaults to True (by maturity).
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. Defaults to False.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -266,6 +279,7 @@ class CreditFixedIncome:
             standardize=standardize,
             axis="rows",
             row_slice=True,
+            transform=transform,
         )
 
     @handle_errors
@@ -274,6 +288,7 @@ class CreditFixedIncome:
         maturity: bool = True,
         rounding: int | None = None,
         standardize: bool = False,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ):
         """
@@ -296,6 +311,11 @@ class CreditFixedIncome:
                 Defaults to True (by maturity).
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. Defaults to False.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -361,6 +381,7 @@ class CreditFixedIncome:
             standardize=standardize,
             axis="rows",
             row_slice=True,
+            transform=transform,
         )
 
     @handle_errors
@@ -369,6 +390,7 @@ class CreditFixedIncome:
         maturity: bool = True,
         rounding: int | None = None,
         standardize: bool = False,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ):
         """
@@ -394,6 +416,11 @@ class CreditFixedIncome:
                 Defaults to True (by maturity).
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. Defaults to False.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -459,6 +486,7 @@ class CreditFixedIncome:
             standardize=standardize,
             axis="rows",
             row_slice=True,
+            transform=transform,
         )
 
     @handle_errors
@@ -469,6 +497,7 @@ class CreditFixedIncome:
         growth: bool = False,
         lag: int = 1,
         standardize: bool = False,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ):
         """
@@ -504,6 +533,11 @@ class CreditFixedIncome:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -557,6 +591,7 @@ class CreditFixedIncome:
             standardize=standardize,
             axis="rows",
             row_slice=True,
+            transform=transform,
         )
 
     @handle_errors
@@ -566,6 +601,7 @@ class CreditFixedIncome:
         growth: bool = False,
         lag: int = 1,
         standardize: bool = False,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ):
         """
@@ -605,6 +641,11 @@ class CreditFixedIncome:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -656,6 +697,7 @@ class CreditFixedIncome:
             standardize=standardize,
             axis="rows",
             row_slice=True,
+            transform=transform,
         )
 
     @handle_errors
@@ -667,6 +709,7 @@ class CreditFixedIncome:
         growth: bool = False,
         lag: int = 1,
         standardize: bool = False,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ):
         """
@@ -712,6 +755,11 @@ class CreditFixedIncome:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -816,6 +864,7 @@ class CreditFixedIncome:
             axis="rows",
             row_slice=True,
             dropna=True,
+            transform=transform,
         )
 
     @handle_errors
@@ -829,6 +878,7 @@ class CreditFixedIncome:
         include_withdrawals: bool = False,
         region: str | None = None,
         rounding: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ):
         """
@@ -891,6 +941,11 @@ class CreditFixedIncome:
                 "America", "Asia", "Europe", "EU members", "International", "Oceania", None (all of
                 them). Defaults to None.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -964,6 +1019,7 @@ class CreditFixedIncome:
             default_rounding=self._rounding,
             rounding=rounding,
             apply_slice=False,
+            transform=transform,
         )
         matrix.index.name = "From Rating"
 
@@ -976,6 +1032,7 @@ class CreditFixedIncome:
         rating_type: str = "corporate",
         region: str | None = None,
         rounding: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ):
         """
@@ -1017,6 +1074,11 @@ class CreditFixedIncome:
                 "America", "Asia", "Europe", "EU members", "International", "Oceania", None (all of
                 them). Defaults to None.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -1111,6 +1173,7 @@ class CreditFixedIncome:
             axis="rows",
             row_slice=True,
             dropna=True,
+            transform=transform,
         )
 
     @handle_errors
@@ -1598,6 +1661,7 @@ class CreditFixedIncome:
         growth: bool = False,
         lag: int = 1,
         standardize: bool = False,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ):
         """
@@ -1641,6 +1705,11 @@ class CreditFixedIncome:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -1706,6 +1775,7 @@ class CreditFixedIncome:
             standardize=standardize,
             axis="rows",
             row_slice=True,
+            transform=transform,
         )
 
     @handle_errors
@@ -1715,6 +1785,7 @@ class CreditFixedIncome:
         growth: bool = False,
         lag: int = 1,
         standardize: bool = False,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ):
         """
@@ -1746,6 +1817,11 @@ class CreditFixedIncome:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -1789,6 +1865,7 @@ class CreditFixedIncome:
             standardize=standardize,
             axis="rows",
             row_slice=True,
+            transform=transform,
         )
 
     @handle_errors
@@ -1799,6 +1876,7 @@ class CreditFixedIncome:
         growth: bool = False,
         lag: int = 1,
         standardize: bool = False,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ):
         """
@@ -1826,6 +1904,11 @@ class CreditFixedIncome:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -1875,6 +1958,7 @@ class CreditFixedIncome:
             row_slice=True,
             countries=countries,
             dropna=True,
+            transform=transform,
         )
 
     @handle_errors
@@ -1886,6 +1970,7 @@ class CreditFixedIncome:
         growth: bool = False,
         lag: int = 1,
         standardize: bool = False,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ):
         """
@@ -1917,6 +2002,11 @@ class CreditFixedIncome:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -1973,4 +2063,5 @@ class CreditFixedIncome:
             row_slice=True,
             countries=countries,
             dropna=True,
+            transform=transform,
         )

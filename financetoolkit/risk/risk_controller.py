@@ -232,6 +232,7 @@ class RiskBase:
         growth: bool,
         lag: int | list[int],
         standardize: bool,
+        transform: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
         Cut a measure to the date range when it has a value per period or date (`sliced`,
@@ -250,6 +251,7 @@ class RiskBase:
             lag=lag,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
             axis="rows",
             apply_slice=False,
         )

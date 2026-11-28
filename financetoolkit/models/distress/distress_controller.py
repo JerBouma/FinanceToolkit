@@ -35,6 +35,7 @@ from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import (
     apply_rounding,
 )
+from financetoolkit.utilities.transform_model import transform_result
 
 # ruff: noqa: E501
 
@@ -64,6 +65,7 @@ class DistressModels:
         standardize: bool = False,
         trailing: int | None = None,
         zone: bool = False,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -132,6 +134,11 @@ class DistressModels:
             zone (bool, optional): Whether to add a "Zone" row per ticker: "Distress" below the lower cut-off of
                 the chosen model, "Grey" up to the upper one and "Safe" from it (see above). Not with growth or
                 standardize. Defaults to False.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -306,7 +313,12 @@ class DistressModels:
             )
 
         altman_results = self._finalize_components(
-            altman_z_score, rounding, growth, lag, standardize
+            altman_z_score,
+            rounding,
+            growth,
+            lag,
+            standardize,
+            transform=transform,
         )
 
         if zone and not growth and not standardize:
@@ -353,6 +365,7 @@ class DistressModels:
         lag: int | list[int] = 1,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -404,6 +417,11 @@ class DistressModels:
                 The window counts calendar periods, so a period without a report makes it NaN. Defaults to
                 None, which is 4 on quarterly data (a trailing twelve months), as the score was estimated
                 on yearly statements.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -580,7 +598,12 @@ class DistressModels:
         )
 
         return self._finalize_components(
-            ohlson_o_score, rounding, growth, lag, standardize
+            ohlson_o_score,
+            rounding,
+            growth,
+            lag,
+            standardize,
+            transform=transform,
         )
 
     @handle_errors
@@ -592,6 +615,7 @@ class DistressModels:
         standardize: bool = False,
         trailing: int | None = None,
         zone: bool = False,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -634,6 +658,11 @@ class DistressModels:
             zone (bool, optional): Whether to add a "Zone" row per ticker: "Distress" from a score of 0, a
                 bankruptcy probability of 0.5 and up (Zmijewski's classification), "Safe" below it. Not with
                 growth or standardize. Defaults to False.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -734,7 +763,12 @@ class DistressModels:
         )
 
         zmijewski_results = self._finalize_components(
-            zmijewski_score, rounding, growth, lag, standardize
+            zmijewski_score,
+            rounding,
+            growth,
+            lag,
+            standardize,
+            transform=transform,
         )
 
         if zone and not growth and not standardize:
@@ -753,6 +787,7 @@ class DistressModels:
         standardize: bool = False,
         trailing: int | None = None,
         zone: bool = False,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -794,6 +829,11 @@ class DistressModels:
                 on yearly statements.
             zone (bool, optional): Whether to add a "Zone" row per ticker: "Distress" below Springate's cut-off
                 of 0.862, "Safe" from it. Not with growth or standardize. Defaults to False.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -897,7 +937,12 @@ class DistressModels:
         )
 
         springate_results = self._finalize_components(
-            springate_score, rounding, growth, lag, standardize
+            springate_score,
+            rounding,
+            growth,
+            lag,
+            standardize,
+            transform=transform,
         )
 
         if zone and not growth and not standardize:
@@ -915,6 +960,7 @@ class DistressModels:
         lag: int | list[int] = 1,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -953,6 +999,11 @@ class DistressModels:
                 The window counts calendar periods, so a period without a report makes it NaN. Defaults to
                 None, which is 4 on quarterly data (a trailing twelve months), as the score was estimated
                 on yearly statements.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -1045,7 +1096,12 @@ class DistressModels:
         )
 
         return self._finalize_components(
-            grover_score, rounding, growth, lag, standardize
+            grover_score,
+            rounding,
+            growth,
+            lag,
+            standardize,
+            transform=transform,
         )
 
     @handle_errors
@@ -1056,6 +1112,7 @@ class DistressModels:
         lag: int | list[int] = 1,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -1103,6 +1160,11 @@ class DistressModels:
                 The window counts calendar periods, so a period without a report makes it NaN. Defaults to
                 None, which is 4 on quarterly data (a trailing twelve months), as the score was estimated
                 on yearly statements.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -1278,7 +1340,12 @@ class DistressModels:
         )
 
         return self._finalize_components(
-            fulmer_h_score, rounding, growth, lag, standardize
+            fulmer_h_score,
+            rounding,
+            growth,
+            lag,
+            standardize,
+            transform=transform,
         )
 
     @handle_errors
@@ -1290,6 +1357,7 @@ class DistressModels:
         standardize: bool = False,
         trailing: int | None = None,
         zone: bool = False,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -1331,6 +1399,11 @@ class DistressModels:
                 months), as the score was estimated on yearly statements.
             zone (bool, optional): Whether to add a "Zone" row per ticker: "Distress" below zero (Taffler's at
                 risk profile), "Safe" from it. Not with growth or standardize. Defaults to False.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -1443,7 +1516,12 @@ class DistressModels:
         )
 
         taffler_results = self._finalize_components(
-            taffler_score, rounding, growth, lag, standardize
+            taffler_score,
+            rounding,
+            growth,
+            lag,
+            standardize,
+            transform=transform,
         )
 
         if zone and not growth and not standardize:
@@ -1464,10 +1542,12 @@ class DistressModels:
         return risk_free.reindex(columns)
 
     @handle_errors
+    @transform_result
     def get_merton_distance_to_default(
         self,
         time_horizon: float = 1.0,
         rounding: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -1527,6 +1607,11 @@ class DistressModels:
                 measured. Defaults to 1.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
+            transform (str | list[str] | None, optional): Time series steps applied to the result in order,
+                such as "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), along the dates of each series. A window needs that many
+                periods of the result, so its first periods are empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -1680,9 +1765,11 @@ class DistressModels:
         return total_return_index, index_market_value
 
     @handle_errors
+    @transform_result
     def get_campbell_hilscher_szilagyi_score(
         self,
         rounding: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -1740,6 +1827,11 @@ class DistressModels:
         Args:
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
+            transform (str | list[str] | None, optional): Time series steps applied to the result in order,
+                such as "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), along the dates of each series. A window needs that many
+                periods of the result, so its first periods are empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -1954,10 +2046,12 @@ class DistressModels:
         )
 
     @handle_errors
+    @transform_result
     def get_shumway_score(
         self,
         method: str = "combined",
         rounding: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -2007,6 +2101,11 @@ class DistressModels:
                 panel A, which also works for companies without statements). Defaults to "combined".
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
+            transform (str | list[str] | None, optional): Time series steps applied to the result in order,
+                such as "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), along the dates of each series. A window needs that many
+                periods of the result, so its first periods are empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -2165,10 +2264,12 @@ class DistressModels:
         )
 
     @handle_errors
+    @transform_result
     def get_synthetic_credit_rating(
         self,
         firm_type: str = "auto",
         rounding: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -2201,6 +2302,11 @@ class DistressModels:
                 (large or small from the market capitalization of every period). Defaults to "auto".
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
+            transform (str | list[str] | None, optional): Time series steps applied to the result in order,
+                such as "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), along the dates of each series. A window needs that many
+                periods of the result, so its first periods are empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none

@@ -81,6 +81,10 @@ from financetoolkit.utilities.statistics_model import (
     calculate_growth,
     shift_periods,
 )
+from financetoolkit.utilities.transform_model import (
+    transform_result,
+    transform_time_series,
+)
 
 if TYPE_CHECKING:
     # TYPE_CHECKING only: the module controllers are imported when first used, so that
@@ -1926,6 +1930,7 @@ class Toolkit:
         growth: bool = False,
         lag: int | list[int] = 1,
         compound: bool = False,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ):
         """
@@ -1954,6 +1959,11 @@ class Toolkit:
             compound (bool): Defines whether the growth is the compound annual growth rate over the lag
             (e.g. lag=5, or lag=20 with quarterly data, for the five-year CAGR) instead of the total change.
             Defaults to False.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -2027,16 +2037,19 @@ class Toolkit:
                 if ticker not in self._invalid_tickers
             ]
 
+        # The steps run before the growth, as in every other method.
+        analyst_estimates = transform_time_series(self._analyst_estimates, transform)
+
         if growth:
             self._analyst_estimates_growth = calculate_growth(
-                self._analyst_estimates,
+                analyst_estimates,
                 lag=lag,
                 compound=compound,
                 rounding=rounding if rounding is not None else self._rounding,
             )
 
         analyst_estimates = apply_rounding(
-            self._analyst_estimates,
+            analyst_estimates,
             rounding if rounding is not None else self._rounding,
         )
 
@@ -2521,9 +2534,11 @@ class Toolkit:
 
         return press_releases
 
+    @transform_result
     def get_revenue_geographic_segmentation(
         self,
         overwrite: bool = False,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ):
         """
@@ -2535,6 +2550,11 @@ class Toolkit:
 
         Args:
             overwrite (bool): Defines whether to overwrite the existing data. Defaults to False.
+            transform (str | list[str] | None, optional): Time series steps applied to the result in order,
+                such as "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), along the dates of each series. A window needs that many
+                periods of the result, so its first periods are empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -2616,9 +2636,11 @@ class Toolkit:
 
         return self._revenue_geographic_segmentation
 
+    @transform_result
     def get_revenue_product_segmentation(
         self,
         overwrite: bool = False,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ):
         """
@@ -2630,6 +2652,11 @@ class Toolkit:
 
         Args:
             overwrite (bool): Defines whether to overwrite the existing data. Defaults to False.
+            transform (str | list[str] | None, optional): Time series steps applied to the result in order,
+                such as "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), along the dates of each series. A window needs that many
+                periods of the result, so its first periods are empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -2711,6 +2738,7 @@ class Toolkit:
 
         return self._revenue_product_segmentation
 
+    @transform_result
     def get_historical_data(
         self,
         enforce_source: str | None = None,
@@ -2721,6 +2749,7 @@ class Toolkit:
         overwrite: bool = False,
         rounding: int | None = None,
         show_ticker_separation: bool = True,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ):
         """
@@ -2773,6 +2802,11 @@ class Toolkit:
                 rounding of the Toolkit (4 unless set otherwise).
             show_ticker_separation (bool, optional): A boolean representing whether to show which tickers
             acquired data from FinancialModelingPrep and which tickers acquired data from YahooFinance. Defaults to True.
+            transform (str | list[str] | None, optional): Time series steps applied to the result in order,
+                such as "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), along the dates of each series. A window needs that many
+                periods of the result, so its first periods are empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -2953,12 +2987,14 @@ class Toolkit:
 
         return historical_data
 
+    @transform_result
     def get_intraday_data(
         self,
         period: str = "1hour",
         return_column: str = "Close",
         fill_nan: bool = True,
         rounding: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ):
         """
@@ -2999,6 +3035,11 @@ class Toolkit:
             fill_nan (bool, optional): Defines whether to forward fill NaN values. Defaults to True.
             rounding (int | None, optional): Defines the number of decimal places to round the data to. Defaults to
                 None, which uses the rounding of the Toolkit (4 unless set otherwise).
+            transform (str | list[str] | None, optional): Time series steps applied to the result in order,
+                such as "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), along the dates of each series. A window needs that many
+                periods of the result, so its first periods are empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -3252,10 +3293,12 @@ class Toolkit:
 
         return dividend_calendar
 
+    @transform_result
     def get_esg_scores(
         self,
         overwrite: bool = False,
         rounding: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ):
         """
@@ -3297,6 +3340,11 @@ class Toolkit:
             overwrite (bool): Defines whether to overwrite the existing data. Defaults to False.
             rounding (int): Defines the number of decimal places to round the data to. Defaults to None, which uses the
                 rounding of the Toolkit (4 unless set otherwise).
+            transform (str | list[str] | None, optional): Time series steps applied to the result in order,
+                such as "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), along the dates of each series. A window needs that many
+                periods of the result, so its first periods are empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -3564,8 +3612,12 @@ class Toolkit:
 
         return premiums
 
+    @transform_result
     def get_commitment_of_traders(
-        self, overwrite: bool = False, show_columns: str | list[str] | None = None
+        self,
+        overwrite: bool = False,
+        show_columns: str | list[str] | None = None,
+        transform: str | list[str] | None = None,
     ):
         """
         Obtains the CFTC Commitment of Traders (COT) report for the tickers the Toolkit was initialized with.
@@ -3588,6 +3640,11 @@ class Toolkit:
 
         Args:
             overwrite (bool): Defines whether to overwrite the existing data. Defaults to False.
+            transform (str | list[str] | None, optional): Time series steps applied to the result in order,
+                such as "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), along the dates of each series. A window needs that many
+                periods of the result, so its first periods are empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -3912,8 +3969,12 @@ class Toolkit:
 
         return self._company_notes
 
+    @transform_result
     def get_employee_count(
-        self, overwrite: bool = False, show_columns: str | list[str] | None = None
+        self,
+        overwrite: bool = False,
+        show_columns: str | list[str] | None = None,
+        transform: str | list[str] | None = None,
     ):
         """
         Obtain the number of employees each company reported in its annual filings over time.
@@ -3927,6 +3988,11 @@ class Toolkit:
 
         Args:
             overwrite (bool): Defines whether to overwrite the existing data. Defaults to False.
+            transform (str | list[str] | None, optional): Time series steps applied to the result in order,
+                such as "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), along the dates of each series. A window needs that many
+                periods of the result, so its first periods are empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -4242,10 +4308,12 @@ class Toolkit:
 
         return self._stock_splits
 
+    @transform_result
     def get_insider_trade_statistics(
         self,
         overwrite: bool = False,
         rounding: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ):
         """
@@ -4267,6 +4335,11 @@ class Toolkit:
             overwrite (bool): Defines whether to overwrite the existing data. Defaults to False.
             rounding (int): Defines the number of decimal places to round the data to. Defaults to None, which uses the
                 rounding of the Toolkit (4 unless set otherwise).
+            transform (str | list[str] | None, optional): Time series steps applied to the result in order,
+                such as "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), along the dates of each series. A window needs that many
+                periods of the result, so its first periods are empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -4339,10 +4412,12 @@ class Toolkit:
 
         return insider_trade_statistics
 
+    @transform_result
     def get_institutional_ownership(
         self,
         overwrite: bool = False,
         rounding: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ):
         """
@@ -4370,6 +4445,11 @@ class Toolkit:
             overwrite (bool): Defines whether to overwrite the existing data. Defaults to False.
             rounding (int): Defines the number of decimal places to round the data to. Defaults to None, which uses the
                 rounding of the Toolkit (4 unless set otherwise).
+            transform (str | list[str] | None, optional): Time series steps applied to the result in order,
+                such as "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), along the dates of each series. A window needs that many
+                periods of the result, so its first periods are empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -4455,11 +4535,13 @@ class Toolkit:
 
         return institutional_ownership
 
+    @transform_result
     def get_short_volume(
         self,
         history_days: int | None = 92,
         window: int = 20,
         rounding: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ):
         """
@@ -4506,6 +4588,11 @@ class Toolkit:
             Defaults to 20, about a month.
             rounding (int | None): The number of decimals to round the results to. Defaults to
             None, which uses the rounding of the Toolkit.
+            transform (str | list[str] | None, optional): Time series steps applied to the result in order,
+                such as "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), along the dates of each series. A window needs that many
+                periods of the result, so its first periods are empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -4601,9 +4688,11 @@ class Toolkit:
 
         return short_volume
 
+    @transform_result
     def get_short_interest(
         self,
         rounding: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ):
         """
@@ -4646,6 +4735,11 @@ class Toolkit:
         Args:
             rounding (int | None): The number of decimals to round the results to. Defaults to
             None, which uses the rounding of the Toolkit.
+            transform (str | list[str] | None, optional): Time series steps applied to the result in order,
+                such as "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), along the dates of each series. A window needs that many
+                periods of the result, so its first periods are empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -5435,6 +5529,7 @@ class Toolkit:
 
         return self._historical_statistics
 
+    @transform_result
     def get_treasury_data(
         self,
         enforce_source: str | None = None,
@@ -5444,6 +5539,7 @@ class Toolkit:
         divide_ohlc_by: int | float | None = 100,
         rounding: int | None = None,
         show_errors: bool = False,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ):
         """
@@ -5480,6 +5576,11 @@ class Toolkit:
                 "YahooFinance" (Yahoo Finance). This takes precedence
                 over the source set on the Toolkit itself. Defaults to None, which falls back to
                 the Toolkit's own enforce_source.
+            transform (str | list[str] | None, optional): Time series steps applied to the result in order,
+                such as "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), along the dates of each series. A window needs that many
+                periods of the result, so its first periods are empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -5643,6 +5744,7 @@ class Toolkit:
             treasury_data, rounding if rounding is not None else self._rounding
         )
 
+    @transform_result
     def get_exchange_rates(
         self,
         period: str = "daily",
@@ -5651,6 +5753,7 @@ class Toolkit:
         overwrite: bool = False,
         rounding: int | None = None,
         show_ticker_separation: bool = True,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ):
         """
@@ -5689,6 +5792,11 @@ class Toolkit:
             translated with are never rounded.
             show_ticker_separation (bool, optional): A boolean representing whether to show which tickers
             acquired data from FinancialModelingPrep and which tickers acquired data from YahooFinance. Defaults to True.
+            transform (str | list[str] | None, optional): Time series steps applied to the result in order,
+                such as "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), along the dates of each series. A window needs that many
+                periods of the result, so its first periods are empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -5963,6 +6071,7 @@ class Toolkit:
         growth: bool = False,
         lag: int | list[int] = 1,
         compound: bool = False,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ):
         """
@@ -6005,6 +6114,11 @@ class Toolkit:
             compound (bool): Defines whether the growth is the compound annual growth rate over the lag
             (e.g. lag=5, or lag=20 with quarterly data, for the five-year CAGR) instead of the total change.
             Defaults to False.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -6135,6 +6249,12 @@ class Toolkit:
 
         balance_sheet_statement = self._balance_sheet_statement
 
+        # The steps run before the growth, as in every other method.
+        if transform:
+            balance_sheet_statement = transform_time_series(
+                balance_sheet_statement, transform
+            )
+
         if growth:
             self._balance_sheet_statement_growth = calculate_growth(
                 balance_sheet_statement,
@@ -6175,6 +6295,7 @@ class Toolkit:
         lag: int | list[int] = 1,
         compound: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ):
         """
@@ -6212,6 +6333,11 @@ class Toolkit:
             compound (bool): Defines whether the growth is the compound annual growth rate over the lag
             (e.g. lag=5, or lag=20 with quarterly data, for the five-year CAGR) instead of the total change.
             Defaults to False.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -6368,6 +6494,10 @@ class Toolkit:
                 trailing, len(self._income_statement.columns), income_statement
             )
 
+        # The steps run before the growth, as in every other method.
+        if transform:
+            income_statement = transform_time_series(income_statement, transform)
+
         if growth:
             self._income_statement_growth = calculate_growth(
                 income_statement,
@@ -6403,6 +6533,7 @@ class Toolkit:
         lag: int | list[int] = 1,
         compound: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ):
         """
@@ -6444,6 +6575,11 @@ class Toolkit:
             compound (bool): Defines whether the growth is the compound annual growth rate over the lag
             (e.g. lag=5, or lag=20 with quarterly data, for the five-year CAGR) instead of the total change.
             Defaults to False.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -6607,6 +6743,10 @@ class Toolkit:
                 trailing, len(self._cash_flow_statement.columns), cash_flow_statement
             )
 
+        # The steps run before the growth, as in every other method.
+        if transform:
+            cash_flow_statement = transform_time_series(cash_flow_statement, transform)
+
         if growth:
             self._cash_flow_statement_growth = calculate_growth(
                 cash_flow_statement,
@@ -6635,11 +6775,13 @@ class Toolkit:
         result = self._cash_flow_statement_growth if growth else cash_flow_statement
         return result
 
+    @transform_result
     def get_statistics_statement(
         self,
         enforce_source: str | None = None,
         overwrite: bool = False,
         rounding: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ):
         """
@@ -6665,6 +6807,11 @@ class Toolkit:
             overwrite (bool): Defines whether to overwrite the existing data. Defaults to False.
             rounding (int): Defines the number of decimal places to round the data to. Defaults to None, which uses the
                 rounding of the Toolkit (4 unless set otherwise).
+            transform (str | list[str] | None, optional): Time series steps applied to the result in order,
+                such as "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), along the dates of each series. A window needs that many
+                periods of the result, so its first periods are empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none

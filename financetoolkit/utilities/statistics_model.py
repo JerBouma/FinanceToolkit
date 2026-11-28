@@ -17,7 +17,7 @@ from financetoolkit.utilities.error_model import (
     check_period,
     validate_window,
 )
-from financetoolkit.utilities.transform_model import apply_transform
+from financetoolkit.utilities.transform_model import apply_transform, is_date_index
 
 logger = logger_model.get_logger()
 
@@ -461,6 +461,19 @@ def finalize_dataset(
         dataset = dataset.rolling(window=trailing).sum()
 
     if transform:
+        dates = (
+            dataset.columns
+            if axis == "columns" and isinstance(dataset, pd.DataFrame)
+            else dataset.index
+        )
+        if not is_date_index(
+            dates.levels[0] if isinstance(dates, pd.MultiIndex) else dates
+        ):
+            raise InvalidArgumentError(
+                "transform runs along dates, and this result has one value per series "
+                "without dates. Ask for a value per period "
+                "(such as within_period=True or rolling=) or leave transform out."
+            )
         dataset = apply_transform(
             dataset, transform, axis="columns" if axis == "columns" else "rows"
         )

@@ -26,6 +26,7 @@ from financetoolkit.utilities.error_model import (
 from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import PERIODS_PER_YEAR
+from financetoolkit.utilities.transform_model import transform_result
 
 # ruff: noqa: E501
 
@@ -2999,12 +3000,14 @@ class AnalysisConstruction:
         return self._round(table, rounding)
 
     @handle_errors
+    @transform_result
     def get_return_contributions(
         self,
         weights: dict[str, float] | None = None,
         period: str = "monthly",
         include_benchmark: bool = False,
         rounding: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -3045,6 +3048,11 @@ class AnalysisConstruction:
                 asset. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
+            transform (str | list[str] | None, optional): Time series steps applied to the result in order,
+                such as "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), along the dates of each series. A window needs that many
+                periods of the result, so its first periods are empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none

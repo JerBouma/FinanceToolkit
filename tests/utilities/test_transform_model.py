@@ -187,3 +187,59 @@ def test_a_gap_inside_a_series_is_named_for_rolling_steps(caplog):
 
     assert smoothed["United States"].iloc[2:4].isna().all()
     assert "United States has no value for 2020-03" in caplog.text
+
+
+def test_a_result_transforms_along_its_dates_wherever_they_are():
+    periods = pd.period_range("2024-01", periods=4, freq="M")
+    by_ticker = pd.DataFrame(
+        {"Value": [1.0, 10, 2, 20, 3, 30, 4, 40], "Name": list("abababab")},
+        index=pd.MultiIndex.from_product([periods, ["A", "B"]]),
+    )
+    transformed = transform_model.transform_time_series(by_ticker, "diff")
+    assert transformed["Value"].tolist()[2:] == [1, 10, 1, 10, 1, 10]
+    assert transformed["Name"].equals(by_ticker["Name"])
+
+    ticker_first = by_ticker.swaplevel().sort_index()
+    swapped = transform_model.transform_time_series(ticker_first, "diff")
+    assert swapped.loc["B", "Value"].tolist()[1:] == [10, 10, 10]
+
+    statement = pd.DataFrame(
+        [[1.0, 2, 4], [3, 6, 9]],
+        index=["Revenue", "Cost"],
+        columns=["2022", "2023", "2024"],
+    )
+    growth = transform_model.transform_time_series(statement, "pct_change")
+    assert growth.loc["Revenue", "2024"] == 1
+    assert growth.loc["Cost", "2024"] == 0.5
+
+
+def test_a_result_without_dates_refuses_a_transform():
+    with pytest.raises(InvalidArgumentError, match="runs along dates"):
+        transform_model.transform_time_series(
+            pd.DataFrame({"Value": [1.0, 2.0]}, index=["AAPL", "MSFT"]), "diff"
+        )
+    with pytest.raises(InvalidArgumentError, match="runs along dates"):
+        statistics_model.finalize_dataset(
+            pd.Series([0.1, 0.2], index=["AAPL", "MSFT"]),
+            start_date=None,
+            end_date=None,
+            default_rounding=None,
+            axis="rows",
+            transform="sma:2",
+        )
+
+
+def test_the_transform_decorator_rounds_like_the_method():
+    class Owner:
+        _rounding = 2
+
+        @transform_model.transform_result
+        def get_values(self, rounding=None, transform=None):
+            return pd.DataFrame(
+                {"A": [1.0, 3.0, 4.0]},
+                index=pd.period_range("2024", periods=3, freq="Y"),
+            )
+
+    assert Owner().get_values(transform="pct_change")["A"].tolist()[1:] == [2.0, 0.33]
+    assert Owner().get_values(rounding=4, transform="pct_change")["A"].iloc[2] == 0.3333
+    assert Owner().get_values()["A"].tolist() == [1.0, 3.0, 4.0]

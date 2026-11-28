@@ -570,6 +570,7 @@ class MomentumTechnicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
@@ -613,6 +614,11 @@ class MomentumTechnicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -684,6 +690,7 @@ class MomentumTechnicals:
             standardize=standardize,
             axis="rows",
             apply_slice=False,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -697,6 +704,7 @@ class MomentumTechnicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
@@ -738,6 +746,11 @@ class MomentumTechnicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -809,6 +822,7 @@ class MomentumTechnicals:
             standardize=standardize,
             axis="rows",
             apply_slice=False,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -822,6 +836,7 @@ class MomentumTechnicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
@@ -869,6 +884,11 @@ class MomentumTechnicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -938,6 +958,7 @@ class MomentumTechnicals:
             standardize=standardize,
             axis="rows",
             apply_slice=False,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -952,6 +973,7 @@ class MomentumTechnicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
@@ -996,6 +1018,11 @@ class MomentumTechnicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -1069,6 +1096,7 @@ class MomentumTechnicals:
             standardize=standardize,
             axis="rows",
             apply_slice=False,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -1082,6 +1110,7 @@ class MomentumTechnicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
@@ -1130,6 +1159,11 @@ class MomentumTechnicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -1200,6 +1234,7 @@ class MomentumTechnicals:
             standardize=standardize,
             axis="rows",
             apply_slice=False,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -1214,6 +1249,7 @@ class MomentumTechnicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
@@ -1277,6 +1313,11 @@ class MomentumTechnicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -1363,6 +1404,7 @@ class MomentumTechnicals:
             standardize=standardize,
             axis="rows",
             apply_slice=False,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -1378,6 +1420,7 @@ class MomentumTechnicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
@@ -1426,6 +1469,11 @@ class MomentumTechnicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -1506,6 +1554,7 @@ class MomentumTechnicals:
             standardize=standardize,
             axis="rows",
             apply_slice=False,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -1521,6 +1570,7 @@ class MomentumTechnicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
@@ -1584,6 +1634,11 @@ class MomentumTechnicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -1669,6 +1724,7 @@ class MomentumTechnicals:
             standardize=standardize,
             axis="rows",
             apply_slice=False,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -1682,6 +1738,7 @@ class MomentumTechnicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
@@ -1725,6 +1782,11 @@ class MomentumTechnicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -1796,6 +1858,7 @@ class MomentumTechnicals:
             standardize=standardize,
             axis="rows",
             apply_slice=False,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -1810,6 +1873,7 @@ class MomentumTechnicals:
         lag: int | list[int] = 1,
         standardize: bool = False,
         method: Literal["standard", "rating"] = "standard",
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
@@ -1870,6 +1934,11 @@ class MomentumTechnicals:
                 values. Defaults to False.
             method (str, optional): Options are: "standard" (the ADX), "rating" (the ADXR). Defaults to
                 "standard".
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -1953,6 +2022,7 @@ class MomentumTechnicals:
             standardize=standardize,
             axis="rows",
             apply_slice=False,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -1966,6 +2036,7 @@ class MomentumTechnicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
@@ -2024,6 +2095,11 @@ class MomentumTechnicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -2106,6 +2182,7 @@ class MomentumTechnicals:
             standardize=standardize,
             axis="rows",
             apply_slice=False,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -2120,6 +2197,7 @@ class MomentumTechnicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
@@ -2171,6 +2249,11 @@ class MomentumTechnicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -2246,6 +2329,7 @@ class MomentumTechnicals:
             standardize=standardize,
             axis="rows",
             apply_slice=False,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -2261,6 +2345,7 @@ class MomentumTechnicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
@@ -2321,6 +2406,11 @@ class MomentumTechnicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -2407,6 +2497,7 @@ class MomentumTechnicals:
             standardize=standardize,
             axis="rows",
             apply_slice=False,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -2424,6 +2515,7 @@ class MomentumTechnicals:
         standardize: bool = False,
         method: Literal["standard", "rsi"] = "standard",
         stochastic_window: int = 14,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
@@ -2504,6 +2596,11 @@ class MomentumTechnicals:
                 Stochastic RSI). Defaults to "standard".
             stochastic_window (int, optional): The number of periods of RSI values whose high-low
                 range gives %K. Only used when method="rsi". Defaults to 14.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -2613,6 +2710,7 @@ class MomentumTechnicals:
             standardize=standardize,
             axis="rows",
             apply_slice=False,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -2632,6 +2730,7 @@ class MomentumTechnicals:
         lag: int | list[int] = 1,
         standardize: bool = False,
         method: Literal["absolute", "percentage"] = "absolute",
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
@@ -2751,6 +2850,11 @@ class MomentumTechnicals:
             method (str, optional): Options are: "absolute" (the MACD in price units), "percentage" (the
                 Percentage Price Oscillator, a decimal of the long average). The volume weighted moving averages
                 and `fixed` apply to the MACD only. Defaults to "absolute".
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -2892,6 +2996,7 @@ class MomentumTechnicals:
             standardize=standardize,
             axis="rows",
             apply_slice=False,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -2915,6 +3020,7 @@ class MomentumTechnicals:
         average_window: int = 10,
         minimum_window: int = 5,
         maximum_window: int = 30,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
@@ -3041,6 +3147,11 @@ class MomentumTechnicals:
                 method="dynamic". Defaults to 5.
             maximum_window (int, optional): The longest period of the RSI. Only used when
                 method="dynamic". Defaults to 30.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -3187,6 +3298,7 @@ class MomentumTechnicals:
             standardize=standardize,
             axis="rows",
             apply_slice=False,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -3203,6 +3315,7 @@ class MomentumTechnicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
@@ -3283,6 +3396,11 @@ class MomentumTechnicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -3384,6 +3502,7 @@ class MomentumTechnicals:
             standardize=standardize,
             axis="rows",
             apply_slice=False,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -3396,6 +3515,7 @@ class MomentumTechnicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
@@ -3436,6 +3556,11 @@ class MomentumTechnicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -3507,6 +3632,7 @@ class MomentumTechnicals:
             standardize=standardize,
             axis="rows",
             apply_slice=False,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -3519,6 +3645,7 @@ class MomentumTechnicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
@@ -3560,6 +3687,11 @@ class MomentumTechnicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -3631,6 +3763,7 @@ class MomentumTechnicals:
             standardize=standardize,
             axis="rows",
             apply_slice=False,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -3644,6 +3777,7 @@ class MomentumTechnicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
@@ -3686,6 +3820,11 @@ class MomentumTechnicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -3757,6 +3896,7 @@ class MomentumTechnicals:
             standardize=standardize,
             axis="rows",
             apply_slice=False,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -3773,6 +3913,7 @@ class MomentumTechnicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
@@ -3845,6 +3986,11 @@ class MomentumTechnicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -3940,6 +4086,7 @@ class MomentumTechnicals:
             standardize=standardize,
             axis="rows",
             apply_slice=False,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -3953,6 +4100,7 @@ class MomentumTechnicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
@@ -3993,6 +4141,11 @@ class MomentumTechnicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -4070,6 +4223,7 @@ class MomentumTechnicals:
             standardize=standardize,
             axis="rows",
             apply_slice=False,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -4083,6 +4237,7 @@ class MomentumTechnicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
@@ -4120,6 +4275,11 @@ class MomentumTechnicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -4199,6 +4359,7 @@ class MomentumTechnicals:
             standardize=standardize,
             axis="rows",
             apply_slice=False,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -4213,6 +4374,7 @@ class MomentumTechnicals:
         lag: int | list[int] = 1,
         standardize: bool = False,
         method: Literal["percentage", "absolute"] = "percentage",
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
@@ -4266,6 +4428,11 @@ class MomentumTechnicals:
                 values. Defaults to False.
             method (str, optional): Options are: "percentage" (the Rate of Change as a decimal), "absolute" (the
                 Momentum in price units). Defaults to "percentage".
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -4349,6 +4516,7 @@ class MomentumTechnicals:
             standardize=standardize,
             axis="rows",
             apply_slice=False,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -4363,6 +4531,7 @@ class MomentumTechnicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
@@ -4418,6 +4587,11 @@ class MomentumTechnicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -4498,6 +4672,7 @@ class MomentumTechnicals:
             standardize=standardize,
             axis="rows",
             apply_slice=False,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -4511,6 +4686,7 @@ class MomentumTechnicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
@@ -4555,6 +4731,11 @@ class MomentumTechnicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -4627,6 +4808,7 @@ class MomentumTechnicals:
             standardize=standardize,
             axis="rows",
             apply_slice=False,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -4640,6 +4822,7 @@ class MomentumTechnicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
@@ -4682,6 +4865,11 @@ class MomentumTechnicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -4755,6 +4943,7 @@ class MomentumTechnicals:
             standardize=standardize,
             axis="rows",
             apply_slice=False,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -4773,6 +4962,7 @@ class MomentumTechnicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
@@ -4845,6 +5035,11 @@ class MomentumTechnicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -4927,6 +5122,7 @@ class MomentumTechnicals:
             standardize=standardize,
             axis="rows",
             apply_slice=False,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -4942,6 +5138,7 @@ class MomentumTechnicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
@@ -4993,6 +5190,11 @@ class MomentumTechnicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -5077,6 +5279,7 @@ class MomentumTechnicals:
             standardize=standardize,
             axis="rows",
             apply_slice=False,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -5090,6 +5293,7 @@ class MomentumTechnicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
@@ -5149,6 +5353,11 @@ class MomentumTechnicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -5226,6 +5435,7 @@ class MomentumTechnicals:
             standardize=standardize,
             axis="rows",
             apply_slice=False,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -5240,6 +5450,7 @@ class MomentumTechnicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
@@ -5289,6 +5500,11 @@ class MomentumTechnicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -5367,6 +5583,7 @@ class MomentumTechnicals:
             standardize=standardize,
             axis="rows",
             apply_slice=False,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -5382,6 +5599,7 @@ class MomentumTechnicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
@@ -5441,6 +5659,11 @@ class MomentumTechnicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -5522,6 +5745,7 @@ class MomentumTechnicals:
             standardize=standardize,
             axis="rows",
             apply_slice=False,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -5536,6 +5760,7 @@ class MomentumTechnicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
@@ -5588,6 +5813,11 @@ class MomentumTechnicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -5665,6 +5895,7 @@ class MomentumTechnicals:
             standardize=standardize,
             axis="rows",
             apply_slice=False,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -5681,6 +5912,7 @@ class MomentumTechnicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
@@ -5736,6 +5968,11 @@ class MomentumTechnicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -5821,6 +6058,7 @@ class MomentumTechnicals:
             standardize=standardize,
             axis="rows",
             apply_slice=False,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -5837,6 +6075,7 @@ class MomentumTechnicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
@@ -5900,6 +6139,11 @@ class MomentumTechnicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -5988,6 +6232,7 @@ class MomentumTechnicals:
             standardize=standardize,
             axis="rows",
             apply_slice=False,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -6003,6 +6248,7 @@ class MomentumTechnicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
@@ -6061,6 +6307,11 @@ class MomentumTechnicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -6145,6 +6396,7 @@ class MomentumTechnicals:
             standardize=standardize,
             axis="rows",
             apply_slice=False,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -6161,6 +6413,7 @@ class MomentumTechnicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
@@ -6213,6 +6466,11 @@ class MomentumTechnicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -6295,6 +6553,7 @@ class MomentumTechnicals:
             standardize=standardize,
             axis="rows",
             apply_slice=False,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -6308,6 +6567,7 @@ class MomentumTechnicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
@@ -6366,6 +6626,11 @@ class MomentumTechnicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -6442,6 +6707,7 @@ class MomentumTechnicals:
             standardize=standardize,
             axis="rows",
             apply_slice=False,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -6457,6 +6723,7 @@ class MomentumTechnicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
@@ -6509,6 +6776,11 @@ class MomentumTechnicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -6591,6 +6863,7 @@ class MomentumTechnicals:
             standardize=standardize,
             axis="rows",
             apply_slice=False,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -6604,6 +6877,7 @@ class MomentumTechnicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
@@ -6651,6 +6925,11 @@ class MomentumTechnicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -6724,6 +7003,7 @@ class MomentumTechnicals:
             standardize=standardize,
             axis="rows",
             apply_slice=False,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -6740,6 +7020,7 @@ class MomentumTechnicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
@@ -6797,6 +7078,11 @@ class MomentumTechnicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -6880,6 +7166,7 @@ class MomentumTechnicals:
             standardize=standardize,
             axis="rows",
             apply_slice=False,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -6894,6 +7181,7 @@ class MomentumTechnicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
@@ -6938,6 +7226,11 @@ class MomentumTechnicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -7012,6 +7305,7 @@ class MomentumTechnicals:
             standardize=standardize,
             axis="rows",
             apply_slice=False,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -7025,6 +7319,7 @@ class MomentumTechnicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
@@ -7067,6 +7362,11 @@ class MomentumTechnicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -7141,6 +7441,7 @@ class MomentumTechnicals:
             standardize=standardize,
             axis="rows",
             apply_slice=False,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -7154,6 +7455,7 @@ class MomentumTechnicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
@@ -7199,6 +7501,11 @@ class MomentumTechnicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -7273,6 +7580,7 @@ class MomentumTechnicals:
             standardize=standardize,
             axis="rows",
             apply_slice=False,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -7287,6 +7595,7 @@ class MomentumTechnicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
@@ -7328,6 +7637,11 @@ class MomentumTechnicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -7402,6 +7716,7 @@ class MomentumTechnicals:
             standardize=standardize,
             axis="rows",
             apply_slice=False,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -7416,6 +7731,7 @@ class MomentumTechnicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
@@ -7462,6 +7778,11 @@ class MomentumTechnicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -7538,6 +7859,7 @@ class MomentumTechnicals:
             standardize=standardize,
             axis="rows",
             apply_slice=False,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -7554,6 +7876,7 @@ class MomentumTechnicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
@@ -7610,6 +7933,11 @@ class MomentumTechnicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -7690,6 +8018,7 @@ class MomentumTechnicals:
             standardize=standardize,
             axis="rows",
             apply_slice=False,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -7703,6 +8032,7 @@ class MomentumTechnicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
@@ -7746,6 +8076,11 @@ class MomentumTechnicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -7817,6 +8152,7 @@ class MomentumTechnicals:
             standardize=standardize,
             axis="rows",
             apply_slice=False,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -7830,6 +8166,7 @@ class MomentumTechnicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
@@ -7876,6 +8213,11 @@ class MomentumTechnicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -7949,6 +8291,7 @@ class MomentumTechnicals:
             standardize=standardize,
             axis="rows",
             apply_slice=False,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -7962,6 +8305,7 @@ class MomentumTechnicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
@@ -8012,6 +8356,11 @@ class MomentumTechnicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -8087,6 +8436,7 @@ class MomentumTechnicals:
             standardize=standardize,
             axis="rows",
             apply_slice=False,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -8100,6 +8450,7 @@ class MomentumTechnicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
@@ -8148,6 +8499,11 @@ class MomentumTechnicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -8225,6 +8581,7 @@ class MomentumTechnicals:
             standardize=standardize,
             axis="rows",
             apply_slice=False,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -8239,6 +8596,7 @@ class MomentumTechnicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
@@ -8293,6 +8651,11 @@ class MomentumTechnicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -8369,6 +8732,7 @@ class MomentumTechnicals:
             standardize=standardize,
             axis="rows",
             apply_slice=False,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -8383,6 +8747,7 @@ class MomentumTechnicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
@@ -8444,6 +8809,11 @@ class MomentumTechnicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -8524,4 +8894,5 @@ class MomentumTechnicals:
             standardize=standardize,
             axis="rows",
             apply_slice=False,
+            transform=transform,
         )

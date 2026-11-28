@@ -1338,6 +1338,8 @@ class StationarityEconometrics:
           largest statistic over all dates, so episodes can be dated while `get_bubble_test` does
           not reject the random walk for the whole sample (as for NVDA below). PSY (2015) read
           the dating as a monitoring device and the GSADF test as the verdict on the sample.
+        - An asset without an episode in the range, such as KO below, has no rows; a warning names
+          it, so the empty answer is not read as missing data.
 
         As an example:
 
@@ -1386,6 +1388,24 @@ class StationarityEconometrics:
             ).reindex(levels.index)
             result = result.swaplevel(0, 1, axis=1).sort_index(axis=1)
         else:
+            # No episode is an answer of the test, not missing data: the asset keeps no rows
+            # and the warning says why, so it is not taken for a symbol without prices.
+            for ticker, (episodes, sequence) in fits.items():
+                if episodes.empty:
+                    logger.warning(
+                        "No bubble episode is found for %s from %s to %s: its %s statistic is not above "
+                        "the critical value (%s confidence) for %s observations in a row.",
+                        ticker,
+                        sequence.index[0],
+                        sequence.index[-1],
+                        sequence.columns[0],
+                        f"{confidence:.0%}",
+                        (
+                            max(1, round(np.log(len(sequence))))
+                            if minimum_duration is None
+                            else minimum_duration
+                        ),
+                    )
             result = pd.concat(
                 {ticker: episodes for ticker, (episodes, _) in fits.items()}
             )

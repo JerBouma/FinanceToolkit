@@ -1,0 +1,5 @@
+,AAPL,AAPL,AAPL,MSFT,MSFT,MSFT,Benchmark,Benchmark,Benchmark
+,Threshold,Mean Excess,Exceedances,Threshold,Mean Excess,Exceedances,Threshold,Mean Excess,Exceedances
+Quantile,,,,,,,,,
+0.9,0.0257,0.0149,76.0,0.0241,0.0144,76.0,0.0157,0.0133,76.0
+0.95,0.0348,0.016,38.0,0.0333,0.0159,38.0,0.0239,0.0147,38.0

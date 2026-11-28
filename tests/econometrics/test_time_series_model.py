@@ -2,6 +2,7 @@
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from financetoolkit.econometrics.forecasting import time_series_model
 
@@ -432,3 +433,115 @@ def test_get_arima_forecast_reports_the_drift_of_the_differenced_series():
 
         assert abs(result["mean"] - sample_drift) < 0.02
         assert time_series_model.arima_summary_table(result).index[0] == "Drift"
+
+
+def _correlated_var2(n=500, seed=3):
+    # A VAR(2) in three variables with contemporaneously correlated shocks.
+    rng = np.random.default_rng(seed)
+    first = np.array([[0.3, 0.1, 0.0], [0.2, 0.2, 0.1], [0.0, 0.3, 0.4]])
+    second = np.array([[0.1, 0.0, 0.0], [0.0, -0.1, 0.05], [0.05, 0.0, 0.1]])
+    loading = np.array([[1.0, 0.0, 0.0], [0.5, 1.0, 0.0], [0.3, 0.4, 1.0]])
+    y = np.zeros((n, 3))
+    for t in range(2, n):
+        y[t] = first @ y[t - 1] + second @ y[t - 2] + loading @ rng.standard_normal(3)
+    return pd.DataFrame(y, columns=["A", "B", "C"])
+
+
+def test_get_generalized_variance_decomposition_matches_statsmodels_ma_rep():
+    # Built independently from statsmodels' VAR moving-average matrices and residual
+    # covariance with the formula of Pesaran and Shin (1998), normalized per row.
+    from statsmodels.tsa.api import VAR
+
+    data = _correlated_var2()
+    horizon = 10
+    result = VAR(data).fit(2)
+    psi = result.ma_rep(horizon - 1)
+    sigma = np.asarray(result.sigma_u)
+
+    expected = np.zeros((3, 3))
+    for i in range(3):
+        denominator = sum(psi[h][i] @ sigma @ psi[h][i] for h in range(horizon))
+        for j in range(3):
+            numerator = sum((psi[h][i] @ sigma[:, j]) ** 2 for h in range(horizon))
+            expected[i, j] = numerator / sigma[j, j] / denominator
+    expected = expected / expected.sum(axis=1, keepdims=True)
+
+    var_result = time_series_model.get_var_forecast(data, lags=2)
+    decomposition = time_series_model.get_generalized_variance_decomposition(
+        var_result, periods=horizon
+    )
+    np.testing.assert_allclose(decomposition.to_numpy(), expected, atol=1e-12)
+
+
+def test_get_generalized_variance_decomposition_one_step_is_the_squared_correlation():
+    # At H = 1 (Psi_0 = I) theta_ij = sigma_ij^2 / (sigma_ii * sigma_jj), the squared residual
+    # correlation, so a normalized row of a bivariate VAR is 1 / (1 + rho^2), rho^2 / (1 + rho^2).
+    data = _correlated_var2()[["A", "B"]]
+    var_result = time_series_model.get_var_forecast(data, lags=1)
+    rho = np.corrcoef(var_result["residuals"].to_numpy().T)[0, 1]
+
+    decomposition = time_series_model.get_generalized_variance_decomposition(
+        var_result, periods=1
+    )
+    expected = np.array([[1, rho**2], [rho**2, 1]]) / (1 + rho**2)
+    np.testing.assert_allclose(decomposition.to_numpy(), expected, atol=1e-12)
+
+
+def test_get_generalized_variance_decomposition_does_not_depend_on_the_order():
+    data = _correlated_var2()
+    original = time_series_model.get_generalized_variance_decomposition(
+        time_series_model.get_var_forecast(data, lags=2)
+    )
+    reordered = time_series_model.get_generalized_variance_decomposition(
+        time_series_model.get_var_forecast(data[["C", "A", "B"]], lags=2)
+    )
+    pd.testing.assert_frame_equal(
+        reordered.loc[original.index, original.columns], original, atol=1e-12
+    )
+
+
+def test_get_connectedness(recorder):
+    var_result = time_series_model.get_var_forecast(_correlated_var2(), lags=2)
+    result = time_series_model.get_connectedness(var_result, periods=10)
+    shares = result["decomposition"].to_numpy()
+
+    # Total = off-diagonal sum / N; what all variables receive equals what they transmit.
+    assert result["total"] == (
+        pytest.approx((shares.sum() - np.trace(shares)) / 3, rel=1e-12)
+    )
+    assert result["to_others"].sum() == pytest.approx(result["from_others"].sum())
+    assert result["net"].sum() == pytest.approx(0, abs=1e-12)
+    assert result["from_others"]["A"] == pytest.approx(shares[0, 1] + shares[0, 2])
+    assert result["to_others"]["A"] == pytest.approx(shares[1, 0] + shares[2, 0])
+
+    table = time_series_model.connectedness_summary_table(result)
+    assert list(table.index) == ["A", "B", "C", "To Others", "Net"]
+    assert table.loc["To Others", "From Others"] == pytest.approx(result["total"])
+
+    recorder.capture(table.round(6))
+
+
+def test_get_rolling_connectedness_matches_the_last_window():
+    data = _correlated_var2(n=260)
+    rolling = time_series_model.get_rolling_connectedness(data, lags=2, window=200)
+
+    assert len(rolling) == 61
+    assert list(rolling.columns) == ["Total", "A", "B", "C"]
+    for end in [200, 260]:
+        window = data.iloc[end - 200 : end]
+        result = time_series_model.get_connectedness(
+            time_series_model.get_var_forecast(window, lags=2), periods=10
+        )
+        assert rolling.loc[end - 1, "Total"] == pytest.approx(
+            result["total"], rel=1e-10
+        )
+        np.testing.assert_allclose(
+            rolling.loc[end - 1, ["A", "B", "C"]].to_numpy(dtype=float),
+            result["net"].to_numpy(),
+            atol=1e-12,
+        )
+
+    with pytest.raises(ValueError, match="window"):
+        time_series_model.get_rolling_connectedness(data, window=300)
+    with pytest.raises(ValueError, match="too few"):
+        time_series_model.get_rolling_connectedness(data, lags=2, window=10)

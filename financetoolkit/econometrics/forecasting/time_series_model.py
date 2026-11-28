@@ -834,6 +834,347 @@ def get_variance_decomposition(var_result: dict, periods: int = 10) -> dict:
     }
 
 
+def get_generalized_variance_decomposition(
+    var_result: dict, periods: int = 10
+) -> pd.DataFrame:
+    """
+    Calculate the Generalized Forecast Error Variance Decomposition (GFEVD) of a Vector Autoregression:
+    which share of each variable's forecast error variance comes from a shock to each variable, without
+    depending on the order of the variables.
+
+    The orthogonalized decomposition of `get_variance_decomposition` identifies the shocks with a Cholesky
+    factor, so its shares change with the order of the variables. The generalized decomposition of Koop,
+    Pesaran and Potter (1996) and Pesaran and Shin (1998) shocks one variable at a time and lets the others
+    respond through their historical correlation with it, which needs no ordering. Because the shocks are
+    correlated, the raw shares of a row do not sum to 1; following Diebold and Yilmaz (2012) each row is
+    divided by its sum.
+
+    The formula is as follows:
+
+    - θᵢⱼ(H) = σⱼⱼ⁻¹ · Σ(h=0..H-1) (eᵢ' Ψₕ Σ eⱼ)² / Σ(h=0..H-1) (eᵢ' Ψₕ Σ Ψₕ' eᵢ)
+    - θ̃ᵢⱼ(H) = θᵢⱼ(H) / Σⱼ θᵢⱼ(H)
+
+    Where Ψₕ are the moving-average matrices of the VAR (Ψ₀ = I), Σ the residual covariance matrix with
+    diagonal σⱼⱼ, eᵢ the i-th unit vector and H = `periods` the forecast horizon. θ̃ᵢⱼ(H) is the share of
+    variable i's H-step forecast error variance due to shocks to variable j.
+
+    For more information about the method, see the following papers:
+
+    - Koop, G., Pesaran, M.H. and Potter, S.M. (1996). "Impulse Response Analysis in Nonlinear
+    Multivariate Models." Journal of Econometrics, 74(1), 119-147.
+    - Pesaran, H.H. and Shin, Y. (1998). "Generalized Impulse Response Analysis in Linear Multivariate
+    Models." Economics Letters, 58(1), 17-29.
+    - Diebold, F.X. and Yilmaz, K. (2012). "Better to Give than to Receive: Predictive Directional
+    Measurement of Volatility Spillovers." International Journal of Forecasting, 28(1), 57-66.
+
+    Shares similar logic:
+    - statsmodels, VARResults.ma_rep: https://www.statsmodels.org/stable/generated/statsmodels.tsa.vector_ar.var_model.VARResults.ma_rep.html
+
+    Args:
+        var_result (dict): A fitted VAR result dict, from `get_var_forecast`.
+        periods (int, optional): The forecast horizon H. Defaults to 10.
+
+    Returns:
+        pd.DataFrame: The normalized shares θ̃ᵢⱼ(H), with the receiving variable i in the rows and the
+        shocked variable j in the columns; every row sums to 1.
+
+    Raises:
+        TypeError: If `var_result` is not a `get_var_forecast` result dict.
+        ValueError: If `periods` is not a positive integer.
+
+    Notes:
+    - The shares do not depend on the scaling of Σ (the degrees of freedom of its estimate), since Σ
+    enters the numerator twice and is divided by σⱼⱼ and the denominator once.
+    - With uncorrelated residuals (a diagonal Σ) the generalized decomposition equals the orthogonalized
+    one of `get_variance_decomposition` at the same horizon.
+
+    As an example:
+
+    ```python
+    import numpy as np
+    import pandas as pd
+    from financetoolkit.econometrics.forecasting import time_series_model
+
+    rng = np.random.default_rng(1)
+    n = 300
+    y1 = np.zeros(n)
+    y2 = np.zeros(n)
+    for t in range(1, n):
+        shock = rng.standard_normal()
+        y1[t] = 0.5 * y1[t - 1] + 0.2 * y2[t - 1] + (shock + rng.standard_normal()) * 0.1
+        y2[t] = 0.1 * y1[t - 1] + 0.6 * y2[t - 1] + (shock + rng.standard_normal()) * 0.1
+
+    data = pd.DataFrame({"Y1": y1, "Y2": y2})
+    var_result = time_series_model.get_var_forecast(data, lags=1)
+    print(time_series_model.get_generalized_variance_decomposition(var_result, periods=10).round(4))
+    ```
+
+    Which returns:
+
+    ```
+            Y1      Y2
+    Y1  0.7118  0.2882
+    Y2  0.2328  0.7672
+    ```
+    """
+    _require_var_result(var_result)
+    if periods < 1:
+        raise ValueError("periods must be a positive integer.")
+
+    variable_names = var_result["variable_names"]
+    psi = _wold_ma_matrices(
+        var_result["coefficient_matrices"],
+        variable_names,
+        var_result["lags"],
+        periods - 1,
+    )
+    sigma = _residual_covariance(var_result)
+
+    # Ψₕ Σ holds eᵢ' Ψₕ Σ eⱼ in row i and column j, and Ψₕ Σ Ψₕ' holds the own variance terms on its diagonal.  # noqa: E501
+    numerator = np.sum([(psi_h @ sigma) ** 2 for psi_h in psi], axis=0) / np.diag(sigma)
+    denominator = np.sum([np.diag(psi_h @ sigma @ psi_h.T) for psi_h in psi], axis=0)
+
+    decomposition = numerator / denominator[:, np.newaxis]
+    decomposition = decomposition / decomposition.sum(axis=1, keepdims=True)
+
+    return pd.DataFrame(decomposition, index=variable_names, columns=variable_names)
+
+
+def get_connectedness(var_result: dict, periods: int = 10) -> dict:
+    """
+    Calculate the Diebold-Yilmaz connectedness of a Vector Autoregression: how much of the variables'
+    forecast error variance comes from shocks to the other variables, in total, from and to each variable
+    and between each pair.
+
+    Diebold and Yilmaz (2009, 2012, 2014) read the Generalized Forecast Error Variance Decomposition
+    (`get_generalized_variance_decomposition`) as a network: the share θ̃ᵢⱼ is how much variable j
+    transmits to variable i. Applied to returns it measures return spillovers, applied to volatilities
+    volatility spillovers. A total connectedness that rises sharply marks a crisis, when shocks travel
+    between markets; the net connectedness says which variables transmit shocks (positive) and which
+    receive them (negative).
+
+    The formula is as follows:
+
+    - From Othersᵢ = Σ(j≠i) θ̃ᵢⱼ(H), the share of variable i's forecast error variance from the others
+    - To Othersⱼ = Σ(i≠j) θ̃ᵢⱼ(H), what variable j contributes to the others' forecast error variances
+    - Netᵢ = To Othersᵢ - From Othersᵢ
+    - Total Connectedness = Σ(i≠j) θ̃ᵢⱼ(H) / N
+
+    Where θ̃ᵢⱼ(H) is the normalized generalized variance share at horizon H = `periods` and N the number of
+    variables. Every value is a decimal: 0.45 total connectedness means 45% of the forecast error variance
+    comes from shocks to other variables. To Othersⱼ can exceed 1, From Othersᵢ cannot.
+
+    For more information about the method, see the following papers:
+
+    - Diebold, F.X. and Yilmaz, K. (2009). "Measuring Financial Asset Return and Volatility Spillovers,
+    with Application to Global Equity Markets." The Economic Journal, 119(534), 158-171.
+    - Diebold, F.X. and Yilmaz, K. (2012). "Better to Give than to Receive: Predictive Directional
+    Measurement of Volatility Spillovers." International Journal of Forecasting, 28(1), 57-66.
+    - Diebold, F.X. and Yilmaz, K. (2014). "On the Network Topology of Variance Decompositions: Measuring
+    the Connectedness of Financial Firms." Journal of Econometrics, 182(1), 119-134.
+
+    Args:
+        var_result (dict): A fitted VAR result dict, from `get_var_forecast`.
+        periods (int, optional): The forecast horizon H. Defaults to 10.
+
+    Returns:
+        dict: The normalized shares and the connectedness measures -- keys `periods`, `decomposition`
+        (the pairwise table θ̃ᵢⱼ, receiving variable in the rows), `from_others`, `to_others`, `net`
+        (pd.Series per variable), `total` (float) and `variable_names`. Call `connectedness_summary_table`
+        for the connectedness table of Diebold and Yilmaz.
+
+    Raises:
+        TypeError: If `var_result` is not a `get_var_forecast` result dict.
+        ValueError: If `periods` is not a positive integer.
+
+    As an example:
+
+    ```python
+    import numpy as np
+    import pandas as pd
+    from financetoolkit.econometrics.forecasting import time_series_model
+
+    rng = np.random.default_rng(1)
+    n = 300
+    y1 = np.zeros(n)
+    y2 = np.zeros(n)
+    for t in range(1, n):
+        shock = rng.standard_normal()
+        y1[t] = 0.5 * y1[t - 1] + 0.2 * y2[t - 1] + (shock + rng.standard_normal()) * 0.1
+        y2[t] = 0.1 * y1[t - 1] + 0.6 * y2[t - 1] + (shock + rng.standard_normal()) * 0.1
+
+    data = pd.DataFrame({"Y1": y1, "Y2": y2})
+    var_result = time_series_model.get_var_forecast(data, lags=1)
+    result = time_series_model.get_connectedness(var_result, periods=10)
+    print(round(result["total"], 4))
+    print(result["net"].round(4))
+    ```
+
+    Which returns:
+
+    ```
+    0.2605
+    Y1   -0.0554
+    Y2    0.0554
+    dtype: float64
+    ```
+    """
+    decomposition = get_generalized_variance_decomposition(var_result, periods)
+    spillovers = decomposition.to_numpy()
+    own = np.diag(spillovers)
+
+    from_others = pd.Series(spillovers.sum(axis=1) - own, index=decomposition.index)
+    to_others = pd.Series(spillovers.sum(axis=0) - own, index=decomposition.columns)
+
+    return {
+        "periods": periods,
+        "decomposition": decomposition,
+        "from_others": from_others,
+        "to_others": to_others,
+        "net": to_others - from_others,
+        "total": float(from_others.sum() / len(from_others)),
+        "variable_names": var_result["variable_names"],
+    }
+
+
+def connectedness_summary_table(result: dict) -> pd.DataFrame:
+    """
+    Build the connectedness table of Diebold and Yilmaz: the pairwise variance shares with what each
+    variable receives from and transmits to the others and the total connectedness.
+
+    The table takes a `get_connectedness` result dict: the pairwise shares θ̃ᵢⱼ (receiving variable in the
+    rows, transmitting variable in the columns) with a "From Others" column, and "To Others" and "Net"
+    rows below them. The cell where the "To Others" row meets the "From Others" column holds the total
+    connectedness, as in Diebold and Yilmaz (2012, Table 2).
+
+    Args:
+        result (dict): A connectedness result dict, as returned by `get_connectedness`.
+
+    Returns:
+        pd.DataFrame: The connectedness table.
+    """
+    table = result["decomposition"].copy()
+    table["From Others"] = result["from_others"]
+    table.loc["To Others"] = pd.concat(
+        [result["to_others"], pd.Series({"From Others": result["total"]})]
+    )
+    table.loc["Net"] = result["net"]
+
+    return table
+
+
+def get_rolling_connectedness(
+    data: pd.DataFrame, lags: int = 1, periods: int = 10, window: int = 200
+) -> pd.DataFrame:
+    """
+    Calculate the Diebold-Yilmaz connectedness over a rolling window: how the total connectedness and each
+    variable's net connectedness move over time.
+
+    Every window of `window` observations gets its own VAR(`lags`) fit and its own generalized variance
+    decomposition at horizon `periods` (see `get_connectedness`), dated by the last observation of the
+    window, so a value only uses data up to its date. Diebold and Yilmaz (2012) use 200-day windows and a
+    10-day horizon.
+
+    The formula is as follows:
+
+    - Total Connectednessₜ = Σ(i≠j) θ̃ᵢⱼ,ₜ(H) / N
+    - Netᵢ,ₜ = Σ(j≠i) θ̃ⱼᵢ,ₜ(H) - Σ(j≠i) θ̃ᵢⱼ,ₜ(H)
+
+    Where θ̃ᵢⱼ,ₜ(H) is the normalized generalized variance share of the VAR fitted on the `window`
+    observations up to t.
+
+    For more information about the method, see the following paper:
+
+    - Diebold, F.X. and Yilmaz, K. (2012). "Better to Give than to Receive: Predictive Directional
+    Measurement of Volatility Spillovers." International Journal of Forecasting, 28(1), 57-66.
+
+    Args:
+        data (pd.DataFrame): One column per series (e.g. several assets' returns), at least 2 columns.
+        lags (int, optional): The VAR order. Defaults to 1.
+        periods (int, optional): The forecast horizon H. Defaults to 10.
+        window (int, optional): The number of observations of every VAR fit. Defaults to 200.
+
+    Returns:
+        pd.DataFrame: The total connectedness in the "Total" column and each variable's net connectedness
+        in a column named after it, one row per window end date.
+
+    Raises:
+        ValueError: If `window` leaves too few observations to fit the VAR.
+
+    As an example:
+
+    ```python
+    import numpy as np
+    import pandas as pd
+    from financetoolkit.econometrics.forecasting import time_series_model
+
+    rng = np.random.default_rng(1)
+    data = pd.DataFrame(rng.standard_normal((260, 3)) * 0.01, columns=["A", "B", "C"])
+    data["B"] += 0.5 * data["A"]
+
+    print(time_series_model.get_rolling_connectedness(data, window=250).round(4).tail(3))
+    ```
+
+    Which returns:
+
+    ```
+          Total       A       B       C
+    257  0.1189  0.0147  0.0009 -0.0155
+    258  0.1180  0.0145  0.0017 -0.0162
+    259  0.1205  0.0141 -0.0002 -0.0139
+    ```
+    """
+    aligned = data.dropna()
+    if len(aligned) < window:
+        raise ValueError(
+            f"The {len(aligned)} observations without gaps are fewer than the window of {window}. "
+            "Use a smaller window or a longer history."
+        )
+
+    variable_names = list(aligned.columns)
+    k = len(variable_names)
+    design, target = _build_lagged_design(aligned, lags)
+    design = np.column_stack([np.ones(len(design)), design.to_numpy()])
+    target = target.to_numpy()
+
+    if window - lags <= k * lags + 1 + MINIMUM_VAR_OBSERVATIONS_BUFFER:
+        raise ValueError(
+            f"A window of {window} leaves too few observations to fit a VAR({lags}) model across {k} series -- "  # noqa: E501
+            f"need a window above {k * lags + 1 + MINIMUM_VAR_OBSERVATIONS_BUFFER + lags}."
+        )
+
+    rows = {}
+
+    # Each window is the equation-by-equation OLS of get_var_forecast on its own `window` observations
+    # (the first `lags` of them only serve as lags), solved in one least squares call since only the
+    # coefficients and residuals enter the decomposition.
+    for end in range(window, len(aligned) + 1):
+        window_design = design[end - window : end - lags]
+        window_target = target[end - window : end - lags]
+        coefficients = np.linalg.lstsq(window_design, window_target, rcond=None)[0]
+        var_result = {
+            "lags": lags,
+            "variable_names": variable_names,
+            "coefficient_matrices": {
+                lag: pd.DataFrame(
+                    coefficients[1 + (lag - 1) * k : 1 + lag * k].T,
+                    index=variable_names,
+                    columns=variable_names,
+                )
+                for lag in range(1, lags + 1)
+            },
+            "residuals": pd.DataFrame(
+                window_target - window_design @ coefficients, columns=variable_names
+            ),
+        }
+        result = get_connectedness(var_result, periods)
+        rows[aligned.index[end - 1]] = pd.concat(
+            [pd.Series({"Total": result["total"]}), result["net"]]
+        )
+
+    return pd.DataFrame.from_dict(rows, orient="index")
+
+
 def vecm_summary_table(result: dict) -> pd.DataFrame:
     """
     Build the table of a Vector Error Correction Model: the cointegrating vector(s) (beta)

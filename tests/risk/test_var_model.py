@@ -3,7 +3,7 @@
 import numpy as np
 import pandas as pd
 import pytest
-from scipy import stats
+from scipy import integrate, stats
 
 from financetoolkit.risk.value_at_risk import var_model
 
@@ -636,3 +636,199 @@ def test_get_var_garch_rolling_path_and_frames(recorder):
         var_model.get_var_garch(returns, 0.05, window_size=50)
     # Too few returns for a single fit give NaN rather than a fit on a handful of returns.
     assert np.isnan(var_model.get_var_garch(returns.iloc[:50], 0.05))
+
+
+@pytest.mark.parametrize("true_shape", [-0.3, 0.0, 0.2, 0.5, 1.2])
+def test_fit_generalized_pareto_matches_scipy(true_shape):
+    # scipy's genpareto.fit (location 0) maximizes the same likelihood with Nelder-Mead: the
+    # estimates agree to about four digits and the profile likelihood search is never lower.
+    excesses = stats.genpareto.rvs(
+        true_shape, scale=0.01, size=150, random_state=np.random.default_rng(0)
+    )
+    shape, scale = var_model.fit_generalized_pareto(excesses)
+    scipy_shape, _, scipy_scale = stats.genpareto.fit(excesses, floc=0)
+
+    assert shape == pytest.approx(scipy_shape, abs=1e-3)
+    assert scale == pytest.approx(scipy_scale, rel=1e-3)
+    assert stats.genpareto.logpdf(excesses, shape, 0, scale).sum() >= (
+        stats.genpareto.logpdf(excesses, scipy_shape, 0, scipy_scale).sum() - 1e-9
+    )
+
+
+def test_gpd_profile_log_likelihood_is_the_log_likelihood():
+    # At beta = xi / theta and xi = mean(ln(1 + theta * y)) the profile equals the full
+    # log-likelihood, here scipy's genpareto.logpdf summed over the excesses.
+    excesses = np.array(
+        [0.002, 0.004, 0.005, 0.009, 0.012, 0.015, 0.021, 0.03, 0.041, 0.07]
+    )
+
+    for theta in [-10.0, 5.0, 40.0]:
+        shape = np.mean(np.log1p(theta * excesses))
+        expected = stats.genpareto.logpdf(excesses, shape, 0, shape / theta).sum()
+        assert var_model.get_gpd_profile_log_likelihood(excesses, theta)[0] == (
+            pytest.approx(expected, rel=1e-12)
+        )
+
+    # Beyond the end point of the support (xi <= -1) the likelihood is unbounded.
+    assert (
+        var_model.get_gpd_profile_log_likelihood(excesses, -1 / 0.0700001)[0] == -np.inf
+    )
+
+
+def test_gpd_standard_errors_are_the_inverse_fisher_information():
+    # The expected information of one observation, integrated numerically over the GPD
+    # density with finite differences of scipy's log-density, inverts to the closed form
+    # of Smith (1987): Var(xi) = (1 + xi)^2, Var(beta) = 2 beta^2 (1 + xi), per observation.
+    shape, scale, step = 0.25, 0.02, 1e-4
+
+    def second_derivative(y, i, j):
+        def logpdf(parameters):
+            return stats.genpareto.logpdf(y, parameters[0], 0, parameters[1])
+
+        parameters = np.array([shape, scale])
+        e_i, e_j = np.eye(2)[i] * step, np.eye(2)[j] * step
+        return (
+            logpdf(parameters + e_i + e_j)
+            - logpdf(parameters + e_i - e_j)
+            - logpdf(parameters - e_i + e_j)
+            + logpdf(parameters - e_i - e_j)
+        ) / (4 * step**2)
+
+    information = np.array(
+        [
+            [
+                -integrate.quad(
+                    lambda y, i=i, j=j: second_derivative(y, i, j)
+                    * stats.genpareto.pdf(y, shape, 0, scale),
+                    0,
+                    np.inf,
+                    limit=200,
+                )[0]
+                for j in range(2)
+            ]
+            for i in range(2)
+        ]
+    )
+    covariance = np.linalg.inv(information)
+
+    returns = pd.Series(
+        -(0.01 + stats.genpareto.rvs(shape, scale=scale, size=400, random_state=1))
+    )
+    fit = var_model.get_generalized_pareto_fit(returns, threshold=0.01)
+    fitted_shape, fitted_scale = fit["Shape (xi)"], fit["Scale (beta)"]
+    n = fit["Exceedances"]
+
+    assert np.sqrt(covariance[0, 0]) == pytest.approx(1 + shape, rel=1e-3)
+    assert np.sqrt(covariance[1, 1]) == pytest.approx(
+        scale * np.sqrt(2 * (1 + shape)), rel=1e-3
+    )
+    assert fit["Shape Standard Error"] == pytest.approx((1 + fitted_shape) / np.sqrt(n))
+    assert fit["Scale Standard Error"] == pytest.approx(
+        fitted_scale * np.sqrt(2 * (1 + fitted_shape) / n)
+    )
+
+
+def test_get_generalized_pareto_fit(recorder):
+    rng = np.random.default_rng(5)
+    returns = pd.DataFrame(
+        {
+            "Heavy": stats.t.rvs(3, size=1000, random_state=rng) * 0.01,
+            "Normal": rng.standard_normal(1000) * 0.01,
+        }
+    )
+    fit = var_model.get_generalized_pareto_fit(returns)
+
+    # Student-t(3) losses have a tail index of 3 (xi = 1/3), normal losses an exponential-type
+    # tail (xi = 0): the fit tells them apart, within about two standard errors.
+    assert fit.loc["Exceedances"].tolist() == [50, 50]
+    assert (
+        abs(fit.loc["Shape (xi)", "Heavy"] - 1 / 3)
+        < 2 * fit.loc["Shape Standard Error", "Heavy"]
+    )
+    assert (
+        abs(fit.loc["Shape (xi)", "Normal"])
+        < 2 * fit.loc["Shape Standard Error", "Normal"]
+    )
+    assert fit.loc["Threshold", "Heavy"] == pytest.approx(
+        np.percentile(-returns["Heavy"], 95)
+    )
+
+    recorder.capture(fit.round(6))
+
+
+def test_get_generalized_pareto_fit_threshold_and_too_few_exceedances():
+    returns = pd.Series(-np.arange(1, 101) / 1000)
+
+    fit = var_model.get_generalized_pareto_fit(returns, threshold=0.09)
+    assert fit["Threshold"] == 0.09
+    assert fit["Exceedances"] == 10
+    assert fit["Exceedance Probability"] == pytest.approx(0.1)
+    assert np.isfinite(fit["Shape (xi)"])
+
+    fit = var_model.get_generalized_pareto_fit(returns, threshold=0.095)
+    assert fit["Exceedances"] == 5
+    assert np.isnan(fit["Shape (xi)"]) and np.isnan(fit["Shape Standard Error"])
+
+
+def test_get_gpd_tail_loss_matches_scipy_quantile_and_exponential_limit():
+    # The VaR loss is the threshold plus the GPD quantile at 1 - alpha / p (scipy's ppf), and
+    # meets the exponential limit u - beta * ln(alpha / p) continuously at xi = 0.
+    threshold, scale, probability, alpha = 0.02, 0.01, 0.05, 0.01
+
+    for shape in [-0.2, 0.1, 0.4]:
+        expected = threshold + stats.genpareto.ppf(
+            1 - alpha / probability, shape, 0, scale
+        )
+        assert var_model.get_gpd_tail_loss(
+            threshold, shape, scale, probability, alpha
+        ) == pytest.approx(expected, rel=1e-12)
+
+    exponential = threshold - scale * np.log(alpha / probability)
+    assert var_model.get_gpd_tail_loss(threshold, 0.0, scale, probability, alpha) == (
+        pytest.approx(exponential, rel=1e-14)
+    )
+    assert var_model.get_gpd_tail_loss(threshold, 1e-13, scale, probability, alpha) == (
+        pytest.approx(exponential, rel=1e-12)
+    )
+
+    # By hand: 0.02 + 0.01 * (0.2^-0.2 - 1) / 0.2 = 0.0389858.
+    assert var_model.get_gpd_tail_loss(threshold, 0.2, scale, probability, alpha) == (
+        pytest.approx(0.02 + 0.01 * (0.2**-0.2 - 1) / 0.2)
+    )
+
+
+def test_get_var_evt_uses_the_generalized_pareto_fit():
+    returns = pd.Series(stats.t.rvs(4, size=1000, random_state=3) * 0.01)
+    fit = var_model.get_generalized_pareto_fit(returns)
+
+    expected = -(
+        fit["Threshold"]
+        + fit["Scale (beta)"]
+        / fit["Shape (xi)"]
+        * ((0.01 / fit["Exceedance Probability"]) ** -fit["Shape (xi)"] - 1)
+    )
+    assert var_model.get_var_evt(returns, 0.01).iloc[0] == pytest.approx(expected)
+
+
+def test_get_mean_excess_function(recorder):
+    returns = pd.Series(
+        [-0.05, -0.04, -0.03, -0.02, -0.01, 0.0, 0.01, 0.02, 0.03, 0.04]
+    )
+    result = var_model.get_mean_excess_function(returns, quantiles=[0.5, 0.8])
+
+    # By hand: losses 0.05 ... -0.04; the median loss is 0.005 and the five losses above it
+    # exceed it by 0.045, 0.035, ..., 0.005, on average 0.025; the 0.8 quantile is 0.032,
+    # exceeded by 0.008 and 0.018.
+    assert result.loc[0.5, "Threshold"] == pytest.approx(0.005)
+    assert result.loc[0.5, "Mean Excess"] == pytest.approx(0.025)
+    assert result.loc[0.5, "Exceedances"] == 5
+    assert result.loc[0.8, "Threshold"] == pytest.approx(0.032)
+    assert result.loc[0.8, "Mean Excess"] == pytest.approx(0.013)
+
+    rng = np.random.default_rng(2)
+    frame = pd.DataFrame({"A": rng.standard_normal(500), "B": rng.standard_normal(500)})
+    default = var_model.get_mean_excess_function(frame)
+    assert default.shape == (20, 6)
+    assert default.index[0] == 0.8 and default.index[-1] == 0.99
+
+    recorder.capture(result.round(6))

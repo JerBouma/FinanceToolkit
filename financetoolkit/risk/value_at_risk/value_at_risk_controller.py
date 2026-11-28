@@ -246,7 +246,7 @@ def _get_out_of_sample_estimates(
 @track_sources
 class ValueAtRiskRisk:
     """
-    Value at Risk and its relatives: conditional and entropic VaR, the higher moment coherent risk and expected quadratic shortfall, marginal and component VaR, and the VaR and expected shortfall backtests.
+    Value at Risk and its relatives: the Generalized Pareto tail fit and mean excess function behind the EVT VaR, conditional and entropic VaR, the higher moment coherent risk and expected quadratic shortfall, marginal and component VaR, and the VaR and expected shortfall backtests.
     """
 
     @handle_portfolio
@@ -814,6 +814,228 @@ class ValueAtRiskRisk:
             standardize=standardize,
             axis="rows",
             apply_slice=False,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_generalized_pareto_fit(
+        self,
+        period: str | None = None,
+        threshold_percentile: float = 0.95,
+        threshold: float | None = None,
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Fit a Generalized Pareto Distribution to the losses above a threshold (Peak-over-Threshold): how heavy
+        the tail of each asset's losses is, with the shape and scale behind the Extreme Value Theory VaR.
+
+        By the Pickands-Balkema-de Haan theorem, the losses above a high threshold follow a Generalized Pareto
+        Distribution (GPD) for a wide class of return distributions. The shape xi says how heavy the tail is:
+        above 0 a power-law tail (as Student-t returns, with tail index 1 / xi; daily stock returns typically
+        give 0.1 to 0.4), 0 an exponential tail (as normal returns) and below 0 a tail with a finite end point.
+        The fitted shape and scale give the Extreme Value Theory VaR and CVaR (`get_value_at_risk` and
+        `get_conditional_value_at_risk` with the "evt" method). A shape of 1 or more means the tail has no
+        mean, so the EVT CVaR is NaN. The fit depends on the threshold: `get_mean_excess_function` helps to
+        choose one.
+
+        The formula is as follows:
+
+        - Losses = -Returns, Excesses y_i = Loss_i - u for every Loss_i > u
+        - (xi, beta) maximize Σ ln f(y_i) with ln f(y) = -ln(beta) - (1 + 1 / xi) * ln(1 + xi * y / beta)
+        - Shape Standard Error = (1 + xi) / √Nu
+        - Scale Standard Error = beta * √(2 * (1 + xi) / Nu)
+        - Exceedance Probability = Nu / n
+
+        Where u is the `threshold_percentile` percentile of the losses (linear interpolation) or the given
+        `threshold`, Nu the number of losses above u and n the number of returns of the asset. The Maximum
+        Likelihood fit maximizes the profile likelihood in theta = xi / beta (Grimshaw 1993), and the standard
+        errors are the asymptotic ones of Smith (1987), which hold for xi > -0.5 (NaN below). The resulting
+        EVT VaR at a tail probability alpha is u + (beta / xi) * ((alpha / p)^(-xi) - 1) as a loss, with the
+        exponential limit u - beta * ln(alpha / p) at xi = 0.
+
+        For more information about the method, see the following sources:
+
+        - Smith, R.L. (1987). "Estimating Tails of Probability Distributions." The Annals of Statistics,
+        15(3), 1174-1207.
+        - Grimshaw, S.D. (1993). "Computing Maximum Likelihood Estimates for the Generalized Pareto
+        Distribution." Technometrics, 35(2), 185-191.
+        - McNeil, A.J. and Frey, R. (2000). "Estimation of Tail-Related Risk Measures for Heteroscedastic
+        Financial Time Series: An Extreme Value Approach." Journal of Empirical Finance, 7(3-4), 271-300.
+        - McNeil, A.J., Frey, R. and Embrechts, P. (2015). "Quantitative Risk Management: Concepts,
+        Techniques and Tools." Revised Edition, Princeton University Press, Section 5.2.
+
+        Also known as: GPD fit, peaks over threshold, POT, extreme value theory tail fit.
+
+        Referenced against:
+        - scipy, genpareto: https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.genpareto.html
+
+        Args:
+            period (str, optional): The data frequency for returns. Options are: "daily", "weekly", "monthly",
+                "quarterly", "yearly". Defaults to "daily".
+            threshold_percentile (float, optional): The percentile of losses above which the GPD is fitted
+            (e.g. 0.95 fits the GPD on the worst 5% of losses). Defaults to 0.95.
+            threshold (float | None, optional): A loss threshold as a positive decimal (0.03 fits the GPD to
+            the losses beyond 3%), which replaces `threshold_percentile`. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None,
+                which uses the rounding of the Toolkit (4 unless set otherwise).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: The threshold, the number of exceedances, the exceedance probability, the shape,
+            the scale and their standard errors, per asset. The fit needs at least 10 losses above the
+            threshold; with fewer the shape, scale and standard errors are NaN.
+
+        Notes:
+        - scipy's genpareto.fit with the location fixed at 0 maximizes the same likelihood with a Nelder-Mead
+        search; the estimates agree to about four significant digits and its log-likelihood is never higher.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["BTCUSD", "^GSPC", "GCUSD"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.risk.get_generalized_pareto_fit()
+        ```
+
+        Which returns:
+
+        |                        |   BTCUSD |   ^GSPC |   GCUSD |   Benchmark |
+        |:-----------------------|---------:|--------:|--------:|------------:|
+        | Threshold              |   0.0476 |  0.0165 |  0.0159 |      0.0166 |
+        | Exceedances            |  92      | 63      | 65      |     63      |
+        | Exceedance Probability |   0.0504 |  0.0502 |  0.05   |      0.0502 |
+        | Shape (xi)             |   0.0339 |  0.023  | -0.019  |      0.073  |
+        | Scale (beta)           |   0.0219 |  0.0081 |  0.008  |      0.0076 |
+        | Shape Standard Error   |   0.1078 |  0.1289 |  0.1217 |      0.1352 |
+        | Scale Standard Error   |   0.0033 |  0.0015 |  0.0014 |      0.0014 |
+        """
+        period = period if period else "daily"
+
+        check_period(period, ["daily", "weekly", "monthly", "quarterly", "yearly"])
+        if not 0 < threshold_percentile < 1:
+            raise InvalidArgumentError(
+                f"threshold_percentile must lie between 0 and 1, received {threshold_percentile}. "
+                "Use 0.95 to fit the worst 5% of losses."
+            )
+        if threshold is not None and threshold < 0:
+            raise InvalidArgumentError(
+                f"threshold is a loss as a positive decimal, received {threshold}. Use 0.03 for losses "
+                "beyond 3%."
+            )
+
+        returns = self._get_returns(period, within_period=False)
+
+        result = var_model.get_generalized_pareto_fit(
+            returns, threshold_percentile, threshold
+        )
+
+        return apply_rounding(
+            result, rounding if rounding is not None else self._rounding
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_mean_excess_function(
+        self,
+        period: str | None = None,
+        quantiles: list[float] | None = None,
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the Mean Excess Function of the losses: the average amount by which the losses exceed a
+        range of thresholds, the plot used to choose the threshold of a Generalized Pareto fit.
+
+        Above a threshold where the losses follow a Generalized Pareto Distribution, the mean excess is a
+        straight line in the threshold with slope xi / (1 - xi): rising for a heavy (power-law) tail, flat for
+        an exponential tail and falling for a tail with an end point. A good threshold for
+        `get_generalized_pareto_fit` and the Extreme Value Theory VaR is the lowest one above which the line
+        is close to straight; the last points rest on a handful of losses and are noisy.
+
+        The formula is as follows:
+
+        - Losses = -Returns
+        - e(u) = Σ (Loss_i - u) * 1{Loss_i > u} / Σ 1{Loss_i > u}
+
+        Where u is the quantile of each asset's losses at each of `quantiles` (linear interpolation).
+
+        For more information about the method, see the following sources:
+
+        - Davison, A.C. and Smith, R.L. (1990). "Models for Exceedances over High Thresholds." Journal of
+        the Royal Statistical Society, Series B, 52(3), 393-442.
+        - McNeil, A.J., Frey, R. and Embrechts, P. (2015). "Quantitative Risk Management: Concepts,
+        Techniques and Tools." Revised Edition, Princeton University Press, Section 5.2.
+
+        Also known as: mean excess plot, mean residual life plot, ME plot.
+
+        Args:
+            period (str, optional): The data frequency for returns. Options are: "daily", "weekly", "monthly",
+                "quarterly", "yearly". Defaults to "daily".
+            quantiles (list[float] | None, optional): The quantiles of the losses to use as thresholds, each
+            between 0 and 1. Defaults to None, which uses 0.80, 0.81, ..., 0.99.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None,
+                which uses the rounding of the Toolkit (4 unless set otherwise).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: The threshold, the mean excess and the number of exceedances for each quantile,
+            with a top-level column per asset.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["BTCUSD", "^GSPC"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.risk.get_mean_excess_function(quantiles=[0.9, 0.95, 0.975, 0.99], show_columns="Mean Excess")
+        ```
+
+        Which returns:
+
+        |   Quantile |   BTCUSD |   ^GSPC |   Benchmark |
+        |-----------:|---------:|--------:|------------:|
+        |      0.9   |   0.0227 |  0.0078 |      0.0076 |
+        |      0.95  |   0.0227 |  0.0083 |      0.0082 |
+        |      0.975 |   0.0243 |  0.0091 |      0.0093 |
+        |      0.99  |   0.0252 |  0.0086 |      0.0095 |
+        """
+        period = period if period else "daily"
+
+        check_period(period, ["daily", "weekly", "monthly", "quarterly", "yearly"])
+        if quantiles is not None and not all(
+            0 < quantile < 1 for quantile in quantiles
+        ):
+            raise InvalidArgumentError(
+                f"quantiles must each lie between 0 and 1, received {quantiles}. Use for example "
+                "[0.9, 0.95, 0.99]."
+            )
+
+        returns = self._get_returns(period, within_period=False)
+
+        result = var_model.get_mean_excess_function(returns, quantiles)
+
+        return apply_rounding(
+            result, rounding if rounding is not None else self._rounding
         )
 
     @handle_portfolio

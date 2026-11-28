@@ -18,6 +18,7 @@ from financetoolkit.portfolio.helpers import BENCHMARK_TICKER, PORTFOLIO_TICKER
 from financetoolkit.risk.helpers import get_observations_per_year
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
 from financetoolkit.utilities.error_model import (
+    InvalidArgumentError,
     check_option,
     check_period,
     handle_errors,
@@ -101,6 +102,7 @@ class AnalysisConstruction:
         covariance: str = "sample",
         covariance_span: int = 180,
         include_benchmark: bool = False,
+        rolling: int | None = None,
         rounding: int | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
@@ -224,6 +226,11 @@ class AnalysisConstruction:
                 weight of a period halves after about span / 2.9 periods. Defaults to 180.
             include_benchmark (bool, optional): Whether to include the benchmark as an
                 asset. Defaults to False.
+            rolling (int | None, optional): The number of periods in a trailing window that moves
+                through time, e.g. 252 for a year of daily returns: the volatility contributions
+                on the sample covariance of each window, one row per period, with the weights held
+                fixed. Only for the volatility with the sample covariance. Defaults to None, which
+                uses every period at once.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -232,7 +239,10 @@ class AnalysisConstruction:
                 exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
-            pd.DataFrame: Per asset and in total, the Weight, Marginal Contribution, Risk
+            pd.DataFrame: With rolling, per date the Volatility, Correlation with Portfolio,
+            Marginal Contribution, Risk Contribution and Percentage Contribution of each asset
+            and the Total, the fields as the first column level. Otherwise per asset and in
+            total, the Weight, Marginal Contribution, Risk
             Contribution and Percentage Contribution: annualized volatility terms, or per period
             terms of the other measures, with losses and drawdowns positive. The volatility also
             has the Volatility of each asset and its Correlation with Portfolio (the portfolio's
@@ -284,9 +294,36 @@ class AnalysisConstruction:
             *optimization_model.FINITE_DIFFERENCE_RISK_MEASURES,
         )
         check_option("risk_measure", risk_measure, measures)
+        if rolling is not None and (risk_measure, covariance) != (
+            "volatility",
+            "sample",
+        ):
+            raise InvalidArgumentError(
+                "rolling is available for risk_measure='volatility' with covariance='sample', "
+                f"not risk_measure={risk_measure!r} with covariance={covariance!r}; leave rolling "
+                "out for the other measures and estimators."
+            )
         # Only the assets held decide the periods, so an asset left out of the weights with
         # a shorter history does not shorten the sample.
         resolved = self._get_held_weights(weights, period, include_benchmark)
+        if rolling is not None:
+            returns = self._get_returns(
+                period, include_benchmark, resolved.index.tolist()
+            )
+            if not optimization_model.MINIMUM_WINDOW <= rolling <= len(returns):
+                raise InvalidArgumentError(
+                    f"rolling must be between {optimization_model.MINIMUM_WINDOW} and the {len(returns)} {period} returns, not "
+                    f"{rolling}."
+                )
+            table = optimization_model.get_rolling_risk_contributions(
+                resolved,
+                returns,
+                rolling,
+                self._get_periods_per_year(period, returns.index),
+            )
+            table.index.name = "Date"
+            table.columns.names = [None, "Asset"]
+            return self._round(table, rounding)
         returns, _, covariance_matrix, _ = self._get_inputs(
             period,
             include_benchmark,

@@ -6894,6 +6894,91 @@ def get_risk_contributions(
     )
 
 
+# A covariance needs two returns.
+MINIMUM_WINDOW = 2
+
+
+def get_rolling_risk_contributions(
+    weights: pd.Series, returns: pd.DataFrame, window: int, periods_per_year: float
+) -> pd.DataFrame:
+    """
+    How much each asset adds to the volatility of a portfolio over a trailing window that moves
+    through time: the Euler allocation of get_risk_contributions on the sample covariance of the
+    last `window` returns at each date, with the weights held fixed (rebalanced to them).
+
+    At each date t, with Σ_t the annualized sample covariance (ddof=1) of the returns from t -
+    window + 1 to t:
+
+    - Portfolio volatility: σ_p,t = √(w' Σ_t w)
+    - Marginal Contribution: (Σ_t w)_i / σ_p,t = σ_i,t ρ_i,p,t
+    - Risk Contribution: w_i (Σ_t w)_i / σ_p,t
+    - Percentage Contribution: the risk contribution divided by σ_p,t
+
+    Args:
+        weights (pd.Series): The weight per asset.
+        returns (pd.DataFrame): The returns per period, one column per asset.
+        window (int): The number of periods in each window, at least 2.
+        periods_per_year (float): The number of periods in a year that annualizes the
+            covariance, e.g. 252 for daily returns.
+
+    Returns:
+        pd.DataFrame: Per date, the Volatility, Correlation with Portfolio, Marginal
+        Contribution, Risk Contribution and Percentage Contribution of each asset and the Total
+        (the portfolio's volatility, a correlation of 1 and contributions that sum), with the
+        fields as the first column level. Dates without a full window for every asset are left
+        out.
+    """
+    if window < MINIMUM_WINDOW:
+        raise ValueError(
+            f"The window must hold at least {MINIMUM_WINDOW} periods, not {window}."
+        )
+    weights = weights.reindex(returns.columns).fillna(0)
+    assets = list(returns.columns)
+    count = len(assets)
+
+    stacked = returns.rolling(window, min_periods=window).cov() * periods_per_year
+    covariances = stacked.to_numpy().reshape(len(returns), count, count)
+    complete = ~np.isnan(covariances).any(axis=(1, 2))
+    covariances = covariances[complete]
+    dates = returns.index[complete]
+
+    weight_vector = weights.to_numpy()
+    covariance_weights = covariances @ weight_vector
+    volatility = np.sqrt(np.clip(covariance_weights @ weight_vector, 0, None))
+    calm = volatility <= ZERO_VOLATILITY_TOLERANCE
+    volatility = np.where(calm, np.nan, volatility)
+
+    marginal = covariance_weights / volatility[:, None]
+    contribution = weight_vector * marginal
+    asset_volatility = np.sqrt(
+        np.clip(np.diagonal(covariances, axis1=1, axis2=2), 0, None)
+    )
+    correlation = np.divide(
+        marginal,
+        asset_volatility,
+        out=np.full_like(marginal, np.nan),
+        where=asset_volatility > ZERO_VOLATILITY_TOLERANCE,
+    )
+    total = np.ones((len(dates), 1))
+    fields = {
+        "Volatility": np.hstack([asset_volatility, volatility[:, None]]),
+        "Correlation with Portfolio": np.hstack([correlation, total]),
+        "Marginal Contribution": np.hstack([marginal, np.full_like(total, np.nan)]),
+        "Risk Contribution": np.hstack([contribution, volatility[:, None]]),
+        "Percentage Contribution": np.hstack(
+            [contribution / volatility[:, None], total]
+        ),
+    }
+
+    return pd.concat(
+        {
+            field: pd.DataFrame(values, index=dates, columns=[*assets, "Total"])
+            for field, values in fields.items()
+        },
+        axis=1,
+    )
+
+
 def get_expected_shortfall_contributions(
     weights: pd.Series, returns: pd.DataFrame, alpha: float = 0.05
 ) -> pd.DataFrame:

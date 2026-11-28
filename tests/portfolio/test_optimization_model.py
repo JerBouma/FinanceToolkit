@@ -4745,3 +4745,33 @@ def test_risk_contribution_is_weight_times_volatility_times_correlation():
         table["Weight"] * table["Volatility"] * table["Correlation with Portfolio"],
         table["Risk Contribution"],
     )
+
+
+def test_rolling_risk_contributions_equal_the_static_ones_on_each_window():
+    generator = np.random.default_rng(3)
+    returns = pd.DataFrame(
+        generator.normal(0, 0.01, (40, 3)),
+        index=pd.date_range("2024-01-01", periods=40),
+        columns=["A", "B", "C"],
+    )
+    weights = pd.Series({"A": 0.5, "B": 0.3, "C": 0.2})
+
+    table = optimization_model.get_rolling_risk_contributions(weights, returns, 20, 252)
+
+    assert len(table) == 21
+    for date in (table.index[0], table.index[-1]):
+        window = returns.loc[:date].iloc[-20:]
+        static = optimization_model.get_risk_contributions(weights, window.cov() * 252)
+        for field in ("Volatility", "Correlation with Portfolio", "Risk Contribution"):
+            np.testing.assert_allclose(
+                table.loc[date, field][["A", "B", "C"]], static[field]
+            )
+    np.testing.assert_allclose(table["Percentage Contribution"]["Total"], 1)
+
+
+def test_rolling_risk_contributions_need_two_periods():
+    returns = pd.DataFrame({"A": [0.01, 0.02, 0.03]})
+    with pytest.raises(ValueError, match="at least 2"):
+        optimization_model.get_rolling_risk_contributions(
+            pd.Series({"A": 1.0}), returns, 1, 252
+        )

@@ -6846,7 +6846,13 @@ def get_risk_contributions(
     How much each asset adds to the volatility of a portfolio (Euler allocation).
 
     These are the marginal contribution ∂σ/∂w_i = (Σw)_i / σ, the risk contribution w_i
-    times that, and its share of the total, which sums to one.
+    times that, and its share of the total, which sums to one. The marginal contribution is
+    also the asset's own volatility times its correlation with the portfolio, σ_i ρ_i,p, so
+    each risk contribution reads term by term as w_i σ_i ρ_i,p (Menchero and Davis, 2011): a
+    volatile asset adds little when it moves apart from the rest.
+
+    See Menchero, J. and Davis, B. (2011), "Risk Contribution Is Exposure Times Volatility
+    Times Correlation", The Journal of Portfolio Management, 37(2), 97-106.
 
     Shares similar logic:
     - Riskfolio-Lib, Risk_Contribution: https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/risk.html#RiskFunctions.Risk_Contribution
@@ -6856,8 +6862,9 @@ def get_risk_contributions(
         covariance (pd.DataFrame): The annualized covariance matrix.
 
     Returns:
-        pd.DataFrame: The Weight, Marginal Contribution, Risk Contribution and Percentage
-        Contribution per asset.
+        pd.DataFrame: The Weight, Volatility (σ_i), Correlation with Portfolio (ρ_i,p),
+        Marginal Contribution, Risk Contribution and Percentage Contribution per asset. The
+        correlation is NaN for an asset without volatility.
     """
     weights = weights.reindex(covariance.index).fillna(0)
     sigma = covariance.to_numpy()
@@ -6867,10 +6874,18 @@ def get_risk_contributions(
 
     marginal = sigma @ weights.to_numpy() / volatility
     contribution = weights.to_numpy() * marginal
+    asset_volatility = np.sqrt(np.clip(np.diag(sigma), 0, None))
 
     return pd.DataFrame(
         {
             "Weight": weights.to_numpy(),
+            "Volatility": asset_volatility,
+            "Correlation with Portfolio": np.divide(
+                marginal,
+                asset_volatility,
+                out=np.full_like(marginal, np.nan),
+                where=asset_volatility > ZERO_VOLATILITY_TOLERANCE,
+            ),
             "Marginal Contribution": marginal,
             "Risk Contribution": contribution,
             "Percentage Contribution": contribution / volatility,

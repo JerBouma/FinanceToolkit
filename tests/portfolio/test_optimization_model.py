@@ -4729,3 +4729,19 @@ def test_onc_clusters_nested_clustered_optimization_but_not_herc():
         optimization_model.get_hierarchical_equal_risk_contribution_weights(
             covariance, cluster_criterion="onc"
         )
+
+
+def test_risk_contribution_is_weight_times_volatility_times_correlation():
+    weights = pd.Series([0.4, 0.3, 0.2, 0.1], index=ASSETS)
+    table = optimization_model.get_risk_contributions(weights, COVARIANCE)
+
+    portfolio = weights @ COVARIANCE @ weights
+    correlation = (COVARIANCE @ weights) / (
+        np.sqrt(np.diag(COVARIANCE)) * np.sqrt(portfolio)
+    )
+    np.testing.assert_allclose(table["Volatility"], np.sqrt(np.diag(COVARIANCE)))
+    np.testing.assert_allclose(table["Correlation with Portfolio"], correlation)
+    np.testing.assert_allclose(
+        table["Weight"] * table["Volatility"] * table["Correlation with Portfolio"],
+        table["Risk Contribution"],
+    )

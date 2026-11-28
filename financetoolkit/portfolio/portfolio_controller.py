@@ -2348,12 +2348,12 @@ class Portfolio:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate portfolio performance metrics for a specified period: each position and the
-        Portfolio at the end of every period.
+        Calculate portfolio performance metrics for a specified period: each position at the end
+        of every period.
 
         The Return is the total return on the capital deployed since the purchase, as of the end
         of the period, not the return within the period (`get_return_contributions` gives that
-        per period).
+        per period, for each position and the Portfolio).
 
         This method calculates key performance metrics, such as returns, for the portfolio
         over a specified period, from daily to yearly. It uses the positions overview dataset

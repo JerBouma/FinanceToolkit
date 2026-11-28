@@ -116,7 +116,9 @@ class AnalysisConstruction:
         in a volatile asset.
 
         - The volatility: the marginal contribution is (Σw)_i / σ_p, with Σ
-          the annualized covariance matrix.
+          the annualized covariance matrix. It equals the asset's volatility times its
+          correlation with the portfolio, σ_i ρ_i,p, so the risk contribution is
+          w_i × σ_i × ρ_i,p (Menchero and Davis, 2011), and both terms are shown.
         - The expected shortfall is the average loss in the periods
           in which the portfolio's return is at or below its Value at Risk, and the
           marginal contribution of an asset is its average loss in those same periods,
@@ -162,6 +164,8 @@ class AnalysisConstruction:
           Science, 37(5), 519-531.
         - Goldberg, L. R. and Mahmoud, O. (2017). "Drawdown: From Practice to Theory and
           Back Again." Mathematics and Financial Economics, 11(3), 275-297.
+        - Menchero, J. and Davis, B. (2011). "Risk Contribution Is Exposure Times Volatility
+          Times Correlation." The Journal of Portfolio Management, 37(2), 97-106.
 
         Also known as: risk decomposition, marginal contribution to risk, risk budget,
         component expected shortfall, component CVaR, downside risk contribution,
@@ -230,7 +234,9 @@ class AnalysisConstruction:
         Returns:
             pd.DataFrame: Per asset and in total, the Weight, Marginal Contribution, Risk
             Contribution and Percentage Contribution: annualized volatility terms, or per period
-            terms of the other measures, with losses and drawdowns positive. For the kurtosis
+            terms of the other measures, with losses and drawdowns positive. The volatility also
+            has the Volatility of each asset and its Correlation with Portfolio (the portfolio's
+            volatility and 1 in the total). For the kurtosis
             measure the marginal contribution is the derivative of the measure and the risk
             contribution half the weight times it. The assets held (a weight other than zero)
             are listed, over the periods in which each of them has a return; a loaded asset
@@ -305,12 +311,14 @@ class AnalysisConstruction:
                 resolved, returns, risk_measure, alpha
             )
         table.index.name = "Asset"
-        table.loc["Total"] = [
-            table["Weight"].sum(),
-            np.nan,
-            table["Risk Contribution"].sum(),
-            table["Percentage Contribution"].sum(),
-        ]
+        total = pd.Series(np.nan, index=table.columns)
+        for column in ("Weight", "Risk Contribution", "Percentage Contribution"):
+            total[column] = table[column].sum()
+        if "Volatility" in table.columns:
+            # The portfolio's own volatility, which is perfectly correlated with itself.
+            total["Volatility"] = total["Risk Contribution"]
+            total["Correlation with Portfolio"] = 1.0
+        table.loc["Total"] = total
         return self._round(table, rounding)
 
     @handle_errors

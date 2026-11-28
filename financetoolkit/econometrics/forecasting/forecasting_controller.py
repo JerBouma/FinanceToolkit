@@ -52,7 +52,7 @@ def _garch_window_size(period: str) -> int:
 @track_sources
 class ForecastingEconometrics:
     """
-    Forecasts and their evaluation: ARIMA, VAR and VECM forecasts, impulse responses, variance decomposition, RMSE, MAE, out-of-sample validation, the Diebold-Mariano, Berkowitz, Hong-Li and directional accuracy tests and the model confidence set.
+    Forecasts and their evaluation: ARIMA, VAR and VECM forecasts, impulse responses, variance decomposition, Diebold-Yilmaz connectedness, RMSE, MAE, out-of-sample validation, the Diebold-Mariano, Berkowitz, Hong-Li and directional accuracy tests and the model confidence set.
     """
 
     @handle_portfolio
@@ -706,6 +706,231 @@ class ForecastingEconometrics:
         return apply_rounding(
             time_series_model.variance_decomposition_summary_table(result),
             rounding if rounding is not None else self._rounding,
+        )
+
+    @handle_errors
+    def get_connectedness(
+        self,
+        period: str | None = None,
+        column: str = "Return",
+        lags: int = 1,
+        periods: int = 10,
+        include_benchmark: bool = False,
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the Diebold-Yilmaz connectedness of the tickers: how much of each ticker's forecast error
+        variance comes from shocks to the other tickers, in total, from and to each ticker and between each
+        pair.
+
+        A VAR(`lags`) is fitted on every ticker's `column` (Return by default) and its Generalized Forecast
+        Error Variance Decomposition (Pesaran and Shin 1998) at horizon `periods` is read as a network: the
+        share in row i and column j is how much ticker j transmits to ticker i. Unlike
+        `get_variance_decomposition`, the generalized decomposition does not depend on the order of the
+        tickers. On returns it measures return spillovers, on volatilities volatility spillovers. A total
+        connectedness that rises sharply marks a crisis, when shocks travel between markets; a positive net
+        connectedness marks a transmitter of shocks and a negative one a receiver.
+
+        The formula is as follows:
+
+        - θᵢⱼ(H) = σⱼⱼ⁻¹ · Σ(h=0..H-1) (eᵢ' Ψₕ Σ eⱼ)² / Σ(h=0..H-1) (eᵢ' Ψₕ Σ Ψₕ' eᵢ)
+        - θ̃ᵢⱼ(H) = θᵢⱼ(H) / Σⱼ θᵢⱼ(H)
+        - From Othersᵢ = Σ(j≠i) θ̃ᵢⱼ(H)
+        - To Othersⱼ = Σ(i≠j) θ̃ᵢⱼ(H)
+        - Netᵢ = To Othersᵢ - From Othersᵢ
+        - Total Connectedness = Σ(i≠j) θ̃ᵢⱼ(H) / N
+
+        Where Ψₕ are the moving-average matrices of the VAR (Ψ₀ = I), Σ the residual covariance matrix with
+        diagonal σⱼⱼ, eᵢ the i-th unit vector, H = `periods` and N the number of tickers. Every value is a
+        decimal: a total connectedness of 0.45 means 45% of the forecast error variance comes from shocks to
+        other tickers.
+
+        For more information about the method, see the following papers:
+
+        - Diebold, F.X. and Yilmaz, K. (2009). "Measuring Financial Asset Return and Volatility Spillovers,
+        with Application to Global Equity Markets." The Economic Journal, 119(534), 158-171.
+        - Diebold, F.X. and Yilmaz, K. (2012). "Better to Give than to Receive: Predictive Directional
+        Measurement of Volatility Spillovers." International Journal of Forecasting, 28(1), 57-66.
+        - Diebold, F.X. and Yilmaz, K. (2014). "On the Network Topology of Variance Decompositions: Measuring
+        the Connectedness of Financial Firms." Journal of Econometrics, 182(1), 119-134.
+        - Pesaran, H.H. and Shin, Y. (1998). "Generalized Impulse Response Analysis in Linear Multivariate
+        Models." Economics Letters, 58(1), 17-29.
+
+        Also known as: spillover index, Diebold-Yilmaz spillover table, generalized variance decomposition.
+
+        Shares similar logic:
+        - statsmodels, VARResults.ma_rep: https://www.statsmodels.org/stable/generated/statsmodels.tsa.vector_ar.var_model.VARResults.ma_rep.html
+
+        Args:
+            period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly). Defaults to
+                "daily".
+            column (str, optional): The historical data column to model. Defaults to "Return".
+            lags (int, optional): The VAR order. Defaults to 1.
+            periods (int, optional): The forecast horizon H. Defaults to 10.
+            include_benchmark (bool, optional): Whether to include "Benchmark" among the tickers modeled
+            jointly. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to
+            None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: The connectedness table of Diebold and Yilmaz: the pairwise shares (receiving ticker
+            in the rows, transmitting ticker in the columns) with a "From Others" column and "To Others" and
+            "Net" rows. The total connectedness is where the "To Others" row meets the "From Others" column.
+
+        Notes:
+        - The VAR uses the dates every ticker has a value on, and is the one of `get_var_forecast`.
+        - The generalized decomposition is checked against one built from statsmodels' VAR moving-average
+        matrices and residual covariance, which agree to machine precision.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["AAPL", "MSFT", "JPM", "XOM"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.econometrics.get_connectedness()
+        ```
+
+        Which returns:
+
+        |           |   AAPL |    MSFT |     JPM |     XOM |   From Others |
+        |:----------|-------:|--------:|--------:|--------:|--------------:|
+        | AAPL      | 0.6385 |  0.2579 |  0.0771 |  0.0265 |        0.3615 |
+        | MSFT      | 0.2691 |  0.6597 |  0.0644 |  0.0068 |        0.3403 |
+        | JPM       | 0.0893 |  0.0725 |  0.7402 |  0.0979 |        0.2598 |
+        | XOM       | 0.0314 |  0.0061 |  0.1124 |  0.8501 |        0.1499 |
+        | To Others | 0.3898 |  0.3365 |  0.2539 |  0.1312 |        0.2778 |
+        | Net       | 0.0283 | -0.0038 | -0.0058 | -0.0187 |      nan      |
+        """
+        period = period if period else "daily"
+        tickers = self._get_tickers(include_benchmark=include_benchmark)
+        data = self._get_series_column(period, column, tickers)
+
+        var_result = time_series_model.get_var_forecast(
+            data[tickers], lags=lags, forecast_steps=1
+        )
+        result = time_series_model.get_connectedness(var_result, periods=periods)
+
+        return apply_rounding(
+            time_series_model.connectedness_summary_table(result),
+            rounding if rounding is not None else self._rounding,
+        )
+
+    @handle_errors
+    def get_rolling_connectedness(
+        self,
+        period: str | None = None,
+        column: str = "Return",
+        lags: int = 1,
+        periods: int = 10,
+        window: int = 200,
+        include_benchmark: bool = False,
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the Diebold-Yilmaz connectedness of the tickers over a rolling window: how the total
+        connectedness and each ticker's net connectedness move over time.
+
+        Every window of `window` observations gets its own VAR(`lags`) fit on every ticker's `column` (Return
+        by default) and its own Generalized Forecast Error Variance Decomposition at horizon `periods` (see
+        `get_connectedness`), dated by the last observation of the window, so a value only uses data up to its
+        date. Diebold and Yilmaz (2012) use 200-day windows and a 10-day horizon. A total connectedness that
+        jumps marks a period in which shocks travel between the tickers (2008, March 2020); a ticker whose net
+        connectedness turns positive becomes a transmitter of shocks.
+
+        The formula is as follows:
+
+        - Total Connectednessₜ = Σ(i≠j) θ̃ᵢⱼ,ₜ(H) / N
+        - Netᵢ,ₜ = Σ(j≠i) θ̃ⱼᵢ,ₜ(H) - Σ(j≠i) θ̃ᵢⱼ,ₜ(H)
+
+        Where θ̃ᵢⱼ,ₜ(H) is the normalized generalized variance share of ticker i's H-step forecast error
+        variance due to shocks to ticker j, from the VAR fitted on the `window` observations up to t, and N the
+        number of tickers. Both are decimals.
+
+        For more information about the method, see the following papers:
+
+        - Diebold, F.X. and Yilmaz, K. (2012). "Better to Give than to Receive: Predictive Directional
+        Measurement of Volatility Spillovers." International Journal of Forecasting, 28(1), 57-66.
+        - Pesaran, H.H. and Shin, Y. (1998). "Generalized Impulse Response Analysis in Linear Multivariate
+        Models." Economics Letters, 58(1), 17-29.
+
+        Also known as: rolling spillover index, dynamic connectedness.
+
+        Shares similar logic:
+        - statsmodels, VARResults.ma_rep: https://www.statsmodels.org/stable/generated/statsmodels.tsa.vector_ar.var_model.VARResults.ma_rep.html
+
+        Args:
+            period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly). Defaults to
+                "daily".
+            column (str, optional): The historical data column to model. Defaults to "Return".
+            lags (int, optional): The VAR order. Defaults to 1.
+            periods (int, optional): The forecast horizon H. Defaults to 10.
+            window (int, optional): The number of observations of every VAR fit. Defaults to 200.
+            include_benchmark (bool, optional): Whether to include "Benchmark" among the tickers modeled
+            jointly. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to
+            None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: The total connectedness in the "Total" column and each ticker's net connectedness in
+            a column named after it, one row per window end date.
+
+        Notes:
+        - Every date fits a VAR and decomposes it, which takes a few thousandths of a second, so five years of
+        daily data take about ten seconds.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["AAPL", "MSFT", "JPM", "XOM"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.econometrics.get_rolling_connectedness().tail()
+        ```
+
+        Which returns:
+
+        |            |   Total |   AAPL |   MSFT |    JPM |     XOM |
+        |:-----------|--------:|-------:|-------:|-------:|--------:|
+        | 2025-12-24 |  0.4027 | 0.0403 | 0.0093 | 0.0237 | -0.0734 |
+        | 2025-12-26 |  0.4015 | 0.041  | 0.0083 | 0.0233 | -0.0726 |
+        | 2025-12-29 |  0.3938 | 0.0409 | 0.0066 | 0.0225 | -0.0699 |
+        | 2025-12-30 |  0.3948 | 0.0408 | 0.0098 | 0.0223 | -0.0728 |
+        | 2025-12-31 |  0.3954 | 0.0401 | 0.0097 | 0.0233 | -0.0731 |
+        """
+        period = period if period else "daily"
+        validate_window("window", window, minimum=2)
+        tickers = self._get_tickers(include_benchmark=include_benchmark)
+        data = self._get_series_column(period, column, tickers)
+
+        result = time_series_model.get_rolling_connectedness(
+            data[tickers], lags=lags, periods=periods, window=window
+        )
+
+        return apply_rounding(
+            result, rounding if rounding is not None else self._rounding
         )
 
     @handle_errors

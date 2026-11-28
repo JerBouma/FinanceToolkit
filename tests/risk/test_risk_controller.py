@@ -2073,3 +2073,25 @@ def test_a_benchmark_shorter_than_the_rolling_window_is_named(caplog):
 
     assert "the yearly returns of Benchmark (0)" in caplog.text
     assert "AAPL (" not in caplog.text
+
+
+def test_get_generalized_pareto_fit(recorder, risk_module):
+    recorder.capture(risk_module.get_generalized_pareto_fit())
+    recorder.capture(
+        risk_module.get_generalized_pareto_fit(period="weekly", threshold=0.03)
+    )
+
+
+def test_get_generalized_pareto_fit_invalid_threshold(risk_module):
+    with pytest.raises(InvalidArgumentError, match="threshold_percentile"):
+        risk_module.get_generalized_pareto_fit(threshold_percentile=95)
+    with pytest.raises(InvalidArgumentError, match="positive decimal"):
+        risk_module.get_generalized_pareto_fit(threshold=-0.03)
+
+
+def test_get_mean_excess_function(recorder, risk_module):
+    recorder.capture(risk_module.get_mean_excess_function())
+    recorder.capture(risk_module.get_mean_excess_function(quantiles=[0.9, 0.95]))
+
+    with pytest.raises(InvalidArgumentError, match="quantiles"):
+        risk_module.get_mean_excess_function(quantiles=[90])

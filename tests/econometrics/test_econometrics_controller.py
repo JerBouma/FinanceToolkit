@@ -1910,3 +1910,18 @@ def test_a_rolling_sample_entropy_without_values_is_logged(econometrics_module, 
 
     assert entropy.notna().any().any()
     assert "NaN throughout" not in caplog.text
+
+
+def test_get_connectedness(recorder, econometrics_module):
+    recorder.capture(econometrics_module.get_connectedness())
+    recorder.capture(
+        econometrics_module.get_connectedness(
+            period="weekly", lags=2, periods=5, include_benchmark=True
+        )
+    )
+
+
+def test_get_rolling_connectedness(recorder, econometrics_module):
+    recorder.capture(
+        econometrics_module.get_rolling_connectedness(period="weekly", window=52)
+    )

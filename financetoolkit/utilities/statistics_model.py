@@ -319,6 +319,56 @@ def warn_about_missing_base_periods(
         )
 
 
+def country_level(dataset: pd.Series | pd.DataFrame) -> pd.Index:
+    """
+    The countries of an economic dataset: its columns, or their first level when each country
+    has several columns (such as maturities).
+
+    Args:
+        dataset (pd.Series | pd.DataFrame): The dataset, dates as the index.
+
+    Returns:
+        pd.Index: The country names.
+    """
+    if not isinstance(dataset, pd.DataFrame):
+        return pd.Index([])
+
+    return (
+        dataset.columns.get_level_values(0).unique()
+        if isinstance(dataset.columns, pd.MultiIndex)
+        else dataset.columns
+    )
+
+
+def resolve_countries(
+    countries: list[str] | tuple | str, known_countries: pd.Index
+) -> list[object]:
+    """
+    The column names of the countries asked for: "United States,Japan" selects both, and common
+    short forms and any casing resolve to the names the sources use ("USA" or "united states"
+    to "United States"). Two spellings of one country select it once, as a repeated column
+    would be counted twice by anything that aggregates the result.
+
+    Args:
+        countries (list[str] | tuple | str): The countries, as a list or one text separated by
+            commas.
+        known_countries (pd.Index): The countries of the dataset.
+
+    Returns:
+        list[object]: The resolved names, in the order asked for.
+    """
+    if isinstance(countries, str):
+        countries = [
+            country.strip() for country in countries.split(",") if country.strip()
+        ]
+
+    return list(
+        dict.fromkeys(
+            normalize_country_name(country, known_countries) for country in countries
+        )
+    )
+
+
 def finalize_dataset(
     dataset: pd.Series | pd.DataFrame,
     start_date: str | None,
@@ -462,7 +512,15 @@ def finalize_dataset(
 
     if transform:
         dataset = apply_transform(
-            dataset, transform, axis="columns" if axis == "columns" else "rows"
+            dataset,
+            transform,
+            axis="columns" if axis == "columns" else "rows",
+            # Only the countries asked for are named when a gap empties their windows.
+            reported=(
+                resolve_countries(countries, country_level(dataset))
+                if countries and isinstance(countries, str | list | tuple)
+                else None
+            ),
         )
 
     levels = dataset
@@ -522,28 +580,8 @@ def finalize_dataset(
         )
 
     if countries:
-        # Economic indicators are indexed by date with countries as columns.
-        if isinstance(countries, str):
-            # "United States,Japan" selects both, as the sources accept it.
-            countries = [
-                country.strip() for country in countries.split(",") if country.strip()
-            ]
-        # Common short forms and any casing resolve to the names the sources use, e.g.
-        # "USA" or "united states" to "United States".
-        # A column per country and item (e.g. a maturity) is selected by its country.
-        known_countries = (
-            dataset.columns.get_level_values(0).unique()
-            if isinstance(dataset.columns, pd.MultiIndex)
-            else dataset.columns
-        )
-        # Two spellings of one country ("USA" and "United States") select it once, as a
-        # repeated column would be counted twice by anything that aggregates the result.
-        selected_countries: list[object] = list(
-            dict.fromkeys(
-                normalize_country_name(country, known_countries)
-                for country in countries
-            )
-        )
+        known_countries = country_level(dataset)
+        selected_countries = resolve_countries(countries, known_countries)
         missing_countries = [
             country for country in selected_countries if country not in dataset.columns
         ]

@@ -6,6 +6,7 @@ import pytest
 
 from financetoolkit.options.market import market_metrics_model
 from financetoolkit.options.pricing import black_scholes_model
+from financetoolkit.utilities.error_model import InvalidArgumentError
 
 STOCK_PRICE = 100.0
 TIME = 30 / 365
@@ -507,3 +508,133 @@ def test_a_vega_notional_converts_to_a_variance_notional():
     assert market_metrics_model.get_variance_swap_value(
         0.21**2, 0.0, 0.2**2, 1.0, 0.0, 0.04, notional
     ) == pytest.approx(102_500)
+
+
+def smile_volatility(strike):
+    """A skewed smile: puts dearer than calls, both wings above the centre."""
+    return 0.2 + 0.003 * (100 - strike) + 0.0001 * (strike - 100) ** 2
+
+
+def smile_chain(step: float = 0.25) -> pd.DataFrame:
+    strikes = np.arange(60.0, 140.0 + step, step)
+    return pd.DataFrame(
+        {"Implied Volatility": smile_volatility(strikes)},
+        index=pd.Index(strikes, name="Strike Price"),
+    )
+
+
+def volatility_at_delta(delta, put_option, dividend_yield):
+    """The smile's volatility where the Black-Scholes spot delta equals delta, solved with scipy."""
+    from scipy.optimize import brentq  # noqa: PLC0415
+    from scipy.stats import norm  # noqa: PLC0415
+
+    def gap(strike):
+        volatility = smile_volatility(strike)
+        d1 = (
+            np.log(STOCK_PRICE / strike)
+            + (RATE - dividend_yield + volatility**2 / 2) * TIME
+        ) / (volatility * np.sqrt(TIME))
+        discount = np.exp(-dividend_yield * TIME)
+        option_delta = discount * (norm.cdf(-d1) if put_option else norm.cdf(d1))
+        return option_delta - delta
+
+    strike = brentq(gap, 60, 99.9) if put_option else brentq(gap, 100.1, 140)
+    return smile_volatility(strike)
+
+
+@pytest.mark.parametrize("delta", [0.25, 0.10])
+@pytest.mark.parametrize("put_option", [True, False])
+def test_the_volatility_at_a_delta_matches_a_root_search_on_the_smile(
+    delta, put_option
+):
+    expected = volatility_at_delta(delta, put_option, dividend_yield=0.02)
+
+    result = market_metrics_model.get_delta_volatility(
+        smile_chain(), STOCK_PRICE, TIME, RATE, 0.02, delta, put_option
+    )
+
+    # Linear interpolation in delta between strikes a quarter apart.
+    assert result == pytest.approx(expected, abs=1e-5)
+
+
+def test_the_skew_has_the_25_and_10_delta_risk_reversal_and_butterfly():
+    skew = market_metrics_model.get_volatility_skew(
+        smile_chain(), smile_chain(), STOCK_PRICE, TIME, RATE
+    )
+    put_25, call_25 = (volatility_at_delta(0.25, side, 0.0) for side in (True, False))
+    put_10, call_10 = (volatility_at_delta(0.10, side, 0.0) for side in (True, False))
+
+    assert skew["25-Delta Risk Reversal"] == pytest.approx(call_25 - put_25, abs=3e-5)
+    assert skew["10-Delta Risk Reversal"] == pytest.approx(call_10 - put_10, abs=3e-5)
+    assert skew["10-Delta Butterfly"] == pytest.approx(
+        (call_10 + put_10) / 2 - skew["At-the-Money Volatility"], abs=3e-5
+    )
+    # Further in the tails the skew is steeper.
+    assert skew["10-Delta Risk Reversal"] < skew["25-Delta Risk Reversal"] < 0
+
+    only_25 = market_metrics_model.get_volatility_skew(
+        smile_chain(), smile_chain(), STOCK_PRICE, TIME, RATE, deltas=[0.25]
+    )
+    assert only_25.index.tolist() == [
+        "25-Delta Put Volatility",
+        "At-the-Money Volatility",
+        "25-Delta Call Volatility",
+        "25-Delta Risk Reversal",
+        "25-Delta Butterfly",
+    ]
+
+
+def test_a_delta_outside_the_quotes_is_nan_and_outside_the_wings_is_refused():
+    narrow = smile_chain().loc[95.0:105.0]
+    skew = market_metrics_model.get_volatility_skew(
+        narrow, narrow, STOCK_PRICE, TIME, RATE
+    )
+    assert np.isnan(skew["10-Delta Risk Reversal"])
+
+    with pytest.raises(InvalidArgumentError, match="between 0 and 0.5"):
+        market_metrics_model.get_volatility_skew(
+            narrow, narrow, STOCK_PRICE, TIME, RATE, deltas=[0.75]
+        )
+
+
+def test_the_implied_correlation_recovers_the_correlation_of_the_index():
+    volatilities = pd.Series({"A": 0.25, "B": 0.30, "C": 0.45, "D": 0.20})
+    weights = pd.Series({"A": 0.4, "B": 0.3, "C": 0.2, "D": 0.1})
+
+    for correlation in (0.1, 0.45, 0.8):
+        covariance = np.outer(volatilities, volatilities) * correlation
+        np.fill_diagonal(covariance, volatilities**2)
+        index_volatility = np.sqrt(weights @ covariance @ weights)
+
+        assert market_metrics_model.get_implied_correlation(
+            index_volatility, volatilities, weights
+        ) == pytest.approx(correlation)
+
+
+def test_the_implied_correlation_matches_the_pairwise_sum_per_date():
+    dates = pd.period_range("2026-11-02", periods=3, freq="D")
+    volatilities = pd.DataFrame(
+        {"A": [0.25, 0.28, 0.30], "B": [0.30, 0.31, np.nan], "C": [0.45, 0.40, 0.50]},
+        index=dates,
+    )
+    weights = pd.Series({"A": 2.0, "B": 1.0, "C": 1.0})
+    index_volatility = pd.Series([0.24, 0.25, 0.26], index=dates)
+
+    result = market_metrics_model.get_implied_correlation(
+        index_volatility, volatilities, weights
+    )
+
+    normalised = weights / weights.sum()
+    for date in dates[:2]:
+        sigma = volatilities.loc[date]
+        own = sum((normalised[name] * sigma[name]) ** 2 for name in weights.index)
+        pairs = sum(
+            normalised[first] * normalised[second] * sigma[first] * sigma[second]
+            for i, first in enumerate(weights.index)
+            for second in weights.index[i + 1 :]
+        )
+        assert result[date] == pytest.approx(
+            (index_volatility[date] ** 2 - own) / (2 * pairs)
+        )
+    # A member without a volatility leaves the date without a correlation.
+    assert np.isnan(result[dates[2]])

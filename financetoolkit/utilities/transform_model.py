@@ -256,7 +256,9 @@ ROLLING_STEPS = (
 GAPS_SHOWN = 3
 
 
-def log_interior_gaps(dataset: pd.DataFrame, name: str, size: int) -> None:
+def log_interior_gaps(
+    dataset: pd.DataFrame, name: str, size: int, reported: list | None = None
+) -> None:
     """
     Say which series miss a value inside their history, as every window of a rolling step that
     covers it is then missing too (a month a statistics office skipped empties a 12-month
@@ -266,8 +268,12 @@ def log_interior_gaps(dataset: pd.DataFrame, name: str, size: int) -> None:
         dataset (pd.DataFrame): The values the step is applied to, dates as the index.
         name (str): The step.
         size (int): Its window.
+        reported (list | None): The columns to name; None names every column.
     """
     for column in dataset.columns:
+        if reported is not None and column not in reported:
+            continue
+
         values = dataset[column]
         valid = values.notna().to_numpy()
 
@@ -358,6 +364,7 @@ def apply_transform(
     dataset: pd.Series | pd.DataFrame,
     transform: str | list[str] | None,
     axis: str = "rows",
+    reported: list | None = None,
 ) -> pd.Series | pd.DataFrame:
     """
     Apply a sequence of time series steps to every series of a dataset, in the order given:
@@ -397,6 +404,8 @@ def apply_transform(
             "pct_change:3,annualize:3". Defaults to None, which returns the dataset as it is.
         axis (str, optional): Where the dates are: "rows" (dates as the index, the default) or
             "columns" (periods as the columns, as in the ratios). Defaults to "rows".
+        reported (list | None, optional): The series to name when a gap empties their rolling
+            windows, such as the countries asked for. Defaults to None, which names every one.
 
     Returns:
         pd.Series | pd.DataFrame: The transformed values, in the shape of the dataset.
@@ -440,7 +449,7 @@ def apply_transform(
 
     for name, window in steps:
         if name in ROLLING_STEPS and window is not None:
-            log_interior_gaps(frame, name, int(window))
+            log_interior_gaps(frame, name, int(window), reported)
         frame = apply_step(frame, name, window)
 
     frame = frame.replace([np.inf, -np.inf], np.nan)

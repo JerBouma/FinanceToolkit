@@ -187,3 +187,23 @@ def test_a_gap_inside_a_series_is_named_for_rolling_steps(caplog):
 
     assert smoothed["United States"].iloc[2:4].isna().all()
     assert "United States has no value for 2020-03" in caplog.text
+
+
+def test_a_gap_is_named_only_for_the_countries_asked_for(caplog):
+    data = monthly(
+        [[1, 1], [2, 2], [np.nan, np.nan], [4, 4], [5, 5]], ["United States", "G7"]
+    )
+
+    statistics_model.finalize_dataset(
+        data,
+        start_date=None,
+        end_date=None,
+        default_rounding=None,
+        axis="rows",
+        row_slice=True,
+        transform="sma:2",
+        countries="USA",
+    )
+
+    assert "United States has no value for 2020-03" in caplog.text
+    assert "G7" not in caplog.text

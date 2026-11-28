@@ -518,6 +518,24 @@ def apply_on_own_closes(
     )
 
 
+def to_dates(index: pd.Index) -> pd.DatetimeIndex:
+    """
+    The dates of a daily PeriodIndex or DatetimeIndex as a DatetimeIndex, for the calendar of the dates
+    (their weekday, month and position in the month).
+
+    Args:
+        index (pd.Index): The dates, a PeriodIndex or DatetimeIndex.
+
+    Returns:
+        pd.DatetimeIndex: The same dates as timestamps.
+    """
+    return (
+        index.to_timestamp()
+        if isinstance(index, pd.PeriodIndex)
+        else pd.DatetimeIndex(index)
+    )
+
+
 def get_observations_per_year(prices: pd.Series) -> int:
     """
     The number of daily observations in a year of a ticker, to annualize a daily measure or to express a year in

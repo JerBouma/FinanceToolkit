@@ -517,8 +517,10 @@ def get_cvar_evt(
 
     - ES = VaR / (1 - xi) + (sigma - xi * u) / (1 - xi)
 
-    This is only valid for a shape parameter xi < 1; for xi >= 1 the GPD's mean (and hence
-    its Expected Shortfall) is undefined/infinite, so NaN is returned for that column instead.
+    Where VaR is the EVT VaR as a positive loss (`var_model.get_gpd_tail_loss`, with the
+    exponential limit at xi = 0, where the ES is VaR + sigma). This is only valid for a shape
+    parameter xi < 1; for xi >= 1 the GPD's mean (and hence its Expected Shortfall) is
+    infinite, so NaN is returned for that column instead, with a logged warning.
     Since the Expected Shortfall averages over all losses beyond the VaR threshold, `abs(CVaR)`
     is always at least as large as `abs(VaR)` for the same `alpha`.
 
@@ -580,16 +582,26 @@ def get_cvar_evt(
         returns, threshold_percentile
     )
 
-    value_at_risk_loss = threshold + (scale / shape) * (
-        (alpha / exceedance_probability) ** (-shape) - 1
+    value_at_risk_loss = var_model.get_gpd_tail_loss(
+        threshold, shape, scale, exceedance_probability, alpha
     )
 
     # Closed-form GPD Expected Shortfall (McNeil & Frey, 2000), undefined at shape >= 1.
-    expected_shortfall_loss = np.where(
-        shape < 1,
-        value_at_risk_loss / (1 - shape) + (scale - shape * threshold) / (1 - shape),
-        np.nan,
-    )
+    with np.errstate(invalid="ignore", divide="ignore"):
+        expected_shortfall_loss = np.where(
+            shape < 1,
+            value_at_risk_loss / (1 - shape)
+            + (scale - shape * threshold) / (1 - shape),
+            np.nan,
+        )
+
+    infinite_mean = returns.columns[shape >= 1]
+    if warn and not infinite_mean.empty:
+        logger.warning(
+            "The Generalized Pareto shape of %s is 1 or more, so the tail has no mean and the Extreme Value "  # noqa: E501
+            "Theory CVaR is NaN. The EVT VaR still exists.",
+            ", ".join(map(str, infinite_mean)),
+        )
 
     conditional_value_at_risk = -expected_shortfall_loss
 

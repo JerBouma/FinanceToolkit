@@ -52,7 +52,7 @@ def _garch_window_size(period: str) -> int:
 @track_sources
 class ForecastingEconometrics:
     """
-    Forecasts and their evaluation: ARIMA, VAR and VECM forecasts, impulse responses, variance decomposition, RMSE, MAE, out-of-sample validation, the Diebold-Mariano, Berkowitz, Hong-Li and directional accuracy tests and the model confidence set.
+    Forecasts and their evaluation: ARIMA, VAR and VECM forecasts, impulse responses, variance decomposition, Diebold-Yilmaz connectedness, RMSE, MAE, out-of-sample validation, the Diebold-Mariano, Berkowitz, Hong-Li and directional accuracy tests and the model confidence set.
     """
 
     @handle_portfolio
@@ -159,8 +159,8 @@ class ForecastingEconometrics:
 
         |                           |       XOM |       CVX |      SHEL |        BP |
         |:--------------------------|----------:|----------:|----------:|----------:|
-        | Diebold-Mariano Statistic |   -3.9115 |   -4.9425 |   -1.8262 |   -1.3358 |
-        | P-Value                   |    0.0001 |    0      |    0.0681 |    0.1818 |
+        | Diebold-Mariano Statistic |   -3.8972 |   -4.9425 |   -1.8516 |   -1.2994 |
+        | P-Value                   |    0.0001 |    0      |    0.0643 |    0.1941 |
         | Mean Loss Differential    |    0      |    0      |    0      |    0      |
         | Observations              | 1232      | 1232      | 1232      | 1232      |
         """
@@ -288,16 +288,16 @@ class ForecastingEconometrics:
 
         |   Step |   GCUSD |
         |-------:|--------:|
-        |      1 | 4348.34 |
-        |      2 | 4348.38 |
-        |      3 | 4350.82 |
-        |      4 | 4352.47 |
-        |      5 | 4354.38 |
-        |      6 | 4356.2  |
-        |      7 | 4358.05 |
-        |      8 | 4359.89 |
-        |      9 | 4361.73 |
-        |     10 | 4363.57 |
+        |      1 | 4348.31 |
+        |      2 | 4348.36 |
+        |      3 | 4350.81 |
+        |      4 | 4352.45 |
+        |      5 | 4354.36 |
+        |      6 | 4356.18 |
+        |      7 | 4358.03 |
+        |      8 | 4359.87 |
+        |      9 | 4361.72 |
+        |     10 | 4363.56 |
         """
         period = period if period else "daily"
         # Each ARIMA fit drops the missing values of its own series, so a series observed
@@ -427,26 +427,26 @@ class ForecastingEconometrics:
 
         |   Step |    ^VIX |   ^VIX3M |
         |-------:|--------:|---------:|
-        |      1 | 15.2712 |  18.3667 |
-        |      2 | 15.5578 |  18.5342 |
-        |      3 | 15.8138 |  18.6846 |
-        |      4 | 16.0425 |  18.82   |
-        |      5 | 16.2471 |  18.9418 |
-        |      6 | 16.4301 |  19.0517 |
-        |      7 | 16.5941 |  19.1509 |
-        |      8 | 16.7411 |  19.2406 |
-        |      9 | 16.873  |  19.322  |
-        |     10 | 16.9915 |  19.3958 |
-        |     11 | 17.0981 |  19.4629 |
-        |     12 | 17.1942 |  19.5241 |
-        |     13 | 17.2808 |  19.58   |
-        |     14 | 17.359  |  19.6311 |
-        |     15 | 17.4298 |  19.6781 |
-        |     16 | 17.494  |  19.7213 |
-        |     17 | 17.5523 |  19.7611 |
-        |     18 | 17.6053 |  19.7979 |
-        |     19 | 17.6536 |  19.8321 |
-        |     20 | 17.6978 |  19.8639 |
+        |      1 | 15.2738 |  18.3697 |
+        |      2 | 15.5632 |  18.5402 |
+        |      3 | 15.8222 |  18.6935 |
+        |      4 | 16.0539 |  18.8314 |
+        |      5 | 16.2614 |  18.9557 |
+        |      6 | 16.4473 |  19.0679 |
+        |      7 | 16.6141 |  19.1693 |
+        |      8 | 16.7638 |  19.261  |
+        |      9 | 16.8983 |  19.3441 |
+        |     10 | 17.0192 |  19.4196 |
+        |     11 | 17.1281 |  19.4882 |
+        |     12 | 17.2262 |  19.5506 |
+        |     13 | 17.3147 |  19.6077 |
+        |     14 | 17.3947 |  19.6599 |
+        |     15 | 17.4671 |  19.7077 |
+        |     16 | 17.5326 |  19.7517 |
+        |     17 | 17.5922 |  19.7921 |
+        |     18 | 17.6463 |  19.8295 |
+        |     19 | 17.6957 |  19.8641 |
+        |     20 | 17.7407 |  19.8962 |
         """
         period = period if period else "daily"
         tickers = self._get_tickers(include_benchmark=include_benchmark)
@@ -551,27 +551,27 @@ class ForecastingEconometrics:
 
         |   Horizon |   ('^VIX', '^VIX') |   ('^VIX', '^OVX') |   ('^OVX', '^VIX') |   ('^OVX', '^OVX') |
         |----------:|-------------------:|-------------------:|-------------------:|-------------------:|
-        |         0 |             1.7975 |             1.1106 |             0      |             2.4048 |
-        |         1 |             1.6806 |             1.1595 |             0.022  |             2.2148 |
-        |         2 |             1.5725 |             1.1956 |             0.0407 |             2.0416 |
-        |         3 |             1.4723 |             1.2207 |             0.0565 |             1.8834 |
-        |         4 |             1.3794 |             1.2361 |             0.0698 |             1.7389 |
-        |         5 |             1.2933 |             1.2433 |             0.0807 |             1.6069 |
-        |         6 |             1.2133 |             1.2434 |             0.0897 |             1.4861 |
-        |         7 |             1.1389 |             1.2374 |             0.097  |             1.3755 |
-        |         8 |             1.0698 |             1.2262 |             0.1027 |             1.2743 |
-        |         9 |             1.0054 |             1.2106 |             0.1071 |             1.1814 |
-        |        10 |             0.9454 |             1.1914 |             0.1104 |             1.0963 |
-        |        11 |             0.8895 |             1.1691 |             0.1126 |             1.0181 |
-        |        12 |             0.8374 |             1.1444 |             0.114  |             0.9462 |
-        |        13 |             0.7887 |             1.1176 |             0.1146 |             0.8801 |
-        |        14 |             0.7432 |             1.0893 |             0.1145 |             0.8193 |
-        |        15 |             0.7006 |             1.0597 |             0.1139 |             0.7633 |
-        |        16 |             0.6608 |             1.0292 |             0.1129 |             0.7117 |
-        |        17 |             0.6236 |             0.9981 |             0.1114 |             0.664  |
-        |        18 |             0.5886 |             0.9667 |             0.1096 |             0.6201 |
-        |        19 |             0.5559 |             0.9351 |             0.1075 |             0.5794 |
-        |        20 |             0.5252 |             0.9034 |             0.1052 |             0.5418 |
+        |         0 |             1.8147 |             1.122  |             0      |             2.4283 |
+        |         1 |             1.6949 |             1.1722 |             0.0222 |             2.2316 |
+        |         2 |             1.5841 |             1.209  |             0.0411 |             2.0525 |
+        |         3 |             1.4816 |             1.2343 |             0.0569 |             1.8894 |
+        |         4 |             1.3867 |             1.2495 |             0.0702 |             1.7408 |
+        |         5 |             1.2987 |             1.2561 |             0.0811 |             1.6053 |
+        |         6 |             1.2171 |             1.2554 |             0.09   |             1.4815 |
+        |         7 |             1.1414 |             1.2483 |             0.0971 |             1.3685 |
+        |         8 |             1.071  |             1.2359 |             0.1026 |             1.2652 |
+        |         9 |             1.0055 |             1.2191 |             0.1069 |             1.1707 |
+        |        10 |             0.9446 |             1.1985 |             0.1099 |             1.0842 |
+        |        11 |             0.8879 |             1.1749 |             0.112  |             1.0049 |
+        |        12 |             0.835  |             1.1488 |             0.1132 |             0.9322 |
+        |        13 |             0.7856 |             1.1207 |             0.1136 |             0.8655 |
+        |        14 |             0.7396 |             1.091  |             0.1134 |             0.8042 |
+        |        15 |             0.6965 |             1.0601 |             0.1126 |             0.7479 |
+        |        16 |             0.6563 |             1.0284 |             0.1114 |             0.6961 |
+        |        17 |             0.6187 |             0.9961 |             0.1098 |             0.6483 |
+        |        18 |             0.5835 |             0.9635 |             0.1078 |             0.6043 |
+        |        19 |             0.5505 |             0.9309 |             0.1056 |             0.5638 |
+        |        20 |             0.5195 |             0.8983 |             0.1032 |             0.5263 |
         """
         period = period if period else "daily"
         tickers = self._get_tickers(include_benchmark=include_benchmark)
@@ -671,26 +671,26 @@ class ForecastingEconometrics:
 
         |   Horizon |   ('^VIX', '^VIX') |   ('^VIX', '^GVZ') |   ('^GVZ', '^VIX') |   ('^GVZ', '^GVZ') |
         |----------:|-------------------:|-------------------:|-------------------:|-------------------:|
-        |         1 |             1      |             0      |             0.1832 |             0.8168 |
-        |         2 |             1      |             0      |             0.1925 |             0.8075 |
-        |         3 |             0.9999 |             0.0001 |             0.2016 |             0.7984 |
-        |         4 |             0.9998 |             0.0002 |             0.2104 |             0.7896 |
-        |         5 |             0.9997 |             0.0003 |             0.219  |             0.781  |
-        |         6 |             0.9996 |             0.0004 |             0.2273 |             0.7727 |
-        |         7 |             0.9995 |             0.0005 |             0.2354 |             0.7646 |
-        |         8 |             0.9993 |             0.0007 |             0.2432 |             0.7568 |
-        |         9 |             0.9991 |             0.0009 |             0.2506 |             0.7494 |
-        |        10 |             0.9989 |             0.0011 |             0.2578 |             0.7422 |
-        |        11 |             0.9987 |             0.0013 |             0.2647 |             0.7353 |
-        |        12 |             0.9985 |             0.0015 |             0.2714 |             0.7286 |
-        |        13 |             0.9983 |             0.0017 |             0.2777 |             0.7223 |
-        |        14 |             0.9981 |             0.0019 |             0.2837 |             0.7163 |
-        |        15 |             0.9978 |             0.0022 |             0.2895 |             0.7105 |
-        |        16 |             0.9976 |             0.0024 |             0.2949 |             0.7051 |
-        |        17 |             0.9974 |             0.0026 |             0.3002 |             0.6998 |
-        |        18 |             0.9971 |             0.0029 |             0.3051 |             0.6949 |
-        |        19 |             0.9969 |             0.0031 |             0.3098 |             0.6902 |
-        |        20 |             0.9967 |             0.0033 |             0.3142 |             0.6858 |
+        |         1 |             1      |             0      |             0.1846 |             0.8154 |
+        |         2 |             1      |             0      |             0.194  |             0.806  |
+        |         3 |             0.9999 |             0.0001 |             0.2031 |             0.7969 |
+        |         4 |             0.9998 |             0.0002 |             0.2119 |             0.7881 |
+        |         5 |             0.9997 |             0.0003 |             0.2205 |             0.7795 |
+        |         6 |             0.9996 |             0.0004 |             0.2288 |             0.7712 |
+        |         7 |             0.9994 |             0.0006 |             0.2369 |             0.7631 |
+        |         8 |             0.9992 |             0.0008 |             0.2446 |             0.7554 |
+        |         9 |             0.9991 |             0.0009 |             0.2521 |             0.7479 |
+        |        10 |             0.9988 |             0.0012 |             0.2593 |             0.7407 |
+        |        11 |             0.9986 |             0.0014 |             0.2661 |             0.7339 |
+        |        12 |             0.9984 |             0.0016 |             0.2727 |             0.7273 |
+        |        13 |             0.9981 |             0.0019 |             0.279  |             0.721  |
+        |        14 |             0.9979 |             0.0021 |             0.285  |             0.715  |
+        |        15 |             0.9976 |             0.0024 |             0.2907 |             0.7093 |
+        |        16 |             0.9974 |             0.0026 |             0.2961 |             0.7039 |
+        |        17 |             0.9971 |             0.0029 |             0.3012 |             0.6988 |
+        |        18 |             0.9969 |             0.0031 |             0.3061 |             0.6939 |
+        |        19 |             0.9966 |             0.0034 |             0.3107 |             0.6893 |
+        |        20 |             0.9963 |             0.0037 |             0.3151 |             0.6849 |
         """
         period = period if period else "daily"
         tickers = self._get_tickers(include_benchmark=include_benchmark)
@@ -706,6 +706,231 @@ class ForecastingEconometrics:
         return apply_rounding(
             time_series_model.variance_decomposition_summary_table(result),
             rounding if rounding is not None else self._rounding,
+        )
+
+    @handle_errors
+    def get_connectedness(
+        self,
+        period: str | None = None,
+        column: str = "Return",
+        lags: int = 1,
+        periods: int = 10,
+        include_benchmark: bool = False,
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the Diebold-Yilmaz connectedness of the tickers: how much of each ticker's forecast error
+        variance comes from shocks to the other tickers, in total, from and to each ticker and between each
+        pair.
+
+        A VAR(`lags`) is fitted on every ticker's `column` (Return by default) and its Generalized Forecast
+        Error Variance Decomposition (Pesaran and Shin 1998) at horizon `periods` is read as a network: the
+        share in row i and column j is how much ticker j transmits to ticker i. Unlike
+        `get_variance_decomposition`, the generalized decomposition does not depend on the order of the
+        tickers. On returns it measures return spillovers, on volatilities volatility spillovers. A total
+        connectedness that rises sharply marks a crisis, when shocks travel between markets; a positive net
+        connectedness marks a transmitter of shocks and a negative one a receiver.
+
+        The formula is as follows:
+
+        - θᵢⱼ(H) = σⱼⱼ⁻¹ · Σ(h=0..H-1) (eᵢ' Ψₕ Σ eⱼ)² / Σ(h=0..H-1) (eᵢ' Ψₕ Σ Ψₕ' eᵢ)
+        - θ̃ᵢⱼ(H) = θᵢⱼ(H) / Σⱼ θᵢⱼ(H)
+        - From Othersᵢ = Σ(j≠i) θ̃ᵢⱼ(H)
+        - To Othersⱼ = Σ(i≠j) θ̃ᵢⱼ(H)
+        - Netᵢ = To Othersᵢ - From Othersᵢ
+        - Total Connectedness = Σ(i≠j) θ̃ᵢⱼ(H) / N
+
+        Where Ψₕ are the moving-average matrices of the VAR (Ψ₀ = I), Σ the residual covariance matrix with
+        diagonal σⱼⱼ, eᵢ the i-th unit vector, H = `periods` and N the number of tickers. Every value is a
+        decimal: a total connectedness of 0.45 means 45% of the forecast error variance comes from shocks to
+        other tickers.
+
+        For more information about the method, see the following papers:
+
+        - Diebold, F.X. and Yilmaz, K. (2009). "Measuring Financial Asset Return and Volatility Spillovers,
+        with Application to Global Equity Markets." The Economic Journal, 119(534), 158-171.
+        - Diebold, F.X. and Yilmaz, K. (2012). "Better to Give than to Receive: Predictive Directional
+        Measurement of Volatility Spillovers." International Journal of Forecasting, 28(1), 57-66.
+        - Diebold, F.X. and Yilmaz, K. (2014). "On the Network Topology of Variance Decompositions: Measuring
+        the Connectedness of Financial Firms." Journal of Econometrics, 182(1), 119-134.
+        - Pesaran, H.H. and Shin, Y. (1998). "Generalized Impulse Response Analysis in Linear Multivariate
+        Models." Economics Letters, 58(1), 17-29.
+
+        Also known as: spillover index, Diebold-Yilmaz spillover table, generalized variance decomposition.
+
+        Shares similar logic:
+        - statsmodels, VARResults.ma_rep: https://www.statsmodels.org/stable/generated/statsmodels.tsa.vector_ar.var_model.VARResults.ma_rep.html
+
+        Args:
+            period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly). Defaults to
+                "daily".
+            column (str, optional): The historical data column to model. Defaults to "Return".
+            lags (int, optional): The VAR order. Defaults to 1.
+            periods (int, optional): The forecast horizon H. Defaults to 10.
+            include_benchmark (bool, optional): Whether to include "Benchmark" among the tickers modeled
+            jointly. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to
+            None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: The connectedness table of Diebold and Yilmaz: the pairwise shares (receiving ticker
+            in the rows, transmitting ticker in the columns) with a "From Others" column and "To Others" and
+            "Net" rows. The total connectedness is where the "To Others" row meets the "From Others" column.
+
+        Notes:
+        - The VAR uses the dates every ticker has a value on, and is the one of `get_var_forecast`.
+        - The generalized decomposition is checked against one built from statsmodels' VAR moving-average
+        matrices and residual covariance, which agree to machine precision.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["AAPL", "MSFT", "JPM", "XOM"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.econometrics.get_connectedness()
+        ```
+
+        Which returns:
+
+        |           |   AAPL |    MSFT |     JPM |     XOM |   From Others |
+        |:----------|-------:|--------:|--------:|--------:|--------------:|
+        | AAPL      | 0.6385 |  0.2579 |  0.0771 |  0.0265 |        0.3615 |
+        | MSFT      | 0.2691 |  0.6597 |  0.0644 |  0.0068 |        0.3403 |
+        | JPM       | 0.0893 |  0.0725 |  0.7402 |  0.0979 |        0.2598 |
+        | XOM       | 0.0314 |  0.0061 |  0.1124 |  0.8501 |        0.1499 |
+        | To Others | 0.3898 |  0.3365 |  0.2539 |  0.1312 |        0.2778 |
+        | Net       | 0.0283 | -0.0038 | -0.0058 | -0.0187 |      nan      |
+        """
+        period = period if period else "daily"
+        tickers = self._get_tickers(include_benchmark=include_benchmark)
+        data = self._get_series_column(period, column, tickers)
+
+        var_result = time_series_model.get_var_forecast(
+            data[tickers], lags=lags, forecast_steps=1
+        )
+        result = time_series_model.get_connectedness(var_result, periods=periods)
+
+        return apply_rounding(
+            time_series_model.connectedness_summary_table(result),
+            rounding if rounding is not None else self._rounding,
+        )
+
+    @handle_errors
+    def get_rolling_connectedness(
+        self,
+        period: str | None = None,
+        column: str = "Return",
+        lags: int = 1,
+        periods: int = 10,
+        window: int = 200,
+        include_benchmark: bool = False,
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the Diebold-Yilmaz connectedness of the tickers over a rolling window: how the total
+        connectedness and each ticker's net connectedness move over time.
+
+        Every window of `window` observations gets its own VAR(`lags`) fit on every ticker's `column` (Return
+        by default) and its own Generalized Forecast Error Variance Decomposition at horizon `periods` (see
+        `get_connectedness`), dated by the last observation of the window, so a value only uses data up to its
+        date. Diebold and Yilmaz (2012) use 200-day windows and a 10-day horizon. A total connectedness that
+        jumps marks a period in which shocks travel between the tickers (2008, March 2020); a ticker whose net
+        connectedness turns positive becomes a transmitter of shocks.
+
+        The formula is as follows:
+
+        - Total Connectednessₜ = Σ(i≠j) θ̃ᵢⱼ,ₜ(H) / N
+        - Netᵢ,ₜ = Σ(j≠i) θ̃ⱼᵢ,ₜ(H) - Σ(j≠i) θ̃ᵢⱼ,ₜ(H)
+
+        Where θ̃ᵢⱼ,ₜ(H) is the normalized generalized variance share of ticker i's H-step forecast error
+        variance due to shocks to ticker j, from the VAR fitted on the `window` observations up to t, and N the
+        number of tickers. Both are decimals.
+
+        For more information about the method, see the following papers:
+
+        - Diebold, F.X. and Yilmaz, K. (2012). "Better to Give than to Receive: Predictive Directional
+        Measurement of Volatility Spillovers." International Journal of Forecasting, 28(1), 57-66.
+        - Pesaran, H.H. and Shin, Y. (1998). "Generalized Impulse Response Analysis in Linear Multivariate
+        Models." Economics Letters, 58(1), 17-29.
+
+        Also known as: rolling spillover index, dynamic connectedness.
+
+        Shares similar logic:
+        - statsmodels, VARResults.ma_rep: https://www.statsmodels.org/stable/generated/statsmodels.tsa.vector_ar.var_model.VARResults.ma_rep.html
+
+        Args:
+            period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly). Defaults to
+                "daily".
+            column (str, optional): The historical data column to model. Defaults to "Return".
+            lags (int, optional): The VAR order. Defaults to 1.
+            periods (int, optional): The forecast horizon H. Defaults to 10.
+            window (int, optional): The number of observations of every VAR fit. Defaults to 200.
+            include_benchmark (bool, optional): Whether to include "Benchmark" among the tickers modeled
+            jointly. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to
+            None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: The total connectedness in the "Total" column and each ticker's net connectedness in
+            a column named after it, one row per window end date.
+
+        Notes:
+        - Every date fits a VAR and decomposes it, which takes a few thousandths of a second, so five years of
+        daily data take about ten seconds.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["AAPL", "MSFT", "JPM", "XOM"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.econometrics.get_rolling_connectedness().tail()
+        ```
+
+        Which returns:
+
+        |            |   Total |   AAPL |   MSFT |    JPM |     XOM |
+        |:-----------|--------:|-------:|-------:|-------:|--------:|
+        | 2025-12-24 |  0.4027 | 0.0403 | 0.0093 | 0.0237 | -0.0734 |
+        | 2025-12-26 |  0.4015 | 0.041  | 0.0083 | 0.0233 | -0.0726 |
+        | 2025-12-29 |  0.3938 | 0.0409 | 0.0066 | 0.0225 | -0.0699 |
+        | 2025-12-30 |  0.3948 | 0.0408 | 0.0098 | 0.0223 | -0.0728 |
+        | 2025-12-31 |  0.3954 | 0.0401 | 0.0097 | 0.0233 | -0.0731 |
+        """
+        period = period if period else "daily"
+        validate_window("window", window, minimum=2)
+        tickers = self._get_tickers(include_benchmark=include_benchmark)
+        data = self._get_series_column(period, column, tickers)
+
+        result = time_series_model.get_rolling_connectedness(
+            data[tickers], lags=lags, periods=periods, window=window
+        )
+
+        return apply_rounding(
+            result, rounding if rounding is not None else self._rounding
         )
 
     @handle_errors
@@ -805,11 +1030,11 @@ class ForecastingEconometrics:
 
         |   Step |   GOOGL |    GOOG |
         |-------:|--------:|--------:|
-        |      1 | 312.569 | 313.352 |
-        |      2 | 312.75  | 313.553 |
-        |      3 | 312.929 | 313.747 |
-        |      4 | 313.109 | 313.941 |
-        |      5 | 313.289 | 314.135 |
+        |      1 | 312.569 | 313.359 |
+        |      2 | 312.75  | 313.56  |
+        |      3 | 312.929 | 313.753 |
+        |      4 | 313.109 | 313.948 |
+        |      5 | 313.288 | 314.142 |
         """
         period = period if period else "daily"
         tickers = self._get_tickers(include_benchmark=include_benchmark)
@@ -1063,9 +1288,9 @@ class ForecastingEconometrics:
 
         |                      |   BTCUSD |   ETHUSD |
         |:---------------------|---------:|---------:|
-        | RMSE                 | 11424.9  |  1003.11 |
-        | MAE                  |  9896.95 |   842.37 |
-        | Holdout Observations |   366    |   366    |
+        | RMSE                 | 11424.9  | 1003.11  |
+        | MAE                  |  9896.95 |  842.368 |
+        | Holdout Observations |   366    |  366     |
         """
         period = period if period else "daily"
         # Every series at its own observations: the ARIMA validation drops the missing
@@ -1261,11 +1486,11 @@ class ForecastingEconometrics:
 
         |                     |       QQQ |       TLT |       GLD |
         |:--------------------|----------:|----------:|----------:|
-        | Berkowitz Statistic |    8.5086 |    3.9236 |    3.8163 |
-        | P-Value             |    0.0366 |    0.2698 |    0.282  |
-        | Mean                |   -0.0443 |   -0.0153 |    0.0396 |
-        | Standard Deviation  |    1.0494 |    0.9641 |    1.0273 |
-        | Autocorrelation     |   -0.0028 |   -0.0176 |    0.002  |
+        | Berkowitz Statistic |    4.4634 |    4.3325 |    3.7421 |
+        | P-Value             |    0.2156 |    0.2277 |    0.2907 |
+        | Mean                |   -0.0436 |   -0.0164 |    0.0396 |
+        | Standard Deviation  |    1.0289 |    0.9626 |    1.0267 |
+        | Autocorrelation     |   -0.0018 |   -0.0193 |    0.0017 |
         | Observations        | 1255      | 1255      | 1255      |
         """
         if alpha is not None:
@@ -1452,17 +1677,17 @@ class ForecastingEconometrics:
 
         |                |       QQQ |       TLT |       GLD |
         |:---------------|----------:|----------:|----------:|
-        | Q(1) Statistic |    7.1786 |    4.2855 |    4.451  |
-        | Q(1) P-Value   |    0      |    0.0016 |    0.0012 |
-        | Q(2) Statistic |    4.7805 |    2.5799 |    3.4082 |
-        | Q(2) P-Value   |    0.0006 |    0.0273 |    0.0075 |
-        | Q(3) Statistic |    3.666  |    2.833  |    2.463  |
-        | Q(3) P-Value   |    0.0049 |    0.0187 |    0.0323 |
-        | Q(4) Statistic |    4.8672 |    2.2805 |    5.7016 |
-        | Q(4) P-Value   |    0.0006 |    0.0418 |    0.0001 |
-        | W Statistic    |   10.2461 |    5.9894 |    8.0119 |
-        | W P-Value      |    0.0001 |    0.005  |    0.0007 |
-        | Bandwidth      |    0.0855 |    0.0855 |    0.0847 |
+        | Q(1) Statistic |    7.1087 |    4.3487 |    4.4467 |
+        | Q(1) P-Value   |    0      |    0.0015 |    0.0012 |
+        | Q(2) Statistic |    4.7446 |    2.5909 |    3.3997 |
+        | Q(2) P-Value   |    0.0007 |    0.0268 |    0.0076 |
+        | Q(3) Statistic |    3.6464 |    2.7648 |    2.4594 |
+        | Q(3) P-Value   |    0.005  |    0.0207 |    0.0325 |
+        | Q(4) Statistic |    4.7813 |    2.3009 |    5.6916 |
+        | Q(4) P-Value   |    0.0006 |    0.0407 |    0.0001 |
+        | W Statistic    |   10.1405 |    6.0026 |    7.9987 |
+        | W P-Value      |    0.0001 |    0.0049 |    0.0007 |
+        | Bandwidth      |    0.0855 |    0.0854 |    0.0847 |
         | Observations   | 1255      | 1255      | 1255      |
         """
         period = period if period else "daily"

@@ -155,8 +155,37 @@ try:
 except metadata.PackageNotFoundError:  # pragma: no cover - running from a checkout
     TOOLKIT_VERSION = "unknown"
 
-# Tried in order when the benchmark is the only requested ticker, so there is still something to analyse.
-FALLBACK_BENCHMARKS = ["SPY", "QQQ", "^GSPC", "IWM", "DIA", "VTI"]
+# The benchmark that takes the place of one that is also a ticker: the first of these that is not
+# one of the tickers. The S&P 500 index comes first, so the default SPY is replaced by the index it
+# tracks (without its dividends) whatever the other tickers are.
+FALLBACK_BENCHMARKS = ["^GSPC", "SPY", "QQQ", "IWM", "DIA", "VTI"]
+
+
+def substitute_benchmark(tickers: list[str]) -> tuple[str | None, str]:
+    """
+    The benchmark that takes the place of one that is also a ticker, and the rule it follows.
+
+    Args:
+        tickers (list[str]): The requested ticker symbols.
+
+    Returns:
+        tuple[str | None, str]: The first of FALLBACK_BENCHMARKS that is not one of the
+            tickers (None when all are), and the rule as a sentence for a note.
+    """
+    upper_tickers = {ticker.upper() for ticker in tickers}
+    substitute = next(
+        (
+            candidate
+            for candidate in FALLBACK_BENCHMARKS
+            if candidate.upper() not in upper_tickers
+        ),
+        None,
+    )
+
+    return substitute, (
+        "A benchmark that is one of the tickers is replaced by the first of "
+        f"{', '.join(FALLBACK_BENCHMARKS)} that is not."
+    )
 
 
 def resolve_benchmark_ticker(
@@ -191,16 +220,16 @@ def resolve_benchmark_ticker(
             f"'Benchmark' rather than as a separate {benchmark_ticker} column."
         )
 
-    for candidate in FALLBACK_BENCHMARKS:
-        if candidate.upper() not in upper_tickers:
-            return candidate, (
-                f"{benchmark_ticker} was requested as both the ticker and the benchmark, "
-                f"so {candidate} is used as the benchmark: 'Benchmark' refers to {candidate}."
-            )
+    substitute, rule = substitute_benchmark(tickers)
+    if substitute is None:
+        return None, (
+            f"{benchmark_ticker} was requested as both the ticker and the benchmark, so the "
+            "results are calculated without a benchmark."
+        )
 
-    return None, (
-        f"{benchmark_ticker} was requested as both the ticker and the benchmark, so the "
-        "results are calculated without a benchmark."
+    return substitute, (
+        f"{benchmark_ticker} was requested as both the ticker and the benchmark, so "
+        f"{substitute} is the benchmark: 'Benchmark' refers to {substitute}. {rule}"
     )
 
 

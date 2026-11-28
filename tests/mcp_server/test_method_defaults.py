@@ -1003,3 +1003,86 @@ def test_an_unknown_indicator_suggests_close_names_of_other_tools(captured):
 
     assert not captured
     assert "get_interest_coverage_ratio (tool `profitability`)" in text
+
+
+@pytest.mark.parametrize(
+    ("tool", "indicator", "note"),
+    [
+        (
+            "econometrics",
+            "get_fractional_difference",
+            "threshold=0.0001 (with method='fixed_width') is this server's default (the "
+            "Python default is 1e-5 for "
+            "'fixed_width' and 0.01 for 'expanding'); pass threshold to change it.",
+        ),
+        (
+            "econometrics",
+            "get_bubble_test",
+            "period='weekly' is this server's default (the Python default is 'daily'); "
+            "pass period to change it.",
+        ),
+        (
+            "liquidity",
+            "get_amihud_illiquidity",
+            "scale=1000000000 is this server's default (the Python default is 1000000); "
+            "pass scale to change it.",
+        ),
+    ],
+)
+def test_a_server_default_of_a_calculation_is_named(captured, tool, indicator, note):
+    answer = read_answer(
+        asyncio.run(
+            mcp_controller.mcp.call_tool(
+                tool, {"indicator": indicator, "tickers": "AAPL"}
+            )
+        )[0].text
+    )
+
+    assert note in answer["_notes"]
+
+
+def test_a_given_value_or_a_size_default_is_not_named(captured):
+    given = asyncio.run(
+        mcp_controller.mcp.call_tool(
+            "econometrics",
+            {
+                "indicator": "get_fractional_difference",
+                "tickers": "AAPL",
+                "threshold": 0.001,
+            },
+        )
+    )[0].text
+    size = asyncio.run(
+        mcp_controller.mcp.call_tool(
+            "options", {"indicator": "get_binomial_model", "tickers": "AAPL"}
+        )
+    )[0].text
+
+    assert captured[0]["threshold"] == 0.001  # noqa: PLR2004
+    assert "this server's default" not in given
+    assert captured[1]["strike_price_range"] == 0.05  # noqa: PLR2004
+    assert "this server's default" not in size
+
+
+def test_a_conditional_server_default_leaves_the_other_case_alone(captured):
+    fixed = asyncio.run(
+        mcp_controller.mcp.call_tool(
+            "econometrics",
+            {"indicator": "get_fractional_difference", "tickers": "AAPL"},
+        )
+    )[0].text
+    expanding = asyncio.run(
+        mcp_controller.mcp.call_tool(
+            "econometrics",
+            {
+                "indicator": "get_fractional_difference",
+                "tickers": "AAPL",
+                "method": "expanding",
+            },
+        )
+    )[0].text
+
+    assert captured[0]["threshold"] == 0.0001  # noqa: PLR2004
+    assert "this server's default" in fixed
+    assert captured[1].get("threshold") is None
+    assert "this server's default" not in expanding

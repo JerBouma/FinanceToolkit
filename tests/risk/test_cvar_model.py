@@ -512,3 +512,41 @@ def test_expected_quadratic_shortfall_ignores_gains():
     assert cvar_model.get_expected_quadratic_shortfall(
         pd.Series([0.01, 0.02, 0.03] * 10), 0.05
     ) == pytest.approx(0)
+
+
+def test_get_cvar_evt_is_the_average_tail_quantile():
+    # The closed-form GPD Expected Shortfall equals the average of the GPD VaR losses over the
+    # tail probabilities below alpha: (1 / alpha) * integral of VaR_loss(a) da from 0 to alpha.
+    returns = pd.Series(stats.t.rvs(4, size=1000, random_state=3) * 0.01)
+    fit = var_model.get_generalized_pareto_fit(returns)
+    alpha = 0.01
+
+    expected = (
+        integrate.quad(
+            lambda a: var_model.get_gpd_tail_loss(
+                fit["Threshold"],
+                fit["Shape (xi)"],
+                fit["Scale (beta)"],
+                fit["Exceedance Probability"],
+                a,
+            ),
+            0,
+            alpha,
+        )[0]
+        / alpha
+    )
+    assert -cvar_model.get_cvar_evt(returns, alpha).iloc[0] == pytest.approx(
+        expected, rel=1e-6
+    )
+
+
+def test_get_cvar_evt_without_a_tail_mean_is_nan(caplog):
+    # Pareto losses with tail index 0.5 have xi = 2 (fitted 1.47): no mean, so no Expected Shortfall,
+    # while the VaR still exists.
+    returns = pd.Series(-stats.pareto.rvs(0.5, size=2000, random_state=4) * 0.01)
+
+    with caplog.at_level("WARNING"):
+        cvar = cvar_model.get_cvar_evt(returns, 0.01)
+    assert np.isnan(cvar.iloc[0])
+    assert any("has no mean" in message for message in caplog.messages)
+    assert np.isfinite(var_model.get_var_evt(returns, 0.01).iloc[0])

@@ -206,3 +206,12 @@ def test_an_implied_move_from_stale_quotes_is_a_note():
     )
 
     assert diagnostics_model.missing_data_notes([message]) == [message]
+
+
+def test_a_rolling_transform_emptied_by_a_skipped_period_is_a_note():
+    message = (
+        "United States has no value for 2025-10, so every 12-period window of 'sma:12' that "
+        "includes it is missing."
+    )
+
+    assert diagnostics_model.missing_data_notes([message]) == [message]

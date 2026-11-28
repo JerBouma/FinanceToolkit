@@ -2820,3 +2820,29 @@ def test_a_trailing_window_as_long_as_the_statements_is_reported_for_averaged_ba
         return_on_equity = ratios_module.get_return_on_equity(trailing=periods - 1)
     assert return_on_equity.notna().any().any()
     assert "trailing window" not in caplog.text
+
+
+def test_get_factor_portfolios(recorder, ratios_module):
+    recorder.capture(ratios_module.get_factor_portfolios())
+    recorder.capture(
+        ratios_module.get_factor_portfolios(
+            "get_price_to_book_ratio",
+            period="quarterly",
+            weighting="value",
+            detail="statistics",
+        )
+    )
+    recorder.capture(
+        ratios_module.get_factor_portfolios(holding_period=3, detail="turnover")
+    )
+
+
+def test_get_factor_portfolios_refuses_more_quantiles_than_tickers(ratios_module):
+    from financetoolkit.utilities.error_model import (
+        InvalidArgumentError,
+    )  # noqa: PLC0415
+
+    with pytest.raises(InvalidArgumentError, match="quantiles"):
+        ratios_module.get_factor_portfolios(quantiles=5)
+    with pytest.raises(InvalidArgumentError, match="one ratio"):
+        ratios_module.get_factor_portfolios("valuation")

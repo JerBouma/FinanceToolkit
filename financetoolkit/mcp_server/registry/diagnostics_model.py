@@ -161,7 +161,15 @@ MISSING_DATA_PATTERN = re.compile(
     r"|^The Global Macro Database repeats\b|^Prices in .+ rose more than tenfold\b"
     # Option prices from a last trade or a wide quote rather than the live market.
     r"|\bmay not reflect the live market\b"
+    # A rolling transform step whose windows a skipped period empties.
+    r"|\bwindow of '\w+:\d+' that includes it is missing\.$"
+    # A ticker for which the test finds no bubble: an answer, not missing data.
+    r"|^No bubble episode is found for\b"
 )
+
+# The notes that make an empty table with its columns the answer itself (no bubble episode
+# in the range) rather than a call without data.
+EMPTY_ANSWER_PATTERN = re.compile(r"^No bubble episode is found for\b")
 
 
 def missing_data_notes(messages: list[str] | None) -> list[str]:

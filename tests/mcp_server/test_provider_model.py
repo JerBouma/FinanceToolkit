@@ -56,8 +56,9 @@ def provider(monkeypatch, tmp_path):
         (["AAPL"], "SPY", "SPY"),
         (["AAPL", "SPY"], "SPY", "SPY"),
         (["aapl", "spy"], "SPY", "SPY"),
-        (["SPY"], "SPY", "QQQ"),
-        (["QQQ"], "QQQ", "SPY"),
+        (["SPY"], "SPY", "^GSPC"),
+        (["QQQ"], "QQQ", "^GSPC"),
+        (["^GSPC"], "^GSPC", "SPY"),
         (["AAPL"], None, None),
     ],
 )

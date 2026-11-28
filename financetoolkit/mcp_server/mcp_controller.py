@@ -366,6 +366,7 @@ def _build_mcp_app(transport: str = "stdio") -> FastMCP:
         tool_groups=configuration["tool_groups"],
         blocked_periods=configuration.get("blocked_periods", {}),
         method_defaults=configuration.get("method_defaults", {}),
+        noted_defaults=configuration.get("noted_defaults", []),
         countries_optional=configuration.get("countries_optional", []),
         analytics=analytics,
         max_response_characters=_resolve_max_response_characters(

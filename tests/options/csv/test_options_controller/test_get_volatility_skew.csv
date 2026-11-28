@@ -1,7 +1,7 @@
-Ticker,Expiration,25-Delta Put Volatility,At-the-Money Volatility,25-Delta Call Volatility,25-Delta Risk Reversal,25-Delta Butterfly
-AAPL,Expiry 1,0.254,0.25,0.2456,-0.0084,-0.0002
-AAPL,Expiry 2,0.2559,0.25,0.2429,-0.013,-0.0006
-AAPL,Expiry 3,0.2577,0.25,0.24,-0.0177,-0.0011
-MSFT,Expiry 1,0.254,0.25,0.2456,-0.0084,-0.0002
-MSFT,Expiry 2,0.2559,0.25,0.243,-0.013,-0.0006
-MSFT,Expiry 3,0.2578,0.25,0.2401,-0.0177,-0.001
+Ticker,Expiration,25-Delta Put Volatility,10-Delta Put Volatility,At-the-Money Volatility,25-Delta Call Volatility,10-Delta Call Volatility,25-Delta Risk Reversal,25-Delta Butterfly,10-Delta Risk Reversal,10-Delta Butterfly
+AAPL,Expiry 1,0.254,0.2578,0.25,0.2456,0.2418,-0.0084,-0.0002,-0.016,-0.0002
+AAPL,Expiry 2,0.2559,0.2618,0.25,0.2429,0.2372,-0.013,-0.0006,-0.0246,-0.0005
+AAPL,Expiry 3,0.2578,0.2658,0.25,0.24,0.2323,-0.0177,-0.0011,-0.0336,-0.001
+MSFT,Expiry 1,0.254,0.2578,0.25,0.2456,0.2418,-0.0084,-0.0002,-0.016,-0.0002
+MSFT,Expiry 2,0.2559,0.2618,0.25,0.243,0.2372,-0.013,-0.0006,-0.0246,-0.0005
+MSFT,Expiry 3,0.2578,0.2659,0.25,0.2401,0.2323,-0.0177,-0.001,-0.0336,-0.0009

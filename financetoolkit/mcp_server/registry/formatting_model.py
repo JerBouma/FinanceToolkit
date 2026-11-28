@@ -1052,6 +1052,7 @@ def format_result(
     max_characters: int | None = None,
     sources: list[str] | None = None,
     outcome: list[str] | None = None,
+    empty_is_answer: bool = False,
 ) -> str:
     """Format a Finance Toolkit result as a compact JSON string for LLM consumption.
 
@@ -1070,6 +1071,9 @@ def format_result(
         outcome: Optional list the kind of answer is appended to, for the usage statistics:
             "empty" for an answer without data, "cut" for one cut to max_characters and
             "data" for any other.
+        empty_is_answer: Whether a note explains an empty table as the answer itself (no
+            bubble episode in the range), so a table with columns and no rows is answered
+            as such rather than as missing data. Defaults to False.
 
     Returns:
         A JSON string.  DataFrames become ``{"columns": [...], "rows": [[...], ...]}``
@@ -1108,6 +1112,22 @@ def format_result(
         dataset = dataset.to_frame()
 
     if isinstance(dataset, pd.DataFrame):
+        if empty_is_answer and dataset.empty and len(dataset.columns):
+            return _answered(
+                "data",
+                _dumps(
+                    _inject(
+                        {
+                            "columns": [
+                                str(name)
+                                for name in [*dataset.index.names, *dataset.columns]
+                                if name is not None
+                            ],
+                            "rows": [],
+                        }
+                    )
+                ),
+            )
         if dataset.empty or not int(dataset.notna().to_numpy().sum()):
             return _answered("empty", _no_data(reason, notes, sources))
         # The size a response may have is that of the table as records, so a cut keeps

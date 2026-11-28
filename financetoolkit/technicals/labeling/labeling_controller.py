@@ -107,6 +107,7 @@ class LabelingTechnicals:
         threshold: float | None = None,
         span: int = 100,
         window: int = 20,
+        signals_only: bool = False,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -170,6 +171,8 @@ class LabelingTechnicals:
                 to 100.
             window (int, optional): The window of the average and standard deviation of the
                 z-score filter. Defaults to 20.
+            signals_only (bool, optional): Whether to return only the dates on which at least one
+                ticker has an event. Defaults to False.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -199,9 +202,9 @@ class LabelingTechnicals:
             end_date="2025-12-31",
         )
 
-        events = toolkit.technicals.get_event_filter(threshold=2)
+        events = toolkit.technicals.get_event_filter(threshold=2, signals_only=True)
 
-        events[events.ne(0).any(axis=1)].tail()
+        events.tail()
         ```
 
         Which returns:
@@ -235,7 +238,13 @@ class LabelingTechnicals:
                 ),
             )
 
-        return events.loc[self._start_date : self._end_date]
+        events = events.loc[self._start_date : self._end_date]
+
+        if signals_only:
+            # An event is rare, so most dates are all zeros; the empty warm-up (NaN) is no event either.
+            events = events[events.abs().gt(0).any(axis=1)]
+
+        return events
 
     @handle_errors
     def get_triple_barrier_labels(

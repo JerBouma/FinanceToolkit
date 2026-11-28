@@ -628,34 +628,50 @@ class MarketOptions:
         self,
         expiration_dates: list[str] | None = None,
         number_of_expirations: int = 6,
+        deltas: list[float] | None = None,
         rounding: int | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the volatility skew of every expiry: how much more the market pays for
-        downside than for upside protection, from the 25-delta options, the standard way
-        to compare skew across underlyings and dates:
+        downside than for upside protection (the risk reversal) and how much both tails cost
+        relative to the centre (the butterfly), from the 25-delta and 10-delta options, the
+        standard way to compare skew across underlyings and dates.
 
-            - 25-Delta Risk Reversal = IV(25-delta call) - IV(25-delta put)
-            - 25-Delta Butterfly = (IV(25-delta call) + IV(25-delta put)) / 2 - ATM IV
+        The formula for each delta Δ (25 for 0.25) is as follows:
+
+        - Δ-Delta Risk Reversal = IV(Δ-delta call) - IV(Δ-delta put)
+        - Δ-Delta Butterfly = (IV(Δ-delta call) + IV(Δ-delta put)) / 2 - ATM IV
 
         For equities the risk reversal is usually negative: out-of-the-money puts are
         dearer than calls because investors pay for crash protection. A more negative risk
         reversal means more fear of a fall; the butterfly measures how much both tails cost
-        relative to the centre. The deltas follow from each option's implied volatility, and
-        the volatility at exactly 25 delta is interpolated.
+        relative to the centre. The 10-delta options lie further in the tails, so their risk
+        reversal and butterfly show the price of crash and tail protection that the
+        25-delta options only partly reflect.
 
-        For more information, see the following book:
+        The delta of each option is its Black-Scholes spot delta, e^(-qT) N(d1) for a call
+        and -e^(-qT) N(-d1) for a put, from the option's own implied volatility with the
+        continuously compounded risk free rate and dividend yield, and the volatility at
+        exactly the delta is interpolated linearly in delta between the quoted strikes
+        around it (not from a fitted smile). The at-the-money volatility is that of calls
+        and puts interpolated at the stock price and averaged.
+
+        For more information, see the following books:
 
         - Gatheral, J. (2006). "The Volatility Surface: A Practitioner's Guide." Wiley.
+        - Clark, I. J. (2011). "Foreign Exchange Option Pricing: A Practitioner's Guide." Wiley.
 
-        Also known as: risk reversal, volatility smile, skew, butterfly spread volatility.
+        Also known as: risk reversal, volatility smile, skew, butterfly spread volatility,
+        25-delta skew, 10-delta skew, smile strangle.
 
         Args:
             expiration_dates (list[str] | None, optional): The expiries to use. Defaults to
                 None, the nearest `number_of_expirations` expiries.
             number_of_expirations (int, optional): The number of nearest expiries to use when
                 no dates are given, at least 1. Defaults to 6.
+            deltas (list[float] | None, optional): The absolute deltas of the wings, each
+                between 0 and 0.5. Defaults to None, which uses 0.25 and 0.10.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -664,9 +680,10 @@ class MarketOptions:
                 exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
-            pd.DataFrame: Per ticker and expiry the Days to Expiration, the 25-Delta Put,
-            At-the-Money and 25-Delta Call Volatility, the 25-Delta Risk Reversal and the
-            25-Delta Butterfly.
+            pd.DataFrame: Per ticker and expiry the Days to Expiration, per delta the Put
+            Volatility, the At-the-Money Volatility, per delta the Call Volatility, and per
+            delta the Risk Reversal and Butterfly (decimals), such as "25-Delta Risk
+            Reversal" and "10-Delta Butterfly".
 
         Notes:
         - The stock price is the price of the underlying quoted with the live option chain
@@ -675,6 +692,8 @@ class MarketOptions:
           risk free rate and dividend yield come from the historical data as well, so
           leave end_date at today: a warning is logged when the history ends more than 5
           days before today.
+        - A delta that the quoted strikes of an expiry do not reach (often 10 delta on the
+          nearest expiries, which list few far out-of-the-money strikes) is NaN.
 
         As an example:
 
@@ -683,22 +702,25 @@ class MarketOptions:
 
         toolkit = Toolkit(["QQQ", "AAPL"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
-        toolkit.options.get_volatility_skew(number_of_expirations=3)
+        toolkit.options.get_volatility_skew(
+            number_of_expirations=3,
+            show_columns=["At-the-Money Volatility", "25-Delta Risk Reversal", "10-Delta Risk Reversal"],
+        )
         ```
 
         Which returns:
 
-        |                        |   Days to Expiration |   25-Delta Put Volatility |   At-the-Money Volatility |   25-Delta Call Volatility |   25-Delta Risk Reversal |   25-Delta Butterfly |
-        |:-----------------------|---------------------:|--------------------------:|--------------------------:|---------------------------:|-------------------------:|---------------------:|
-        | ('QQQ', '2026-11-17')  |                    1 |                    0.4167 |                    0.3999 |                     0.3738 |                  -0.0429 |              -0.0047 |
-        | ('QQQ', '2026-11-18')  |                    2 |                    0.4336 |                    0.4161 |                     0.3949 |                  -0.0387 |              -0.0019 |
-        | ('QQQ', '2026-11-19')  |                    3 |                    0.4302 |                    0.4128 |                     0.3904 |                  -0.0398 |              -0.0025 |
-        | ('AAPL', '2026-11-18') |                    2 |                    0.3172 |                    0.2889 |                     0.2724 |                  -0.0448 |               0.0059 |
-        | ('AAPL', '2026-11-20') |                    4 |                    0.3142 |                    0.2983 |                     0.2728 |                  -0.0414 |              -0.0048 |
-        | ('AAPL', '2026-11-23') |                    7 |                    0.27   |                    0.2516 |                     0.2324 |                  -0.0376 |              -0.0004 |
+        |                        |   At-the-Money Volatility |   25-Delta Risk Reversal |   10-Delta Risk Reversal |
+        |:-----------------------|--------------------------:|-------------------------:|-------------------------:|
+        | ('QQQ', '2026-11-30')  |                    0.2527 |                  -0.0857 |                  -0.1086 |
+        | ('QQQ', '2026-12-01')  |                    0.2909 |                  -0.0836 |                  -0.1236 |
+        | ('QQQ', '2026-12-02')  |                    0.306  |                  -0.0859 |                  -0.1427 |
+        | ('AAPL', '2026-11-30') |                    0.1754 |                  -0.025  |                  -0.051  |
+        | ('AAPL', '2026-12-02') |                    0.2144 |                  -0.0378 |                  -0.0858 |
+        | ('AAPL', '2026-12-04') |                    0.2292 |                  -0.0373 |                  -0.0947 |
         """
         return self._per_expiry(
-            market_metrics_model.get_volatility_skew,
+            partial(market_metrics_model.get_volatility_skew, deltas=deltas),
             expiration_dates,
             number_of_expirations,
             rounding,
@@ -1594,7 +1616,7 @@ class MarketOptions:
     def get_delta_hedging_backtest(
         self,
         days: int = 63,
-        start_date: str | None = None,
+        sale_date: str | None = None,
         moneyness: float = 1.0,
         volatility: float | None = None,
         put_option: bool = False,
@@ -1614,7 +1636,7 @@ class MarketOptions:
         shares, pays a proportional cost on every trade, receives the dividends on the
         shares held and keeps the rest in cash at the risk free rate:
 
-            - Option Value = Black-Scholes value at the volatility σ on the start date
+            - Option Value = Black-Scholes value at the volatility σ on the sale date
             - Cash_(i+1) = Cash_i e^(r Δt) + Δ_i D_(i+1) - (Δ_(i+1) - Δ_i) S_(i+1) - k |Δ_(i+1) - Δ_i| S_(i+1)
             - Profit and Loss = e^(-rT) [Cash_T + Δ_T S_T - Payoff(S_T)]
 
@@ -1636,15 +1658,15 @@ class MarketOptions:
         Args:
             days (int, optional): The trading days from the sale to expiration, at least 1. Defaults to 63,
                 about three months.
-            start_date (str | None, optional): The date the option is sold, or the last
+            sale_date (str | None, optional): The date the option is sold, or the last
                 trading day before it. Defaults to None, `days` trading days before the end
                 of the historical data, so the option expires on its last date.
             moneyness (float, optional): The strike as a fraction of the stock price on the
-                start date. Defaults to 1.0, at the money.
+                sale date. Defaults to 1.0, at the money.
             volatility (float | None, optional): The volatility the option is sold and hedged
                 at, such as an implied volatility, for every ticker, 0 or above (at 0 the option
                 is sold at its discounted intrinsic value and the delta is 0 or 1). Defaults to
-                None, the volatility of the year of daily returns up to the start date, which is
+                None, the volatility of the year of daily returns up to the sale date, which is
                 known on that date.
             put_option (bool, optional): Whether the option is a put. Defaults to False.
             transaction_cost (float, optional): The cost of a trade as a fraction of its value
@@ -1661,7 +1683,7 @@ class MarketOptions:
         Returns:
             pd.DataFrame: Per ticker the Start Date, Expiration Date, Stock Price, Strike Price,
             Volatility, Realized Volatility, Option Value, Payoff, Transaction Costs and Profit
-            and Loss. The costs and the profit and loss are discounted to the start date.
+            and Loss. The costs and the profit and loss are discounted to the sale date.
 
         Raises:
             InvalidArgumentError: When the days or rebalancing days are below 1, the moneyness
@@ -1673,7 +1695,7 @@ class MarketOptions:
           the same days.
         - The stock follows the traded Close and the hedge receives the cash dividends on
           their ex-dates; the option is valued with the trailing dividend yield and the risk
-          free rate on the start date, both continuously compounded.
+          free rate on the sale date, both continuously compounded.
         - At expiration the hedge moves to the position the option settles with (one share
           for a call in the money, none out of the money), and that trade pays the cost as
           well, as for physical settlement.
@@ -1690,7 +1712,7 @@ class MarketOptions:
         )
 
         toolkit.options.get_delta_hedging_backtest(
-            start_date="2025-06-02",
+            sale_date="2025-06-02",
             transaction_cost=0.0005,
             show_columns=["Volatility", "Realized Volatility", "Option Value", "Payoff", "Transaction Costs", "Profit and Loss"],
         )
@@ -1728,18 +1750,18 @@ class MarketOptions:
         rows = {}
         for ticker in self._tickers:
             history = self._prices[ticker].dropna()
-            if start_date is None:
+            if sale_date is None:
                 start = len(history) - 1 - days
             else:
                 start = (
                     history.index.searchsorted(
-                        pd.Period(start_date, freq="D"), side="right"
+                        pd.Period(sale_date, freq="D"), side="right"
                     )
                     - 1
                 )
             if start < 0 or start + days >= len(history):
                 logger.warning(
-                    "The historical data of %s does not cover %d trading days after the start "
+                    "The historical data of %s does not cover %d trading days after the sale "
                     "date, so it is left out.",
                     ticker,
                     days,
@@ -1753,10 +1775,10 @@ class MarketOptions:
                     ticker, date, volatility
                 )
             except IndexError:
-                # Too few prices before the start date for a volatility leaves this ticker out only.  # noqa: E501
+                # Too few prices before the sale date for a volatility leaves this ticker out only.  # noqa: E501
                 logger.warning(
                     "No delta hedging backtest for %s: it has too few prices for a "
-                    "volatility on the start date.",
+                    "volatility on the sale date.",
                     ticker,
                 )
                 continue
@@ -1765,7 +1787,7 @@ class MarketOptions:
                 paid = (
                     dividends[ticker].reindex(path.index).fillna(0).to_numpy(copy=True)
                 )
-                # A dividend going ex on the start date belongs to the seller of the shares.
+                # A dividend going ex on the sale date belongs to the seller of the shares.
                 paid[0] = 0.0
             result = hedging_model.get_delta_hedging_profit_and_loss(
                 stock_prices=path.to_numpy(),
@@ -1798,7 +1820,7 @@ class MarketOptions:
 
         if not rows:
             raise ValueError(
-                f"No ticker has {days} trading days of prices after the start date."
+                f"No ticker has {days} trading days of prices after the sale date."
             )
 
         table = pd.DataFrame(rows).T

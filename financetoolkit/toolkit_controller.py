@@ -4601,6 +4601,168 @@ class Toolkit:
 
         return short_volume
 
+    def get_short_interest(
+        self,
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ):
+        """
+        Get the short interest of each company: the shares sold short and not yet bought back,
+        twice a month, with the days to cover and the short interest as a share of the float.
+
+        Obtain the short interest FINRA collects from its member firms under Rule 4560, for the
+        settlement dates in the middle and at the end of each month: the Short Interest (the
+        open short positions in shares), the Average Daily Volume over the reporting cycle up
+        to the settlement date, the Days to Cover (how many days of that volume the short
+        positions amount to) and the Short Interest to Float (the part of the shares available
+        for public trading that is sold short, as a decimal). A high and rising short interest
+        shows that many investors bet on a fall; with many days to cover, buying back the
+        shares takes long and can drive the price up sharply (a short squeeze).
+
+        This is short INTEREST, the positions still open at the settlement date, not the
+        daily short sale volume of get_short_volume, most of which is closed again within
+        days. FINRA publishes each settlement date about a week and a half later, so the
+        last row lags today, and its history starts at the end of 2017. It covers securities
+        listed in the United States only: a ticker with an exchange suffix (such as ASML.AS)
+        has no data.
+
+        The formulas are as follows:
+
+        - Days to Cover = Short Interest / Average Daily Volume
+        - Short Interest to Float = Short Interest / Float Shares
+
+        For more information, see the following papers:
+
+        - Dechow, P. M., Hutton, A. P., Meulbroek, L., and Sloan, R. G. (2001). "Short-Sellers,
+          Fundamental Analysis, and Stock Returns." Journal of Financial Economics, 61(1), 77-106.
+        - Asquith, P., Pathak, P. A., and Ritter, J. R. (2005). "Short Interest, Institutional
+          Ownership, and Stock Returns." Journal of Financial Economics, 78(2), 243-276.
+        - Hong, H., Li, W., Ni, S. X., Scheinkman, J. A., and Yan, P. (2015). "Days to Cover
+          and Stock Returns." NBER Working Paper 21166.
+
+        Also known as: short interest, days to cover, short interest ratio, short float,
+        short interest as a percentage of float, Rule 4560.
+
+        Args:
+            rounding (int | None): The number of decimals to round the results to. Defaults to
+            None, which uses the rounding of the Toolkit.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: The Short Interest, Average Daily Volume, Days to Cover and Short
+            Interest to Float per ticker (columns) per settlement date (index), between the
+            Toolkit's start and end date.
+
+        Notes:
+        - The average daily volume is FINRA's: the consolidated volume of the business days
+          since the previous settlement date, without trades that are not reported to the
+          tape, so the days to cover match FINRA's own figure.
+        - The float is today's (get_shares_float holds no history), so on earlier settlement
+          dates the share of the float uses the current number of float shares, which differs
+          after share issues, buybacks and splits. Without an API key, or for a company the
+          float is unknown for, the Short Interest to Float is NaN.
+        - A ticker FINRA has no short interest for is left out with a warning.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["GME"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2026-08-01",
+            end_date="2026-11-27",
+        )
+
+        toolkit.get_short_interest()
+        ```
+
+        Which returns:
+
+        | Date       |   Short Interest |   Average Daily Volume |   Days to Cover |   Short Interest to Float |
+        |:-----------|-----------------:|-----------------------:|----------------:|--------------------------:|
+        | 2026-08-14 |      5.40366e+07 |            1.01713e+07 |          5.3126 |                    0.1282 |
+        | 2026-08-31 |      5.699e+07   |            5.86424e+06 |          9.7182 |                    0.1352 |
+        | 2026-09-15 |      3.90691e+07 |            9.10597e+06 |          4.2905 |                    0.0927 |
+        | 2026-09-30 |      4.26737e+07 |            1.07279e+07 |          3.9778 |                    0.1013 |
+        | 2026-10-15 |      4.80316e+07 |            1.20036e+07 |          4.0014 |                    0.114  |
+        | 2026-10-30 |      4.23938e+07 |            8.08133e+06 |          5.2459 |                    0.1006 |
+        | 2026-11-13 |      4.10544e+07 |            5.97783e+06 |          6.8678 |                    0.0974 |
+        """
+        symbols = {
+            ticker: finra_model.to_finra_symbol(ticker, separator="")
+            for ticker in self._tickers
+        }
+        uncovered = [ticker for ticker, symbol in symbols.items() if symbol is None]
+        symbols = {
+            ticker: symbol for ticker, symbol in symbols.items() if symbol is not None
+        }
+
+        positions = finra_model.collect_short_interest(
+            symbols=list(dict.fromkeys(symbols.values())),
+            start_date=self._start_date,
+            end_date=self._end_date,
+        )
+
+        float_shares = pd.Series(dtype=float)
+        if self._api_key:
+            shares_float = self.get_shares_float()
+            if isinstance(shares_float, pd.DataFrame) and (
+                "Float Shares" in shares_float.index
+            ):
+                float_shares = pd.to_numeric(
+                    shares_float.loc["Float Shares"], errors="coerce"
+                )
+
+        statistics = {}
+
+        for ticker, symbol in symbols.items():
+            if positions[symbol].empty:
+                uncovered.append(ticker)
+                continue
+
+            short_interest = positions[symbol]["Short Interest"]
+            statistics[ticker] = positions[symbol].assign(
+                **{
+                    "Days to Cover": finra_model.get_days_to_cover(
+                        short_interest, positions[symbol]["Average Daily Volume"]
+                    ),
+                    "Short Interest to Float": finra_model.get_short_interest_to_float(
+                        short_interest, float_shares.get(ticker, float("nan"))
+                    ),
+                }
+            )
+
+        if uncovered:
+            logger.warning(
+                "FINRA has no short interest for the following tickers, which it only "
+                "reports for securities listed in the United States: %s",
+                ", ".join(uncovered),
+            )
+
+        if not statistics:
+            return pd.DataFrame()
+
+        # Metrics on the outer level and tickers on the inner level, as in the historical data.
+        short_interest = pd.concat(statistics, axis=1).swaplevel(axis=1)
+        short_interest = short_interest[
+            pd.MultiIndex.from_product(
+                [statistics[next(iter(statistics))].columns, list(statistics)]
+            )
+        ]
+        short_interest = apply_rounding(
+            short_interest, rounding if rounding is not None else self._rounding
+        )
+
+        if len(statistics) == 1:
+            short_interest = short_interest.droplevel(1, axis=1)
+
+        return short_interest
+
     def get_stock_grades(
         self, overwrite: bool = False, show_columns: str | list[str] | None = None
     ):

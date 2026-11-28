@@ -2026,20 +2026,6 @@ class ValuationModels:
         | ADBE |      213.31   |
         | CRM  |       67.9174 |
         | INTU |      172.144  |
-
-        And the same valuation for every period:
-
-        ```python
-        toolkit.models.get_intrinsic_valuation(historical=True)
-        ```
-
-        Which returns:
-
-        |      |     2021 |     2022 |     2023 |     2024 |    2025 |
-        |:-----|---------:|---------:|---------:|---------:|--------:|
-        | ADBE | 132.425  | 112.433  | 102.593  | 130.005  | 212.536 |
-        | CRM  |  18.2502 |  11.8861 |  51.1607 |  67.9382 | nan     |
-        | INTU | 102.101  |  60.4477 |  99.9192 |  97.2924 | 173.485 |
         """
         check_option(
             "cash_flow_type",

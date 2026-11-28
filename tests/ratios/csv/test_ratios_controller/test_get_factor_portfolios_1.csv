@@ -1,0 +1,4 @@
+,Mean Return,Annualized Mean Return,Standard Deviation,Newey-West Standard Error,t-Statistic,P-Value,Sharpe Ratio,Observations,Lags,Mean Turnover
+Quantile 1,0.0184,0.0735,0.1238,0.0483,0.3799,0.704,0.2966,8.0,2.0,0.0
+Quantile 2,0.0074,0.0296,0.1406,0.0443,0.1672,0.8672,0.1054,8.0,2.0,0.0
+Top Minus Bottom,-0.011,-0.0438,0.084,0.0259,-0.4236,0.6718,-0.2609,8.0,2.0,

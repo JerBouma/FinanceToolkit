@@ -20,6 +20,7 @@ from financetoolkit.helpers import (
     trailing_mean,
     trailing_sum,
 )
+from financetoolkit.performance import factor_portfolio_model
 from financetoolkit.ratios import (
     efficiency_model,
     liquidity_model,
@@ -31,17 +32,21 @@ from financetoolkit.ratios.helpers import map_period_data_to_daily_data
 from financetoolkit.utilities import factor_model, logger_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
 from financetoolkit.utilities.error_model import (
+    InvalidArgumentError,
+    check_option,
     handle_errors,
     validate_window,
 )
 from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import (
+    PERIODS_PER_YEAR,
     apply_rounding,
     calculate_growth,
     calculate_standardization,
     drop_non_finite,
     finalize_dataset,
     shift_periods,
+    validate_period,
 )
 
 logger = logger_model.get_logger()
@@ -178,6 +183,9 @@ FACTOR_COLLECTIONS = {
 FACTOR_COLLECTIONS["all"] = [
     metric for metrics in FACTOR_COLLECTIONS.values() for metric in metrics
 ]
+
+# The parts get_factor_portfolios returns besides the returns per period.
+FACTOR_PORTFOLIO_DETAILS = (None, "statistics", "monotonicity", "turnover", "weights")
 
 # The examples' output tables are wider than the line length.
 # ruff: noqa: E501
@@ -19585,6 +19593,244 @@ class Ratios:
             demeaned=demeaned,
             groups=factor_model.get_groups(group, self._profile_source, self._tickers),
         )
+
+        return apply_rounding(
+            result, rounding if rounding is not None else self._rounding
+        )
+
+    @handle_errors
+    def get_factor_portfolios(
+        self,
+        metric: str = "get_price_to_earnings_ratio",
+        period: str = "monthly",
+        quantiles: int | None = None,
+        weighting: str = "equal",
+        holding_period: int = 1,
+        detail: str | None = None,
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+        **kwargs,
+    ) -> pd.DataFrame:
+        """
+        Calculate the returns of portfolios sorted on a ratio: how the tickers with the lowest values of the ratio
+        performed against those with the highest, period by period, as in the portfolio sorts of Fama and French.
+
+        At the end of every rebalancing period the tickers are sorted into quantiles of the ratio by percentile
+        breakpoints, held over the following holding_period periods and weighted equally or by their market cap.
+        The Top Minus Bottom spread is long the highest quantile and short the lowest, so a ratio whose low values
+        do better (such as a low P/E) gives a negative spread. Next to the returns per period, detail gives
+        whether the spread differs from zero (Newey-West t-statistic) with its Sharpe ratio, whether the returns
+        rise or fall across every quantile (Patton and Timmermann's monotonic relation test), the turnover of each
+        quantile and the weights of the tickers.
+
+        The formula is as follows:
+
+        - Breakpoints: the 1 / n, ..., (n − 1) / n percentiles of the ratio of the tickers at the end of period s
+        - Equal weight: w(i, t) = 1 / N(q, t); value weight: w(i, t) = ME(i, t − 1) / Σ_j ME(j, t − 1)
+        - R(q, t) = Σ_i w(i, t) × R(i, t) over the tickers i in quantile q, for the periods t after s up to the
+          next rebalancing
+        - Top Minus Bottom(t) = R(n, t) − R(1, t)
+        - t-Statistic = mean / √(S / T), with S the Newey-West long-run variance (Bartlett weights)
+        - Sharpe Ratio = mean / standard deviation × √(periods per year)
+        - Monotonic relation test: J = min_k (mean R(k + 1) − mean R(k)), its p-value from a stationary bootstrap
+        - Turnover(q, t) = 1/2 × Σ_i |w(i, t) − w̃(i, t − 1)|, with w̃ the previous weights drifted by the returns
+
+        The ratios are calculated daily from the closing price where they can be (daily values) and otherwise per
+        statement period. Statement figures apply from the end of each fiscal period, or with point-in-time data
+        from the day they were filed, and the ratio at the end of a period sorts the returns of the periods after
+        it, so no return uses figures that were not known yet. The returns use the dividend and split adjusted
+        close, the market caps the traded close at the end of the previous period. A ticker without a ratio is
+        left out of that sort, and one without a return out of that period.
+
+        For more information, see the following sources:
+
+        - Fama, E.F. and French, K.R. (1992). "The Cross-Section of Expected Stock Returns." Journal of Finance,
+          47(2), 427-465, for the sorts.
+        - Fama, E.F. and French, K.R. (1993). "Common Risk Factors in the Returns on Stocks and Bonds." Journal
+          of Financial Economics, 33(1), 3-56, for the value weights and the long-short spread.
+        - Jegadeesh, N. and Titman, S. (1993). "Returns to Buying Winners and Selling Losers: Implications for
+          Stock Market Efficiency." Journal of Finance, 48(1), 65-91, for the holding periods.
+        - Newey, W.K. and West, K.D. (1987). "A Simple, Positive Semi-Definite, Heteroskedasticity and
+          Autocorrelation Consistent Covariance Matrix." Econometrica, 55(3), 703-708.
+        - Patton, A.J. and Timmermann, A. (2010). "Monotonicity in Asset Returns: New Tests with Applications to
+          the Term Structure, the CAPM, and Portfolio Sorts." Journal of Financial Economics, 98(3), 605-625.
+        - DeMiguel, V., Garlappi, L. and Uppal, R. (2009). "Optimal Versus Naive Diversification: How Inefficient
+          is the 1/N Portfolio Strategy?" Review of Financial Studies, 22(5), 1915-1953, for the turnover.
+
+        Referenced against:
+        - statsmodels, OLS with HAC covariance: https://www.statsmodels.org/stable/generated/statsmodels.stats.sandwich_covariance.cov_hac.html
+
+        Shares similar logic:
+        - alphalens, quantize_factor: https://github.com/stefan-jansen/alphalens-reloaded/blob/v0.4.4/src/alphalens/utils.py#L91
+        - alphalens, mean_return_by_quantile: https://github.com/stefan-jansen/alphalens-reloaded/blob/v0.4.4/src/alphalens/performance.py#L461
+        - alphalens, quantile_turnover: https://github.com/stefan-jansen/alphalens-reloaded/blob/v0.4.4/src/alphalens/performance.py#L575
+        - arch, StationaryBootstrap: https://bashtage.github.io/arch/bootstrap/generated/arch.bootstrap.StationaryBootstrap.html
+
+        Args:
+            metric (str, optional): The ratio method to sort on, e.g. "get_price_to_book_ratio". Defaults to
+                "get_price_to_earnings_ratio".
+            period (str, optional): The frequency of the returns and of the sorts. Options are: "weekly" (weekly
+                returns), "monthly" (monthly returns), "quarterly" (quarterly returns), "yearly" (yearly returns).
+                Defaults to "monthly".
+            quantiles (int | None, optional): The number of quantile portfolios, at most the number of tickers.
+                Defaults to None, which uses 5 or the number of tickers when there are fewer.
+            weighting (str, optional): How the tickers within a quantile are weighted. Options are: "equal"
+                (equally, rebalanced every period), "value" (by market cap at the end of the previous period).
+                Defaults to "equal".
+            holding_period (int, optional): The number of periods a sort is held before the next, e.g. 12 with
+                monthly returns for yearly rebalancing. Defaults to 1.
+            detail (str | None, optional): Returns another part instead of the returns per period. Options are:
+                "statistics" (the mean return, Newey-West t-statistic, p-value, Sharpe ratio and mean turnover of
+                each quantile and the spread), "monotonicity" (the monotonic relation tests and the Spearman rank
+                correlation of the quantiles' mean returns), "turnover" (the turnover per period and quantile),
+                "weights" (the weight per period, quantile and ticker). Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None,
+                which uses the Toolkit's rounding.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+            **kwargs: Parameters passed to the ratio, e.g. trailing=4 or diluted=False.
+
+        Returns:
+            pd.DataFrame: The return of "Quantile 1" (the lowest values of the ratio) to "Quantile n" and the "Top
+            Minus Bottom" spread per period, or with detail that part.
+
+        Notes:
+            - The cross-section is the tickers of the Toolkit, so quantiles of a handful of tickers hold one or two
+              companies each; twenty or more tickers give portfolios that say more about the ratio than about
+              single companies.
+            - A period in which fewer tickers have a ratio than there are quantiles has no portfolios, and equal
+              values share a quantile, which can leave another quantile empty in that period.
+            - The breakpoints come from the Toolkit's tickers, where Fama and French use those of the NYSE.
+            - The Sharpe ratio of the quantiles is that of their returns, not of their returns over the risk-free
+              rate; the spread is an excess return by construction.
+            - get_factor_analysis gives the information coefficient and the forward returns of every period over
+              several horizons; these are the returns of one portfolio per quantile held from one rebalancing to
+              the next, as in a backtest.
+
+        Also known as: portfolio sorts, quantile portfolios, characteristic-sorted portfolios, long-short spread,
+        factor mimicking portfolio
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["AAPL", "MSFT", "GOOGL", "AMZN", "META", "NVDA", "JPM", "JNJ",
+             "XOM", "PG", "KO", "WMT", "V", "UNH", "HD", "CVX"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2016-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.ratios.get_factor_portfolios(
+            "get_price_to_book_ratio",
+            quantiles=4,
+            detail="statistics",
+            show_columns=["Annualized Mean Return", "t-Statistic", "P-Value", "Sharpe Ratio", "Mean Turnover"],
+        )
+        ```
+
+        Which returns:
+
+        |                  |   Annualized Mean Return |   t-Statistic |   P-Value |   Sharpe Ratio |   Mean Turnover |
+        |:-----------------|-------------------------:|--------------:|----------:|---------------:|----------------:|
+        | Quantile 1       |                   0.1856 |        3.6939 |    0.0002 |         0.9679 |          0.0635 |
+        | Quantile 2       |                   0.1898 |        4.566  |    0      |         1.2321 |          0.1222 |
+        | Quantile 3       |                   0.1967 |        5.0153 |    0      |         1.1672 |          0.1507 |
+        | Quantile 4       |                   0.2886 |        4.1601 |    0      |         1.2925 |          0.0793 |
+        | Top Minus Bottom |                   0.1031 |        1.3506 |    0.1768 |         0.4708 |        nan      |
+        """
+        names = factor_model.select_metrics(metric, FACTOR_COLLECTIONS)
+        if len(names) != 1:
+            raise InvalidArgumentError(
+                "get_factor_portfolios sorts on one ratio at a time; name a single ratio method instead of "
+                f"{metric}."
+            )
+        validate_period(period)
+        check_option("weighting", weighting, factor_portfolio_model.WEIGHTINGS)
+        check_option("detail", detail, FACTOR_PORTFOLIO_DETAILS)
+
+        factors = factor_model.get_daily_factors(
+            self,
+            names,
+            kwargs,
+            {"show_daily": True},
+            self._tickers,
+            None,
+            self._period_end_dates,
+        )
+        if not factors:
+            raise ValueError(f"{metric} returned no data to sort the tickers on.")
+        factor = next(iter(factors.values())).loc[self._start_date : self._end_date]
+
+        prices = self._daily_historical_data["Adj Close"]
+        daily_returns = self._daily_historical_data.get("Return")
+        if daily_returns is not None:
+            prices = factor_model.mask_non_trading_days(prices, daily_returns)
+        prices = factor_model.sample_by_period(
+            prices.loc[:, prices.columns.isin(factor.columns)], period
+        )
+        # The return of each calendar period, NaN for a ticker without a close in it or in the period before.
+        returns = prices / prices.shift(1) - 1
+        characteristic = factor_model.sample_by_period(
+            factor[prices.columns], period
+        ).reindex(prices.index)
+
+        tickers_with_values = int(characteristic.notna().any().sum())
+        if tickers_with_values < 2:  # noqa: PLR2004
+            raise ValueError(
+                f"{metric} has a value for {tickers_with_values} ticker(s); sorting needs at least two tickers."
+            )
+        quantiles = min(5, tickers_with_values) if quantiles is None else quantiles
+        if not 2 <= quantiles <= tickers_with_values:  # noqa: PLR2004
+            raise InvalidArgumentError(
+                f"quantiles must lie between 2 and the {tickers_with_values} tickers with a value of {metric}."
+            )
+
+        market_cap = None
+        if weighting == "value":
+            market_cap = self.get_market_cap(show_daily=True)
+            market_cap = factor_model.sample_by_period(
+                market_cap.loc[:, market_cap.columns.isin(prices.columns)], period
+            ).reindex(index=prices.index, columns=prices.columns)
+
+        portfolio_returns = factor_portfolio_model.get_quantile_portfolios(
+            characteristic, returns, quantiles, market_cap, holding_period
+        )
+        labels = {
+            float(number): f"Quantile {number}" for number in range(1, quantiles + 1)
+        }
+
+        if detail is None:
+            result = portfolio_returns.dropna(how="all")
+        elif detail == "monotonicity":
+            result = factor_portfolio_model.get_monotonicity_test(portfolio_returns)
+        else:
+            weights = factor_portfolio_model.get_sorted_portfolio_weights(
+                factor_portfolio_model.assign_breakpoint_portfolios(
+                    characteristic,
+                    [number / quantiles for number in range(1, quantiles)],
+                ),
+                returns,
+                market_cap,
+                holding_period,
+            ).rename(columns=labels, level=0)
+            turnover = factor_portfolio_model.get_portfolio_turnover(weights, returns)
+            if detail == "weights":
+                result = weights.dropna(how="all")
+            elif detail == "turnover":
+                result = turnover.dropna(how="all")
+            else:
+                result = factor_portfolio_model.get_factor_statistics(
+                    portfolio_returns, PERIODS_PER_YEAR[period]
+                )
+                result["Mean Turnover"] = turnover.mean().reindex(result.index)
+
+        if detail in (None, "turnover", "weights"):
+            result.index.name = "Date"
 
         return apply_rounding(
             result, rounding if rounding is not None else self._rounding

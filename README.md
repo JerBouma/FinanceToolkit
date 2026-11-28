@@ -391,11 +391,11 @@ regressions.loc["NVDA"]
 
 For example, the coefficients for Nvidia are shown below.
 
-|                        |   Coefficient |   Std. Error |   t-Statistic |   P-Value |
-|:-----------------------|--------------:|-------------:|--------------:|----------:|
-| Intercept              |        0.049  |       0.0129 |        3.8028 |    0.0003 |
-| Real Yield             |      -22.8132 |       5.6358 |       -4.0479 |    0.0001 |
-| Inflation Expectations |       18.1329 |       9.1029 |        1.992  |    0.0493 |
+|                        |   Coefficient |   Standard Error |   t-Statistic |   P-Value |
+|:-----------------------|--------------:|-----------------:|--------------:|----------:|
+| Intercept              |        0.049  |           0.0129 |        3.8028 |    0.0003 |
+| Real Yield             |      -22.8132 |           5.6358 |       -4.0479 |    0.0001 |
+| Inflation Expectations |       18.1329 |           9.1029 |        1.992  |    0.0493 |
 
 And below each coefficient is shown with its 95% confidence interval. A rise of 0.1 percentage point in the real yield went with a monthly return about 2.3% lower for Nvidia, 3.4% for AMD and 1.9% for Intel, as a higher real yield discounts their distant earnings more heavily. Inflation expectations matter far less: only for Nvidia does their coefficient come close to significance.
 

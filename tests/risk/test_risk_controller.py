@@ -2073,3 +2073,92 @@ def test_a_benchmark_shorter_than_the_rolling_window_is_named(caplog):
 
     assert "the yearly returns of Benchmark (0)" in caplog.text
     assert "AAPL (" not in caplog.text
+
+
+def _intraday_risk():
+    """A Risk module on five-minute bars of AAPL and the Benchmark over two weeks, with a
+    jump in AAPL on the third day and a bar AAPL did not trade (a flat bar without a Return).
+    """
+    from financetoolkit.risk.risk_controller import Risk  # noqa: PLC0415
+
+    rng = np.random.default_rng(1)
+    start_times = pd.bdate_range("2025-12-01", "2025-12-12") + pd.Timedelta(
+        hours=9, minutes=30
+    )
+    index = pd.PeriodIndex(
+        np.concatenate(
+            [pd.date_range(start, periods=78, freq="5min") for start in start_times]
+        ),
+        freq="min",
+    )
+    fields: dict[str, dict[str, np.ndarray]] = {"Open": {}, "Close": {}}
+    for ticker in ("AAPL", "Benchmark"):
+        log_returns = rng.normal(0, 0.001, len(index))
+        if ticker == "AAPL":
+            log_returns[2 * 78 + 40] += 0.02
+        close = 100 * np.exp(np.cumsum(log_returns))
+        fields["Open"][ticker] = np.r_[100, close[:-1]]
+        fields["Close"][ticker] = close
+    frames = {
+        field: pd.DataFrame(values, index=index) for field, values in fields.items()
+    }
+    frames["Return"] = frames["Close"].pct_change()
+    frames["Return"].iloc[100, 0] = np.nan
+    return Risk(
+        tickers=["AAPL"],
+        historical_data={
+            "intraday": pd.concat(frames, axis=1),
+            "daily": pd.DataFrame(),
+        },
+        rounding=6,
+        start_date="2025-12-01",
+        end_date="2025-12-31",
+    )
+
+
+def test_get_realized_variance(recorder):
+    risk = _intraday_risk()
+    realized_variance = risk.get_realized_variance()
+
+    recorder.capture(realized_variance)
+    # The untraded bar is left out of AAPL's second day only.
+    assert realized_variance["Observations"]["AAPL"].tolist() == [78, 77] + [78] * 8
+    assert "Tripower Quarticity" not in realized_variance.columns.get_level_values(0)
+
+
+def test_get_jump_test(recorder):
+    risk = _intraday_risk()
+    jump_test = risk.get_jump_test()
+
+    recorder.capture(jump_test)
+    recorder.capture(risk.get_jump_test(alpha=0.001))
+    # The jump on the third day is found, and its jump variation is significant.
+    assert jump_test["p-Value"]["AAPL"].iloc[2] < 0.001  # noqa: PLR2004
+    assert jump_test["Significant Jump Variation"]["AAPL"].iloc[2] > 0
+
+
+def test_realized_measures_need_intraday_data(risk_module):
+    with pytest.raises(InvalidArgumentError, match="intraday_period"):
+        risk_module.get_realized_variance()
+
+
+def test_get_generalized_pareto_fit(recorder, risk_module):
+    recorder.capture(risk_module.get_generalized_pareto_fit())
+    recorder.capture(
+        risk_module.get_generalized_pareto_fit(period="weekly", threshold=0.03)
+    )
+
+
+def test_get_generalized_pareto_fit_invalid_threshold(risk_module):
+    with pytest.raises(InvalidArgumentError, match="threshold_percentile"):
+        risk_module.get_generalized_pareto_fit(threshold_percentile=95)
+    with pytest.raises(InvalidArgumentError, match="positive decimal"):
+        risk_module.get_generalized_pareto_fit(threshold=-0.03)
+
+
+def test_get_mean_excess_function(recorder, risk_module):
+    recorder.capture(risk_module.get_mean_excess_function())
+    recorder.capture(risk_module.get_mean_excess_function(quantiles=[0.9, 0.95]))
+
+    with pytest.raises(InvalidArgumentError, match="quantiles"):
+        risk_module.get_mean_excess_function(quantiles=[90])

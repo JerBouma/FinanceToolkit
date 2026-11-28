@@ -17,6 +17,7 @@ from financetoolkit.utilities.error_model import (
     check_period,
     validate_window,
 )
+from financetoolkit.utilities.transform_model import apply_transform
 
 logger = logger_model.get_logger()
 
@@ -336,6 +337,7 @@ def finalize_dataset(
     dropna: bool = False,
     countries: list[str] | str | None = None,
     indicator_name: str = "",
+    transform: str | list[str] | None = None,
 ) -> pd.Series | pd.DataFrame:
     """
     Shared post-processing for every Finance Toolkit metric, used across the Ratios,
@@ -391,6 +393,10 @@ def finalize_dataset(
             country to include in the results. Defaults to None.
         indicator_name (str, optional): The human-readable name of the indicator, used in
             the missing-country warning message. Defaults to "".
+        transform (str | list[str] | None, optional): Time series steps applied in order after
+            the rolling and trailing windows and before growth, on the full history so the
+            first periods shown have complete windows, such as "sma:12" or ["log", "diff"]
+            (see transform_model.apply_transform). Defaults to None.
 
     Returns:
         pd.Series | pd.DataFrame: The processed metric values; an empty Series (a metric
@@ -453,6 +459,11 @@ def finalize_dataset(
 
     if trailing:
         dataset = dataset.rolling(window=trailing).sum()
+
+    if transform:
+        dataset = apply_transform(
+            dataset, transform, axis="columns" if axis == "columns" else "rows"
+        )
 
     levels = dataset
 

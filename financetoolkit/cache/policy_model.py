@@ -333,6 +333,9 @@ POLICIES: dict[str, CachePolicy] = {
     # A published day of short sale volume does not change, but FINRA publishes the file of
     # a day in the evening, so once a day has passed the last week is asked for again.
     f"{FINRA}.short_volume": CachePolicy(ttl_seconds=DAY, revision_days=7),
+    # FINRA publishes a settlement date of short interest about a week and a half after it and
+    # revises the cycle before it, so once a day has passed the last month is asked for again.
+    f"{FINRA}.short_interest": CachePolicy(ttl_seconds=DAY, revision_days=31),
     # The National Mortgage Database statistics are published once a quarter, about three
     # months after the quarter ends, as one file with the full history.
     f"{FEDERAL_HOUSING_FINANCE_AGENCY}.outstanding_mortgages": CachePolicy(

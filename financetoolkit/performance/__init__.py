@@ -1,6 +1,6 @@
 """
 The model functions of the Performance module, importable from the package itself, e.g.
-`from financetoolkit.performance import download_factor_file`. A model module is imported when one of its
+`from financetoolkit.performance import assign_breakpoint_portfolios`. A model module is imported when one of its
 functions is first used.
 """
 
@@ -12,6 +12,16 @@ from typing import TYPE_CHECKING
 from financetoolkit.helpers import import_functions_when_used
 
 _MODULES = {
+    "financetoolkit.performance.factor_portfolio_model": [
+        "assign_breakpoint_portfolios",
+        "get_double_sort_portfolios",
+        "get_factor_statistics",
+        "get_monotonicity_test",
+        "get_portfolio_turnover",
+        "get_quantile_portfolios",
+        "get_sorted_portfolio_returns",
+        "get_sorted_portfolio_weights",
+    ],
     "financetoolkit.performance.performance_model": [
         "download_factor_file",
         "factor_url",
@@ -128,6 +138,7 @@ _MODULES = {
 }
 
 __all__ = [
+    "assign_breakpoint_portfolios",
     "download_factor_file",
     "factor_url",
     "get_adjusted_sharpe_ratio",
@@ -163,10 +174,12 @@ __all__ = [
     "get_covariance_matrix",
     "get_d_ratio",
     "get_deflated_sharpe_ratio",
+    "get_double_sort_portfolios",
     "get_downside_capture_ratio",
     "get_excess_return",
     "get_factor_asset_correlations",
     "get_factor_regression",
+    "get_factor_statistics",
     "get_fama_and_french_model_multi",
     "get_fama_and_french_model_single",
     "get_fama_decomposition",
@@ -188,15 +201,18 @@ __all__ = [
     "get_m2_ratio",
     "get_minimum_track_record_length",
     "get_modified_jensens_alpha",
+    "get_monotonicity_test",
     "get_morningstar_risk_adjusted_return",
     "get_omega_excess_return",
     "get_omega_ratio",
     "get_outperformance_probability",
     "get_pain_ratio",
+    "get_portfolio_turnover",
     "get_probabilistic_momentum",
     "get_probabilistic_sharpe_ratio",
     "get_probability_of_backtest_overfitting",
     "get_prospect_ratio",
+    "get_quantile_portfolios",
     "get_r_squared",
     "get_rachev_ratio",
     "get_regression_epsilon",
@@ -216,6 +232,8 @@ __all__ = [
     "get_sharpe_ratio_difference_test",
     "get_sharpe_ratio_standard_error",
     "get_smoothing_index",
+    "get_sorted_portfolio_returns",
+    "get_sorted_portfolio_weights",
     "get_sortino_ratio",
     "get_stability_of_returns",
     "get_standard_deviation",
@@ -242,6 +260,16 @@ __all__ = [
 ]
 
 if TYPE_CHECKING:
+    from financetoolkit.performance.factor_portfolio_model import (
+        assign_breakpoint_portfolios,
+        get_double_sort_portfolios,
+        get_factor_statistics,
+        get_monotonicity_test,
+        get_portfolio_turnover,
+        get_quantile_portfolios,
+        get_sorted_portfolio_returns,
+        get_sorted_portfolio_weights,
+    )
     from financetoolkit.performance.performance_model import (
         download_factor_file,
         factor_url,

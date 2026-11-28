@@ -2258,6 +2258,17 @@ def test_get_event_filter(recorder, technical_module):
     recorder.capture(technical_module.get_event_filter(method="z_score", threshold=2))
 
 
+def test_get_event_filter_signals_only(technical_module):
+    events = technical_module.get_event_filter(method="z_score", threshold=2)
+    signals = technical_module.get_event_filter(
+        method="z_score", threshold=2, signals_only=True
+    )
+
+    # The dates on which a ticker has an event, and only those.
+    pd.testing.assert_frame_equal(signals, events[events.abs().gt(0).any(axis=1)])
+    assert 0 < len(signals) < len(events)
+
+
 def test_get_triple_barrier_labels(recorder, technical_module):
     recorder.capture(technical_module.get_triple_barrier_labels())
     recorder.capture(
@@ -2541,3 +2552,14 @@ def test_the_factor_analysis_of_a_short_history_reports_its_windows_once(caplog)
     # One message for the windows of every indicator, counted in the daily periods they use.
     assert caplog.text.count("get_factor_analysis over 2 daily periods of data") == 1
     assert "A window of" not in caplog.text
+
+
+def test_get_calendar_effects(recorder, technical_module):
+    recorder.capture(technical_module.get_calendar_effects())
+    recorder.capture(technical_module.get_calendar_effects(effect="turn_of_month"))
+    recorder.capture(
+        technical_module.get_calendar_effects(
+            effect="turn_of_month", days_before=1, days_after=9, lags=0
+        )
+    )
+    recorder.capture(technical_module.get_calendar_effects(effect="pre_holiday"))

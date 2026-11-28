@@ -1,8 +1,9 @@
-"""FINRA Short Sale Volume Model"""
+"""FINRA Short Sale Volume and Short Interest Model"""
 
 __docformat__ = "google"
 
 import io
+import json
 
 import numpy as np
 import pandas as pd
@@ -29,6 +30,19 @@ VOLUME_COLUMNS = {
     "TotalVolume": "Total Volume",
 }
 
+# FINRA's Query API serves the short interest of every exchange-listed and over-the-counter
+# security, reported by its members twice a month under Rule 4560, from the end of 2017. It is
+# a public dataset, answered without credentials up to 5,000 records per request.
+SHORT_INTEREST_URL = (
+    "https://api.finra.org/data/group/otcMarket/name/consolidatedShortInterest"
+)
+SHORT_INTEREST_DATASET = "short_interest"
+SHORT_INTEREST_PAGE = 5000
+SHORT_INTEREST_FIELDS = {
+    "currentShortPositionQuantity": "Short Interest",
+    "averageDailyVolumeQuantity": "Average Daily Volume",
+}
+
 # A day without a file (a holiday, or today before FINRA publishes in the evening) is
 # answered with 403 by the CDN rather than 404.
 NOT_PUBLISHED = (403, 404)
@@ -38,15 +52,18 @@ NOT_PUBLISHED = (403, 404)
 MAX_DOWNLOADS = 8
 
 
-def to_finra_symbol(ticker: str) -> str | None:
+def to_finra_symbol(ticker: str, separator: str = "/") -> str | None:
     """
     Converts a ticker to the symbol FINRA reports it under: share classes are written with
-    a slash (BRK/B rather than BRK-B). FINRA only covers securities listed in the United
-    States, so a ticker with an exchange suffix (ASML.AS), an index (^GSPC) or a currency
-    pair (EURUSD=X) has no symbol.
+    a slash in the short sale volume files (BRK/B rather than BRK-B) and without a separator
+    in the short interest (BRKB). FINRA only covers securities listed in the United States,
+    so a ticker with an exchange suffix (ASML.AS), an index (^GSPC) or a currency pair
+    (EURUSD=X) has no symbol.
 
     Args:
         ticker (str): The ticker as the Finance Toolkit writes it.
+        separator (str, optional): What separates the share class. Defaults to "/", as in
+            the short sale volume files.
 
     Returns:
         str | None: The FINRA symbol, or None when FINRA does not cover the ticker.
@@ -54,7 +71,7 @@ def to_finra_symbol(ticker: str) -> str | None:
     if any(character in ticker for character in ".^="):
         return None
 
-    return ticker.upper().replace("-", "/")
+    return ticker.upper().replace("-", separator)
 
 
 def read_daily_file(text: str) -> pd.DataFrame:
@@ -309,3 +326,295 @@ def get_short_volume_ratio_statistics(
     )
 
     return statistics
+
+
+def read_short_interest(records: list[dict]) -> dict[str, pd.DataFrame]:
+    """
+    Reads the short interest records of FINRA's Query API.
+
+    Each record holds one symbol on one settlement date with, among others, the
+    symbolCode, settlementDate, currentShortPositionQuantity (the shares sold short and not
+    yet bought back at the settlement date) and averageDailyVolumeQuantity (the average
+    daily volume over the reporting cycle, without trades that are not reported to the
+    tape).
+
+    Args:
+        records (list[dict]): The records as the API returns them in JSON.
+
+    Returns:
+        dict[str, pd.DataFrame]: Per symbol the Short Interest and Average Daily Volume
+        (columns) per settlement date (index).
+
+    Raises:
+        ValueError: When a field is missing, which means FINRA changed the format.
+    """
+    if not records:
+        return {}
+
+    data = pd.DataFrame.from_records(records)
+    missing = {"symbolCode", "settlementDate", *SHORT_INTEREST_FIELDS} - set(
+        data.columns
+    )
+    if missing:
+        raise ValueError(
+            f"The FINRA short interest has no {', '.join(sorted(missing))} field."
+        )
+
+    data["settlementDate"] = pd.PeriodIndex(data["settlementDate"], freq="D")
+    values = data[list(SHORT_INTEREST_FIELDS)].apply(pd.to_numeric, errors="coerce")
+    values.index = pd.MultiIndex.from_frame(data[["symbolCode", "settlementDate"]])
+    values = values.rename(columns=SHORT_INTEREST_FIELDS).astype(float)
+    values = values[~values.index.duplicated(keep="last")]
+
+    per_symbol = {}
+    for symbol, rows in values.groupby(level=0):
+        frame = rows.droplevel(0).sort_index()
+        frame.index.name = "Date"
+        per_symbol[str(symbol)] = frame
+
+    return per_symbol
+
+
+def _download_short_interest(
+    symbols: list[str], start: pd.Timestamp, end: pd.Timestamp
+) -> dict[str, pd.DataFrame] | None:
+    """
+    Requests the short interest of symbols between two settlement dates from FINRA's Query
+    API, page by page.
+
+    Args:
+        symbols (list[str]): The FINRA symbols.
+        start (pd.Timestamp): The first settlement date.
+        end (pd.Timestamp): The last settlement date.
+
+    Returns:
+        dict[str, pd.DataFrame] | None: Per symbol found the Short Interest and Average Daily
+        Volume per settlement date, or None when FINRA could not be reached.
+    """
+    records: list[dict] = []
+    offset = 0
+
+    while True:
+        payload = {
+            "limit": SHORT_INTEREST_PAGE,
+            "offset": offset,
+            "fields": ["symbolCode", "settlementDate", *SHORT_INTEREST_FIELDS],
+            "domainFilters": [{"fieldName": "symbolCode", "values": symbols}],
+            "dateRangeFilters": [
+                {
+                    "fieldName": "settlementDate",
+                    "startDate": start.strftime("%Y-%m-%d"),
+                    "endDate": end.strftime("%Y-%m-%d"),
+                }
+            ],
+        }
+        try:
+            response = get_request(
+                SHORT_INTEREST_URL,
+                timeout=60,
+                extra_headers={
+                    "Content-Type": "application/json",
+                    "Accept": "application/json",
+                },
+                data=json.dumps(payload),
+            )
+        except requests.exceptions.RequestException as error:
+            logger.warning("Could not retrieve the FINRA short interest: %s", error)
+            return None
+
+        # An empty selection is answered with an empty body rather than an empty list.
+        page = response.json() if response.text.strip() else []
+        records.extend(page)
+        offset += SHORT_INTEREST_PAGE
+        total = int(response.headers.get("record-total", len(records)))
+
+        if len(page) < SHORT_INTEREST_PAGE or offset >= total:
+            break
+
+    return read_short_interest(records)
+
+
+def collect_short_interest(
+    symbols: list[str], start_date: str, end_date: str
+) -> dict[str, pd.DataFrame]:
+    """
+    Retrieves the short interest of symbols between two dates through the cache.
+
+    The cache holds each symbol's settlement dates, so a rerun only requests the range that
+    was never retrieved for one of the symbols (and, once a day has passed, the last month
+    again, as FINRA publishes a settlement date about a week and a half later and revises
+    the cycle before it). All symbols are requested at once.
+
+    Args:
+        symbols (list[str]): The FINRA symbols (share classes without a separator, such as
+            BRKB).
+        start_date (str): The start date (YYYY-MM-DD).
+        end_date (str): The end date (YYYY-MM-DD).
+
+    Returns:
+        dict[str, pd.DataFrame]: Per symbol, the Short Interest and Average Daily Volume
+        (columns) per settlement date (index); empty for a symbol FINRA has no data for.
+    """
+    start, end = pd.Timestamp(start_date), pd.Timestamp(end_date)
+    cache = get_active_cache()
+    cached: dict[str, pd.DataFrame | None] = dict.fromkeys(symbols)
+    spans: dict[str, tuple[pd.Timestamp, pd.Timestamp] | None] = dict.fromkeys(
+        symbols, (start, end)
+    )
+
+    if cache is not None:
+        plan = cache.plan(
+            source=policy_model.FINRA,
+            dataset=SHORT_INTEREST_DATASET,
+            entities=symbols,
+            start=start_date,
+            end=end_date,
+        )
+        for symbol in symbols:
+            cached[symbol] = plan.cached_frame(symbol)
+            span = plan.get_fetch_span(symbol)
+            spans[symbol] = (
+                (pd.Timestamp(span[0]), pd.Timestamp(span[1])) if span else None
+            )
+
+    requested = {symbol: span for symbol, span in spans.items() if span is not None}
+    fetched: dict[str, pd.DataFrame] | None = {}
+
+    if requested:
+        fetched = _download_short_interest(
+            list(requested),
+            min(span[0] for span in requested.values()),
+            max(span[1] for span in requested.values()),
+        )
+
+    result = {}
+
+    for symbol in symbols:
+        span = spans[symbol]
+        data = (fetched or {}).get(symbol, pd.DataFrame())
+
+        # A request that failed is not recorded as answered, so it is asked again next time.
+        if span is not None and cache is not None and fetched is not None:
+            cache.store(
+                source=policy_model.FINRA,
+                dataset=SHORT_INTEREST_DATASET,
+                entity=symbol,
+                data=data,
+                start=span[0].strftime("%Y-%m-%d"),
+                end=span[1].strftime("%Y-%m-%d"),
+            )
+
+        frames = [
+            frame
+            for frame in (cached[symbol], data)
+            if frame is not None and not frame.empty
+        ]
+        combined = pd.concat(frames) if frames else pd.DataFrame()
+
+        if not combined.empty:
+            combined = combined[~combined.index.duplicated(keep="last")].sort_index()
+            combined = combined.loc[
+                (combined.index >= pd.Period(start, freq="D"))
+                & (combined.index <= pd.Period(end, freq="D"))
+            ]
+
+        result[symbol] = combined
+
+    return result
+
+
+def get_days_to_cover(
+    short_interest: pd.Series | float, average_daily_volume: pd.Series | float
+) -> pd.Series | float:
+    """
+    Calculate the days to cover: how many days of average trading volume the open short
+    positions amount to, the time short sellers would need to buy back their shares if
+    they made up all of the volume. A high value means a crowded short that can be slow
+    and costly to unwind, which makes a short squeeze more likely.
+
+    The formula is as follows:
+
+    - Days to Cover = Short Interest / Average Daily Volume
+
+    The short interest is the number of shares sold short and not yet bought back at a
+    settlement date, the average daily volume that of the reporting cycle up to it (FINRA
+    averages the volume of the business days since the previous settlement date). Also
+    known as the short interest ratio.
+
+    For more information, see the following papers:
+
+    - Hong, H., Li, W., Ni, S. X., Scheinkman, J. A., and Yan, P. (2015). "Days to Cover and
+      Stock Returns." NBER Working Paper 21166.
+    - Dechow, P. M., Hutton, A. P., Meulbroek, L., and Sloan, R. G. (2001). "Short-Sellers,
+      Fundamental Analysis, and Stock Returns." Journal of Financial Economics, 61(1), 77-106.
+
+    Args:
+        short_interest (pd.Series | float): The shares sold short.
+        average_daily_volume (pd.Series | float): The average daily volume in shares.
+
+    Returns:
+        pd.Series | float: The days to cover, NaN where the volume is zero or missing.
+
+    As an example:
+
+    ```python
+    from financetoolkit import finra_model
+
+    finra_model.get_days_to_cover(143_471_087, 51_185_713)
+    ```
+
+    Which returns:
+
+    ```
+    2.8029518119636236
+    ```
+    """
+    if isinstance(average_daily_volume, pd.Series):
+        return short_interest / average_daily_volume.replace(0, np.nan)
+
+    return short_interest / average_daily_volume if average_daily_volume else np.nan
+
+
+def get_short_interest_to_float(
+    short_interest: pd.Series | float, float_shares: pd.Series | float
+) -> pd.Series | float:
+    """
+    Calculate the short interest as a share of the float: the part of the shares available
+    for public trading that is sold short, the usual way to compare short interest across
+    companies of different size. Above about 0.2 a stock counts as heavily shorted.
+
+    The formula is as follows:
+
+    - Short Interest to Float = Short Interest / Float Shares
+
+    For more information, see the following paper:
+
+    - Asquith, P., Pathak, P. A., and Ritter, J. R. (2005). "Short Interest, Institutional
+      Ownership, and Stock Returns." Journal of Financial Economics, 78(2), 243-276.
+
+    Args:
+        short_interest (pd.Series | float): The shares sold short.
+        float_shares (pd.Series | float): The shares available for public trading.
+
+    Returns:
+        pd.Series | float: The short interest as a share of the float (decimal), NaN where
+        the float is zero or missing. It can exceed 1 when shares are lent more than once.
+
+    As an example:
+
+    ```python
+    from financetoolkit import finra_model
+
+    finra_model.get_short_interest_to_float(41_054_446, 402_000_000)
+    ```
+
+    Which returns:
+
+    ```
+    0.10212548756218906
+    ```
+    """
+    if isinstance(float_shares, pd.Series):
+        return short_interest / float_shares.replace(0, np.nan)
+
+    return short_interest / float_shares if float_shares else np.nan

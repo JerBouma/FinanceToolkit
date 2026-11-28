@@ -7,6 +7,7 @@ import pandas as pd
 
 from financetoolkit.options.greeks import greeks_model
 from financetoolkit.utilities import logger_model
+from financetoolkit.utilities.error_model import InvalidArgumentError
 
 logger = logger_model.get_logger()
 
@@ -15,6 +16,9 @@ CONTRACT_SIZE = 100
 
 # The delta that defines the wings of the volatility skew.
 SKEW_DELTA = 0.25
+
+# The delta of the far wings, further in the tails than the 25-delta options.
+TAIL_DELTA = 0.10
 
 # The expiries used have at least a week to expiration; the Cboe uses the Friday expiries
 # between 23 and 37 days away for the VIX.
@@ -329,6 +333,105 @@ def get_at_the_money_volatility(
     return float(np.mean(values)) if values else np.nan
 
 
+def get_delta_volatility(
+    chain: pd.DataFrame,
+    stock_price: float,
+    time_to_expiration: float,
+    risk_free_rate: float,
+    dividend_yield: float = 0.0,
+    delta: float = SKEW_DELTA,
+    put_option: bool = False,
+) -> float:
+    """
+    Calculate the implied volatility at a given delta: the volatility of the call or put of
+    one expiry whose Black-Scholes delta, in absolute terms, equals `delta`, the way the
+    volatility smile is quoted in the currency market and compared across underlyings.
+
+    The formula for the delta of each option is as follows:
+
+    - d1 = (ln(S / K) + (r - q + σ² / 2) T) / (σ √T)
+    - Call Delta = e^(-qT) N(d1)
+    - Put Delta = -e^(-qT) N(-d1)
+
+    with S the stock price, K the strike, r the continuously compounded risk free rate, q
+    the continuously compounded dividend yield, T the time to expiration in years and σ the
+    option's own implied volatility (the spot delta, with the dividend discount, not the
+    forward delta). The implied volatility at exactly `delta` is interpolated linearly in
+    delta between the two quoted strikes around it, not read from a fitted smile.
+
+    For more information, see the following book:
+
+    - Clark, I. J. (2011). "Foreign Exchange Option Pricing: A Practitioner's Guide." Wiley,
+      chapter 3 on delta conventions and the volatility smile quoted by delta.
+
+    Args:
+        chain (pd.DataFrame): The calls or the puts of one expiry, indexed by strike, with an
+            Implied Volatility column (decimals).
+        stock_price (float): The price of the underlying.
+        time_to_expiration (float): The time to expiration in years.
+        risk_free_rate (float): The continuously compounded risk free rate.
+        dividend_yield (float, optional): The continuously compounded dividend yield.
+            Defaults to 0.
+        delta (float, optional): The absolute delta, between 0 and 1. Defaults to 0.25.
+        put_option (bool, optional): Whether the chain holds puts. Defaults to False.
+
+    Returns:
+        float: The implied volatility at the delta (decimal), NaN when fewer than two strikes
+        have an implied volatility or the quoted deltas do not reach `delta`.
+
+    Notes:
+    - Strikes quoted more than once are averaged first, and an implied volatility of zero
+      counts as missing.
+    - Linear interpolation in delta is exact when the quotes are dense around the delta;
+      between strikes far apart it differs from interpolating a fitted smile (such as
+      get_svi_implied_volatility) by the curvature of the smile between them.
+
+    As an example:
+
+    ```python
+    import numpy as np
+    import pandas as pd
+
+    from financetoolkit.options.market import market_metrics_model
+
+    strikes = np.arange(80.0, 121.0, 2.5)
+    puts = pd.DataFrame(
+        {"Implied Volatility": 0.2 + 0.004 * (100 - strikes)},
+        index=pd.Index(strikes, name="Strike Price"),
+    )
+
+    market_metrics_model.get_delta_volatility(
+        puts, 100, 30 / 365, 0.04, delta=0.25, put_option=True
+    )
+    ```
+
+    Which returns:
+
+    ```
+    0.21465437641945903
+    ```
+    """
+    volatility = _positive_volatility(chain)
+    if len(volatility) < 2:  # noqa: PLR2004
+        return np.nan
+    option_delta = np.abs(
+        greeks_model.get_delta(
+            stock_price=float(stock_price),
+            strike_price=volatility.index.to_numpy(dtype=float),
+            time_to_expiration=float(time_to_expiration),
+            risk_free_rate=float(risk_free_rate),
+            volatility=volatility.to_numpy(dtype=float),
+            dividend_yield=float(dividend_yield),
+            put_option=put_option,
+        )
+    )
+    order = np.argsort(option_delta)
+    option_delta, values = option_delta[order], volatility.to_numpy()[order]
+    if not option_delta.min() <= delta <= option_delta.max():
+        return np.nan
+    return float(np.interp(delta, option_delta, values))
+
+
 def get_volatility_skew(
     calls: pd.DataFrame,
     puts: pd.DataFrame,
@@ -336,66 +439,209 @@ def get_volatility_skew(
     time_to_expiration: float,
     risk_free_rate: float,
     dividend_yield: float = 0.0,
+    deltas: list[float] | None = None,
 ) -> pd.Series:
     """
     Calculate the volatility skew of one expiry: how much more the market pays for downside
-    than for upside protection, measured on the 25-delta options:
+    than for upside protection (the risk reversal) and how much both tails cost relative to
+    the centre (the butterfly), measured on the 25-delta and 10-delta options.
 
-    - 25-Delta Risk Reversal = IV(25-delta call) - IV(25-delta put): negative when puts are
-      dearer than calls, the usual case for equities as investors pay for crash protection.
-    - 25-Delta Butterfly = (IV(25-delta call) + IV(25-delta put)) / 2 - ATM IV: the
-      curvature of the smile, the price of tail risk on both sides.
+    The formula for each delta Δ (25 for 0.25) is as follows:
 
-    The deltas follow from each option's own implied volatility (Black-Scholes), and the
-    implied volatility at exactly 25 delta is interpolated.
+    - Δ-Delta Risk Reversal = IV(Δ-delta call) - IV(Δ-delta put)
+    - Δ-Delta Butterfly = (IV(Δ-delta call) + IV(Δ-delta put)) / 2 - ATM IV
+
+    The risk reversal is negative when puts are dearer than calls, the usual case for
+    equities as investors pay for crash protection; the butterfly is the curvature of the
+    smile, the price of tail risk on both sides (the "smile strangle" of the currency
+    market, not the broker-quoted market strangle). The 10-delta options lie further in the
+    tails, so their risk reversal and butterfly show the crash premium and the cost of
+    tail protection that the 25-delta options only partly reflect.
+
+    The volatilities at each delta come from get_delta_volatility: the Black-Scholes spot
+    delta of each option from its own implied volatility, with the continuously compounded
+    risk free rate and dividend yield, interpolated linearly in delta. The at-the-money
+    volatility is that of calls and puts interpolated at the stock price and averaged (see
+    get_at_the_money_volatility), not the delta-neutral straddle of the currency market.
+
+    For more information, see the following books:
+
+    - Gatheral, J. (2006). "The Volatility Surface: A Practitioner's Guide." Wiley.
+    - Clark, I. J. (2011). "Foreign Exchange Option Pricing: A Practitioner's Guide." Wiley.
 
     Args:
         calls (pd.DataFrame): The calls of one expiry, indexed by strike.
         puts (pd.DataFrame): The puts of the same expiry.
         stock_price (float): The price of the underlying.
         time_to_expiration (float): The time to expiration in years.
-        risk_free_rate (float): The risk free rate.
-        dividend_yield (float, optional): The dividend yield. Defaults to 0.
+        risk_free_rate (float): The continuously compounded risk free rate.
+        dividend_yield (float, optional): The continuously compounded dividend yield.
+            Defaults to 0.
+        deltas (list[float] | None, optional): The absolute deltas of the wings, each
+            between 0 and 0.5. Defaults to None, which uses 0.25 and 0.10.
 
     Returns:
-        pd.Series: The 25-Delta Put Volatility, At-the-Money Volatility, 25-Delta Call
-        Volatility, 25-Delta Risk Reversal and 25-Delta Butterfly.
+        pd.Series: Per delta the Put Volatility, then the At-the-Money Volatility, per delta
+        the Call Volatility, and per delta the Risk Reversal and Butterfly (decimals), such as
+        "25-Delta Put Volatility" and "10-Delta Butterfly". NaN for a delta the quoted
+        strikes do not reach.
+
+    As an example:
+
+    ```python
+    import numpy as np
+    import pandas as pd
+
+    from financetoolkit.options.market import market_metrics_model
+
+    strikes = np.arange(70.0, 131.0, 2.5)
+    smile = pd.DataFrame(
+        {"Implied Volatility": 0.2 + 0.003 * (100 - strikes) + 0.0001 * (strikes - 100) ** 2},
+        index=pd.Index(strikes, name="Strike Price"),
+    )
+
+    market_metrics_model.get_volatility_skew(smile, smile, 100, 30 / 365, 0.04).round(4)
+    ```
+
+    Which returns:
+
+    |                          |       0 |
+    |:-------------------------|--------:|
+    | 25-Delta Put Volatility  |  0.2123 |
+    | 10-Delta Put Volatility  |  0.2284 |
+    | At-the-Money Volatility  |  0.2    |
+    | 25-Delta Call Volatility |  0.1891 |
+    | 10-Delta Call Volatility |  0.1832 |
+    | 25-Delta Risk Reversal   | -0.0232 |
+    | 25-Delta Butterfly       |  0.0007 |
+    | 10-Delta Risk Reversal   | -0.0452 |
+    | 10-Delta Butterfly       |  0.0058 |
     """
-
-    def wing(chain: pd.DataFrame, put_option: bool) -> float:
-        volatility = _positive_volatility(chain)
-        if len(volatility) < 2:  # noqa: PLR2004
-            return np.nan
-        delta = np.abs(
-            greeks_model.get_delta(
-                stock_price=float(stock_price),
-                strike_price=volatility.index.to_numpy(dtype=float),
-                time_to_expiration=float(time_to_expiration),
-                risk_free_rate=float(risk_free_rate),
-                volatility=volatility.to_numpy(dtype=float),
-                dividend_yield=float(dividend_yield),
-                put_option=put_option,
+    deltas = [SKEW_DELTA, TAIL_DELTA] if deltas is None else list(deltas)
+    for delta in deltas:
+        if not 0 < delta < 0.5:  # noqa: PLR2004
+            raise InvalidArgumentError(
+                f"Each delta of the volatility skew lies between 0 and 0.5, not {delta}. "
+                "Pass for example deltas=[0.25, 0.10]."
             )
-        )
-        order = np.argsort(delta)
-        delta, values = delta[order], volatility.to_numpy()[order]
-        if not delta.min() <= SKEW_DELTA <= delta.max():
-            return np.nan
-        return float(np.interp(SKEW_DELTA, delta, values))
-
-    put_wing = wing(puts, put_option=True)
-    call_wing = wing(calls, put_option=False)
+    inputs = (stock_price, time_to_expiration, risk_free_rate, dividend_yield)
+    labels = [f"{delta * 100:g}-Delta" for delta in deltas]
+    put_wings = [get_delta_volatility(puts, *inputs, delta, True) for delta in deltas]
+    call_wings = [
+        get_delta_volatility(calls, *inputs, delta, False) for delta in deltas
+    ]
     at_the_money = get_at_the_money_volatility(calls, puts, stock_price)
 
-    return pd.Series(
+    skew = {
+        f"{label} Put Volatility": put_wing
+        for label, put_wing in zip(labels, put_wings, strict=True)
+    }
+    skew["At-the-Money Volatility"] = at_the_money
+    skew.update(
         {
-            "25-Delta Put Volatility": put_wing,
-            "At-the-Money Volatility": at_the_money,
-            "25-Delta Call Volatility": call_wing,
-            "25-Delta Risk Reversal": call_wing - put_wing,
-            "25-Delta Butterfly": (call_wing + put_wing) / 2 - at_the_money,
+            f"{label} Call Volatility": call_wing
+            for label, call_wing in zip(labels, call_wings, strict=True)
         }
     )
+    for label, put_wing, call_wing in zip(labels, put_wings, call_wings, strict=True):
+        skew[f"{label} Risk Reversal"] = call_wing - put_wing
+        skew[f"{label} Butterfly"] = (call_wing + put_wing) / 2 - at_the_money
+
+    return pd.Series(skew)
+
+
+def get_implied_correlation(
+    index_volatility: float | pd.Series,
+    member_volatilities: pd.Series | pd.DataFrame,
+    weights: pd.Series,
+) -> float | pd.Series:
+    """
+    Calculate the implied correlation of an index: the average correlation between its
+    members that makes their option-implied volatilities consistent with the implied
+    volatility of the index, the measure behind the Cboe S&P 500 Implied Correlation
+    Index. A high implied correlation means the market prices the members to move
+    together (diversification is expected to fail, as in a sell-off); a low one means it
+    expects dispersion between them.
+
+    The variance of an index whose members all share one correlation ρ is
+    σ_I² = Σ w_i² σ_i² + 2 ρ Σ_{i<j} w_i w_j σ_i σ_j, which solved for ρ gives the
+    implied correlation.
+
+    The formula is as follows:
+
+    - ρ = (σ_I² - Σ w_i² σ_i²) / (2 Σ_{i<j} w_i w_j σ_i σ_j)
+    - 2 Σ_{i<j} w_i w_j σ_i σ_j = (Σ w_i σ_i)² - Σ w_i² σ_i²
+
+    with σ_I the implied volatility of the index, σ_i that of member i and w_i its weight,
+    normalised to sum to one over the members given (the Cboe uses the 50 largest members
+    of the S&P 500, weighted by market capitalisation and normalised the same way).
+
+    For more information, see the following sources:
+
+    - Cboe (2009). "CBOE S&P 500 Implied Correlation Index." Chicago Board Options Exchange
+      white paper.
+    - Driessen, J., Maenhout, P. J., and Vilkov, G. (2009). "The Price of Correlation
+      Risk: Evidence from Equity Options." Journal of Finance, 64(3), 1377-1406.
+
+    Args:
+        index_volatility (float | pd.Series): The implied volatility of the index (decimal),
+            a single value or one per date.
+        member_volatilities (pd.Series | pd.DataFrame): The implied volatilities of the
+            members (decimals) of the same maturity as the index's, indexed by member, or a
+            DataFrame with one column per member and one row per date.
+        weights (pd.Series): The weight of each member in the index, indexed by member,
+            normalised to sum to one over the members given.
+
+    Returns:
+        float | pd.Series: The implied correlation, a single value or one per date. NaN on
+        a date where a member has no implied volatility. It can lie outside [-1, 1] when the
+        volatilities are not consistent with one shared correlation.
+
+    Notes:
+    - All volatilities have to share one maturity (the Cboe interpolates them to the
+      index's), and they are annualised, so their unit cancels.
+    - A member without a weight is left out; a member in the weights without a volatility
+      makes the result NaN rather than being dropped, so that the index stays the same.
+    - The result above 1 or below -1 is returned as is, not clipped: it signals that the
+      index volatility is above or below what any common correlation of these members gives.
+
+    As an example:
+
+    ```python
+    import pandas as pd
+
+    from financetoolkit.options.market import market_metrics_model
+
+    market_metrics_model.get_implied_correlation(
+        index_volatility=0.22,
+        member_volatilities=pd.Series({"AAPL": 0.25, "MSFT": 0.22, "NVDA": 0.45}),
+        weights=pd.Series({"AAPL": 0.35, "MSFT": 0.35, "NVDA": 0.3}),
+    )
+    ```
+
+    Which returns:
+
+    ```
+    0.2865736742097081
+    ```
+    """
+    weights = pd.Series(weights, dtype=float)
+    weights = weights / weights.sum()
+    member_volatilities = member_volatilities.reindex(
+        weights.index, axis=0 if isinstance(member_volatilities, pd.Series) else 1
+    )
+    weighted = member_volatilities * weights
+
+    if isinstance(weighted, pd.Series):
+        own_variance = float((weighted**2).sum(min_count=len(weights)))
+        cross_variance = float(weighted.sum(min_count=len(weights)) ** 2 - own_variance)
+        if not cross_variance:
+            return np.nan
+        return (float(index_volatility) ** 2 - own_variance) / cross_variance
+
+    own_variance = (weighted**2).sum(axis=1, min_count=len(weights))
+    cross_variance = weighted.sum(axis=1, min_count=len(weights)) ** 2 - own_variance
+    return (index_volatility**2 - own_variance) / cross_variance.replace(0, np.nan)
 
 
 def get_straddle_quotes(

@@ -62,6 +62,7 @@ class OutputEconomics:
         usd: bool = False,
         rolling: int | None = None,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         growth: bool = False,
         lag: int = 1,
         standardize: bool = False,
@@ -102,6 +103,11 @@ class OutputEconomics:
             usd (bool, optional): Whether to return the values in millions of US dollars, converted by the Global Macro Database, instead of millions of national currency, which makes levels comparable across countries. With inflation_adjusted=True, real GDP in millions of US dollars at constant 2015 prices, converted at the 2015 market exchange rate (not at purchasing power parities), so its growth equals the growth of real GDP in the national currency. Always from the GMDB. Defaults to False.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott). They run on the full history before growth and
+                the date range, so the first periods shown have complete windows. Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
             lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -176,6 +182,7 @@ class OutputEconomics:
             indicator_name="Gross Domestic Product",
             countries=countries,
             rolling=rolling,
+            transform=transform,
             trailing=trailing,
             growth=growth,
             lag=lag,
@@ -192,6 +199,7 @@ class OutputEconomics:
         year_over_year: bool = False,
         rolling: int | None = None,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         growth: bool = False,
         lag: int = 1,
         standardize: bool = False,
@@ -239,6 +247,11 @@ class OutputEconomics:
                 year earlier instead of on the previous quarter. Defaults to False.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott). They run on the full history before growth and
+                the date range, so the first periods shown have complete windows. Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
             lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -313,6 +326,7 @@ class OutputEconomics:
             indicator_name="Gross Domestic Product Growth",
             countries=countries,
             rolling=rolling,
+            transform=transform,
             trailing=trailing,
             growth=growth,
             lag=lag,
@@ -329,6 +343,7 @@ class OutputEconomics:
         countries: list[str] | str | None = None,
         rolling: int | None = None,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         growth: bool = False,
         lag: int = 1,
         standardize: bool = False,
@@ -358,6 +373,11 @@ class OutputEconomics:
             countries (list[str] | str | None, optional): A list of countries or a single country to include in the results. Defaults to None.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott). They run on the full history before growth and
+                the date range, so the first periods shown have complete windows. Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
             lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -419,6 +439,7 @@ class OutputEconomics:
             indicator_name="Gross Domestic Product Deflator",
             countries=countries,
             rolling=rolling,
+            transform=transform,
             trailing=trailing,
             growth=growth,
             lag=lag,
@@ -435,6 +456,7 @@ class OutputEconomics:
         usd: bool = False,
         rolling: int | None = None,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         growth: bool = False,
         lag: int = 1,
         standardize: bool = False,
@@ -465,6 +487,11 @@ class OutputEconomics:
             usd (bool, optional): Whether to return the values in US dollars per person, converted by the Global Macro Database, instead of national currency per person, which makes levels comparable across countries. Defaults to False.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott). They run on the full history before growth and
+                the date range, so the first periods shown have complete windows. Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
             lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -523,6 +550,7 @@ class OutputEconomics:
             indicator_name="Real Gross Domestic Product per Capita",
             countries=countries,
             rolling=rolling,
+            transform=transform,
             trailing=trailing,
             growth=growth,
             lag=lag,
@@ -538,6 +566,7 @@ class OutputEconomics:
         countries: list[str] | str | None = None,
         rolling: int | None = None,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         growth: bool = False,
         lag: int = 1,
         standardize: bool = False,
@@ -587,6 +616,11 @@ class OutputEconomics:
             countries (list[str] | str | None, optional): The countries to include in the data. Defaults to None.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott). They run on the full history before growth and
+                the date range, so the first periods shown have complete windows. Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
             lag (int, optional): The number of periods to lag the data by. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -635,6 +669,7 @@ class OutputEconomics:
             indicator_name="Output Gap",
             countries=countries,
             rolling=rolling,
+            transform=transform,
             trailing=trailing,
             growth=growth,
             lag=lag,
@@ -653,6 +688,7 @@ class OutputEconomics:
         usd: bool = False,
         rolling: int | None = None,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         growth: bool = False,
         lag: int = 1,
         standardize: bool = False,
@@ -686,6 +722,11 @@ class OutputEconomics:
             usd (bool, optional): Whether to return the values in millions of US dollars, converted by the Global Macro Database, instead of millions of national currency. Cannot be combined with inflation_adjusted. Defaults to False.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott). They run on the full history before growth and
+                the date range, so the first periods shown have complete windows. Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
             lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -763,6 +804,7 @@ class OutputEconomics:
             indicator_name="Total Consumption",
             countries=countries,
             rolling=rolling,
+            transform=transform,
             trailing=trailing,
             growth=growth,
             lag=lag,
@@ -779,6 +821,7 @@ class OutputEconomics:
         component: str = "total",
         rolling: int | None = None,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         growth: bool = False,
         lag: int = 1,
         standardize: bool = False,
@@ -814,6 +857,11 @@ class OutputEconomics:
                 them), "government" (the government). Defaults to "total".
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott). They run on the full history before growth and
+                the date range, so the first periods shown have complete windows. Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
             lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -873,6 +921,7 @@ class OutputEconomics:
             indicator_name="Total Consumption to GDP Ratio",
             countries=countries,
             rolling=rolling,
+            transform=transform,
             trailing=trailing,
             growth=growth,
             lag=lag,
@@ -889,6 +938,7 @@ class OutputEconomics:
         usd: bool = False,
         rolling: int | None = None,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         growth: bool = False,
         lag: int = 1,
         standardize: bool = False,
@@ -913,6 +963,11 @@ class OutputEconomics:
             usd (bool, optional): Whether to return the values in millions of US dollars, converted by the Global Macro Database, instead of millions of national currency, which makes levels comparable across countries. Defaults to False.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott). They run on the full history before growth and
+                the date range, so the first periods shown have complete windows. Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
             lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -974,6 +1029,7 @@ class OutputEconomics:
             indicator_name="Investment",
             countries=countries,
             rolling=rolling,
+            transform=transform,
             trailing=trailing,
             growth=growth,
             lag=lag,
@@ -989,6 +1045,7 @@ class OutputEconomics:
         countries: list[str] | str | None = None,
         rolling: int | None = None,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         growth: bool = False,
         lag: int = 1,
         standardize: bool = False,
@@ -1018,6 +1075,11 @@ class OutputEconomics:
             countries (list[str] | str | None, optional): A list of countries or a single country to include in the results. Defaults to None.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott). They run on the full history before growth and
+                the date range, so the first periods shown have complete windows. Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
             lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -1074,6 +1136,7 @@ class OutputEconomics:
             indicator_name="Investment to GDP Ratio",
             countries=countries,
             rolling=rolling,
+            transform=transform,
             trailing=trailing,
             growth=growth,
             lag=lag,
@@ -1090,6 +1153,7 @@ class OutputEconomics:
         usd: bool = False,
         rolling: int | None = None,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         growth: bool = False,
         lag: int = 1,
         standardize: bool = False,
@@ -1114,6 +1178,11 @@ class OutputEconomics:
             usd (bool, optional): Whether to return the values in millions of US dollars, converted by the Global Macro Database, instead of millions of national currency, which makes levels comparable across countries. Defaults to False.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott). They run on the full history before growth and
+                the date range, so the first periods shown have complete windows. Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
             lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -1169,6 +1238,7 @@ class OutputEconomics:
             indicator_name="Fixed Investment",
             countries=countries,
             rolling=rolling,
+            transform=transform,
             trailing=trailing,
             growth=growth,
             lag=lag,
@@ -1184,6 +1254,7 @@ class OutputEconomics:
         countries: list[str] | str | None = None,
         rolling: int | None = None,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         growth: bool = False,
         lag: int = 1,
         standardize: bool = False,
@@ -1212,6 +1283,11 @@ class OutputEconomics:
             countries (list[str] | str | None, optional): A list of countries or a single country to include in the results. Defaults to None.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott). They run on the full history before growth and
+                the date range, so the first periods shown have complete windows. Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
             lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -1271,6 +1347,7 @@ class OutputEconomics:
             indicator_name="Fixed Investment to GDP Ratio",
             countries=countries,
             rolling=rolling,
+            transform=transform,
             trailing=trailing,
             growth=growth,
             lag=lag,
@@ -1287,6 +1364,7 @@ class OutputEconomics:
         usd: bool = False,
         rolling: int | None = None,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         growth: bool = False,
         lag: int = 1,
         standardize: bool = False,
@@ -1311,6 +1389,11 @@ class OutputEconomics:
             usd (bool, optional): Whether to return the values in millions of US dollars, converted by the Global Macro Database, instead of millions of national currency, which makes levels comparable across countries. Defaults to False.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott). They run on the full history before growth and
+                the date range, so the first periods shown have complete windows. Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
             lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -1369,6 +1452,7 @@ class OutputEconomics:
             indicator_name="Exports",
             countries=countries,
             rolling=rolling,
+            transform=transform,
             trailing=trailing,
             growth=growth,
             lag=lag,
@@ -1384,6 +1468,7 @@ class OutputEconomics:
         countries: list[str] | str | None = None,
         rolling: int | None = None,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         growth: bool = False,
         lag: int = 1,
         standardize: bool = False,
@@ -1412,6 +1497,11 @@ class OutputEconomics:
             countries (list[str] | str | None, optional): A list of countries or a single country to include in the results. Defaults to None.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott). They run on the full history before growth and
+                the date range, so the first periods shown have complete windows. Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
             lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -1470,6 +1560,7 @@ class OutputEconomics:
             indicator_name="Exports to GDP Ratio",
             countries=countries,
             rolling=rolling,
+            transform=transform,
             trailing=trailing,
             growth=growth,
             lag=lag,
@@ -1486,6 +1577,7 @@ class OutputEconomics:
         usd: bool = False,
         rolling: int | None = None,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         growth: bool = False,
         lag: int = 1,
         standardize: bool = False,
@@ -1510,6 +1602,11 @@ class OutputEconomics:
             usd (bool, optional): Whether to return the values in millions of US dollars, converted by the Global Macro Database, instead of millions of national currency, which makes levels comparable across countries. Defaults to False.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott). They run on the full history before growth and
+                the date range, so the first periods shown have complete windows. Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
             lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -1574,6 +1671,7 @@ class OutputEconomics:
             indicator_name="Imports",
             countries=countries,
             rolling=rolling,
+            transform=transform,
             trailing=trailing,
             growth=growth,
             lag=lag,
@@ -1589,6 +1687,7 @@ class OutputEconomics:
         countries: list[str] | str | None = None,
         rolling: int | None = None,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         growth: bool = False,
         lag: int = 1,
         standardize: bool = False,
@@ -1617,6 +1716,11 @@ class OutputEconomics:
             countries (list[str] | str | None, optional): A list of countries or a single country to include in the results. Defaults to None.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott). They run on the full history before growth and
+                the date range, so the first periods shown have complete windows. Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
             lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -1680,6 +1784,7 @@ class OutputEconomics:
             indicator_name="Imports to GDP Ratio",
             countries=countries,
             rolling=rolling,
+            transform=transform,
             trailing=trailing,
             growth=growth,
             lag=lag,
@@ -1696,6 +1801,7 @@ class OutputEconomics:
         usd: bool = False,
         rolling: int | None = None,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         growth: bool = False,
         lag: int = 1,
         standardize: bool = False,
@@ -1728,6 +1834,11 @@ class OutputEconomics:
             usd (bool, optional): Whether to return the values in millions of US dollars, converted by the Global Macro Database, instead of millions of national currency, which makes levels comparable across countries. Defaults to False.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott). They run on the full history before growth and
+                the date range, so the first periods shown have complete windows. Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
             lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -1784,6 +1895,7 @@ class OutputEconomics:
             indicator_name="Trade Balance",
             countries=countries,
             rolling=rolling,
+            transform=transform,
             trailing=trailing,
             growth=growth,
             lag=lag,
@@ -1800,6 +1912,7 @@ class OutputEconomics:
         usd: bool = False,
         rolling: int | None = None,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         growth: bool = False,
         lag: int = 1,
         standardize: bool = False,
@@ -1824,6 +1937,11 @@ class OutputEconomics:
             usd (bool, optional): Whether to return the values in millions of US dollars, converted by the Global Macro Database, instead of millions of national currency, which makes levels comparable across countries. Defaults to False.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott). They run on the full history before growth and
+                the date range, so the first periods shown have complete windows. Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
             lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -1882,6 +2000,7 @@ class OutputEconomics:
             indicator_name="Current Account Balance",
             countries=countries,
             rolling=rolling,
+            transform=transform,
             trailing=trailing,
             growth=growth,
             lag=lag,
@@ -1897,6 +2016,7 @@ class OutputEconomics:
         countries: list[str] | str | None = None,
         rolling: int | None = None,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         growth: bool = False,
         lag: int = 1,
         standardize: bool = False,
@@ -1932,6 +2052,11 @@ class OutputEconomics:
             countries (list[str] | str | None, optional): A list of countries or a single country to include in the results. Defaults to None.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott). They run on the full history before growth and
+                the date range, so the first periods shown have complete windows. Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
             lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -1993,6 +2118,7 @@ class OutputEconomics:
             indicator_name="Current Account Balance to GDP Ratio",
             countries=countries,
             rolling=rolling,
+            transform=transform,
             trailing=trailing,
             growth=growth,
             lag=lag,
@@ -2009,6 +2135,7 @@ class OutputEconomics:
         period: str | None = None,
         rolling: int | None = None,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         growth: bool = False,
         lag: int = 1,
         standardize: bool = False,
@@ -2053,6 +2180,11 @@ class OutputEconomics:
                 quarterly, the highest frequency published.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott). They run on the full history before growth and
+                the date range, so the first periods shown have complete windows. Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
             lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -2115,6 +2247,7 @@ class OutputEconomics:
             indicator_name="Net International Investment Position",
             countries=countries,
             rolling=rolling,
+            transform=transform,
             trailing=trailing,
             growth=growth,
             lag=lag,
@@ -2132,6 +2265,7 @@ class OutputEconomics:
         period: str | None = None,
         rolling: int | None = None,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         growth: bool = False,
         lag: int = 1,
         standardize: bool = False,
@@ -2187,6 +2321,11 @@ class OutputEconomics:
                 quarterly, the highest frequency published.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott). They run on the full history before growth and
+                the date range, so the first periods shown have complete windows. Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
             lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -2249,6 +2388,7 @@ class OutputEconomics:
             indicator_name="Net International Investment Position to GDP Ratio",
             countries=countries,
             rolling=rolling,
+            transform=transform,
             trailing=trailing,
             growth=growth,
             lag=lag,
@@ -2265,6 +2405,7 @@ class OutputEconomics:
         countries: list[str] | str | None = None,
         rolling: int | None = None,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         growth: bool = False,
         lag: int = 1,
         standardize: bool = False,
@@ -2301,6 +2442,11 @@ class OutputEconomics:
             countries (list[str] | str | None, optional): A list of countries or a single country to include in the results. Defaults to None.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott). They run on the full history before growth and
+                the date range, so the first periods shown have complete windows. Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
             lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -2355,6 +2501,7 @@ class OutputEconomics:
             indicator_name="Foreign Exchange Reserves",
             countries=countries,
             rolling=rolling,
+            transform=transform,
             trailing=trailing,
             growth=growth,
             lag=lag,
@@ -2370,6 +2517,7 @@ class OutputEconomics:
         countries: list[str] | str | None = None,
         rolling: int | None = None,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         growth: bool = False,
         lag: int = 1,
         standardize: bool = False,
@@ -2410,6 +2558,11 @@ class OutputEconomics:
             countries (list[str] | str | None, optional): A list of countries or a single country to include in the results. Defaults to None.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott). They run on the full history before growth and
+                the date range, so the first periods shown have complete windows. Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
             lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -2463,6 +2616,7 @@ class OutputEconomics:
             indicator_name="Reserves Import Cover",
             countries=countries,
             rolling=rolling,
+            transform=transform,
             trailing=trailing,
             growth=growth,
             lag=lag,

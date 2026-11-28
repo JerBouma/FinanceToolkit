@@ -3434,7 +3434,6 @@ class PricingOptions:
         |            200 |      11.6939 |      20.9915 |      28.6406 |
         |            205 |       8.9622 |      17.694  |      25.0864 |
         |            210 |       6.7797 |      14.8381 |      21.9116 |
-        TABLE_LOOKBACK
         """
         check_option("strike_type", strike_type, ("fixed", "floating"))
         if not 0 < lookback_period <= 1:
@@ -3691,7 +3690,6 @@ class PricingOptions:
         |:---------|-------------:|-------------:|-------------:|-------------:|
         | TSLA     |       0.4951 |       0.0223 |       0.0004 |       0      |
         | KO       |       0.9991 |       0.9028 |       0.6768 |       0.4958 |
-        TABLE_TOUCH
         """
         option_types = ("one-touch", "no-touch", "double-one-touch", "double-no-touch")
         check_option("option_type", option_type, option_types)

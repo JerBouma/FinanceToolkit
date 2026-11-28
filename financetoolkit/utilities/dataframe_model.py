@@ -79,6 +79,8 @@ def filter_columns(
         show_columns: Column names to keep.  For MultiIndex columns every level
             is searched, outermost first, so a name occurring on an inner level
             (such as a factor model coefficient under a ticker) is matched too.
+            Names on one level add up and names on different levels narrow each
+            other: a ticker and a field give that ticker's field.
             Invalid names are logged as warnings; if none of the requested
             columns exist the original result is returned unchanged and that is
             reported explicitly.
@@ -189,7 +191,9 @@ def _filter_dataframe_columns(
 
     # MultiIndex columns. Every level is searched, not only the first: a factor model is indexed by (ticker, coefficient), so asking for "Intercept" matched nothing at level 0 and the unfiltered frame came back as though the filter had been applied.  # noqa: E501
     if isinstance(df.columns, pd.MultiIndex):
-        mask = pd.Series(False, index=range(len(df.columns)))
+        # Names on one level add up (two tickers, two fields); names on different levels narrow
+        # each other, so "AAPL" with "On-Balance Volume" is AAPL's On-Balance Volume.
+        mask = pd.Series(True, index=range(len(df.columns)))
         matched: list[str] = []
         available: list[str] = []
 
@@ -207,7 +211,7 @@ def _filter_dataframe_columns(
             ]
 
             if level_valid:
-                mask |= pd.Series(level_values.astype(str).isin(level_valid).tolist())
+                mask &= pd.Series(level_values.astype(str).isin(level_valid).tolist())
                 matched.extend(level_valid)
 
         for column in show_columns:
@@ -216,6 +220,13 @@ def _filter_dataframe_columns(
                     "Column '%s' not found. Valid columns: %s", column, available
                 )
 
+        if matched and not mask.any():
+            logger.warning(
+                "No column combines %s: the names exist, but on different columns. "
+                "Valid columns: %s",
+                matched,
+                available,
+            )
         if matched:
             filtered = df.loc[:, mask.to_numpy()]
             # A level reduced to one value repeats, so drop it, as for the rows below: the

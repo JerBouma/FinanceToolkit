@@ -4729,3 +4729,49 @@ def test_onc_clusters_nested_clustered_optimization_but_not_herc():
         optimization_model.get_hierarchical_equal_risk_contribution_weights(
             covariance, cluster_criterion="onc"
         )
+
+
+def test_risk_contribution_is_weight_times_volatility_times_correlation():
+    weights = pd.Series([0.4, 0.3, 0.2, 0.1], index=ASSETS)
+    table = optimization_model.get_risk_contributions(weights, COVARIANCE)
+
+    portfolio = weights @ COVARIANCE @ weights
+    correlation = (COVARIANCE @ weights) / (
+        np.sqrt(np.diag(COVARIANCE)) * np.sqrt(portfolio)
+    )
+    np.testing.assert_allclose(table["Volatility"], np.sqrt(np.diag(COVARIANCE)))
+    np.testing.assert_allclose(table["Correlation with Portfolio"], correlation)
+    np.testing.assert_allclose(
+        table["Weight"] * table["Volatility"] * table["Correlation with Portfolio"],
+        table["Risk Contribution"],
+    )
+
+
+def test_rolling_risk_contributions_equal_the_static_ones_on_each_window():
+    generator = np.random.default_rng(3)
+    returns = pd.DataFrame(
+        generator.normal(0, 0.01, (40, 3)),
+        index=pd.date_range("2024-01-01", periods=40),
+        columns=["A", "B", "C"],
+    )
+    weights = pd.Series({"A": 0.5, "B": 0.3, "C": 0.2})
+
+    table = optimization_model.get_rolling_risk_contributions(weights, returns, 20, 252)
+
+    assert len(table) == 21
+    for date in (table.index[0], table.index[-1]):
+        window = returns.loc[:date].iloc[-20:]
+        static = optimization_model.get_risk_contributions(weights, window.cov() * 252)
+        for field in ("Volatility", "Correlation with Portfolio", "Risk Contribution"):
+            np.testing.assert_allclose(
+                table.loc[date, field][["A", "B", "C"]], static[field]
+            )
+    np.testing.assert_allclose(table["Percentage Contribution"]["Total"], 1)
+
+
+def test_rolling_risk_contributions_need_two_periods():
+    returns = pd.DataFrame({"A": [0.01, 0.02, 0.03]})
+    with pytest.raises(ValueError, match="at least 2"):
+        optimization_model.get_rolling_risk_contributions(
+            pd.Series({"A": 1.0}), returns, 1, 252
+        )

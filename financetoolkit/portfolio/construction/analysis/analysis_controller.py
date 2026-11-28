@@ -18,6 +18,7 @@ from financetoolkit.portfolio.helpers import BENCHMARK_TICKER, PORTFOLIO_TICKER
 from financetoolkit.risk.helpers import get_observations_per_year
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
 from financetoolkit.utilities.error_model import (
+    InvalidArgumentError,
     check_option,
     check_period,
     handle_errors,
@@ -101,6 +102,7 @@ class AnalysisConstruction:
         covariance: str = "sample",
         covariance_span: int = 180,
         include_benchmark: bool = False,
+        rolling: int | None = None,
         rounding: int | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
@@ -116,7 +118,9 @@ class AnalysisConstruction:
         in a volatile asset.
 
         - The volatility: the marginal contribution is (Σw)_i / σ_p, with Σ
-          the annualized covariance matrix.
+          the annualized covariance matrix. It equals the asset's volatility times its
+          correlation with the portfolio, σ_i ρ_i,p, so the risk contribution is
+          w_i × σ_i × ρ_i,p (Menchero and Davis, 2011), and both terms are shown.
         - The expected shortfall is the average loss in the periods
           in which the portfolio's return is at or below its Value at Risk, and the
           marginal contribution of an asset is its average loss in those same periods,
@@ -162,6 +166,8 @@ class AnalysisConstruction:
           Science, 37(5), 519-531.
         - Goldberg, L. R. and Mahmoud, O. (2017). "Drawdown: From Practice to Theory and
           Back Again." Mathematics and Financial Economics, 11(3), 275-297.
+        - Menchero, J. and Davis, B. (2011). "Risk Contribution Is Exposure Times Volatility
+          Times Correlation." The Journal of Portfolio Management, 37(2), 97-106.
 
         Also known as: risk decomposition, marginal contribution to risk, risk budget,
         component expected shortfall, component CVaR, downside risk contribution,
@@ -220,6 +226,11 @@ class AnalysisConstruction:
                 weight of a period halves after about span / 2.9 periods. Defaults to 180.
             include_benchmark (bool, optional): Whether to include the benchmark as an
                 asset. Defaults to False.
+            rolling (int | None, optional): The number of periods in a trailing window that moves
+                through time, e.g. 252 for a year of daily returns: the volatility contributions
+                on the sample covariance of each window, one row per period, with the weights held
+                fixed. Only for the volatility with the sample covariance. Defaults to None, which
+                uses every period at once.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -228,9 +239,14 @@ class AnalysisConstruction:
                 exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
-            pd.DataFrame: Per asset and in total, the Weight, Marginal Contribution, Risk
+            pd.DataFrame: With rolling, per date the Volatility, Correlation with Portfolio,
+            Marginal Contribution, Risk Contribution and Percentage Contribution of each asset
+            and the Total, the fields as the first column level. Otherwise per asset and in
+            total, the Weight, Marginal Contribution, Risk
             Contribution and Percentage Contribution: annualized volatility terms, or per period
-            terms of the other measures, with losses and drawdowns positive. For the kurtosis
+            terms of the other measures, with losses and drawdowns positive. The volatility also
+            has the Volatility of each asset and its Correlation with Portfolio (the portfolio's
+            volatility and 1 in the total). For the kurtosis
             measure the marginal contribution is the derivative of the measure and the risk
             contribution half the weight times it. The assets held (a weight other than zero)
             are listed, over the periods in which each of them has a return; a loaded asset
@@ -278,9 +294,36 @@ class AnalysisConstruction:
             *optimization_model.FINITE_DIFFERENCE_RISK_MEASURES,
         )
         check_option("risk_measure", risk_measure, measures)
+        if rolling is not None and (risk_measure, covariance) != (
+            "volatility",
+            "sample",
+        ):
+            raise InvalidArgumentError(
+                "rolling is available for risk_measure='volatility' with covariance='sample', "
+                f"not risk_measure={risk_measure!r} with covariance={covariance!r}; leave rolling "
+                "out for the other measures and estimators."
+            )
         # Only the assets held decide the periods, so an asset left out of the weights with
         # a shorter history does not shorten the sample.
         resolved = self._get_held_weights(weights, period, include_benchmark)
+        if rolling is not None:
+            returns = self._get_returns(
+                period, include_benchmark, resolved.index.tolist()
+            )
+            if not optimization_model.MINIMUM_WINDOW <= rolling <= len(returns):
+                raise InvalidArgumentError(
+                    f"rolling must be between {optimization_model.MINIMUM_WINDOW} and the {len(returns)} {period} returns, not "
+                    f"{rolling}."
+                )
+            table = optimization_model.get_rolling_risk_contributions(
+                resolved,
+                returns,
+                rolling,
+                self._get_periods_per_year(period, returns.index),
+            )
+            table.index.name = "Date"
+            table.columns.names = [None, "Asset"]
+            return self._round(table, rounding)
         returns, _, covariance_matrix, _ = self._get_inputs(
             period,
             include_benchmark,
@@ -305,12 +348,14 @@ class AnalysisConstruction:
                 resolved, returns, risk_measure, alpha
             )
         table.index.name = "Asset"
-        table.loc["Total"] = [
-            table["Weight"].sum(),
-            np.nan,
-            table["Risk Contribution"].sum(),
-            table["Percentage Contribution"].sum(),
-        ]
+        total = pd.Series(np.nan, index=table.columns)
+        for column in ("Weight", "Risk Contribution", "Percentage Contribution"):
+            total[column] = table[column].sum()
+        if "Volatility" in table.columns:
+            # The portfolio's own volatility, which is perfectly correlated with itself.
+            total["Volatility"] = total["Risk Contribution"]
+            total["Correlation with Portfolio"] = 1.0
+        table.loc["Total"] = total
         return self._round(table, rounding)
 
     @handle_errors

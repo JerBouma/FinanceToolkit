@@ -1499,6 +1499,24 @@ def test_get_covariance_estimate_robust(recorder, portfolio_module):
     assert weights["Weight"].drop("Portfolio").sum() == pytest.approx(1, abs=1e-6)
 
 
+def test_get_risk_contributions_rolling(recorder, portfolio_module):
+    table = portfolio_module.get_risk_contributions(
+        weights={"AAPL": 0.7, "MSFT": 0.3}, rolling=60, rounding=8
+    )
+    recorder.capture(table["Percentage Contribution"])
+    static = portfolio_module.get_risk_contributions(
+        weights={"AAPL": 0.7, "MSFT": 0.3}, rounding=8
+    )
+    assert list(table["Percentage Contribution"].columns) == ["AAPL", "MSFT", "Total"]
+    assert table["Percentage Contribution"]["Total"].eq(1).all()
+    assert static.shape == (3, 6)
+
+    with pytest.raises(InvalidArgumentError, match="rolling is available"):
+        portfolio_module.get_risk_contributions(risk_measure="cvar", rolling=60)
+    with pytest.raises(InvalidArgumentError, match="rolling must be between"):
+        portfolio_module.get_risk_contributions(rolling=1)
+
+
 def test_get_risk_contributions_finite_differences(recorder, portfolio_module):
     for measure in ("maximum_drawdown", "kurtosis", "evar"):
         table = portfolio_module.get_risk_contributions(

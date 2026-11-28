@@ -2064,7 +2064,7 @@ def test_get_delta_hedging_backtest(recorder, options_module):
     recorder.capture(
         options_module.get_delta_hedging_backtest(
             days=21,
-            start_date="2022-06-01",
+            sale_date="2022-06-01",
             moneyness=0.95,
             volatility=0.3,
             put_option=True,

@@ -710,6 +710,8 @@ class MarketsFixedIncome(CurvesFixedIncome):
         date: str | None = None,
         security_type: list[str] | str | None = None,
         bonds: list[str] | str | None = None,
+        maturity_start: str | None = None,
+        maturity_end: str | None = None,
         rounding: int | None = None,
         show_columns: str | list[str] | None = None,
     ):
@@ -763,6 +765,10 @@ class MarketsFixedIncome(CurvesFixedIncome):
             bonds (list[str] | str | None, optional): Keeps the securities with these CUSIPs
                 (or their US ISINs), as a list or a comma-separated string. Defaults to None,
                 every security.
+            maturity_start (str | None, optional): Keeps the securities maturing on or after this
+                date (YYYY-MM-DD). Defaults to None.
+            maturity_end (str | None, optional): Keeps the securities maturing on or before this
+                date (YYYY-MM-DD). Defaults to None.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the rounding of the class.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -805,7 +811,9 @@ class MarketsFixedIncome(CurvesFixedIncome):
         | 91282CQQ7 | Note            |   0.0438 | 2036-05-15 | 96.625  |              0.0482 |              7.5126 | 2026-11-05   |
         | 91282CRF0 | Note            |   0.0462 | 2036-08-15 | 98.4375 |              0.0483 |              7.6914 | 2026-11-05   |
         """
-        prices, price_date = self._treasury_prices(date, security_type, bonds)
+        prices, price_date = self._treasury_prices(
+            date, security_type, bonds, maturity_start, maturity_end
+        )
 
         values = prices.apply(
             bond_data_model.get_security_analytics,
@@ -1113,6 +1121,8 @@ class MarketsFixedIncome(CurvesFixedIncome):
         date: str | None,
         security_type: list[str] | str | None,
         bonds: list[str] | str | None,
+        maturity_start: str | None = None,
+        maturity_end: str | None = None,
     ) -> tuple[pd.DataFrame, date_type]:
         """
         The FedInvest prices of the Treasuries of the kinds and CUSIPs asked for that have
@@ -1123,6 +1133,10 @@ class MarketsFixedIncome(CurvesFixedIncome):
             security_type (list[str] | str | None): The kinds of security, see
                 get_treasury_securities.
             bonds (list[str] | str | None): The CUSIPs or ISINs.
+            maturity_start (str | None, optional): The earliest maturity (YYYY-MM-DD).
+                Defaults to None.
+            maturity_end (str | None, optional): The latest maturity (YYYY-MM-DD). Defaults
+                to None.
 
         Returns:
             tuple[pd.DataFrame, date]: The prices, one row per security, and the price date.
@@ -1150,10 +1164,14 @@ class MarketsFixedIncome(CurvesFixedIncome):
                 for value in helpers.split_values(bonds)
             ]
             prices = prices[prices["CUSIP"].isin(cusips)]
+        if maturity_start is not None:
+            prices = prices[prices["Maturity"] >= pd.Timestamp(maturity_start)]
+        if maturity_end is not None:
+            prices = prices[prices["Maturity"] <= pd.Timestamp(maturity_end)]
         prices = prices[prices["Maturity"].dt.date > price_date].copy()
         if prices.empty:
             raise ValueError(
-                f"FedInvest lists no security of the type and CUSIPs given on {price_date}."
+                f"FedInvest lists no security of the type, CUSIPs and maturities given on {price_date}."
             )
 
         return prices, price_date
@@ -1294,6 +1312,8 @@ class MarketsFixedIncome(CurvesFixedIncome):
         self,
         date: str | None = None,
         bonds: list[str] | str | None = None,
+        maturity_start: str | None = None,
+        maturity_end: str | None = None,
         rounding: int | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
@@ -1355,6 +1375,10 @@ class MarketsFixedIncome(CurvesFixedIncome):
                 with prices.
             bonds (list[str] | str | None, optional): Keeps the notes with these CUSIPs (or
                 their US ISINs). Defaults to None, every floating rate note.
+            maturity_start (str | None, optional): Keeps the securities maturing on or after this
+                date (YYYY-MM-DD). Defaults to None.
+            maturity_end (str | None, optional): Keeps the securities maturing on or before this
+                date (YYYY-MM-DD). Defaults to None.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the rounding of the class.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -1398,7 +1422,9 @@ class MarketsFixedIncome(CurvesFixedIncome):
         | 91282CRD5 | 2028-07-31 | 100.076 |   0.0005 |        0.042 |            0      |  0.042  |            1.6494 |
         | 91282CRS2 | 2028-10-31 | 100.023 |   0.0004 |        0.042 |            0.0003 |  0.0422 |            1.8841 |
         """
-        prices, price_date = self._treasury_prices(date, "FRN", bonds)
+        prices, price_date = self._treasury_prices(
+            date, "FRN", bonds, maturity_start, maturity_end
+        )
         notes = self._floating_rate_note_analytics(prices, price_date)
 
         # TreasuryDirect could not be reached, which it reports.
@@ -1478,6 +1504,8 @@ class MarketsFixedIncome(CurvesFixedIncome):
         self,
         date: str | None = None,
         bonds: list[str] | str | None = None,
+        maturity_start: str | None = None,
+        maturity_end: str | None = None,
         rounding: int | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
@@ -1539,6 +1567,10 @@ class MarketsFixedIncome(CurvesFixedIncome):
                 with prices.
             bonds (list[str] | str | None, optional): Keeps the TIPS with these CUSIPs (or their
                 US ISINs). Defaults to None, every TIPS.
+            maturity_start (str | None, optional): Keeps the securities maturing on or after this
+                date (YYYY-MM-DD). Defaults to None.
+            maturity_end (str | None, optional): Keeps the securities maturing on or before this
+                date (YYYY-MM-DD). Defaults to None.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the rounding of the class.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -1585,7 +1617,9 @@ class MarketsFixedIncome(CurvesFixedIncome):
         | 912810UH9 | 2055-02-15 |        1.0653 |       0.0328 |          0.0541 |                     0.0213 |
         | 912810US5 | 2056-02-15 |        1.0372 |       0.0326 |          0.054  |                     0.0214 |
         """
-        prices, price_date = self._treasury_prices(date, "TIPS", bonds)
+        prices, price_date = self._treasury_prices(
+            date, "TIPS", bonds, maturity_start, maturity_end
+        )
         terms = self._original_issues(
             treasurydirect_model.get_auctioned_securities("TIPS")
         )
@@ -1759,6 +1793,8 @@ class MarketsFixedIncome(CurvesFixedIncome):
         date: str | None = None,
         security_type: list[str] | str | None = None,
         bonds: list[str] | str | None = None,
+        maturity_start: str | None = None,
+        maturity_end: str | None = None,
         rounding: int | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
@@ -1811,6 +1847,10 @@ class MarketsFixedIncome(CurvesFixedIncome):
                 are: "Bill", "Note", "Bond", None (all three). Defaults to None.
             bonds (list[str] | str | None, optional): Keeps the securities with these CUSIPs
                 (or their US ISINs). Defaults to None, every security.
+            maturity_start (str | None, optional): Keeps the securities maturing on or after this
+                date (YYYY-MM-DD). Defaults to None.
+            maturity_end (str | None, optional): Keeps the securities maturing on or before this
+                date (YYYY-MM-DD). Defaults to None.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the rounding of the class.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -1862,7 +1902,9 @@ class MarketsFixedIncome(CurvesFixedIncome):
             raise ValueError(
                 f"Forward prices are calculated for bills, notes and bonds, not {', '.join(unknown)}."
             )
-        prices, price_date = self._treasury_prices(date, types, bonds)
+        prices, price_date = self._treasury_prices(
+            date, types, bonds, maturity_start, maturity_end
+        )
         end = (
             datetime.strptime(forward_date, "%Y-%m-%d").date()
             if forward_date

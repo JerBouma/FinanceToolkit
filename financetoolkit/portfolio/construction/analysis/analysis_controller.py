@@ -2762,9 +2762,9 @@ class AnalysisConstruction:
     @handle_errors
     def get_entropy_pooling(
         self,
-        views: dict | None = None,
-        volatility_views: dict | None = None,
-        correlation_views: dict | None = None,
+        views: dict[str, float | tuple[str, float]] | None = None,
+        volatility_views: dict[str, float | tuple[str, float]] | None = None,
+        correlation_views: dict[str, float | tuple[str, float]] | None = None,
         ranking: list[str] | None = None,
         opinions: list[dict] | None = None,
         opinion_weights: list[float] | None = None,
@@ -2829,12 +2829,13 @@ class AnalysisConstruction:
         - skfolio, OpinionPooling: https://skfolio.org/generated/skfolio.prior.OpinionPooling.html
 
         Args:
-            views (dict | None, optional): The annualized expected return views. Defaults
-                to None.
-            volatility_views (dict | None, optional): The annualized volatility views.
-                Defaults to None.
-            correlation_views (dict | None, optional): The correlation views. Defaults to
-                None.
+            views (dict[str, float | tuple[str, float]] | None, optional): The annualized expected return
+                views, per asset or pair of assets: a number, or a pair such as (">=", 0.10) for an
+                inequality. Defaults to None.
+            volatility_views (dict[str, float | tuple[str, float]] | None, optional): The annualized
+                volatility views, per asset: a number, or a pair such as ("<=", 0.25). Defaults to None.
+            correlation_views (dict[str, float | tuple[str, float]] | None, optional): The correlation
+                views, per pair of assets: a number, or a pair such as (">=", 0.5). Defaults to None.
             ranking (list[str] | None, optional): Assets from the highest expected return
                 to the lowest, at least two. Defaults to None.
             opinions (list[dict] | None, optional): The views of several experts to pool,

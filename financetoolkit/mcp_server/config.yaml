@@ -1615,12 +1615,25 @@ method_defaults:
   # The fixed window of d = 0.4 spans about 1,460 observations at the Python default
   # threshold of 1e-5, more than the five years of daily prices of the default range, which
   # would leave a single value; at 1e-4 it spans about 280.
+  # Only for the fixed window: the expanding window's threshold is a share of weight left
+  # out, where the Python default of 0.01 already fits.
   get_fractional_difference:
-    threshold: 0.0001
+    threshold:
+      value: 0.0001
+      only_with:
+        method: "fixed_width"
   get_bubble_test:
     period: "weekly"
   get_bubble_episodes:
     period: "weekly"
+
+# The parameters of method_defaults whose server default changes the calculation itself
+# rather than the size or layout of the answer. An answer that used one says so, with the
+# Python default, so a figure that differs from the package's is explained.
+noted_defaults:
+  - "threshold"
+  - "period"
+  - "scale"
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Methods whose answer is only of use in full

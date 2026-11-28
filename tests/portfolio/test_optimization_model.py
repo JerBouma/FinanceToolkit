@@ -131,6 +131,11 @@ def test_black_litterman_without_views_returns_the_implied_returns():
         optimization_model.get_black_litterman_returns(
             COVARIANCE, market, views={"Z": 0.1}
         )
+    # An inequality is a view of entropy pooling, which the blend of Black-Litterman can't take.
+    with pytest.raises(ValueError, match="get_entropy_pooling takes inequality views"):
+        optimization_model.get_black_litterman_returns(
+            COVARIANCE, market, views={"D": (">=", 0.2)}
+        )
 
 
 def _random_problem(seed: int, assets: int) -> tuple[pd.Series, pd.DataFrame]:

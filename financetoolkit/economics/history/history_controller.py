@@ -62,6 +62,7 @@ class HistoryEconomics(PricesEconomics):
         real: bool = False,
         accept_licence: bool = False,
         rolling: int | None = None,
+        transform: str | list[str] | None = None,
         growth: bool = False,
         lag: int = 1,
         standardize: bool = False,
@@ -113,6 +114,11 @@ class HistoryEconomics(PricesEconomics):
                 to False, which returns nothing.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple
             moving average). Defaults to None.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott). They run on the full history before growth and
+                the date range, so the first periods shown have complete windows. Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
             lag (int, optional): The number of periods to lag the data by. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -176,6 +182,7 @@ class HistoryEconomics(PricesEconomics):
             indicator_name="Long Run Asset Returns",
             countries=countries,
             rolling=rolling,
+            transform=transform,
             growth=growth,
             lag=lag,
             rounding=rounding,
@@ -190,6 +197,7 @@ class HistoryEconomics(PricesEconomics):
         series: list[str] | str | None = None,
         deflate_with: str | None = None,
         rolling: int | None = None,
+        transform: str | list[str] | None = None,
         growth: bool = False,
         lag: int = 1,
         standardize: bool = False,
@@ -241,6 +249,11 @@ class HistoryEconomics(PricesEconomics):
                 series as published.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple
             moving average). Defaults to None.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott). They run on the full history before growth and
+                the date range, so the first periods shown have complete windows. Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
             lag (int, optional): The number of periods to lag the data by. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -325,6 +338,7 @@ class HistoryEconomics(PricesEconomics):
             end_date=self._end_date,
             default_rounding=self._rounding,
             rolling=rolling,
+            transform=transform,
             growth=growth,
             lag=lag,
             rounding=rounding,
@@ -495,6 +509,7 @@ class HistoryEconomics(PricesEconomics):
         period: str = "daily",
         returns: bool = True,
         rolling: int | None = None,
+        transform: str | list[str] | None = None,
         standardize: bool = False,
         rounding: int | None = None,
         show_columns: str | list[str] | None = None,
@@ -541,6 +556,11 @@ class HistoryEconomics(PricesEconomics):
                 of the dividend-adjusted price. Defaults to True.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple
             moving average). Defaults to None.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott). They run on the full history before growth and
+                the date range, so the first periods shown have complete windows. Defaults to None.
             standardize (bool, optional): Whether to standardize (Z-Score) the result.
                 Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to.
@@ -649,6 +669,7 @@ class HistoryEconomics(PricesEconomics):
             end_date=self._end_date,
             default_rounding=self._rounding,
             rolling=rolling,
+            transform=transform,
             rounding=rounding,
             standardize=standardize,
             axis="rows",
@@ -663,6 +684,7 @@ class HistoryEconomics(PricesEconomics):
         growth: bool = False,
         lag: int = 1,
         standardize: bool = False,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ):
         """
@@ -699,6 +721,11 @@ class HistoryEconomics(PricesEconomics):
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott). They run on the full history before growth and
+                the date range, so the first periods shown have complete windows. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -742,6 +769,7 @@ class HistoryEconomics(PricesEconomics):
             growth=growth,
             lag=lag,
             standardize=standardize,
+            transform=transform,
             axis="rows",
             row_slice=True,
         )

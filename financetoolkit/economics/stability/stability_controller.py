@@ -50,6 +50,7 @@ class StabilityEconomics:
         countries: list[str] | str | None = None,
         rolling: int | None = None,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         rounding: int | None = None,
         gmdb_forecasts: bool = False,
         show_columns: str | list[str] | None = None,
@@ -75,6 +76,11 @@ class StabilityEconomics:
             countries (list[str] | str | None, optional): A list of countries or a single country to include in the results. Defaults to None.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott). They run on the full history before growth and
+                the date range, so the first periods shown have complete windows. Defaults to None.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the rounding of the Economics class.
             gmdb_forecasts (bool, optional): Whether to include the years the Global Macro
@@ -124,6 +130,7 @@ class StabilityEconomics:
             indicator_name="Sovereign Debt Crisis",
             countries=countries,
             rolling=rolling,
+            transform=transform,
             trailing=trailing,
             rounding=rounding,
             axis="rows",
@@ -136,6 +143,7 @@ class StabilityEconomics:
         countries: list[str] | str | None = None,
         rolling: int | None = None,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         rounding: int | None = None,
         gmdb_forecasts: bool = False,
         show_columns: str | list[str] | None = None,
@@ -161,6 +169,11 @@ class StabilityEconomics:
             countries (list[str] | str | None, optional): A list of countries or a single country to include in the results. Defaults to None.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott). They run on the full history before growth and
+                the date range, so the first periods shown have complete windows. Defaults to None.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the rounding of the Economics class.
             gmdb_forecasts (bool, optional): Whether to include the years the Global Macro
@@ -208,6 +221,7 @@ class StabilityEconomics:
             indicator_name="Currency Crisis",
             countries=countries,
             rolling=rolling,
+            transform=transform,
             trailing=trailing,
             rounding=rounding,
             axis="rows",
@@ -220,6 +234,7 @@ class StabilityEconomics:
         countries: list[str] | str | None = None,
         rolling: int | None = None,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         rounding: int | None = None,
         gmdb_forecasts: bool = False,
         show_columns: str | list[str] | None = None,
@@ -245,6 +260,11 @@ class StabilityEconomics:
             countries (list[str] | str | None, optional): A list of countries or a single country to include in the results. Defaults to None.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott). They run on the full history before growth and
+                the date range, so the first periods shown have complete windows. Defaults to None.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the rounding of the Economics class.
             gmdb_forecasts (bool, optional): Whether to include the years the Global Macro
@@ -308,6 +328,7 @@ class StabilityEconomics:
             indicator_name="Banking Crisis",
             countries=countries,
             rolling=rolling,
+            transform=transform,
             trailing=trailing,
             rounding=rounding,
             axis="rows",
@@ -320,6 +341,7 @@ class StabilityEconomics:
         countries: list[str] | str | None = None,
         rolling: int | None = None,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         growth: bool = False,
         lag: int = 1,
         standardize: bool = False,
@@ -356,6 +378,11 @@ class StabilityEconomics:
                 moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over
                 trailing periods. Defaults to None.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott). They run on the full history before growth and
+                the date range, so the first periods shown have complete windows. Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
             lag (int, optional): The number of periods to lag the data by. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -406,6 +433,7 @@ class StabilityEconomics:
             end_date=self._end_date,
             default_rounding=self._rounding,
             rolling=rolling,
+            transform=transform,
             trailing=trailing,
             growth=growth,
             lag=lag,
@@ -427,6 +455,7 @@ class StabilityEconomics:
         borrowers: str = "private",
         rolling: int | None = None,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         growth: bool = False,
         lag: int = 1,
         standardize: bool = False,
@@ -463,6 +492,11 @@ class StabilityEconomics:
                 moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over
                 trailing periods. Defaults to None.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott). They run on the full history before growth and
+                the date range, so the first periods shown have complete windows. Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
             lag (int, optional): The number of periods to lag the data by. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -513,6 +547,7 @@ class StabilityEconomics:
             end_date=self._end_date,
             default_rounding=self._rounding,
             rolling=rolling,
+            transform=transform,
             trailing=trailing,
             growth=growth,
             lag=lag,
@@ -542,6 +577,7 @@ class StabilityEconomics:
         borrowers: str = "private",
         rolling: int | None = None,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         growth: bool = False,
         lag: int = 1,
         standardize: bool = False,
@@ -579,6 +615,11 @@ class StabilityEconomics:
                 moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over
                 trailing periods. Defaults to None.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott). They run on the full history before growth and
+                the date range, so the first periods shown have complete windows. Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
             lag (int, optional): The number of periods to lag the data by. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -629,6 +670,7 @@ class StabilityEconomics:
             end_date=self._end_date,
             default_rounding=self._rounding,
             rolling=rolling,
+            transform=transform,
             trailing=trailing,
             growth=growth,
             lag=lag,
@@ -648,6 +690,7 @@ class StabilityEconomics:
         period: str = "daily",
         rolling: int | None = None,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         growth: bool = False,
         lag: int = 1,
         standardize: bool = False,
@@ -706,6 +749,11 @@ class StabilityEconomics:
             moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over
             trailing periods. Defaults to None.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott). They run on the full history before growth and
+                the date range, so the first periods shown have complete windows. Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
             lag (int, optional): The number of periods to lag the data by. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -835,6 +883,7 @@ class StabilityEconomics:
             end_date=self._end_date,
             default_rounding=self._rounding,
             rolling=rolling,
+            transform=transform,
             trailing=trailing,
             growth=growth,
             lag=lag,

@@ -1594,7 +1594,7 @@ class MarketOptions:
     def get_delta_hedging_backtest(
         self,
         days: int = 63,
-        start_date: str | None = None,
+        sale_date: str | None = None,
         moneyness: float = 1.0,
         volatility: float | None = None,
         put_option: bool = False,
@@ -1614,7 +1614,7 @@ class MarketOptions:
         shares, pays a proportional cost on every trade, receives the dividends on the
         shares held and keeps the rest in cash at the risk free rate:
 
-            - Option Value = Black-Scholes value at the volatility σ on the start date
+            - Option Value = Black-Scholes value at the volatility σ on the sale date
             - Cash_(i+1) = Cash_i e^(r Δt) + Δ_i D_(i+1) - (Δ_(i+1) - Δ_i) S_(i+1) - k |Δ_(i+1) - Δ_i| S_(i+1)
             - Profit and Loss = e^(-rT) [Cash_T + Δ_T S_T - Payoff(S_T)]
 
@@ -1636,15 +1636,15 @@ class MarketOptions:
         Args:
             days (int, optional): The trading days from the sale to expiration, at least 1. Defaults to 63,
                 about three months.
-            start_date (str | None, optional): The date the option is sold, or the last
+            sale_date (str | None, optional): The date the option is sold, or the last
                 trading day before it. Defaults to None, `days` trading days before the end
                 of the historical data, so the option expires on its last date.
             moneyness (float, optional): The strike as a fraction of the stock price on the
-                start date. Defaults to 1.0, at the money.
+                sale date. Defaults to 1.0, at the money.
             volatility (float | None, optional): The volatility the option is sold and hedged
                 at, such as an implied volatility, for every ticker, 0 or above (at 0 the option
                 is sold at its discounted intrinsic value and the delta is 0 or 1). Defaults to
-                None, the volatility of the year of daily returns up to the start date, which is
+                None, the volatility of the year of daily returns up to the sale date, which is
                 known on that date.
             put_option (bool, optional): Whether the option is a put. Defaults to False.
             transaction_cost (float, optional): The cost of a trade as a fraction of its value
@@ -1661,7 +1661,7 @@ class MarketOptions:
         Returns:
             pd.DataFrame: Per ticker the Start Date, Expiration Date, Stock Price, Strike Price,
             Volatility, Realized Volatility, Option Value, Payoff, Transaction Costs and Profit
-            and Loss. The costs and the profit and loss are discounted to the start date.
+            and Loss. The costs and the profit and loss are discounted to the sale date.
 
         Raises:
             InvalidArgumentError: When the days or rebalancing days are below 1, the moneyness
@@ -1673,7 +1673,7 @@ class MarketOptions:
           the same days.
         - The stock follows the traded Close and the hedge receives the cash dividends on
           their ex-dates; the option is valued with the trailing dividend yield and the risk
-          free rate on the start date, both continuously compounded.
+          free rate on the sale date, both continuously compounded.
         - At expiration the hedge moves to the position the option settles with (one share
           for a call in the money, none out of the money), and that trade pays the cost as
           well, as for physical settlement.
@@ -1690,7 +1690,7 @@ class MarketOptions:
         )
 
         toolkit.options.get_delta_hedging_backtest(
-            start_date="2025-06-02",
+            sale_date="2025-06-02",
             transaction_cost=0.0005,
             show_columns=["Volatility", "Realized Volatility", "Option Value", "Payoff", "Transaction Costs", "Profit and Loss"],
         )
@@ -1728,18 +1728,18 @@ class MarketOptions:
         rows = {}
         for ticker in self._tickers:
             history = self._prices[ticker].dropna()
-            if start_date is None:
+            if sale_date is None:
                 start = len(history) - 1 - days
             else:
                 start = (
                     history.index.searchsorted(
-                        pd.Period(start_date, freq="D"), side="right"
+                        pd.Period(sale_date, freq="D"), side="right"
                     )
                     - 1
                 )
             if start < 0 or start + days >= len(history):
                 logger.warning(
-                    "The historical data of %s does not cover %d trading days after the start "
+                    "The historical data of %s does not cover %d trading days after the sale "
                     "date, so it is left out.",
                     ticker,
                     days,
@@ -1753,10 +1753,10 @@ class MarketOptions:
                     ticker, date, volatility
                 )
             except IndexError:
-                # Too few prices before the start date for a volatility leaves this ticker out only.  # noqa: E501
+                # Too few prices before the sale date for a volatility leaves this ticker out only.  # noqa: E501
                 logger.warning(
                     "No delta hedging backtest for %s: it has too few prices for a "
-                    "volatility on the start date.",
+                    "volatility on the sale date.",
                     ticker,
                 )
                 continue
@@ -1765,7 +1765,7 @@ class MarketOptions:
                 paid = (
                     dividends[ticker].reindex(path.index).fillna(0).to_numpy(copy=True)
                 )
-                # A dividend going ex on the start date belongs to the seller of the shares.
+                # A dividend going ex on the sale date belongs to the seller of the shares.
                 paid[0] = 0.0
             result = hedging_model.get_delta_hedging_profit_and_loss(
                 stock_prices=path.to_numpy(),
@@ -1798,7 +1798,7 @@ class MarketOptions:
 
         if not rows:
             raise ValueError(
-                f"No ticker has {days} trading days of prices after the start date."
+                f"No ticker has {days} trading days of prices after the sale date."
             )
 
         table = pd.DataFrame(rows).T

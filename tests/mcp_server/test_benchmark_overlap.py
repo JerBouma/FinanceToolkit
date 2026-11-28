@@ -74,8 +74,8 @@ def test_the_default_benchmark_asked_as_a_ticker_stays_a_ticker(
 ):
     answer = call(tool, {"indicator": indicator, "tickers": "SPY,VT"})
 
-    # SPY is analysed as one of the tickers, with QQQ as the benchmark.
-    assert toolkit_calls == ["QQQ"]
+    # SPY is analysed as one of the tickers, with the S&P 500 index as the benchmark.
+    assert toolkit_calls == ["^GSPC"]
     assert '"SPY"' in answer
     assert "No data is available for SPY" not in answer
     assert "left out as a ticker" not in answer
@@ -89,7 +89,39 @@ def test_the_default_benchmark_swap_is_named_with_a_benchmark(monkeypatch):
 
     answer = call("performance", {"indicator": "get_beta", "tickers": "SPY,VT"})
 
-    assert "SPY is one of the tickers, so QQQ is the benchmark" in answer
+    assert "SPY is one of the tickers, so ^GSPC is the benchmark" in answer
+
+
+@pytest.mark.parametrize(
+    ("tool", "indicator", "tickers"),
+    [
+        ("momentum", "get_internal_bar_strength", "SPY"),
+        ("breadth", "get_volume_index", "SPY,QQQ"),
+        ("performance", "get_beta", "SPY,QQQ,VT"),
+    ],
+)
+def test_the_substitute_benchmark_is_the_same_in_every_tool(
+    monkeypatch, tool, indicator, tickers
+):
+    calls = []
+
+    def answer(self, module_name, method_name, category, **kwargs):  # noqa: ARG001
+        calls.append(kwargs["benchmark_ticker"])
+        return pd.DataFrame(
+            {ticker: [0.5] for ticker in kwargs["tickers"]} | {"Benchmark": [0.5]},
+            index=pd.period_range("2026-01-02", periods=1, freq="D"),
+        )
+
+    monkeypatch.setattr(ToolkitProvider, "call_method", answer)
+
+    text = call(tool, {"indicator": indicator, "tickers": tickers})
+
+    # Whatever the other tickers are, the S&P 500 index takes SPY's place, and the note says the rule.
+    assert calls == ["^GSPC"]
+    assert (
+        "A benchmark that is one of the tickers is replaced by the first of ^GSPC"
+        in text
+    )
 
 
 def test_a_chosen_benchmark_asked_as_a_ticker_is_kept(toolkit_calls):

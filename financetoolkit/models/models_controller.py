@@ -419,6 +419,7 @@ class ModelsBase:
         growth: bool,
         lag: int | list[int],
         standardize: bool,
+        transform: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         A model's components per ticker and period as ticker and component (rows) by period
@@ -439,6 +440,7 @@ class ModelsBase:
             lag=lag,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
             axis="columns",
         )
 

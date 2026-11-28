@@ -173,7 +173,7 @@ def test_a_search_result_shows_how_to_call_each_indicator():
     # The parameters most of the tool's indicators take are named once, not per indicator.
     assert "growth=" not in line
     assert (
-        "Most indicators also take period, growth, lag, standardize (performance)"
+        "Most indicators also take period, transform, growth, lag, standardize (performance)"
         in text
     )
 

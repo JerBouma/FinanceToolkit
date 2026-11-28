@@ -19,6 +19,7 @@ from financetoolkit.utilities.error_model import (
 from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import apply_rounding
+from financetoolkit.utilities.transform_model import transform_result
 
 # ruff: noqa: E501
 
@@ -34,6 +35,7 @@ class StatisticsEconometrics:
 
     @handle_portfolio
     @handle_errors
+    @transform_result
     def get_linear_regression(
         self,
         period: str | None = None,
@@ -41,6 +43,7 @@ class StatisticsEconometrics:
         window: int = 14,
         include_benchmark: bool = False,
         rounding: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -89,6 +92,11 @@ class StatisticsEconometrics:
                 Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
+            transform (str | list[str] | None, optional): Time series steps applied to the result in order,
+                such as "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), along the dates of each series. A window needs that many
+                periods of the result, so its first periods are empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -149,6 +157,7 @@ class StatisticsEconometrics:
 
     @handle_portfolio
     @handle_errors
+    @transform_result
     def get_slope(
         self,
         period: str | None = None,
@@ -157,6 +166,7 @@ class StatisticsEconometrics:
         as_angle: bool = False,
         include_benchmark: bool = False,
         rounding: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -192,6 +202,11 @@ class StatisticsEconometrics:
                 Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
+            transform (str | list[str] | None, optional): Time series steps applied to the result in order,
+                such as "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), along the dates of each series. A window needs that many
+                periods of the result, so its first periods are empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -250,6 +265,7 @@ class StatisticsEconometrics:
 
     @handle_portfolio
     @handle_errors
+    @transform_result
     def get_correlation(
         self,
         period: str | None = None,
@@ -258,6 +274,7 @@ class StatisticsEconometrics:
         against: str | None = None,
         include_benchmark: bool = False,
         rounding: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
@@ -307,6 +324,11 @@ class StatisticsEconometrics:
                 Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
+            transform (str | list[str] | None, optional): Time series steps applied to the result in order,
+                such as "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), along the dates of each series. A window needs that many
+                periods of the result, so its first periods are empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -409,6 +431,7 @@ class StatisticsEconometrics:
 
     @handle_portfolio
     @handle_errors
+    @transform_result
     def get_percentile(
         self,
         period: str | None = None,
@@ -418,6 +441,7 @@ class StatisticsEconometrics:
         method: str = "linear",
         include_benchmark: bool = False,
         rounding: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
@@ -469,6 +493,11 @@ class StatisticsEconometrics:
                 Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
+            transform (str | list[str] | None, optional): Time series steps applied to the result in order,
+                such as "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), along the dates of each series. A window needs that many
+                periods of the result, so its first periods are empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -530,6 +559,7 @@ class StatisticsEconometrics:
 
     @handle_portfolio
     @handle_errors
+    @transform_result
     def get_percent_rank(
         self,
         period: str | None = None,
@@ -537,6 +567,7 @@ class StatisticsEconometrics:
         rolling: int | None = None,
         include_benchmark: bool = False,
         rounding: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
@@ -576,6 +607,11 @@ class StatisticsEconometrics:
                 Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
+            transform (str | list[str] | None, optional): Time series steps applied to the result in order,
+                such as "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), along the dates of each series. A window needs that many
+                periods of the result, so its first periods are empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -637,6 +673,7 @@ class StatisticsEconometrics:
 
     @handle_portfolio
     @handle_errors
+    @transform_result
     def get_z_score(
         self,
         period: str | None = None,
@@ -644,6 +681,7 @@ class StatisticsEconometrics:
         rolling: int | None = None,
         include_benchmark: bool = False,
         rounding: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
@@ -679,6 +717,11 @@ class StatisticsEconometrics:
                 Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
+            transform (str | list[str] | None, optional): Time series steps applied to the result in order,
+                such as "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), along the dates of each series. A window needs that many
+                periods of the result, so its first periods are empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -739,6 +782,7 @@ class StatisticsEconometrics:
 
     @handle_portfolio
     @handle_errors
+    @transform_result
     def get_mean_absolute_deviation(
         self,
         period: str | None = None,
@@ -746,6 +790,7 @@ class StatisticsEconometrics:
         rolling: int | None = None,
         include_benchmark: bool = False,
         rounding: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
@@ -788,6 +833,11 @@ class StatisticsEconometrics:
                 Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
+            transform (str | list[str] | None, optional): Time series steps applied to the result in order,
+                such as "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), along the dates of each series. A window needs that many
+                periods of the result, so its first periods are empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -851,6 +901,7 @@ class StatisticsEconometrics:
 
     @handle_portfolio
     @handle_errors
+    @transform_result
     def get_standard_error(
         self,
         period: str | None = None,
@@ -858,6 +909,7 @@ class StatisticsEconometrics:
         rolling: int | None = None,
         include_benchmark: bool = False,
         rounding: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
@@ -898,6 +950,11 @@ class StatisticsEconometrics:
                 Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
+            transform (str | list[str] | None, optional): Time series steps applied to the result in order,
+                such as "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), along the dates of each series. A window needs that many
+                periods of the result, so its first periods are empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -958,6 +1015,7 @@ class StatisticsEconometrics:
 
     @handle_portfolio
     @handle_errors
+    @transform_result
     def get_entropy(
         self,
         method: Literal[
@@ -985,6 +1043,7 @@ class StatisticsEconometrics:
         word_length: int = 1,
         include_benchmark: bool = False,
         rounding: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
@@ -1113,6 +1172,11 @@ class StatisticsEconometrics:
                 Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
+            transform (str | list[str] | None, optional): Time series steps applied to the result in order,
+                such as "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), along the dates of each series. A window needs that many
+                periods of the result, so its first periods are empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -1267,6 +1331,7 @@ class StatisticsEconometrics:
 
     @handle_portfolio
     @handle_errors
+    @transform_result
     def get_lempel_ziv_complexity(
         self,
         period: str | None = None,
@@ -1277,6 +1342,7 @@ class StatisticsEconometrics:
         normalize: bool = True,
         include_benchmark: bool = False,
         rounding: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
@@ -1331,6 +1397,11 @@ class StatisticsEconometrics:
                 Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
+            transform (str | list[str] | None, optional): Time series steps applied to the result in order,
+                such as "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), along the dates of each series. A window needs that many
+                periods of the result, so its first periods are empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none

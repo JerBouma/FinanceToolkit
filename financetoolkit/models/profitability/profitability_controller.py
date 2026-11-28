@@ -19,6 +19,10 @@ from financetoolkit.utilities.statistics_model import (
     drop_non_finite,
     finalize_dataset,
 )
+from financetoolkit.utilities.transform_model import (
+    transform_result,
+    transform_time_series,
+)
 
 # ruff: noqa: E501
 
@@ -40,6 +44,7 @@ class ProfitabilityModels:
         standardize: bool = False,
         trailing: int | None = None,
         method: Literal["standard", "extended"] = "standard",
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -96,6 +101,11 @@ class ProfitabilityModels:
                 NaN. Defaults to None.
             method (str, optional): Options are: "standard" (the three-factor decomposition), "extended" (the
                 five-factor decomposition). Defaults to "standard".
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -190,6 +200,12 @@ class ProfitabilityModels:
         # other undefined ratio rather than infinite.
         dupont_analysis = drop_non_finite(dupont_analysis)
 
+        # The steps run before the growth, as in every other method.
+        if transform:
+            dupont_analysis = transform_time_series(dupont_analysis, transform).round(
+                rounding if rounding is not None else self._rounding
+            )
+
         if growth:
             dupont_analysis = calculate_growth(
                 dataset=dupont_analysis,
@@ -222,6 +238,7 @@ class ProfitabilityModels:
         lag: int | list[int] = 1,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -283,6 +300,11 @@ class ProfitabilityModels:
                 gives the trailing twelve months (TTM). The window counts calendar periods, so a
                 period without a report makes it NaN. Defaults to None, which uses single-period
                 flows over the average of the opening and closing balance.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -397,6 +419,12 @@ class ProfitabilityModels:
             )
         )
 
+        # The steps run before the growth, as in every other method.
+        if transform:
+            nissim_penman_decomposition = transform_time_series(
+                nissim_penman_decomposition, transform
+            ).round(rounding if rounding is not None else self._rounding)
+
         if growth:
             nissim_penman_decomposition = calculate_growth(
                 dataset=nissim_penman_decomposition,
@@ -425,6 +453,7 @@ class ProfitabilityModels:
         return nissim_penman_decomposition.loc[:, self._start_date : self._end_date]
 
     @handle_errors
+    @transform_result
     def get_return_decomposition(
         self,
         lag: int | None = None,
@@ -432,6 +461,7 @@ class ProfitabilityModels:
         trailing: int | None = None,
         logarithmic: bool = False,
         rounding: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -478,6 +508,11 @@ class ProfitabilityModels:
                 simple returns, which multiply. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the rounding of the Toolkit (4 unless set otherwise).
+            transform (str | list[str] | None, optional): Time series steps applied to the result in order,
+                such as "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), along the dates of each series. A window needs that many
+                periods of the result, so its first periods are empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -607,6 +642,7 @@ class ProfitabilityModels:
         lag: int | list[int] = 1,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -636,6 +672,11 @@ class ProfitabilityModels:
                 values. Defaults to False.
             trailing (int | None, optional): The trailing period to use for the calculation. The window counts
                 calendar periods, so a period without a report makes it NaN. Defaults to None.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -700,6 +741,7 @@ class ProfitabilityModels:
             rounding=rounding,
             standardize=standardize,
             axis="columns",
+            transform=transform,
         )
 
     @handle_errors
@@ -710,6 +752,7 @@ class ProfitabilityModels:
         lag: int | list[int] = 1,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -735,6 +778,11 @@ class ProfitabilityModels:
                 values. Defaults to False.
             trailing (int | None, optional): The trailing period to use for the calculation. The window counts
                 calendar periods, so a period without a report makes it NaN. Defaults to None.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -813,6 +861,7 @@ class ProfitabilityModels:
             rounding=rounding,
             standardize=standardize,
             axis="columns",
+            transform=transform,
         )
 
     @handle_errors
@@ -823,6 +872,7 @@ class ProfitabilityModels:
         lag: int | list[int] = 1,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -870,6 +920,11 @@ class ProfitabilityModels:
                 a period without a report makes it NaN. Defaults to None, which is 4 on quarterly data
                 (a trailing twelve months against the capital a year earlier) and single years on
                 yearly data.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -973,7 +1028,9 @@ class ProfitabilityModels:
             invested_capital=invested_capital,
         )
 
-        return self._finalize_components(components, rounding, growth, lag, standardize)
+        return self._finalize_components(
+            components, rounding, growth, lag, standardize, transform=transform
+        )
 
     @handle_errors
     def get_rule_of_40(
@@ -984,6 +1041,7 @@ class ProfitabilityModels:
         lag: int | list[int] = 1,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -1023,6 +1081,11 @@ class ProfitabilityModels:
                 over. The window counts calendar periods, so a period without a report makes it NaN.
                 Defaults to None, which is 4 on quarterly data (a trailing twelve months, its growth
                 against the trailing twelve months a year earlier) and single years on yearly data.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -1089,4 +1152,6 @@ class ProfitabilityModels:
             profit_margin=components[name],
         )
 
-        return self._finalize_components(components, rounding, growth, lag, standardize)
+        return self._finalize_components(
+            components, rounding, growth, lag, standardize, transform=transform
+        )

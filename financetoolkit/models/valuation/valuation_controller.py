@@ -42,6 +42,10 @@ from financetoolkit.utilities.statistics_model import (
     calculate_standardization,
     finalize_dataset,
 )
+from financetoolkit.utilities.transform_model import (
+    transform_result,
+    transform_time_series,
+)
 
 # ruff: noqa: E501
 
@@ -74,6 +78,7 @@ class ValuationModels:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -116,6 +121,11 @@ class ValuationModels:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -191,6 +201,12 @@ class ValuationModels:
             ),
         )
 
+        # The steps run before the growth, as in every other method.
+        if transform:
+            enterprise_value_breakdown = transform_time_series(
+                enterprise_value_breakdown, transform
+            ).round(rounding if rounding is not None else self._rounding)
+
         if growth:
             enterprise_value_breakdown = calculate_growth(
                 dataset=enterprise_value_breakdown,
@@ -225,6 +241,7 @@ class ValuationModels:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -261,6 +278,11 @@ class ValuationModels:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -335,7 +357,12 @@ class ValuationModels:
         )
 
         return self._finalize_components(
-            tobins_q_ratio, rounding, growth, lag, standardize
+            tobins_q_ratio,
+            rounding,
+            growth,
+            lag,
+            standardize,
+            transform=transform,
         )
 
     @handle_errors
@@ -493,6 +520,7 @@ class ValuationModels:
         standardize: bool = False,
         trailing: int | None = None,
         market_risk_premium: float | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -563,6 +591,11 @@ class ValuationModels:
                 uses. Defaults to None, which takes the equity risk premium of each company's country
                 (Damodaran's Total Equity Risk Premium, see get_market_risk_premium) and, where that is
                 not available, the benchmark's average return above the risk-free rate over the data.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -629,6 +662,12 @@ class ValuationModels:
             trailing=trailing,
             market_risk_premium=market_risk_premium,
         )
+        # The steps run before the growth, as in every other method.
+        if transform:
+            weighted_average_cost_of_capital = transform_time_series(
+                weighted_average_cost_of_capital, transform
+            ).round(rounding if rounding is not None else self._rounding)
+
         if growth:
             weighted_average_cost_of_capital = calculate_growth(
                 dataset=weighted_average_cost_of_capital,
@@ -673,6 +712,7 @@ class ValuationModels:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -724,6 +764,11 @@ class ValuationModels:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -868,6 +913,7 @@ class ValuationModels:
             rounding=rounding,
             standardize=standardize,
             axis="columns",
+            transform=transform,
         )
 
     @handle_errors
@@ -879,6 +925,7 @@ class ValuationModels:
         standardize: bool = False,
         trailing: int | None = None,
         market_risk_premium: float | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -929,6 +976,11 @@ class ValuationModels:
                 uses. Defaults to None, which takes the equity risk premium of each company's country
                 (Damodaran's Total Equity Risk Premium, see get_market_risk_premium) and, where that is
                 not available, the benchmark's average return above the risk-free rate over the data.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -1040,7 +1092,9 @@ class ValuationModels:
             invested_capital=eva["Invested Capital"],
         )
 
-        return self._finalize_components(eva, rounding, growth, lag, standardize)
+        return self._finalize_components(
+            eva, rounding, growth, lag, standardize, transform=transform
+        )
 
     @handle_errors
     def get_market_value_added(
@@ -1051,6 +1105,7 @@ class ValuationModels:
         lag: int | list[int] = 1,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -1082,6 +1137,11 @@ class ValuationModels:
             trailing (int | None, optional): The number of periods the Invested Capital is averaged
                 over. The window counts calendar periods, so a period without a report makes it
                 NaN. Defaults to None, which uses the closing balances.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -1174,7 +1234,9 @@ class ValuationModels:
             invested_capital=mva["Invested Capital"],
         )
 
-        return self._finalize_components(mva, rounding, growth, lag, standardize)
+        return self._finalize_components(
+            mva, rounding, growth, lag, standardize, transform=transform
+        )
 
     @handle_errors
     def get_return_on_incremental_invested_capital(
@@ -1185,6 +1247,7 @@ class ValuationModels:
         lag: int | list[int] = 1,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -1226,6 +1289,11 @@ class ValuationModels:
                 counts calendar periods, so a period without a report makes it NaN. Defaults to None,
                 which is 4 on quarterly data (a trailing twelve months, with every lag counted in
                 years of four quarters) and single years on yearly data.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -1294,7 +1362,9 @@ class ValuationModels:
             )
         )
 
-        return self._finalize_components(components, rounding, growth, lag, standardize)
+        return self._finalize_components(
+            components, rounding, growth, lag, standardize, transform=transform
+        )
 
     @handle_errors
     def get_owner_earnings(
@@ -1305,6 +1375,7 @@ class ValuationModels:
         lag: int | list[int] = 1,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -1355,6 +1426,11 @@ class ValuationModels:
             trailing (int | None, optional): The number of periods to sum the flows over. The window
                 counts calendar periods, so a period without a report makes it NaN. Defaults to None,
                 which uses single periods (per quarter on quarterly data).
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -1453,7 +1529,9 @@ class ValuationModels:
             self._rows(self._income_statement, "Weighted Average Shares Diluted")
         )
 
-        return self._finalize_components(components, rounding, growth, lag, standardize)
+        return self._finalize_components(
+            components, rounding, growth, lag, standardize, transform=transform
+        )
 
     @handle_errors
     def get_unlevered_beta(
@@ -1463,6 +1541,7 @@ class ValuationModels:
         lag: int | list[int] = 1,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -1497,6 +1576,11 @@ class ValuationModels:
             trailing (int | None, optional): The number of periods the beta is measured over (and the
                 taxes summed over). The window counts calendar periods, so a period without a report
                 makes it NaN. Defaults to None, which is a single period.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -1563,7 +1647,9 @@ class ValuationModels:
             tax_rate=tax_rate,
         )
 
-        return self._finalize_components(components, rounding, growth, lag, standardize)
+        return self._finalize_components(
+            components, rounding, growth, lag, standardize, transform=transform
+        )
 
     @handle_errors
     def get_capitalized_research_and_development(
@@ -1573,6 +1659,7 @@ class ValuationModels:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -1618,6 +1705,11 @@ class ValuationModels:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -1731,7 +1823,9 @@ class ValuationModels:
             / beginning_capital.where(beginning_capital > 0)
         )
 
-        return self._finalize_components(components, rounding, growth, lag, standardize)
+        return self._finalize_components(
+            components, rounding, growth, lag, standardize, transform=transform
+        )
 
     @handle_errors
     def get_cash_flow_return_on_investment(
@@ -1740,6 +1834,7 @@ class ValuationModels:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -1786,6 +1881,11 @@ class ValuationModels:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -1876,7 +1976,9 @@ class ValuationModels:
             )
         )
 
-        return self._finalize_components(components, rounding, growth, lag, standardize)
+        return self._finalize_components(
+            components, rounding, growth, lag, standardize, transform=transform
+        )
 
     @handle_errors
     def get_intrinsic_valuation(
@@ -2255,6 +2357,7 @@ class ValuationModels:
         lag: int | list[int] = 1,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -2284,6 +2387,11 @@ class ValuationModels:
                 values. Defaults to False.
             trailing (int | None, optional): The trailing period to use for the calculation. The window counts
                 calendar periods, so a period without a report makes it NaN. Defaults to None.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -2375,7 +2483,9 @@ class ValuationModels:
             change_in_net_working_capital=fcff["Change in Net Working Capital"],
         )
 
-        return self._finalize_components(fcff, rounding, growth, lag, standardize)
+        return self._finalize_components(
+            fcff, rounding, growth, lag, standardize, transform=transform
+        )
 
     @handle_errors
     def get_free_cash_flow_to_equity(
@@ -2385,6 +2495,7 @@ class ValuationModels:
         lag: int | list[int] = 1,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -2412,6 +2523,11 @@ class ValuationModels:
                 values. Defaults to False.
             trailing (int | None, optional): The trailing period to use for the calculation. The window counts
                 calendar periods, so a period without a report makes it NaN. Defaults to None.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -2491,7 +2607,9 @@ class ValuationModels:
             net_borrowing=fcfe["Net Borrowing"],
         )
 
-        return self._finalize_components(fcfe, rounding, growth, lag, standardize)
+        return self._finalize_components(
+            fcfe, rounding, growth, lag, standardize, transform=transform
+        )
 
     def _complete_period_dividends(self) -> pd.DataFrame:
         """
@@ -2545,12 +2663,14 @@ class ValuationModels:
         return dividends_per_share
 
     @handle_errors
+    @transform_result
     def get_gordon_growth_model(
         self,
         rate_of_return: float | list | dict[str, float] | None = None,
         growth_rate: float | list | dict[str, float] | None = None,
         project_periods: int = 5,
         rounding: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ):
         """
@@ -2601,6 +2721,11 @@ class ValuationModels:
                 last complete period. Defaults to 5.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
+            transform (str | list[str] | None, optional): Time series steps applied to the result in order,
+                such as "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), along the dates of each series. A window needs that many
+                periods of the result, so its first periods are empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -2889,6 +3014,7 @@ class ValuationModels:
         return two_stage_ddm_results.loc[:, self._start_date :]
 
     @handle_errors
+    @transform_result
     def get_h_model(
         self,
         rate_of_return: float | list | dict[str, float] | None = None,
@@ -2896,6 +3022,7 @@ class ValuationModels:
         stable_growth_rate: float | list | dict[str, float] | None = None,
         high_growth_periods: int = 10,
         rounding: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -2939,6 +3066,11 @@ class ValuationModels:
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the rounding of the Toolkit (4 unless set
                 otherwise).
+            transform (str | list[str] | None, optional): Time series steps applied to the result in order,
+                such as "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), along the dates of each series. A window needs that many
+                periods of the result, so its first periods are empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -3047,6 +3179,7 @@ class ValuationModels:
         return h_model.loc[self._start_date :]
 
     @handle_errors
+    @transform_result
     def get_justified_multiples(
         self,
         rate_of_return: float | list | dict[str, float] | None = None,
@@ -3054,6 +3187,7 @@ class ValuationModels:
         diluted: bool = True,
         trailing: int | None = None,
         rounding: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -3097,6 +3231,11 @@ class ValuationModels:
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the rounding of the Toolkit (4 unless set
                 otherwise).
+            transform (str | list[str] | None, optional): Time series steps applied to the result in order,
+                such as "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), along the dates of each series. A window needs that many
+                periods of the result, so its first periods are empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -3216,6 +3355,7 @@ class ValuationModels:
         standardize: bool = False,
         trailing: int | None = None,
         market_risk_premium: float | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -3246,6 +3386,11 @@ class ValuationModels:
                 uses. Defaults to None, which takes the equity risk premium of each company's country
                 (Damodaran's Total Equity Risk Premium, see get_market_risk_premium) and, where that is
                 not available, the benchmark's average return above the risk-free rate over the data.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -3344,7 +3489,12 @@ class ValuationModels:
         )
 
         return self._finalize_components(
-            residual_income, rounding, growth, lag, standardize
+            residual_income,
+            rounding,
+            growth,
+            lag,
+            standardize,
+            transform=transform,
         )
 
     @handle_errors
@@ -3359,6 +3509,7 @@ class ValuationModels:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -3395,6 +3546,11 @@ class ValuationModels:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -3486,6 +3642,12 @@ class ValuationModels:
             period_end_dates=self._market_dates(),
         )
 
+        # The steps run before the growth, as in every other method.
+        if transform:
+            pvgo = transform_time_series(pvgo, transform).round(
+                rounding if rounding is not None else self._rounding
+            )
+
         if growth:
             pvgo = calculate_growth(
                 dataset=pvgo,
@@ -3526,6 +3688,7 @@ class ValuationModels:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -3563,6 +3726,11 @@ class ValuationModels:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -3639,6 +3807,7 @@ class ValuationModels:
             rounding=rounding,
             standardize=standardize,
             axis="columns",
+            transform=transform,
         )
 
     @handle_errors
@@ -3652,6 +3821,7 @@ class ValuationModels:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -3708,6 +3878,11 @@ class ValuationModels:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -3792,6 +3967,7 @@ class ValuationModels:
             rounding=rounding,
             standardize=standardize,
             axis="columns",
+            transform=transform,
         )
 
     def _trailing_earnings_per_share(

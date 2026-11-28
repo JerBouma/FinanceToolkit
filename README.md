@@ -248,7 +248,7 @@ And below each component is shown for every fiscal year, with the latest value o
   <img alt="Extended DuPont Analysis" src="https://raw.githubusercontent.com/JerBouma/FinanceToolkit/main/assets/readme/models-light.png">
 </picture>
 
-Other models include the [Weighted Average Cost of Capital](https://www.jeroenbouma.com/projects/financetoolkit/docs/models#get_weighted_average_cost_of_capital), [Altman Z-Score](https://www.jeroenbouma.com/projects/financetoolkit/docs/models#get_altman_z_score), [Piotroski F-Score](https://www.jeroenbouma.com/projects/financetoolkit/docs/models#get_piotroski_score) and [Intrinsic Valuation](https://www.jeroenbouma.com/projects/financetoolkit/docs/models#get_intrinsic_valuation). Almost every function also accepts `growth=True` for the growth from one period to the next, `trailing=4` for trailing twelve-month figures and `standardize=True` for Z-Scores.
+Other models include the [Weighted Average Cost of Capital](https://www.jeroenbouma.com/projects/financetoolkit/docs/models#get_weighted_average_cost_of_capital), [Altman Z-Score](https://www.jeroenbouma.com/projects/financetoolkit/docs/models#get_altman_z_score), [Piotroski F-Score](https://www.jeroenbouma.com/projects/financetoolkit/docs/models#get_piotroski_score) and [Intrinsic Valuation](https://www.jeroenbouma.com/projects/financetoolkit/docs/models#get_intrinsic_valuation). Almost every function also accepts `growth=True` for the growth from one period to the next, `trailing=4` for trailing twelve-month figures, `standardize=True` for Z-Scores and `transform=` for time series steps on the result, applied in order, such as `"yoy"`, `"sma:4"`, `"zscore:20"` or `"hp_trend"` (Hodrick-Prescott).
 
 ## Weighing Risk and Return
 

@@ -1452,6 +1452,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -1488,6 +1489,11 @@ class Ratios:
                 The window counts calendar periods, so a period without a report makes it NaN.
                 Defaults to None, which uses single-period flows (per quarter and not annualized
                 with quarterly data).
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -1553,6 +1559,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -1565,6 +1572,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -1609,6 +1617,11 @@ class Ratios:
                 The window counts calendar periods, so a period without a report makes it NaN.
                 Defaults to None, which uses single-period flows (per quarter and not annualized
                 with quarterly data).
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -1675,6 +1688,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -1688,6 +1702,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -1727,6 +1742,11 @@ class Ratios:
                 The window counts calendar periods, so a period without a report makes it NaN.
                 Defaults to None, which uses single-period flows (per quarter and not annualized
                 with quarterly data).
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -1802,6 +1822,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -1815,6 +1836,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -1862,6 +1884,11 @@ class Ratios:
                 The window counts calendar periods, so a period without a report makes it NaN.
                 Defaults to None, which uses single-period flows (per quarter and not annualized
                 with quarterly data).
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -1931,6 +1958,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -1944,6 +1972,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -1982,6 +2011,11 @@ class Ratios:
                 The window counts calendar periods, so a period without a report makes it NaN.
                 Defaults to None, which uses single-period flows (per quarter and not annualized
                 with quarterly data).
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -2072,6 +2106,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -2084,6 +2119,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -2121,6 +2157,11 @@ class Ratios:
                 The window counts calendar periods, so a period without a report makes it NaN.
                 Defaults to None, which uses single-period flows (per quarter and not annualized
                 with quarterly data).
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -2192,6 +2233,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -2205,6 +2247,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -2244,6 +2287,11 @@ class Ratios:
                 The window counts calendar periods, so a period without a report makes it NaN.
                 Defaults to None, which uses single-period flows (per quarter and not annualized
                 with quarterly data).
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -2319,6 +2367,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -2332,6 +2381,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -2379,6 +2429,11 @@ class Ratios:
                 The window counts calendar periods, so a period without a report makes it NaN.
                 Defaults to None, which uses single-period flows (per quarter and not annualized
                 with quarterly data).
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -2490,6 +2545,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -2502,6 +2558,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -2537,6 +2594,11 @@ class Ratios:
                 with annual data a three-year cumulative figure. The window counts calendar periods,
                 so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -2605,6 +2667,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -2617,6 +2680,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -2653,6 +2717,11 @@ class Ratios:
                 The window counts calendar periods, so a period without a report makes it NaN.
                 Defaults to None, which uses single-period flows (per quarter and not annualized
                 with quarterly data).
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -2717,6 +2786,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -2729,6 +2799,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -2762,6 +2833,11 @@ class Ratios:
                 with annual data a three-year cumulative figure. The window counts calendar periods,
                 so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -2827,6 +2903,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -2839,6 +2916,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -2878,6 +2956,11 @@ class Ratios:
                 The window counts calendar periods, so a period without a report makes it NaN.
                 Defaults to None, which uses single-period flows (per quarter and not annualized
                 with quarterly data).
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -2945,6 +3028,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -2957,6 +3041,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -2999,6 +3084,11 @@ class Ratios:
                 The window counts calendar periods, so a period without a report makes it NaN.
                 Defaults to None, which uses single-period flows (per quarter and not annualized
                 with quarterly data).
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -3068,6 +3158,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -3080,6 +3171,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -3121,6 +3213,11 @@ class Ratios:
                 with annual data a three-year cumulative figure. The window counts calendar periods,
                 so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -3185,6 +3282,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -3197,6 +3295,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -3236,6 +3335,11 @@ class Ratios:
                 with annual data a three-year cumulative figure. The window counts calendar periods,
                 so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -3299,6 +3403,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -3311,6 +3416,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -3343,6 +3449,11 @@ class Ratios:
                 with annual data a three-year cumulative figure. The window counts calendar periods,
                 so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -3408,6 +3519,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -3420,6 +3532,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -3452,6 +3565,11 @@ class Ratios:
                 with annual data a three-year cumulative figure. The window counts calendar periods,
                 so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -3520,6 +3638,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -3532,6 +3651,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -3564,6 +3684,11 @@ class Ratios:
                 with annual data a three-year cumulative figure. The window counts calendar periods,
                 so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -3625,6 +3750,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -3637,6 +3763,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -3673,6 +3800,11 @@ class Ratios:
                 with annual data a three-year cumulative figure. The window counts calendar periods,
                 so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -3736,6 +3868,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -3748,6 +3881,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -3786,6 +3920,11 @@ class Ratios:
                 months (TTM) and 3 with annual data a three-year cumulative figure. The window
                 counts calendar periods, so a period without a report makes it NaN. Defaults to
                 None, which uses single-period flows.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -3840,6 +3979,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -3852,6 +3992,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -3892,6 +4033,11 @@ class Ratios:
                 and 3 with annual data a three-year cumulative figure. The window counts
                 calendar periods, so a period without a report makes it NaN. Defaults to None,
                 which uses single-period flows.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -3952,6 +4098,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -3964,6 +4111,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -4000,6 +4148,11 @@ class Ratios:
                 with annual data a three-year cumulative figure. The window counts calendar periods,
                 so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -4062,6 +4215,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -4074,6 +4228,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -4111,6 +4266,11 @@ class Ratios:
                 with annual data a three-year cumulative figure. The window counts calendar periods,
                 so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -4171,6 +4331,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -4183,6 +4344,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -4218,6 +4380,11 @@ class Ratios:
                 with annual data a three-year cumulative figure. The window counts calendar periods,
                 so a period without a report makes it NaN. Defaults to None, which uses the trailing
                 twelve months (4 quarters) with quarterly data and single years with annual data.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -4281,6 +4448,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -4293,6 +4461,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -4328,6 +4497,11 @@ class Ratios:
                 with annual data a three-year cumulative figure. The window counts calendar periods,
                 so a period without a report makes it NaN. Defaults to None, which uses the trailing
                 twelve months (4 quarters) with quarterly data and single years with annual data.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -4391,6 +4565,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -4403,6 +4578,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -4442,6 +4618,11 @@ class Ratios:
                 and 3 with annual data a three-year cumulative figure. The window counts
                 calendar periods, so a period without a report makes it NaN. Defaults to None,
                 which uses single-period flows.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -4505,6 +4686,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -4517,6 +4699,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -4557,6 +4740,11 @@ class Ratios:
                 counts calendar periods, so a period without a report makes it NaN. Defaults
                 to None, which uses a year: 4 quarters with quarterly data and 1 year with
                 annual data.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -4618,6 +4806,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -4629,6 +4818,7 @@ class Ratios:
         lag: int | list[int] = 1,
         compound: bool = False,
         standardize: bool = False,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -4671,6 +4861,11 @@ class Ratios:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -4736,6 +4931,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_errors
@@ -4921,6 +5117,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -4961,6 +5158,11 @@ class Ratios:
                 with annual data a three-year cumulative figure. The window counts calendar periods,
                 so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -5027,6 +5229,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -5039,6 +5242,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -5076,6 +5280,11 @@ class Ratios:
                 with annual data a three-year cumulative figure. The window counts calendar periods,
                 so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -5154,6 +5363,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -5166,6 +5376,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -5199,6 +5410,11 @@ class Ratios:
                 with annual data a three-year cumulative figure. The window counts calendar periods,
                 so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -5272,6 +5488,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -5284,6 +5501,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -5316,6 +5534,11 @@ class Ratios:
                 with annual data a three-year cumulative figure. The window counts calendar periods,
                 so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -5382,6 +5605,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -5394,6 +5618,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -5429,6 +5654,11 @@ class Ratios:
                 months (TTM) and 3 with annual data a three-year cumulative figure. The window counts calendar
                 periods, so a period without a report makes it NaN. Defaults to None, which uses the trailing
                 twelve months (4 quarters) with quarterly data and single years with annual data.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -5489,6 +5719,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -5501,6 +5732,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -5533,6 +5765,11 @@ class Ratios:
                 with annual data a three-year cumulative figure. The window counts calendar periods,
                 so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -5600,6 +5837,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -5612,6 +5850,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ):
         """
@@ -5647,6 +5886,11 @@ class Ratios:
                 The window counts calendar periods, so a period without a report makes it NaN.
                 Defaults to None, which uses the trailing twelve months (4 quarters) with quarterly
                 data and single years with annual data.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -5701,6 +5945,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -5714,6 +5959,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ):
         """
@@ -5761,6 +6007,11 @@ class Ratios:
                 with annual data a three-year cumulative figure. The window counts calendar periods,
                 so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -5861,6 +6112,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_errors
@@ -6135,6 +6387,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -6174,6 +6427,11 @@ class Ratios:
                 with annual data a three-year cumulative figure. The window counts calendar periods,
                 so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -6249,6 +6507,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -6261,6 +6520,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -6299,6 +6559,11 @@ class Ratios:
                 with annual data a three-year cumulative figure. The window counts calendar periods,
                 so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -6359,6 +6624,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -6371,6 +6637,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -6403,6 +6670,11 @@ class Ratios:
                 with annual data a three-year cumulative figure. The window counts calendar periods,
                 so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -6461,6 +6733,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -6473,6 +6746,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -6507,6 +6781,11 @@ class Ratios:
                 with annual data a three-year cumulative figure. The window counts calendar periods,
                 so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -6567,6 +6846,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -6579,6 +6859,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -6614,6 +6895,11 @@ class Ratios:
                 with annual data a three-year cumulative figure. The window counts calendar periods,
                 so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -6680,6 +6966,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -6692,6 +6979,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -6734,6 +7022,11 @@ class Ratios:
                 with annual data a three-year cumulative figure. The window counts calendar periods,
                 so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -6796,6 +7089,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -6808,6 +7102,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -6838,6 +7133,11 @@ class Ratios:
                 with annual data a three-year cumulative figure. The window counts calendar periods,
                 so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -6902,6 +7202,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -6914,6 +7215,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -6954,6 +7256,11 @@ class Ratios:
                 with annual data a three-year cumulative figure. The window counts calendar periods,
                 so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -7014,6 +7321,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -7026,6 +7334,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -7067,6 +7376,11 @@ class Ratios:
                 The window counts calendar periods, so a period without a report makes it NaN.
                 Defaults to None, which uses single-period flows (per quarter and not annualized
                 with quarterly data).
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -7133,6 +7447,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -7145,6 +7460,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -7184,6 +7500,11 @@ class Ratios:
                 The window counts calendar periods, so a period without a report makes it NaN.
                 Defaults to None, which uses single-period flows (per quarter and not annualized
                 with quarterly data).
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -7246,6 +7567,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -7258,6 +7580,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -7295,6 +7618,11 @@ class Ratios:
                 The window counts calendar periods, so a period without a report makes it NaN.
                 Defaults to None, which uses single-period flows (per quarter and not annualized
                 with quarterly data).
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -7362,6 +7690,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -7374,6 +7703,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -7425,6 +7755,11 @@ class Ratios:
                 The window counts calendar periods, so a period without a report makes it NaN.
                 Defaults to None, which uses single-period flows (per quarter and not annualized
                 with quarterly data).
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -7489,6 +7824,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -7501,6 +7837,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ):
         """
@@ -7545,6 +7882,11 @@ class Ratios:
                 The window counts calendar periods, so a period without a report makes it NaN.
                 Defaults to None, which uses single-period flows (per quarter and not annualized
                 with quarterly data).
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -7629,6 +7971,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -7641,6 +7984,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -7706,6 +8050,11 @@ class Ratios:
                 The window counts calendar periods, so a period without a report makes it NaN.
                 Defaults to None, which uses single-period flows (per quarter and not annualized
                 with quarterly data).
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -7775,6 +8124,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -7787,6 +8137,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -7847,6 +8198,11 @@ class Ratios:
                 The window counts calendar periods, so a period without a report makes it NaN.
                 Defaults to None, which uses single-period flows (per quarter and not annualized
                 with quarterly data).
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -7914,6 +8270,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -7926,6 +8283,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -7985,6 +8343,11 @@ class Ratios:
                 The window counts calendar periods, so a period without a report makes it NaN.
                 Defaults to None, which uses single-period flows (per quarter and not annualized
                 with quarterly data).
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -8042,6 +8405,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -8054,6 +8418,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ):
         """
@@ -8093,6 +8458,11 @@ class Ratios:
                 with annual data a three-year cumulative figure. The window counts calendar periods,
                 so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -8152,6 +8522,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -8164,6 +8535,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ):
         """
@@ -8203,6 +8575,11 @@ class Ratios:
                 The window counts calendar periods, so a period without a report makes it NaN.
                 Defaults to None, which uses single-period flows (per quarter and not annualized
                 with quarterly data).
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -8281,6 +8658,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -8293,6 +8671,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ):
         """
@@ -8335,6 +8714,11 @@ class Ratios:
                 with annual data a three-year cumulative figure. The window counts calendar periods,
                 so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -8410,6 +8794,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -8422,6 +8807,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ):
         """
@@ -8455,6 +8841,11 @@ class Ratios:
                 with annual data a three-year cumulative figure. The window counts calendar periods,
                 so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -8523,6 +8914,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -8535,6 +8927,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -8568,6 +8961,11 @@ class Ratios:
                 with annual data a three-year cumulative figure. The window counts calendar periods,
                 so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -8628,6 +9026,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -8640,6 +9039,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ):
         """
@@ -8675,6 +9075,11 @@ class Ratios:
                 with annual data a three-year cumulative figure. The window counts calendar periods,
                 so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -8733,6 +9138,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -8745,6 +9151,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -8782,6 +9189,11 @@ class Ratios:
                 with annual data a three-year cumulative figure. The window counts calendar periods,
                 so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -8842,6 +9254,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -8854,6 +9267,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -8895,6 +9309,11 @@ class Ratios:
                 with annual data a three-year cumulative figure. The window counts calendar periods,
                 so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -8954,6 +9373,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -8966,6 +9386,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -9006,6 +9427,11 @@ class Ratios:
                 counts calendar periods, so a period without a report makes it NaN. Defaults to
                 None, which uses the trailing twelve months (4 quarters) with quarterly data and
                 single years with annual data.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -9066,6 +9492,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -9078,6 +9505,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -9122,6 +9550,11 @@ class Ratios:
                 calendar periods, so a period without a report makes it NaN. Defaults to None,
                 which uses the trailing twelve months (4 quarters) with quarterly data and single
                 years with annual data.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -9189,6 +9622,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -9201,6 +9635,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -9250,6 +9685,11 @@ class Ratios:
                 periods the total assets are taken before. The window counts calendar periods, so a
                 period without a report makes it NaN. Defaults to None, which uses the trailing
                 twelve months (4 quarters) with quarterly data and single years with annual data.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -9338,6 +9778,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -9350,6 +9791,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -9390,6 +9832,11 @@ class Ratios:
                 periods, so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data) against
                 the average of the opening and closing invested capital.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -9457,6 +9904,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -9469,6 +9917,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -9508,6 +9957,11 @@ class Ratios:
                 months (TTM) and 3 with annual data a three-year cumulative figure. The window
                 counts calendar periods, so a period without a report makes it NaN. Defaults to
                 None, which uses single-period flows.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -9562,6 +10016,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -9574,6 +10029,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -9611,6 +10067,11 @@ class Ratios:
                 months (TTM) and 3 with annual data a three-year cumulative figure. The window
                 counts calendar periods, so a period without a report makes it NaN. Defaults to
                 None, which uses single-period flows.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -9675,6 +10136,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -9687,6 +10149,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -9727,6 +10190,11 @@ class Ratios:
                 without a report makes it NaN. Defaults to None, which uses the trailing
                 twelve months (4 quarters) with quarterly data and single years with annual
                 data.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -9787,6 +10255,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_errors
@@ -10043,6 +10512,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ):
         """
@@ -10077,6 +10547,11 @@ class Ratios:
                 with annual data a three-year cumulative figure. The window counts calendar periods,
                 so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -10137,6 +10612,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -10149,6 +10625,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ):
         """
@@ -10184,6 +10661,11 @@ class Ratios:
                 with annual data a three-year cumulative figure. The window counts calendar periods,
                 so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -10261,6 +10743,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -10273,6 +10756,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ):
         """
@@ -10317,6 +10801,11 @@ class Ratios:
                 with annual data a three-year cumulative figure. The window counts calendar periods,
                 so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -10377,6 +10866,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -10389,6 +10879,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ):
         """
@@ -10430,6 +10921,11 @@ class Ratios:
                 with annual data a three-year cumulative figure. The window counts calendar periods,
                 so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -10490,6 +10986,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -10502,6 +10999,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ):
         """
@@ -10544,6 +11042,11 @@ class Ratios:
                 The window counts calendar periods, so a period without a report makes it NaN.
                 Defaults to None, which uses single-period flows (per quarter and not annualized
                 with quarterly data).
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -10612,6 +11115,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -10624,6 +11128,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ):
         """
@@ -10665,6 +11170,11 @@ class Ratios:
                 with annual data a three-year cumulative figure. The window counts calendar periods,
                 so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -10749,6 +11259,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -10763,6 +11274,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ):
         """
@@ -10807,6 +11319,11 @@ class Ratios:
                 with annual data a three-year cumulative figure. The window counts calendar periods,
                 so a period without a report makes it NaN. Defaults to None, which uses the trailing
                 twelve months (4 quarters) with quarterly data and single years with annual data.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -10898,6 +11415,7 @@ class Ratios:
             standardize=standardize,
             axis="rows" if show_daily else "columns",
             row_slice=show_daily,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -10910,6 +11428,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ):
         """
@@ -10951,6 +11470,11 @@ class Ratios:
                 The window counts calendar periods, so a period without a report makes it NaN.
                 Defaults to None, which uses the trailing twelve months (4 quarters) with quarterly
                 data and single years with annual data.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -11011,6 +11535,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -11023,6 +11548,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ):
         """
@@ -11061,6 +11587,11 @@ class Ratios:
                 equity over. E.g. 4 with quarterly data averages the last four quarter ends. The
                 window counts calendar periods, so a period without a report makes it NaN. Defaults
                 to None, which uses the balances at the end of each period.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -11115,6 +11646,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -11127,6 +11659,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ):
         """
@@ -11165,6 +11698,11 @@ class Ratios:
                 The window counts calendar periods, so a period without a report makes it NaN.
                 Defaults to None, which uses the trailing twelve months (4 quarters) with quarterly
                 data and single years with annual data.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -11225,6 +11763,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -11237,6 +11776,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ):
         """
@@ -11270,6 +11810,11 @@ class Ratios:
                 The window counts calendar periods, so a period without a report makes it NaN.
                 Defaults to None, which uses the trailing twelve months (4 quarters) with quarterly
                 data and single years with annual data.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -11327,6 +11872,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -11339,6 +11885,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ):
         """
@@ -11372,6 +11919,11 @@ class Ratios:
                 with annual data a three-year cumulative figure. The window counts calendar periods,
                 so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -11433,6 +11985,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -11445,6 +11998,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ):
         """
@@ -11480,6 +12034,11 @@ class Ratios:
                 with annual data a three-year cumulative figure. The window counts calendar periods,
                 so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -11552,6 +12111,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -11564,6 +12124,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ):
         """
@@ -11597,6 +12158,11 @@ class Ratios:
                 with annual data a three-year cumulative figure. The window counts calendar periods,
                 so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -11657,6 +12223,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -11669,6 +12236,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -11704,6 +12272,11 @@ class Ratios:
                 with annual data a three-year cumulative figure. The window counts calendar periods,
                 so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -11763,6 +12336,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -11776,6 +12350,7 @@ class Ratios:
         lag: int | list[int] = 1,
         compound: bool = False,
         standardize: bool = False,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -11812,6 +12387,11 @@ class Ratios:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -11884,6 +12464,7 @@ class Ratios:
             standardize=standardize,
             axis="rows" if show_daily else "columns",
             row_slice=show_daily,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -11896,6 +12477,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -11932,6 +12514,11 @@ class Ratios:
                 with annual data a three-year cumulative figure. The window counts calendar periods,
                 so a period without a report makes it NaN. Defaults to None, which uses the trailing
                 twelve months (4 quarters) with quarterly data and single years with annual data.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -11993,6 +12580,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -12005,6 +12593,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ):
         """
@@ -12033,6 +12622,11 @@ class Ratios:
                 with annual data a three-year cumulative figure. The window counts calendar periods,
                 so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -12104,6 +12698,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -12116,6 +12711,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ):
         """
@@ -12156,6 +12752,11 @@ class Ratios:
                 with annual data a three-year cumulative figure. The window counts calendar periods,
                 so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -12220,6 +12821,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -12232,6 +12834,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -12270,6 +12873,11 @@ class Ratios:
                 months (TTM) and 3 with annual data a three-year cumulative figure. The window
                 counts calendar periods, so a period without a report makes it NaN. Defaults to
                 None, which uses single-period flows.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -12330,6 +12938,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -12342,6 +12951,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -12378,6 +12988,11 @@ class Ratios:
                 months (TTM) and 3 with annual data a three-year cumulative figure. The window
                 counts calendar periods, so a period without a report makes it NaN. Defaults to
                 None, which uses single-period flows.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -12446,6 +13061,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -12458,6 +13074,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -12495,6 +13112,11 @@ class Ratios:
                 months (TTM) and 3 with annual data a three-year cumulative figure. The window
                 counts calendar periods, so a period without a report makes it NaN. Defaults to
                 None, which uses single-period flows.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -12555,6 +13177,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -12567,6 +13190,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -12612,6 +13236,11 @@ class Ratios:
                 stays that at the end of the last period. The window counts calendar periods, so
                 a period without a report makes it NaN. Defaults to None, which uses the trailing
                 twelve months (4 quarters) with quarterly data and single years with annual data.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -12690,6 +13319,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -12702,6 +13332,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -12742,6 +13373,11 @@ class Ratios:
                 stays that at the end of the last period. The window counts calendar periods, so
                 a period without a report makes it NaN. Defaults to None, which uses the trailing
                 twelve months (4 quarters) with quarterly data and single years with annual data.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -12815,6 +13451,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -12827,6 +13464,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -12866,6 +13504,11 @@ class Ratios:
                 changes are compared, e.g. 4 with quarterly data compares trailing twelve months
                 with those a year earlier. The window counts calendar periods, so a period
                 without a report makes it NaN. Defaults to None, which uses single-period flows.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -12921,6 +13564,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -12933,6 +13577,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -12973,6 +13618,11 @@ class Ratios:
                 changes are compared, e.g. 4 with quarterly data compares trailing twelve months
                 with those a year earlier. The window counts calendar periods, so a period
                 without a report makes it NaN. Defaults to None, which uses single-period flows.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -13028,6 +13678,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -13040,6 +13691,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -13077,6 +13729,11 @@ class Ratios:
                 changes are compared, e.g. 4 with quarterly data compares trailing twelve months
                 with those a year earlier. The window counts calendar periods, so a period
                 without a report makes it NaN. Defaults to None, which uses single-period flows.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -13130,6 +13787,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_errors
@@ -13528,6 +14186,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ):
         """
@@ -13568,6 +14227,11 @@ class Ratios:
                 with annual data a three-year cumulative figure. The window counts calendar periods,
                 so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -13617,6 +14281,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -13630,6 +14295,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ):
         """
@@ -13663,6 +14329,11 @@ class Ratios:
                 with annual data a three-year cumulative figure. The window counts calendar periods,
                 so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -13726,6 +14397,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -13741,6 +14413,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ):
         """
@@ -13788,6 +14461,11 @@ class Ratios:
                 with annual data a three-year cumulative figure. The window counts calendar periods,
                 so a period without a report makes it NaN. Defaults to None, which uses the trailing
                 twelve months (4 quarters) with quarterly data and single years with annual data.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -13858,6 +14536,7 @@ class Ratios:
             standardize=standardize,
             axis="rows" if show_daily else "columns",
             row_slice=show_daily,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -13874,6 +14553,7 @@ class Ratios:
         lag: int | list[int] = 1,
         compound: bool = False,
         standardize: bool = False,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ):
         """
@@ -13955,6 +14635,11 @@ class Ratios:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -14075,6 +14760,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -14089,6 +14775,7 @@ class Ratios:
         lag: int | list[int] = 1,
         compound: bool = False,
         standardize: bool = False,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ):
         """
@@ -14133,6 +14820,11 @@ class Ratios:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -14216,6 +14908,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -14229,6 +14922,7 @@ class Ratios:
         lag: int | list[int] = 1,
         compound: bool = False,
         standardize: bool = False,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ):
         """
@@ -14271,6 +14965,11 @@ class Ratios:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -14354,6 +15053,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     def _get_or_fetch_analyst_estimates(self) -> pd.DataFrame:
@@ -14483,6 +15183,7 @@ class Ratios:
         lag: int | list[int] = 1,
         compound: bool = False,
         standardize: bool = False,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ):
         """
@@ -14526,6 +15227,11 @@ class Ratios:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -14599,6 +15305,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -14611,6 +15318,7 @@ class Ratios:
         lag: int | list[int] = 1,
         compound: bool = False,
         standardize: bool = False,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ):
         """
@@ -14656,6 +15364,11 @@ class Ratios:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -14790,6 +15503,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     def _get_book_value_per_share(
@@ -14845,6 +15559,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ):
         """
@@ -14877,6 +15592,11 @@ class Ratios:
                 with annual data a three-year cumulative figure. The window counts calendar periods,
                 so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -14926,6 +15646,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -14939,6 +15660,7 @@ class Ratios:
         lag: int | list[int] = 1,
         compound: bool = False,
         standardize: bool = False,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ):
         """
@@ -14981,6 +15703,11 @@ class Ratios:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -15055,6 +15782,7 @@ class Ratios:
             standardize=standardize,
             axis="rows" if show_daily else "columns",
             row_slice=show_daily,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -15068,6 +15796,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ):
         """
@@ -15099,6 +15828,11 @@ class Ratios:
                 with annual data a three-year cumulative figure. The window counts calendar periods,
                 so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -15169,6 +15903,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -15182,6 +15917,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ):
         """
@@ -15221,6 +15957,11 @@ class Ratios:
                 with annual data a three-year cumulative figure. The window counts calendar periods,
                 so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -15288,6 +16029,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -15301,6 +16043,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -15336,6 +16079,11 @@ class Ratios:
                 with annual data a three-year cumulative figure. The window counts calendar periods,
                 so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -15402,6 +16150,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -15415,6 +16164,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -15449,6 +16199,11 @@ class Ratios:
                 with annual data a three-year cumulative figure. The window counts calendar periods,
                 so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -15512,6 +16267,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -15525,6 +16281,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -15563,6 +16320,11 @@ class Ratios:
                 with annual data a three-year cumulative figure. The window counts calendar periods,
                 so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -15624,6 +16386,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -15637,6 +16400,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -15677,6 +16441,11 @@ class Ratios:
                 with annual data a three-year cumulative figure. The window counts calendar periods,
                 so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -15752,6 +16521,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -15765,6 +16535,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ):
         """
@@ -15812,6 +16583,11 @@ class Ratios:
                 with annual data a three-year cumulative figure. The window counts calendar periods,
                 so a period without a report makes it NaN. Defaults to None, which uses the trailing
                 twelve months (4 quarters) with quarterly data and single years with annual data.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -15990,6 +16766,7 @@ class Ratios:
             standardize=standardize,
             axis="rows" if show_daily else "columns",
             row_slice=show_daily,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -16004,6 +16781,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ):
         """
@@ -16041,6 +16819,11 @@ class Ratios:
                 with annual data a three-year cumulative figure. The window counts calendar periods,
                 so a period without a report makes it NaN. Defaults to None, which uses the trailing
                 twelve months (4 quarters) with quarterly data and single years with annual data.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -16132,6 +16915,7 @@ class Ratios:
             standardize=standardize,
             axis="rows" if show_daily else "columns",
             row_slice=show_daily,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -16146,6 +16930,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ):
         """
@@ -16183,6 +16968,11 @@ class Ratios:
                 with annual data a three-year cumulative figure. The window counts calendar periods,
                 so a period without a report makes it NaN. Defaults to None, which uses the trailing
                 twelve months (4 quarters) with quarterly data and single years with annual data.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -16259,6 +17049,7 @@ class Ratios:
             standardize=standardize,
             axis="rows" if show_daily else "columns",
             row_slice=show_daily,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -16273,6 +17064,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ):
         """
@@ -16308,6 +17100,11 @@ class Ratios:
                 with annual data a three-year cumulative figure. The window counts calendar periods,
                 so a period without a report makes it NaN. Defaults to None, which uses the trailing
                 twelve months (4 quarters) with quarterly data and single years with annual data.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -16386,6 +17183,7 @@ class Ratios:
             standardize=standardize,
             axis="rows" if show_daily else "columns",
             row_slice=show_daily,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -16400,6 +17198,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ):
         """
@@ -16440,6 +17239,11 @@ class Ratios:
                 with annual data a three-year cumulative figure. The window counts calendar periods,
                 so a period without a report makes it NaN. Defaults to None, which uses the trailing
                 twelve months (4 quarters) with quarterly data and single years with annual data.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -16514,6 +17318,7 @@ class Ratios:
             standardize=standardize,
             axis="rows" if show_daily else "columns",
             row_slice=show_daily,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -16528,6 +17333,7 @@ class Ratios:
         lag: int | list[int] = 1,
         compound: bool = False,
         standardize: bool = False,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ):
         """
@@ -16583,6 +17389,11 @@ class Ratios:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -16653,6 +17464,7 @@ class Ratios:
             standardize=standardize,
             axis="rows" if show_daily else "columns",
             row_slice=show_daily,
+            transform=transform,
         )
 
     @handle_errors
@@ -16666,6 +17478,7 @@ class Ratios:
         lag: int | list[int] = 1,
         compound: bool = False,
         standardize: bool = False,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ):
         """
@@ -16716,6 +17529,11 @@ class Ratios:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -16806,6 +17624,7 @@ class Ratios:
             standardize=standardize,
             axis="rows" if show_daily else "columns",
             row_slice=show_daily,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -16819,6 +17638,7 @@ class Ratios:
         lag: int | list[int] = 1,
         compound: bool = False,
         standardize: bool = False,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ):
         """
@@ -16860,6 +17680,11 @@ class Ratios:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -16937,6 +17762,7 @@ class Ratios:
             standardize=standardize,
             axis="rows" if show_daily else "columns",
             row_slice=show_daily,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -16951,6 +17777,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ):
         """
@@ -16988,6 +17815,11 @@ class Ratios:
                 with annual data a three-year cumulative figure. The window counts calendar periods,
                 so a period without a report makes it NaN. Defaults to None, which uses the trailing
                 twelve months (4 quarters) with quarterly data and single years with annual data.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -17058,6 +17890,7 @@ class Ratios:
             standardize=standardize,
             axis="rows" if show_daily else "columns",
             row_slice=show_daily,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -17072,6 +17905,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ):
         """
@@ -17116,6 +17950,11 @@ class Ratios:
                 with annual data a three-year cumulative figure. The window counts calendar periods,
                 so a period without a report makes it NaN. Defaults to None, which uses the trailing
                 twelve months (4 quarters) with quarterly data and single years with annual data.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -17198,6 +18037,7 @@ class Ratios:
             standardize=standardize,
             axis="rows" if show_daily else "columns",
             row_slice=show_daily,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -17212,6 +18052,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ):
         """
@@ -17248,6 +18089,11 @@ class Ratios:
                 with annual data a three-year cumulative figure. The window counts calendar periods,
                 so a period without a report makes it NaN. Defaults to None, which uses the trailing
                 twelve months (4 quarters) with quarterly data and single years with annual data.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -17322,6 +18168,7 @@ class Ratios:
             standardize=standardize,
             axis="rows" if show_daily else "columns",
             row_slice=show_daily,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -17337,6 +18184,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ):
         """
@@ -17377,6 +18225,11 @@ class Ratios:
                 with annual data a three-year cumulative figure. The window counts calendar periods,
                 so a period without a report makes it NaN. Defaults to None, which uses the trailing
                 twelve months (4 quarters) with quarterly data and single years with annual data.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -17441,6 +18294,7 @@ class Ratios:
             standardize=standardize,
             axis="rows" if show_daily else "columns",
             row_slice=show_daily,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -17453,6 +18307,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ):
         """
@@ -17495,6 +18350,11 @@ class Ratios:
                 with annual data a three-year cumulative figure. The window counts calendar periods,
                 so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -17549,6 +18409,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -17561,6 +18422,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ):
         """
@@ -17600,6 +18462,11 @@ class Ratios:
                 with annual data a three-year cumulative figure. The window counts calendar periods,
                 so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -17651,6 +18518,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -17663,6 +18531,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ):
         """
@@ -17691,6 +18560,11 @@ class Ratios:
                 with annual data a three-year cumulative figure. The window counts calendar periods,
                 so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -17747,6 +18621,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -17759,6 +18634,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ):
         """
@@ -17794,6 +18670,11 @@ class Ratios:
                 with annual data a three-year cumulative figure. The window counts calendar periods,
                 so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -17852,6 +18733,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -17867,6 +18749,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -17915,6 +18798,11 @@ class Ratios:
                 with annual data a three-year cumulative figure. The window counts calendar periods,
                 so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -17994,6 +18882,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -18008,6 +18897,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ):
         """
@@ -18057,6 +18947,11 @@ class Ratios:
                 with annual data a three-year cumulative figure. The window counts calendar periods,
                 so a period without a report makes it NaN. Defaults to None, which uses the trailing
                 twelve months (4 quarters) with quarterly data and single years with annual data.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -18127,6 +19022,7 @@ class Ratios:
             standardize=standardize,
             axis="rows" if show_daily else "columns",
             row_slice=show_daily,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -18141,6 +19037,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ):
         """
@@ -18178,6 +19075,11 @@ class Ratios:
                 with annual data a three-year cumulative figure. The window counts calendar periods,
                 so a period without a report makes it NaN. Defaults to None, which uses the trailing
                 twelve months (4 quarters) with quarterly data and single years with annual data.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -18249,6 +19151,7 @@ class Ratios:
             standardize=standardize,
             axis="rows" if show_daily else "columns",
             row_slice=show_daily,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -18262,6 +19165,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ):
         """
@@ -18302,6 +19206,11 @@ class Ratios:
                 with annual data a three-year cumulative figure. The window counts calendar periods,
                 so a period without a report makes it NaN. Defaults to None, which uses the trailing
                 twelve months (4 quarters) with quarterly data and single years with annual data.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -18368,6 +19277,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -18381,6 +19291,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ):
         """
@@ -18415,6 +19326,11 @@ class Ratios:
                 with annual data a three-year cumulative figure. The window counts calendar periods,
                 so a period without a report makes it NaN. Defaults to None, which uses the trailing
                 twelve months (4 quarters) with quarterly data and single years with annual data.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -18489,6 +19405,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -18501,6 +19418,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ):
         """
@@ -18535,6 +19453,11 @@ class Ratios:
                 with annual data a three-year cumulative figure. The window counts calendar periods,
                 so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -18602,6 +19525,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -18614,6 +19538,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -18650,6 +19575,11 @@ class Ratios:
                 and 3 with annual data a three-year cumulative figure. The window counts
                 calendar periods, so a period without a report makes it NaN. Defaults to None,
                 which uses single-period flows.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -18706,6 +19636,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -18719,6 +19650,7 @@ class Ratios:
         lag: int | list[int] = 1,
         compound: bool = False,
         standardize: bool = False,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -18760,6 +19692,11 @@ class Ratios:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -18839,6 +19776,7 @@ class Ratios:
             standardize=standardize,
             axis="rows" if show_daily else "columns",
             row_slice=show_daily,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -18852,6 +19790,7 @@ class Ratios:
         lag: int | list[int] = 1,
         compound: bool = False,
         standardize: bool = False,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -18891,6 +19830,11 @@ class Ratios:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -18973,6 +19917,7 @@ class Ratios:
             standardize=standardize,
             axis="rows" if show_daily else "columns",
             row_slice=show_daily,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -18986,6 +19931,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -19029,6 +19975,11 @@ class Ratios:
                 calendar periods, so a period without a report makes it NaN. Defaults to
                 None, which uses a year: 4 quarters with quarterly data and 1 year with
                 annual data.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -19092,6 +20043,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -19105,6 +20057,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -19150,6 +20103,11 @@ class Ratios:
                 data gives the issuance over a year. The window counts calendar periods, so a
                 period without a report makes it NaN. Defaults to None, which uses five
                 years: 20 quarters with quarterly data and 5 years with annual data.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -19241,6 +20199,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_portfolio
@@ -19253,6 +20212,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -19298,6 +20258,11 @@ class Ratios:
                 window. The window counts calendar periods, so a period without a report
                 makes it NaN. Defaults to None, which uses the trailing twelve months (4
                 quarters) with quarterly data and single years with annual data.
+            transform (str | list[str] | None, optional): Time series steps applied in order, such as
+                "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), before growth. A window needs that many periods
+                of history, so the first periods can be empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -19368,6 +20333,7 @@ class Ratios:
             compound=compound,
             rounding=rounding,
             standardize=standardize,
+            transform=transform,
         )
 
     @handle_errors

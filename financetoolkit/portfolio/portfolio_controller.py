@@ -27,6 +27,7 @@ from financetoolkit.utilities.dataframe_model import filter_shown_columns
 from financetoolkit.utilities.error_model import check_option, check_period
 from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import apply_rounding, to_period_index
+from financetoolkit.utilities.transform_model import transform_result
 
 logger = logger_model.get_logger()
 
@@ -2008,8 +2009,12 @@ class Portfolio:
                 "" if self._api_key else " (the stock splits need an API key)",
             )
 
+    @transform_result
     def get_positions_overview(
-        self, rounding: int | None = None, show_columns: str | list[str] | None = None
+        self,
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+        transform: str | list[str] | None = None,
     ):
         """
         Calculate and provide an overview of the portfolio's positions, including key statistics and performance metrics.
@@ -2050,6 +2055,11 @@ class Portfolio:
         Args:
             rounding (int | None, optional): An optional integer specifying the number of decimal places to round the data.
                 If None, the default rounding precision is used. Defaults to None.
+            transform (str | list[str] | None, optional): Time series steps applied to the result in order,
+                such as "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), along the dates of each series. A window needs that many
+                periods of the result, so its first periods are empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -2340,11 +2350,13 @@ class Portfolio:
 
         return self._portfolio_overview
 
+    @transform_result
     def get_portfolio_performance(
         self,
         period: str | None = None,
         exclude_sold_positions: bool = True,
         rounding: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ):
         """
@@ -2369,6 +2381,11 @@ class Portfolio:
                 sold, its sales adding up to its purchases. Open positions stay, long or short. Defaults to True.
             rounding (int | None): The number of decimal places to round the output to.
                 If None, it defaults to the rounding precision specified in the configuration.
+            transform (str | list[str] | None, optional): Time series steps applied to the result in order,
+                such as "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), along the dates of each series. A window needs that many
+                periods of the result, so its first periods are empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -2990,11 +3007,13 @@ class Portfolio:
             raise ValueError("The Portfolio has no positions.")
         return positions["Current Value"].astype(float)
 
+    @transform_result
     def get_turnover(
         self,
         denominator: str = "gross_value",
         period: str = "daily",
         rounding: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -3031,6 +3050,11 @@ class Portfolio:
                 "daily", "weekly", "monthly", "quarterly", "yearly". Defaults to "daily".
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Portfolio's rounding.
+            transform (str | list[str] | None, optional): Time series steps applied to the result in order,
+                such as "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), along the dates of each series. A window needs that many
+                periods of the result, so its first periods are empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -3113,10 +3137,12 @@ class Portfolio:
             table, rounding if rounding is not None else self._rounding
         )
 
+    @transform_result
     def get_gross_leverage(
         self,
         period: str = "daily",
         rounding: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -3140,6 +3166,11 @@ class Portfolio:
                 "monthly", "quarterly", "yearly". Defaults to "daily".
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Portfolio's rounding.
+            transform (str | list[str] | None, optional): Time series steps applied to the result in order,
+                such as "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), along the dates of each series. A window needs that many
+                periods of the result, so its first periods are empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -3960,10 +3991,12 @@ class Portfolio:
             rounding if rounding is not None else self._rounding,
         )
 
+    @transform_result
     def get_return_contributions(
         self,
         period: str = "monthly",
         rounding: int | None = None,
+        transform: str | list[str] | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -3997,6 +4030,11 @@ class Portfolio:
                 "monthly", "quarterly", "yearly". Defaults to "monthly".
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Portfolio's rounding.
+            transform (str | list[str] | None, optional): Time series steps applied to the result in order,
+                such as "sma:12" (moving average), "ema:12", "std:12", "zscore:60", "percentile:120",
+                "yoy", "pct_change:3,annualize:3", "log", "diff", "cumsum" or "hp_trend" and
+                "hp_cycle" (Hodrick-Prescott), along the dates of each series. A window needs that many
+                periods of the result, so its first periods are empty. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none

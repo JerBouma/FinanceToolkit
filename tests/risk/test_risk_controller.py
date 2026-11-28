@@ -497,6 +497,15 @@ def test_get_excess_volatility(recorder, risk_module):
     recorder.capture(risk_module.get_excess_volatility(period="monthly", rolling=6))
 
 
+def test_get_return_distribution(recorder, risk_module):
+    recorder.capture(risk_module.get_return_distribution(period="weekly"))
+    shares = risk_module.get_return_distribution(
+        period="monthly", bin_width=0.05, relative=True, rounding=10
+    )
+    recorder.capture(shares)
+    assert shares.sum().round(6).eq(1).all()
+
+
 def test_get_hill_estimator(recorder, risk_module):
     recorder.capture(risk_module.get_hill_estimator(period="yearly"))
     recorder.capture(

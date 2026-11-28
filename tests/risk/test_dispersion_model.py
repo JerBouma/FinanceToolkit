@@ -209,3 +209,24 @@ def test_get_risk_range_evar():
     assert dispersion_model.get_risk_range(
         RETURNS, "evar", 0.05, 0.1
     ) > dispersion_model.get_risk_range(RETURNS, "cvar", 0.05, 0.1)
+
+
+def test_return_histogram_counts_returns_in_bins_centred_on_the_width():
+    returns = pd.DataFrame(
+        {"A": [-0.031, -0.01, 0.0, 0.009, 0.0099, 0.03], "B": [0.0] * 5 + [np.nan]}
+    )
+
+    counts = dispersion_model.get_return_histogram(returns, 0.02)
+
+    assert counts.index.tolist() == [-0.04, -0.02, 0.0, 0.02, 0.04]
+    # -0.01 lies on the lower edge of the zero bin, 0.03 on the lower edge of 0.04's.
+    assert counts["A"].tolist() == [1, 0, 4, 0, 1]
+    assert counts["B"].tolist() == [0, 0, 5, 0, 0]
+
+    shares = dispersion_model.get_return_histogram(returns, 0.02, relative=True)
+    assert shares.sum().round(10).tolist() == [1.0, 1.0]
+
+
+def test_return_histogram_needs_a_positive_width():
+    with pytest.raises(ValueError, match="bin_width must be a positive"):
+        dispersion_model.get_return_histogram(pd.DataFrame({"A": [0.01]}), 0)

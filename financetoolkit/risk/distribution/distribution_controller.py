@@ -586,6 +586,93 @@ class DistributionRisk:
 
     @handle_portfolio
     @handle_errors
+    def get_return_distribution(
+        self,
+        period: str | None = None,
+        bin_width: float = 0.01,
+        relative: bool = False,
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the Return Distribution: how many of each asset's returns fall in each bin of
+        equal width, the table behind a histogram of the returns.
+
+        The bins are centred on multiples of the width, so with a width of 0.02 (two
+        percentage points) they are centred on ..., -0.02, 0, 0.02, ..., each running from half
+        a width below its centre to half a width above it. It shows the shape the summary
+        statistics (Volatility, Skewness, Kurtosis) condense into single numbers: whether the
+        returns cluster around zero, lean to one side or have a few far out in the tails.
+
+        The formula is as follows:
+
+        - Bin of a return = floor(Return / Bin Width + 0.5)
+        - Bin Center = Bin × Bin Width
+        - Count = the number of returns in the bin, or that number divided by the asset's
+          number of returns when relative
+
+        Also known as: return histogram, frequency distribution of returns.
+
+        Args:
+            period (str, optional): The data frequency for returns. Options are: "daily", "weekly", "monthly",
+                "quarterly", "yearly". Defaults to "daily".
+            bin_width (float, optional): The width of each bin as a return, e.g. 0.02 for two percentage
+                points. Defaults to 0.01.
+            relative (bool, optional): Whether to give each bin's share of the asset's returns instead of the
+                count. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None,
+                which uses the rounding of the Toolkit (4 unless set otherwise).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: The count (or share) of returns per bin centre (rows) and asset (columns),
+            from the bin of the lowest return to that of the highest, empty bins between them included.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["VTI", "BND"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.risk.get_return_distribution(period="weekly", bin_width=0.02)
+        ```
+
+        Which returns:
+
+        |   Bin Center |   VTI |   BND |   Benchmark |
+        |-------------:|------:|------:|------------:|
+        |        -0.1  |     1 |     0 |           1 |
+        |        -0.08 |     0 |     0 |           0 |
+        |        -0.06 |     4 |     0 |           3 |
+        |        -0.04 |    11 |     0 |          13 |
+        |        -0.02 |    59 |    27 |          53 |
+        |         0    |    90 |   210 |          93 |
+        |         0.02 |    70 |    23 |          76 |
+        |         0.04 |    16 |     0 |          14 |
+        |         0.06 |     9 |     0 |           7 |
+        """
+        period = period if period else "daily"
+
+        check_period(period, ["daily", "weekly", "monthly", "quarterly", "yearly"])
+
+        return apply_rounding(
+            dispersion_model.get_return_histogram(
+                self._get_returns(period, within_period=False), bin_width, relative
+            ),
+            rounding if rounding is not None else self._rounding,
+        )
+
+    @handle_portfolio
+    @handle_errors
     def get_variance(
         self,
         period: str | None = None,

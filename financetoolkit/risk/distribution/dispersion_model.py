@@ -670,3 +670,47 @@ def get_skewness_kurtosis_ratio(
     return risk_model.get_skewness(returns) / risk_model.get_kurtosis(
         returns, fisher=False
     )
+
+
+def get_return_histogram(
+    returns: pd.DataFrame, bin_width: float, relative: bool = False
+) -> pd.DataFrame:
+    """
+    Count how many returns of each asset fall in bins of equal width centred on multiples of
+    the width: with a width of 0.02 the bins are centred on ..., -0.02, 0, 0.02, ... and run
+    from half a width below their centre (included) to half a width above it (excluded).
+
+    Args:
+        returns (pd.DataFrame): The returns, one column per asset.
+        bin_width (float): The width of each bin, e.g. 0.01 for one percentage point.
+        relative (bool, optional): Whether to give each bin's share of the asset's returns
+            instead of the count. Defaults to False.
+
+    Returns:
+        pd.DataFrame: The count (or share) of returns per bin centre (rows) and asset
+        (columns), from the bin of the lowest return to that of the highest, empty bins
+        between them included.
+    """
+    if not bin_width > 0:
+        raise InvalidArgumentError(
+            f"bin_width must be a positive return, such as 0.01, not {bin_width}."
+        )
+
+    finite = returns.where(np.isfinite(returns))
+    # The bin of a return is the multiple of the width nearest to it, halves rounded up.
+    bins = np.floor(finite / bin_width + 0.5)
+    if bins.isna().all().all():
+        return pd.DataFrame(columns=returns.columns, dtype=float)
+
+    every_bin = np.arange(int(np.nanmin(bins)), int(np.nanmax(bins)) + 1)
+    counts = pd.DataFrame(
+        {
+            column: bins[column].value_counts().reindex(every_bin, fill_value=0)
+            for column in returns.columns
+        }
+    )
+    if relative:
+        counts = counts / finite.count()
+
+    counts.index = pd.Index(np.round(every_bin * bin_width, 10), name="Bin Center")
+    return counts
